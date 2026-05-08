@@ -5,11 +5,12 @@ from datetime import datetime
 from sqlalchemy import select, delete, or_
 from app.database import async_session
 from app.models.device import Device, DiscoveredHost, Service
+import json
 from app.scanner.vendor import get_vendor
 
 logger = logging.getLogger(__name__)
 
-async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None, vendor: str | None = None, is_planner_scan: bool = True):
+async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None, vendor: str | None = None, ports: list[int] | None = None, is_planner_scan: bool = True):
     """
     Core synchronization logic. 
     Handles MAC-based identity, deduplication, and cross-table status updates.
@@ -61,6 +62,7 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
             if hostname: disc.hostname = hostname
             if mac: disc.mac = mac
             if vendor: disc.vendor = vendor # Use passed vendor
+            if ports: disc.ports = json.dumps(ports)
             
             # Inherit custom name if missing
             if not disc.custom_name and mac:
@@ -81,7 +83,8 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
                 is_online=True,
                 is_monitored=dev is not None,
                 last_seen=datetime.now(),
-                first_seen=datetime.now()
+                first_seen=datetime.now(),
+                ports=json.dumps(ports) if ports else None
             )
             db.add(disc)
 

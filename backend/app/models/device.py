@@ -165,3 +165,4 @@ class DiscoveredHost(Base):
     is_online: Mapped[bool] = mapped_column(Boolean, default=True)
     is_monitored: Mapped[bool] = mapped_column(Boolean, default=False)
     is_reserved: Mapped[bool] = mapped_column(Boolean, default=False)
+    ports: Mapped[str | None] = mapped_column(Text, nullable=True) # JSON list of ports
