@@ -1,0 +1,167 @@
+"""SQLAlchemy ORM models for devices, groups, and services."""
+
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database import Base
+
+
+class DeviceGroup(Base):
+    """A logical group for organizing devices (e.g. Firewalls, Server, NAS).
+
+    Attributes:
+        id: Primary key.
+        name: Human-readable group name.
+        icon: Optional icon identifier.
+        color: Optional hex color for the group header.
+        sort_order: Display order on the dashboard.
+        is_default: Whether this is a system-created default group.
+        devices: Related devices in this group.
+    """
+
+    __tablename__ = "device_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    devices: Mapped[list["Device"]] = relationship(back_populates="group", lazy="selectin")
+
+
+class Device(Base):
+    """A discovered network device.
+
+    Attributes:
+        id: Primary key.
+        ip: IPv4 address of the device.
+        mac: MAC address (if discovered via ARP).
+        hostname: DNS/NetBIOS hostname.
+        display_name: User-customizable name shown on dashboard.
+        device_type: Classification category (firewall, server, nas, etc.).
+        device_subtype: Specific product/role (Sophos, Proxmox, etc.).
+        group_id: Foreign key to DeviceGroup.
+        icon: Custom icon override.
+        sort_order: Position within its group.
+        is_pinned: Whether the device is pinned to top.
+        is_hidden: Whether the device is hidden from dashboard.
+        notes: Optional user notes.
+        first_seen: Timestamp of initial discovery.
+        last_seen: Timestamp of last successful scan.
+    """
+
+    __tablename__ = "devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ip: Mapped[str] = mapped_column(String(45), nullable=False, unique=True, index=True)
+    mac: Mapped[str | None] = mapped_column(String(17), nullable=True, index=True)
+    hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    device_type: Mapped[str] = mapped_column(String(30), nullable=False, default="unknown")
+    device_subtype: Mapped[str] = mapped_column(String(50), nullable=False, default="Unknown")
+    vendor: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("device_groups.id"), nullable=True)
+    icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Grid Layout
+    x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    w: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    h: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    is_online: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_reserved: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_agent: Mapped[bool] = mapped_column(Boolean, default=False)
+    virtual_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    status_changed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    old_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    ip_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    group: Mapped[DeviceGroup | None] = relationship(back_populates="devices")
+    services: Mapped[list["Service"]] = relationship(back_populates="device", lazy="selectin", cascade="all, delete-orphan")
+    history: Mapped[list["DeviceHistory"]] = relationship(back_populates="device", lazy="select", cascade="all, delete-orphan")
+
+
+class Service(Base):
+    """A network service exposed by a device (e.g. SSH on port 22).
+
+    Attributes:
+        id: Primary key.
+        device_id: Foreign key to Device.
+        name: Display name (e.g. "SSH", "Sophos Admin").
+        protocol: Protocol type (ssh, rdp, http, https, smb, scp, vnc).
+        port: TCP port number.
+        url_template: URL pattern using {ip} and {port} placeholders.
+        color: Button color as hex string.
+        is_auto_detected: Whether this service was found by the scanner.
+        sort_order: Display order of service buttons.
+    """
+
+    __tablename__ = "services"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    protocol: Mapped[str] = mapped_column(String(20), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    url_template: Mapped[str] = mapped_column(String(500), default="")
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    is_auto_detected: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_up: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_checked: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    device: Mapped[Device] = relationship(back_populates="services")
+
+
+class DeviceHistory(Base):
+    """Historical record of device status changes."""
+
+    __tablename__ = "device_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False)
+    service_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("services.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # online, offline, up, down
+    message: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    device: Mapped[Device] = relationship(back_populates="history")
+    service: Mapped[Service | None] = relationship()
+
+
+class DiscoveredHost(Base):
+    """A host discovered during a network scan but not yet added to the dashboard.
+
+    Attributes:
+        id: Primary key.
+        ip: IPv4 address.
+        mac: MAC address.
+        hostname: DNS/NetBIOS hostname.
+        vendor: Device vendor (from MAC).
+        first_seen: Initial discovery.
+        last_seen: Last time seen online.
+        is_online: Current status.
+    """
+
+    __tablename__ = "discovered_hosts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ip: Mapped[str] = mapped_column(String(45), nullable=False, unique=True, index=True)
+    mac: Mapped[str | None] = mapped_column(String(17), nullable=True, index=True)
+    hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    custom_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    vendor: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    is_online: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_monitored: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_reserved: Mapped[bool] = mapped_column(Boolean, default=False)

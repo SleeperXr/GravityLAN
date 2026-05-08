@@ -1,0 +1,105 @@
+# GravityLAN 🌌
+
+**GravityLAN** is a modern, lightweight, and incredibly practical Homelab network radar and dashboard. Designed to give you an immediate overview of your network without the tedious, hours-long setup typical of enterprise monitoring solutions.
+
+> **100% Vibe Coded** 
+> *This tool (and most of this documentation) was generated entirely through "vibe coding" with AI. I just wanted a practical, good-looking tool to keep an overview of my Homelab without having to play sysadmin for 3 days straight. What you see is the result of that vision.*  
+> — **SleeperXr**
+
+---
+
+## 🎯 Why GravityLAN?
+
+Managing a Homelab shouldn't require setting up a bloated enterprise monitoring stack just to see if your Proxmox server or Home Assistant instance is online. GravityLAN is built to be deployed in seconds (via Docker), instantly scan your subnets, and give you a beautiful, customizable drag-and-drop dashboard.
+
+![GravityLAN Dashboard](./docs/screenshots/GravityLanDashboard.png)
+*(GravityLAN Dashboard with custom groups)*
+
+## ✨ Core Features
+
+*   **⚡ Zero-Config Network Discovery**  
+    Automatically scans multiple subnets (e.g., `192.168.1.0/24`, `10.0.0.0/24`) to find devices, resolve their actual hostnames (bypassing DNS caches), and detect their MAC vendors.
+*   **🧠 Smart Home & Service Fingerprinting**  
+    Automatically classifies devices based on open ports. It instantly recognizes Home Assistant (8123), ioBroker (8081), Proxmox (8006), Portainer (9000), and dozens of other typical Homelab services.
+*   **🛠️ Zero-SSH Resource Agents**  
+    Want to see CPU, RAM, and Disk usage of your Linux servers or VMs? GravityLAN can deploy a tiny, self-updating Python agent to your target machines via SSH—no manual installation required.
+*   **🎨 Dynamic Drag-&-Drop Dashboard**  
+    Group your devices (e.g., "Servers", "Smart Home", "Clients") and arrange them exactly how you want. GravityLAN remembers your custom layout natively.
+*   **🌍 Multi-Language Ready (i18n)**  
+    Fully supports English and German out of the box, selectable directly from the UI.
+
+## 🛠️ Tech Stack & Environment
+
+GravityLAN was built with a clear separation of concerns, utilizing modern and blazingly fast frameworks:
+
+### Frontend (The Dashboard)
+*   **[React 18](https://react.dev/) & [TypeScript](https://www.typescriptlang.org/):** For a robust, type-safe, and highly reactive user interface.
+*   **[Vite](https://vitejs.dev/):** Providing lightning-fast HMR and optimized production builds.
+*   **[GridStack.js](https://gridstackjs.com/):** The engine behind the fluid, drag-and-drop masonry grid layout.
+*   **[Lucide React](https://lucide.dev/):** For beautiful, crisp vector icons.
+
+### Backend (The Radar)
+*   **[FastAPI](https://fastapi.tiangolo.com/) (Python):** A high-performance, async API framework that handles network scanning and data processing seamlessly.
+*   **[SQLite](https://www.sqlite.org/):** A zero-configuration database that keeps the deployment incredibly simple while persistently storing device histories and layouts.
+*   **Network Tooling:** Native integration with `arp`, `nmap`, and socket connections for deep layer-2 and layer-3 network visibility.
+
+### 🐳 The Docker Philosophy
+GravityLAN is engineered specifically for Homelab environments (like **Unraid**, **TrueNAS**, or standalone **Portainer**). Because the backend relies on ARP requests to discover devices on your local network, GravityLAN is deployed using a `macvlan` network type. This gives the Docker container its own dedicated IP address on your physical LAN, completely bypassing Docker's internal NAT routing.
+
+## 📸 Screenshots
+
+### The Network Planner
+![Network Planner](./docs/screenshots/GravityLanNetwork-Planer.png)
+
+### Smart Device Editor
+![Device Editor](./docs/screenshots/GravitryLanDeviceEditor.png)
+
+### Zero-SSH Agent Deployment
+![Agent Dashboard](./docs/screenshots/GravityLanDeviceEditorAgent.png)
+
+---
+
+## 🔍 Under the Hood
+
+### How the Scan Process Works
+GravityLAN is built for speed and precision in local environments. The scanning engine operates in multiple stages:
+1.  **Layer 2 Discovery (ARP):** The primary scan uses `arp-scan` or local ARP cache lookups. This allows GravityLAN to find devices even if they are blocking ICMP (Ping) requests, providing a much higher detection rate for mobile devices and firewalls.
+2.  **Layer 3 Monitoring (ICMP):** Once a device is known, its real-time status is monitored via ICMP Echo Requests (Pings).
+3.  **Hostname Resolution:** GravityLAN queries hostnames directly from your network's primary gateways and DNS resolvers using low-level socket queries, often resolving local names that standard OS-level tools might miss.
+4.  **Service Fingerprinting (Port Scan):** A high-performance async TCP scanner checks common Homelab ports (80, 443, 8006, 8123, 9000, etc.). Based on the combination of open ports, GravityLAN automatically assigns the correct service icons and links.
+
+### The GravityLAN Agent
+The optional resource agent provides deep system insights for your Linux-based machines (Debian, Ubuntu, Proxmox, CentOS, etc.).
+
+*   **Dependencies:**
+    *   **Python 3.7+:** Must be installed on the target system (pre-installed on almost all modern Linux distros).
+    *   **Standard Library Only:** The agent uses only Python built-in modules to remain as lightweight and non-intrusive as possible.
+    *   **SSH Server:** Required only for the "Auto-Deploy" feature from the UI.
+*   **Deployment Methods:**
+    *   **One-Click Deploy:** Enter your SSH credentials in the Device Editor. GravityLAN connects once, uploads the agent, sets up a systemd-style service (or cron), and starts reporting. Your credentials are **not** stored.
+    *   **Manual Install:** For high-security environments, GravityLAN provides a simple `curl | bash` command you can paste into your terminal.
+*   **Metrics Gathered:** Real-time CPU utilization (per core), RAM usage, Disk space (customizable paths), and system temperature sensors.
+
+---
+
+## 🚀 Quick Start (Docker / Unraid)
+
+GravityLAN is designed to run in a `macvlan` Docker network so it can accurately scan your local subnets without NAT interference.
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/SleeperXr/GravityLAN.git
+   cd GravityLAN
+   ```
+2. Adjust the `docker-compose.yml` to match your local network interface (e.g., `eth0`, `br0`) and subnet.
+3. Bring it up:
+   ```bash
+   docker compose up -d
+   ```
+4. Open your browser and navigate to the IP you assigned to the container (e.g., `http://192.168.1.200`).
+
+*(Note for Unraid Users: Simply use the Unraid Docker UI, set the Network Type to `Custom: br0`, and assign a static IP!)*
+
+## 🤝 Contributing
+
+Since this project is *vibe coded*, it's constantly evolving based on what feels right for a Homelab. Feel free to open issues, submit PRs, or just leave a star if it saved you from setting up a massive enterprise dashboard!
