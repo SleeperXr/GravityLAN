@@ -61,8 +61,12 @@ services:
     restart: unless-stopped
 ```
 
-### Unraid
-GravityLAN is optimized for Unraid. You can find it in the Community Applications (coming soon) or deploy it manually via the Docker tab. Ensure you use `Network: Host` for full discovery features.
+### Windows Development
+For local testing or development on Windows, we provide simple PowerShell scripts that handle everything (Dependency installation, Backend & Frontend startup):
+
+1.  Open a PowerShell terminal in the project root.
+2.  Run `.\start_gravitylan.ps1` to start the stack.
+3.  Run `.\stop_gravitylan.ps1` to stop all processes.
 
 ---
 
