@@ -22,10 +22,10 @@ cd ..
 Write-Host "Starting GravityLAN Development Stack..." -ForegroundColor Cyan
 
 # 3. Start Backend
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000" -WindowStyle Normal
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000" -WorkingDirectory $PSScriptRoot -WindowStyle Normal
 
 # 4. Start Frontend
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; npm run dev" -WindowStyle Normal
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; npm run dev" -WorkingDirectory $PSScriptRoot -WindowStyle Normal
 
 Write-Host "Backend: http://localhost:8000"
 Write-Host "Frontend: http://127.0.0.1:5173"
