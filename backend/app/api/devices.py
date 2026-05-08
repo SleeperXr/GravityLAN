@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,15 +62,27 @@ async def list_devices(
 
 
 @router.post("/refresh-all", status_code=200)
-async def refresh_all_devices() -> dict:
-    """Trigger a status and service check for all known devices."""
+async def refresh_all_devices(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)) -> dict:
+    """Trigger a metadata refresh (DNS, MAC, Vendor) for all known devices."""
     try:
-        from app.api.scanner import start_dashboard_scan
-        from fastapi import BackgroundTasks
+        from app.database import async_session
+        from app.api.devices import refresh_device_info
         
-        # We simulate a background task trigger here
-        bt = BackgroundTasks()
-        return await start_dashboard_scan(bt)
+        res = await db.execute(select(Device.id))
+        device_ids = res.scalars().all()
+        
+        async def run_metadata_refresh():
+            logger.info(f"Starting bulk metadata refresh for {len(device_ids)} devices.")
+            for d_id in device_ids:
+                async with async_session() as local_db:
+                    try:
+                        await refresh_device_info(d_id, local_db, commit=True)
+                    except Exception as e:
+                        logger.warning(f"Metadata refresh failed for device ID {d_id}: {e}")
+            logger.info("Bulk metadata refresh complete.")
+
+        background_tasks.add_task(run_metadata_refresh)
+        return {"status": "success", "message": f"Metadata refresh started for {len(device_ids)} devices"}
     except Exception as e:
         logger.error(f"Refresh all failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
