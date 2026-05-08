@@ -5,7 +5,7 @@ import ipaddress
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,6 +107,40 @@ async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate):
         await db.refresh(host)
         return host
 
+@router.post("/start-dashboard")
+async def start_dashboard_scan(background_tasks: BackgroundTasks):
+    """Manually trigger the 'Strongest' Dashboard scan (Health + Port Discovery)."""
+    global _scan_active, _scan_task, _cancel_event
+    if _scan_active:
+        return {"status": "error", "message": "A scan is already in progress"}
+
+    _scan_active = True
+    _cancel_event = asyncio.Event()
+    
+    async def progress_cb(msg):
+        await _broadcast(ScanProgress(status=ScanStatus.RUNNING, message=msg, progress=50))
+
+    async def run_dashboard_task():
+        global _scan_active
+        try:
+            # Get subnets from settings
+            async with async_session() as db:
+                from app.models.setting import Setting
+                res_sub = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
+                s_set = res_sub.scalar_one_or_none()
+                subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else [s.subnet for s in _get_local_subnets()]
+
+            found_count = await run_dashboard_scan(subnets, progress_callback=progress_cb)
+            await _broadcast(ScanProgress(status=ScanStatus.COMPLETED, message=f"Dashboard scan complete: {found_count} new devices", devices_found=found_count))
+        except Exception as e:
+            logger.error(f"Dashboard scan failed: {e}")
+            await _broadcast(ScanProgress(status=ScanStatus.ERROR, message=f"Scan error: {str(e)}"))
+        finally:
+            _scan_active = False
+
+    _scan_task = asyncio.create_task(run_dashboard_task())
+    return {"status": "ok", "message": "Dashboard scan started"}
+
 @router.post("/start")
 async def start_scan(request: ScanRequest):
     """Manually trigger a Network Planner scan (ARP + Ping + DNS)."""
@@ -133,7 +167,6 @@ async def start_scan(request: ScanRequest):
 
     _scan_task = asyncio.create_task(run_scan_task())
     return {"status": "ok", "message": "Planner scan started"}
-
 @router.post("/stop")
 async def stop_scan() -> dict:
     """Cancel a running scan."""
