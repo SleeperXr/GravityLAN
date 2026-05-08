@@ -22,7 +22,31 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
     """
     logger.info("Dashboard: Starting health and relevance scan.")
     
-    # 1. Dashboard Health Check (Check ALL services for ALL known devices)
+    # 1. Fast Discovery Phase (Ping + ARP) - The Planner logic
+    # This finds out who is generally "alive" in the network very quickly.
+    from app.scanner.discovery import discover_hosts_simple
+    all_resolved_hosts = []
+    
+    for subnet in subnets:
+        if progress_callback: await progress_callback(f"Ping/ARP discovery on {subnet}...")
+        
+        import ipaddress
+        if "/" not in subnet:
+             if subnet.count(".") == 2: subnet = f"{subnet}.0/24"
+             else: subnet = f"{subnet}/24"
+        
+        net = ipaddress.ip_network(subnet, strict=False)
+        target_ips = [str(ip) for ip in net.hosts()]
+        
+        # Fast ping discovery
+        alive_hosts = await discover_hosts_simple(target_ips)
+        resolved = await resolve_mac_addresses(alive_hosts)
+        all_resolved_hosts.extend(resolved)
+        
+    # Map for quick lookup
+    alive_map = {h["ip"]: h for h in all_resolved_hosts}
+
+    # 2. Deep Health & Service Phase
     async with async_session() as db:
         from sqlalchemy.orm import selectinload
         from app.scanner.port_scanner import scan_ports
@@ -32,107 +56,93 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
         )
         devices = res_dev.scalars().all()
         
-        logger.info(f"Dashboard: Starting deep health check for {len(devices)} devices.")
+        logger.info(f"Dashboard: Verifying services for {len(devices)} devices.")
         
-        # We scan in small batches to not overwhelm the network but still be fast
-        batch_size = 5
+        batch_size = 8
         for i in range(0, len(devices), batch_size):
             batch = devices[i:i+batch_size]
             health_tasks = []
             
             for dev in batch:
-                if progress_callback: await progress_callback(f"Checking {dev.display_name} services...")
+                is_ping_alive = dev.ip in alive_map
                 
-                # We check ALL services defined for this device
+                # We check services if it's ping-alive OR if we want to be sure (ICMP might be blocked)
                 target_ports = [s.port for s in dev.services]
                 if not target_ports:
-                    target_ports = MANAGEMENT_PORTS[:5] # Default fallback
+                    target_ports = MANAGEMENT_PORTS[:3]
                 
-                health_tasks.append(scan_ports(dev.ip, ports=target_ports, timeout=0.8))
+                # If it's not even ping-alive, we do a very quick single-port check as fallback
+                # If it is ping-alive, we do the full service check
+                timeout = 0.4 if is_ping_alive else 0.2
+                health_tasks.append(scan_ports(dev.ip, ports=target_ports, timeout=timeout))
             
-            # Run batch health check
             batch_results = await asyncio.gather(*health_tasks)
             
             for dev, open_ports in zip(batch, batch_results):
-                is_online = len(open_ports) > 0
+                # Device is online if it responded to Ping/ARP OR has open ports
+                is_ping_alive = dev.ip in alive_map
+                is_port_alive = len(open_ports) > 0
+                is_online = is_ping_alive or is_port_alive
+                
                 dev.is_online = is_online
                 if is_online:
                     dev.last_seen = datetime.now()
+                    # Update MAC/Vendor if we found it via ARP now but didn't have it
+                    if is_ping_alive and not dev.mac:
+                        dev.mac = alive_map[dev.ip].get("mac")
+                        if dev.mac: dev.vendor = alive_map[dev.ip].get("vendor")
                 
-                # Update each service
+                # Update individual services
                 for svc in dev.services:
                     svc.is_up = svc.port in open_ports
                     svc.last_checked = datetime.now()
             
             await db.commit()
 
-    # 2. Aggressive Subnet Discovery (Finding NEW interesting devices)
-    from app.scanner.port_scanner import nmap_scan
+    # 3. Intelligent Discovery Phase (Sync Neufunde)
     from app.scanner.classifier import classify_device
-    all_found_count = 0
+    new_found_count = 0
     
-    for subnet in subnets:
-        if progress_callback: await progress_callback(f"Aggressive scan on {subnet}...")
+    for host in all_resolved_hosts:
+        ip = host["ip"]
+        mac = host.get("mac")
         
-        import ipaddress
-        if "/" not in subnet:
-             if subnet.count(".") == 2: subnet = f"{subnet}.0/24"
-             else: subnet = f"{subnet}/24"
+        # Check if already in dashboard
+        is_dashboard = any(d.ip == ip for d in devices)
         
-        # We use a more "brute force" discovery for the dashboard: 
-        # Scan the subnet for ANY management ports directly.
-        # This is the "Strongest Scanner" logic.
-        from app.scanner.discovery import discover_hosts_simple
-        
-        # Step A: Fast ping discovery to find ALIVE hosts
-        net = ipaddress.ip_network(subnet, strict=False)
-        target_ips = [str(ip) for ip in net.hosts()]
-        alive_hosts = await discover_hosts_simple(target_ips)
-        resolved_hosts = await resolve_mac_addresses(alive_hosts)
-        
-        for host in resolved_hosts:
-            ip = host["ip"]
-            mac = host.get("mac")
+        if not is_dashboard:
+            # Check if it's "interesting" (Strongest Scanner logic)
+            # We already know it's alive from Phase 1
+            found_ports = await scan_ports(ip, ports=MANAGEMENT_PORTS, timeout=0.4)
             
-            # Step B: Deep-check hosts not already in Dashboard
-            is_dashboard = any(d.ip == ip for d in devices)
-            if not is_dashboard:
-                if progress_callback: await progress_callback(f"Analyzing {ip}...")
+            if found_ports:
+                classification = classify_device({"ip": ip, "ports": found_ports})
+                hostname = host.get("hostname") or classification.get("hostname")
                 
-                # Heavy duty port check
-                found_ports = await scan_ports(ip, ports=MANAGEMENT_PORTS, timeout=0.5)
-                
-                # If it has management ports, it's a high-priority "Newly Discovered" device
-                if found_ports:
-                    logger.info(f"Dashboard: High-priority device found: {ip} (Ports: {found_ports})")
-                    # We can even trigger a classification here to get the best name/icon
-                    classification = classify_device({"ip": ip, "ports": found_ports})
-                    hostname = host.get("hostname") or classification.get("hostname")
-                    
-                    await sync_host_to_db(
-                        ip=ip,
-                        mac=mac,
-                        hostname=hostname,
-                        vendor=host.get("vendor"),
-                        ports=found_ports,
-                        is_planner_scan=False # This puts it into discovered_hosts
-                    )
-                    all_found_count += 1
-                else:
-                    # Still sync it as a low-priority discovery
-                    await sync_host_to_db(
-                        ip=ip,
-                        mac=mac,
-                        hostname=host.get("hostname"),
-                        is_planner_scan=False
-                    )
+                await sync_host_to_db(
+                    ip=ip,
+                    mac=mac,
+                    hostname=hostname,
+                    vendor=host.get("vendor"),
+                    ports=found_ports,
+                    is_planner_scan=False
+                )
+                new_found_count += 1
             else:
-                # Host is already in dashboard, sync_host_to_db will update its online status
+                # Still sync as a regular discovered host (Planner style)
                 await sync_host_to_db(
                     ip=ip,
                     mac=mac,
                     hostname=host.get("hostname"),
                     is_planner_scan=False
                 )
+        else:
+            # Just ensure the discovered_host entry is also kept fresh
+            await sync_host_to_db(
+                ip=ip,
+                mac=mac,
+                hostname=host.get("hostname"),
+                is_planner_scan=False
+            )
 
-    return all_found_count
+    return new_found_count
