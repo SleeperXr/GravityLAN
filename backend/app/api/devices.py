@@ -73,7 +73,7 @@ async def refresh_all_devices(db: AsyncSession = Depends(get_db)) -> dict:
         # 1. Fetch subnets for the scan
         res_sub = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
         s_set = res_sub.scalar_one_or_none()
-        subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else _get_local_subnets()
+        subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else [s.subnet for s in _get_local_subnets()]
 
         # 2. Basic online/offline check via Dashboard Scanner
         await run_dashboard_scan(subnets)
