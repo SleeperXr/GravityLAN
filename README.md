@@ -27,6 +27,8 @@ Managing a Homelab shouldn't require setting up a bloated enterprise monitoring 
     Clean separation between the **Network Planner** (fast discovery) and the **Dashboard** (deep health/service monitoring) for maximum performance and stability.
 *   **🎨 Dynamic Drag-&-Drop Dashboard**  
     Group and arrange your devices exactly how you want. GravityLAN remembers your custom layout natively.
+*   **📱 Mobile-First Design**  
+    A fully responsive interface optimized for smartphones and tablets. Keep an eye on your Homelab while on the go.
 *   **🌍 Multi-Language Ready (i18n)**  
     Full support for English and German out of the box.
 
