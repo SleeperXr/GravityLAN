@@ -10,26 +10,14 @@ from app.models.setting import Setting
 from app.models.device import DeviceHistory
 from app.scanner.planner import run_planner_scan, run_arp_only_scan
 from app.scanner.dashboard import run_dashboard_scan
+from app.scanner.utils import get_local_subnets
 
 logger = logging.getLogger(__name__)
 
-def _get_local_subnets():
-    """Helper to detect subnets if not configured."""
-    import ipaddress
-    import netifaces
-    subnets = []
-    for iface in netifaces.interfaces():
-        addrs = netifaces.ifaddresses(iface)
-        if netifaces.AF_INET in addrs:
-            for addr_info in addrs[netifaces.AF_INET]:
-                ip = addr_info.get("addr", "")
-                mask = addr_info.get("netmask", "255.255.255.0")
-                if ip and not ip.startswith("127."):
-                    try:
-                        network = ipaddress.IPv4Network(f"{ip}/{mask}", strict=False)
-                        subnets.append(str(network))
-                    except: continue
-    return subnets
+def _get_auto_scan_subnets():
+    """Returns a list of CIDR subnets that are suitable for automatic scanning (non-virtual)."""
+    all_subnets = get_local_subnets()
+    return [s.subnet for s in all_subnets if not s.is_virtual]
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +72,7 @@ class ScanScheduler:
                         if subnet_setting and subnet_setting.value:
                             subnets = [s.strip() for s in subnet_setting.value.split(",") if s.strip()]
                         else:
-                            subnets = _get_local_subnets()
+                            subnets = _get_auto_scan_subnets()
 
                         if subnets:
                             logger.info(f"Scheduled Full Scan (Dashboard) starting for: {subnets}")
@@ -128,7 +116,7 @@ class ScanScheduler:
                     async with async_session() as db:
                         res = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
                         s_set = res.scalar_one_or_none()
-                        subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else _get_local_subnets()
+                        subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else _get_auto_scan_subnets()
                     
                     if subnets:
                         await run_planner_scan(subnets)

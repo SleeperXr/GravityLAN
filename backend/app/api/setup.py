@@ -45,7 +45,7 @@ class SetupCompleteRequest(BaseModel):
 async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = Depends(get_db)) -> dict:
     """Mark the initial setup as completed and migrate discovered hosts."""
     from app.models.device import DiscoveredHost, Device, Service
-    from app.scanner.utils import _ensure_default_groups, GROUP_TYPE_MAP
+    from app.scanner.utils import ensure_default_groups, GROUP_TYPE_MAP
     from app.scanner.classifier import classify_device
     from app.scanner.hostname import resolve_hostname, is_ip_like
     from app.scanner.port_scanner import scan_ports
@@ -78,7 +78,7 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
     
     if discovered_hosts:
         import asyncio
-        group_map = await _ensure_default_groups(db, commit=False)
+        group_map = await ensure_default_groups(db, commit=False)
         
         # Avoid IP duplicates
         existing_res = await db.execute(select(Device.ip))
@@ -132,6 +132,11 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
                         url_template=svc_data["url_template"], color=svc_data.get("color"),
                         is_auto_detected=True, is_up=True
                     ))
+            
+            # CRITICAL: Only add device if it has at least one service
+            if not services:
+                logger.info(f"Setup: Skipping auto-adoption for {host.ip} (No services found)")
+                return None
             
             return (device, services, host)
 

@@ -1,25 +1,18 @@
-version: '3.8'
-
 services:
   gravitylan:
-    build: .
-    container_name: GravityLAN
-    privileged: true
+    container_name: gravitylan
+    build:
+      context: .
+      dockerfile: Dockerfile
+    network_mode: host
     restart: unless-stopped
-    networks:
-      home_lan:
-        ipv4_address: 192.168.100.254
     volumes:
-      - /mnt/user/appdata/gravitylan/data:/app/backend/data
+      - ./data:/app/data
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
     environment:
-      - PORT=8000
-      - TZ=Europe/Berlin
-      - GRAVITYLAN_DATA_DIR=/app/backend/data
+      - GRAVITYLAN_DATA_DIR=/app/data
       - GRAVITYLAN_DEBUG=true
-      - GRAVITYLAN_HOST=0.0.0.0
-      - GRAVITYLAN_PORT=8000
-
-networks:
-  home_lan:
-    external: true
-    name: br0
+      - GRAVITYLAN_PORT=8080

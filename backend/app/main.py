@@ -2,15 +2,20 @@
 
 Serves both the API backend and the React frontend (static files).
 """
-
-import logging
-import os
 import sys
 import asyncio
 
 # Force ProactorEventLoop on Windows to support subprocesses (Nmap)
+# This MUST be done before any other imports or loop creation
 if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    try:
+        from asyncio import WindowsProactorEventLoopPolicy
+        asyncio.set_event_loop_policy(WindowsProactorEventLoopPolicy())
+    except ImportError:
+        pass # Fallback for older python versions
+
+import logging
+import os
 
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,7 +32,8 @@ from app.database import init_db
 
 logger = logging.getLogger(__name__)
 
-FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
+# Detection: Use /app/static in Docker, fallback to local dist for development
+FRONTEND_DIR = Path("/app/static") if Path("/app/static").exists() else Path(__file__).parent.parent / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -38,15 +44,24 @@ async def lifespan(app: FastAPI):
         level=logging.DEBUG if settings.debug else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    # Aggressively suppress SQLAlchemy and aiosqlite logs
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    # Aggressively suppress aiosqlite logs (usually not needed even with SQL logs)
     logging.getLogger("aiosqlite").setLevel(logging.WARNING)
-    
+
+    # Custom filter for Uvicorn access logs to ignore polling noise
+    class PollingFilter(logging.Filter):
+        def filter(self, record):
+            msg = record.getMessage()
+            # Ignore frequent polling endpoints and binary health checks
+            if any(x in msg for x in ["/api/agent/status/", "/api/devices", "/api/groups", "/api/scanner/status", "/api/health", "/api/scanner/ws"]):
+                return False
+            return True
+
+    logging.getLogger("uvicorn.access").addFilter(PollingFilter())
+    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+
     # Attach Live Log Streamer
     from app.services.log_streamer import log_handler
     logging.getLogger().addHandler(log_handler)
-    
-    # Load dynamic log level from settings if available
     try:
         from app.database import async_session
         from app.models.setting import Setting
@@ -60,7 +75,9 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-    logger.info("GravityLAN v%s starting (Timeout: %ss)...", settings.app_version, settings.scan_timeout)
+    loop = asyncio.get_running_loop()
+    logger.info("GravityLAN v%s starting (Loop: %s, Timeout: %ss)...", 
+                settings.app_version, loop.__class__.__name__, settings.scan_timeout)
 
     # Ensure data directory exists
     settings.data_dir.mkdir(parents=True, exist_ok=True)
@@ -174,7 +191,9 @@ from app.api.scanner import router as scanner_router  # noqa: E402
 from app.api.settings import router as settings_router  # noqa: E402
 from app.api.setup import router as setup_router  # noqa: E402
 from app.api.agent import router as agent_router  # noqa: E402
+from app.api.backup import router as backup_router  # noqa: E402
 
+app.include_router(backup_router)
 app.include_router(devices_router)
 app.include_router(groups_router)
 app.include_router(router_services)
@@ -217,6 +236,20 @@ async def logs_websocket(websocket: WebSocket):
 
 
 # --- Serve React Frontend (production) ---
+@app.get("/")
+async def root():
+    """Root endpoint: Serve frontend if available, else status JSON."""
+    index_file = FRONTEND_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(str(index_file))
+    return {
+        "app": "GravityLAN",
+        "version": "0.1.0",
+        "status": "online",
+        "api_docs": "/docs",
+        "message": "Backend is running. Frontend build missing in /app/static."
+    }
+
 if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")

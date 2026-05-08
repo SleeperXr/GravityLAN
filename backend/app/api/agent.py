@@ -121,8 +121,8 @@ async def receive_report(
                 disc = disc_result.scalar_one_or_none()
                 if disc:
                     logger.info("Agent report from IP %s found in DiscoveredHost. Auto-promoting.", client_ip)
-                    from app.scanner.utils import _ensure_default_groups
-                    group_map = await _ensure_default_groups(db)
+                    from app.scanner.utils import ensure_default_groups
+                    group_map = await ensure_default_groups(db)
                     
                     new_device = Device(
                         ip=disc.ip,
@@ -162,8 +162,8 @@ async def receive_report(
                     disc_result = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == client_ip))
                     disc = disc_result.scalar_one_or_none()
                     if disc:
-                        from app.scanner.utils import _ensure_default_groups
-                        group_map = await _ensure_default_groups(db, commit=False)
+                        from app.scanner.utils import ensure_default_groups
+                        group_map = await ensure_default_groups(db, commit=False)
                         device = Device(
                             ip=disc.ip, mac=disc.mac, hostname=disc.hostname,
                             display_name=disc.hostname.split('.')[0] if disc.hostname else disc.ip,
@@ -469,8 +469,8 @@ async def download_agent_config(device_id: int, db: AsyncSession = Depends(get_d
     server_url = setting.value if setting and setting.value else None
     
     if not server_url:
-        from app.scanner.utils import _get_local_subnets
-        subnets = _get_local_subnets()
+        from app.scanner.utils import get_local_subnets
+        subnets = get_local_subnets()
         if subnets:
             def ip_priority(s):
                 ip = s.ip_address
@@ -509,8 +509,8 @@ async def download_install_script(device_id: int, db: AsyncSession = Depends(get
     server_url = setting.value if setting and setting.value else None
     
     if not server_url:
-        from app.scanner.utils import _get_local_subnets
-        subnets = _get_local_subnets()
+        from app.scanner.utils import get_local_subnets
+        subnets = get_local_subnets()
         if subnets:
             def ip_priority(s):
                 ip = s.ip_address
@@ -596,8 +596,8 @@ async def deploy_agent_endpoint(
     
     if not server_url:
         # Auto-detect local IP of this server
-        from app.scanner.utils import _get_local_subnets
-        subnets = _get_local_subnets()
+        from app.scanner.utils import get_local_subnets
+        subnets = get_local_subnets()
         if subnets:
             # Sorter: Prioritize 192.168.x.x and 10.x.x.x, avoid 172.x.x.x (Docker) and bridge names
             def ip_priority(s):

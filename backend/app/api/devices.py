@@ -66,23 +66,39 @@ async def refresh_all_devices(background_tasks: BackgroundTasks, db: AsyncSessio
     """Trigger a metadata refresh (DNS, MAC, Vendor) for all known devices."""
     try:
         from app.database import async_session
-        from app.api.devices import refresh_device_info
+        from app.scanner.hostname import resolve_hostname, is_ip_like
+        from app.models.setting import Setting
         
-        res = await db.execute(select(Device.id))
-        device_ids = res.scalars().all()
+        res = await db.execute(select(Device.id, Device.ip, Device.display_name))
+        devices_to_refresh = res.all()
         
-        async def run_metadata_refresh():
-            logger.info(f"Starting bulk metadata refresh for {len(device_ids)} devices.")
-            for d_id in device_ids:
-                async with async_session() as local_db:
-                    try:
-                        await refresh_device_info(d_id, local_db, commit=True)
-                    except Exception as e:
-                        logger.warning(f"Metadata refresh failed for device ID {d_id}: {e}")
-            logger.info("Bulk metadata refresh complete.")
+        # Get DNS server once
+        dns_q = await db.execute(select(Setting).where(Setting.key == "dns.server"))
+        dns_s = dns_q.scalar_one_or_none()
+        dns_server = dns_s.value if dns_s else None
 
-        background_tasks.add_task(run_metadata_refresh)
-        return {"status": "success", "message": f"Metadata refresh started for {len(device_ids)} devices"}
+        async def run_dns_bulk_refresh():
+            logger.info(f"Starting bulk DNS refresh for {len(devices_to_refresh)} devices.")
+            updated = 0
+            for d_id, d_ip, d_display_name in devices_to_refresh:
+                try:
+                    new_hostname = await resolve_hostname(d_ip, dns_server=dns_server)
+                    if new_hostname:
+                        async with async_session() as local_db:
+                            dev = await local_db.get(Device, d_id)
+                            if dev:
+                                dev.hostname = new_hostname
+                                # Also update display name if it was just an IP
+                                if is_ip_like(dev.display_name) and not is_ip_like(new_hostname):
+                                    dev.display_name = new_hostname.split('.')[0]
+                                await local_db.commit()
+                                updated += 1
+                except Exception as e:
+                    logger.debug(f"DNS refresh failed for {d_ip}: {e}")
+            logger.info(f"Bulk DNS refresh complete. Updated {updated} hostnames.")
+
+        background_tasks.add_task(run_dns_bulk_refresh)
+        return {"status": "success", "message": f"DNS refresh started for {len(devices_to_refresh)} devices"}
     except Exception as e:
         logger.error(f"Refresh all failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
