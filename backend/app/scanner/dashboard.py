@@ -22,7 +22,7 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
     """
     logger.info("Dashboard: Starting health and relevance scan.")
     
-    # 1. Dashboard Health Check
+    # 1. Dashboard Health Check (Check ALL services for ALL known devices)
     async with async_session() as db:
         from sqlalchemy.orm import selectinload
         from app.scanner.port_scanner import scan_ports
@@ -32,70 +32,107 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
         )
         devices = res_dev.scalars().all()
         
-        for dev in devices:
-            if progress_callback: await progress_callback(f"Checking Dashboard: {dev.display_name}...")
+        logger.info(f"Dashboard: Starting deep health check for {len(devices)} devices.")
+        
+        # We scan in small batches to not overwhelm the network but still be fast
+        batch_size = 5
+        for i in range(0, len(devices), batch_size):
+            batch = devices[i:i+batch_size]
+            health_tasks = []
             
-            # Check if any port is open to determine online status
-            target_ports = [s.port for s in dev.services if s.is_up or s.is_auto_detected]
-            if not target_ports:
-                # Fallback to standard management ports if no services defined
-                target_ports = MANAGEMENT_PORTS[:3] # 22, 80, 443
+            for dev in batch:
+                if progress_callback: await progress_callback(f"Checking {dev.display_name} services...")
+                
+                # We check ALL services defined for this device
+                target_ports = [s.port for s in dev.services]
+                if not target_ports:
+                    target_ports = MANAGEMENT_PORTS[:5] # Default fallback
+                
+                health_tasks.append(scan_ports(dev.ip, ports=target_ports, timeout=0.8))
             
-            open_ports = await scan_ports(dev.ip, ports=target_ports, timeout=0.5)
-            is_online = len(open_ports) > 0
+            # Run batch health check
+            batch_results = await asyncio.gather(*health_tasks)
             
-            # Update device status
-            dev.is_online = is_online
-            dev.last_seen = datetime.now() if is_online else dev.last_seen
-            
-            # Update individual service status
-            for svc in dev.services:
-                if svc.port in open_ports:
-                    svc.is_up = True
+            for dev, open_ports in zip(batch, batch_results):
+                is_online = len(open_ports) > 0
+                dev.is_online = is_online
+                if is_online:
+                    dev.last_seen = datetime.now()
+                
+                # Update each service
+                for svc in dev.services:
+                    svc.is_up = svc.port in open_ports
                     svc.last_checked = datetime.now()
-                elif svc.port in target_ports:
-                    svc.is_up = False
-                    svc.last_checked = datetime.now()
             
-        await db.commit()
+            await db.commit()
 
-    # 2. Subnet Scan for Neufunde (Port-aware)
+    # 2. Aggressive Subnet Discovery (Finding NEW interesting devices)
     from app.scanner.port_scanner import nmap_scan
-    all_found = []
+    from app.scanner.classifier import classify_device
+    all_found_count = 0
+    
     for subnet in subnets:
-        if progress_callback: await progress_callback(f"Scanning Subnet {subnet} for management ports...")
+        if progress_callback: await progress_callback(f"Aggressive scan on {subnet}...")
         
         import ipaddress
         if "/" not in subnet:
              if subnet.count(".") == 2: subnet = f"{subnet}.0/24"
              else: subnet = f"{subnet}/24"
         
+        # We use a more "brute force" discovery for the dashboard: 
+        # Scan the subnet for ANY management ports directly.
+        # This is the "Strongest Scanner" logic.
+        from app.scanner.discovery import discover_hosts_simple
+        
+        # Step A: Fast ping discovery to find ALIVE hosts
         net = ipaddress.ip_network(subnet, strict=False)
         target_ips = [str(ip) for ip in net.hosts()]
-        
-        # Use nmap with management ports for discovery
-        alive_hosts = await discover_hosts_simple(target_ips) # Fast ping first
+        alive_hosts = await discover_hosts_simple(target_ips)
         resolved_hosts = await resolve_mac_addresses(alive_hosts)
         
         for host in resolved_hosts:
             ip = host["ip"]
             mac = host.get("mac")
             
-            # For each alive host, check if it has interesting ports
-            # (We only do this for hosts not already in the dashboard to save time)
+            # Step B: Deep-check hosts not already in Dashboard
             is_dashboard = any(d.ip == ip for d in devices)
             if not is_dashboard:
-                # Quick port check for relevance
-                found_ports = await scan_ports(ip, ports=MANAGEMENT_PORTS, timeout=0.3)
+                if progress_callback: await progress_callback(f"Analyzing {ip}...")
+                
+                # Heavy duty port check
+                found_ports = await scan_ports(ip, ports=MANAGEMENT_PORTS, timeout=0.5)
+                
+                # If it has management ports, it's a high-priority "Newly Discovered" device
                 if found_ports:
-                    logger.info(f"Dashboard: Found interesting host {ip} with ports {found_ports}")
-            
-            await sync_host_to_db(
-                ip=ip,
-                mac=mac,
-                hostname=host.get("hostname"),
-                is_planner_scan=False
-            )
-            all_found.append(ip)
+                    logger.info(f"Dashboard: High-priority device found: {ip} (Ports: {found_ports})")
+                    # We can even trigger a classification here to get the best name/icon
+                    classification = classify_device({"ip": ip, "ports": found_ports})
+                    hostname = host.get("hostname") or classification.get("hostname")
+                    
+                    await sync_host_to_db(
+                        ip=ip,
+                        mac=mac,
+                        hostname=hostname,
+                        vendor=host.get("vendor"),
+                        ports=found_ports,
+                        is_planner_scan=False # This puts it into discovered_hosts
+                    )
+                    all_found_count += 1
+                else:
+                    # Still sync it as a low-priority discovery
+                    await sync_host_to_db(
+                        ip=ip,
+                        mac=mac,
+                        hostname=host.get("hostname"),
+                        is_planner_scan=False
+                    )
+            else:
+                # Host is already in dashboard, sync_host_to_db will update its online status
+                await sync_host_to_db(
+                    ip=ip,
+                    mac=mac,
+                    hostname=host.get("hostname"),
+                    is_planner_scan=False
+                )
 
-    return len(all_found)
+    return all_found_count
