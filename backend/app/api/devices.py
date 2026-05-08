@@ -62,39 +62,15 @@ async def list_devices(
 
 
 @router.post("/refresh-all", status_code=200)
-async def refresh_all_devices(db: AsyncSession = Depends(get_db)) -> dict:
+async def refresh_all_devices() -> dict:
     """Trigger a status and service check for all known devices."""
     try:
-        from app.scanner.dashboard import run_dashboard_scan
-        from app.scanner.utils import _get_local_subnets
-        from app.api.devices import refresh_device_info
-        from app.models.setting import Setting
+        from app.api.scanner import start_dashboard_scan
+        from fastapi import BackgroundTasks
         
-        # 1. Fetch subnets for the scan
-        res_sub = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
-        s_set = res_sub.scalar_one_or_none()
-        subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else [s.subnet for s in _get_local_subnets()]
-
-        # 2. Basic online/offline check via Dashboard Scanner
-        await run_dashboard_scan(subnets)
-        
-        # 2. Deep metadata refresh for all devices (Parallel processing)
-        res = await db.execute(select(Device.id))
-        device_ids = res.scalars().all()
-        
-        from app.database import async_session
-        
-        async def safe_refresh(d_id):
-            async with async_session() as local_db:
-                try:
-                    await refresh_device_info(d_id, local_db, commit=True)
-                except Exception as e:
-                    logger.warning(f"Metadata refresh failed for device ID {d_id}: {e}")
-
-        tasks = [safe_refresh(d_id) for d_id in device_ids]
-        await asyncio.gather(*tasks)
-        
-        return {"status": "success", "message": f"All {len(device_ids)} devices refreshed"}
+        # We simulate a background task trigger here
+        bt = BackgroundTasks()
+        return await start_dashboard_scan(bt)
     except Exception as e:
         logger.error(f"Refresh all failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
