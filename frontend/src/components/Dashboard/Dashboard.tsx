@@ -278,7 +278,7 @@ export function Dashboard() {
     setShowSubnetModal(false);
     try {
       const subnets = subnetToScan ? [subnetToScan] : (await api.getSubnets()).map(s => s.subnet);
-      await api.startScan({
+      await api.startDashboardScan({
         subnets: subnets,
       });
       const interval = setInterval(async () => {
