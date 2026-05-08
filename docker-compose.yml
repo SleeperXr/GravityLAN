@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  gravitylan:
+    build: .
+    container_name: GravityLAN
+    privileged: true
+    restart: unless-stopped
+    networks:
+      home_lan:
+        ipv4_address: 192.168.100.254
+    volumes:
+      - /mnt/user/appdata/gravitylan/data:/app/backend/data
+    environment:
+      - PORT=8000
+      - TZ=Europe/Berlin
+      - GRAVITYLAN_DATA_DIR=/app/backend/data
+      - GRAVITYLAN_DEBUG=true
+      - GRAVITYLAN_HOST=0.0.0.0
+      - GRAVITYLAN_PORT=8000
+
+networks:
+  home_lan:
+    external: true
+    name: br0

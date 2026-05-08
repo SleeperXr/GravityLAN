@@ -1,0 +1,27 @@
+# Local development files
+.venv
+venv
+node_modules
+dist
+build
+.DS_Store
+
+# Docker specific
+docker
+
+# Backend artifacts
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.db
+homelan.db
+backend/data/*.db
+
+# Frontend artifacts
+frontend/dist
+frontend/node_modules
+
+# Git
+.git
+.gitignore
