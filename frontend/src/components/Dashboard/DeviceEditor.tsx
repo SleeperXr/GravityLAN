@@ -799,7 +799,8 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                         onClick={() => {
                           const host = window.location.hostname;
                           const port = window.location.port === '5173' ? ':8000' : (window.location.port ? `:${window.location.port}` : '');
-                          const cmd = `curl -sSL http://${host}${port}/api/agent/download/install-sh/${currentDevice.id} | bash`;
+                          const protocol = window.location.protocol;
+                          const cmd = `curl -sSL ${protocol}//${host}${port}/api/agent/download/install-sh/${currentDevice.id} | bash`;
                           
                           if (navigator.clipboard && window.isSecureContext) {
                             navigator.clipboard.writeText(cmd);
@@ -842,7 +843,8 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                         onClick={() => {
                           const host = window.location.hostname;
                           const port = window.location.port === '5173' ? ':8000' : (window.location.port ? `:${window.location.port}` : '');
-                          const cmd = `curl -sSL http://${host}${port}/api/agent/download/uninstall-sh/${currentDevice.id} | bash`;
+                          const protocol = window.location.protocol;
+                          const cmd = `curl -sSL ${protocol}//${host}${port}/api/agent/download/uninstall-sh/${currentDevice.id} | bash`;
                           
                           if (navigator.clipboard && window.isSecureContext) {
                             navigator.clipboard.writeText(cmd);

@@ -86,8 +86,9 @@ export const api = {
 
 /** Create a WebSocket connection for scan progress updates. */
 export function createScanSocket(onMessage: (data: import('../types').ScanProgress) => void): WebSocket {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  const wsBase = import.meta.env.DEV ? `ws://${host}:8000` : `ws://${window.location.host}`;
+  const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
   const ws = new WebSocket(`${wsBase}/api/scanner/ws`);
 
   ws.onmessage = (event) => {
@@ -106,8 +107,9 @@ export function createScanSocket(onMessage: (data: import('../types').ScanProgre
 
 /** Create a WebSocket connection for live agent metrics. */
 export function createMetricsSocket(deviceId: number, onMessage: (data: any) => void): WebSocket {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  const wsBase = import.meta.env.DEV ? `ws://${host}:8000` : `ws://${window.location.host}`;
+  const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
   const ws = new WebSocket(`${wsBase}/api/agent/ws/${deviceId}`);
 
   ws.onmessage = (event) => {

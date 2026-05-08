@@ -20,8 +20,9 @@ export function LiveLogs() {
       return;
     }
 
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname;
-    const wsBase = import.meta.env.DEV ? `ws://${host}:8000` : `ws://${window.location.host}`;
+    const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
     const ws = new WebSocket(`${wsBase}/api/logs/ws`);
     wsRef.current = ws;
 
