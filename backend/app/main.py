@@ -99,6 +99,7 @@ async def lifespan(app: FastAPI):
     from sqlalchemy import text
     async with async_session() as db:
         for table in ["devices", "discovered_hosts"]:
+            # Standard columns
             for column, col_type in [("is_reserved", "BOOLEAN DEFAULT 0"), ("old_ip", "VARCHAR(45)"), ("ip_changed_at", "DATETIME")]:
                 try:
                     await db.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
@@ -106,6 +107,16 @@ async def lifespan(app: FastAPI):
                     logger.info("Database Migration: Added '%s' column to '%s'", column, table)
                 except Exception:
                     await db.rollback()
+            
+            # Table specific columns
+            if table == "discovered_hosts":
+                for column, col_type in [("ports", "TEXT")]:
+                    try:
+                        await db.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+                        await db.commit()
+                        logger.info("Database Migration: Added '%s' column to '%s'", column, table)
+                    except Exception:
+                        await db.rollback()
 
         # Migration for agent_configs
         for column, col_type in [("version", "INTEGER DEFAULT 1")]:
