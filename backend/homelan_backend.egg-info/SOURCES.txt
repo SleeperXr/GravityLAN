@@ -9,7 +9,6 @@ app/api/scanner.py
 app/api/setup.py
 app/models/__init__.py
 app/models/device.py
-app/models/settings.py
 app/scanner/__init__.py
 app/scanner/classifier.py
 app/scanner/discovery.py

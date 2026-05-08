@@ -2,6 +2,9 @@
 __pycache__/
 *.py[codz]
 *$py.class
+**/__pycache__/
+*.egg-info/
+**/*.egg-info/
 
 # Database
 backend/data/*.db*
@@ -11,6 +14,7 @@ backend/*.db*
 *.db
 *.db-shm
 *.db-wal
+backend/data/cache/mac_cache.json
 
 # C extensions
 *.so
