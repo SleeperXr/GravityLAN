@@ -63,8 +63,14 @@ services:
     restart: unless-stopped
 ```
 
-### Windows Development
-For local testing or development on Windows, we provide simple PowerShell scripts that handle everything (Dependency installation, Backend & Frontend startup):
+### 🛠️ Windows Development Setup
+
+1.  **Install Python 3.11+** and **Node.js 18+**.
+2.  **Install Nmap**:
+    *   Download and install Nmap from [nmap.org](https://nmap.org/download.html).
+    *   **CRITICAL**: During installation, ensure you check the box to **"Add Nmap to the system PATH"**.
+    *   Restart your terminal/PowerShell after installation.
+3.  **Run the Startup Script**:
 
 1.  Open a PowerShell terminal in the project root.
 2.  Run `.\start_gravitylan.ps1` to start the stack.
