@@ -23,7 +23,7 @@ from app.schemas.device import DiscoveredHostResponse, DiscoveredHostUpdate
 from app.scanner.planner import run_planner_scan
 from app.scanner.dashboard import run_dashboard_scan
 from app.scanner.sync import sync_host_to_db
-from app.scanner.utils import _get_local_subnets
+from app.scanner.utils import get_local_subnets
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/scanner", tags=["scanner"])
@@ -37,7 +37,7 @@ _scan_active = False
 @router.get("/subnets", response_model=list[SubnetInfo])
 async def get_subnets() -> list[SubnetInfo]:
     """Get available network interfaces and subnets for scanning."""
-    return _get_local_subnets()
+    return get_local_subnets()
 
 @router.get("/test")
 async def test_scanner():
@@ -110,6 +110,7 @@ async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate):
 @router.post("/start-dashboard")
 async def start_dashboard_scan(request: ScanRequest, background_tasks: BackgroundTasks):
     """Manually trigger the 'Strongest' Dashboard scan (Health + Port Discovery)."""
+    logger.info(f"API: Received start-dashboard-scan request for subnets: {request.subnets}")
     global _scan_active, _scan_task, _cancel_event
     if _scan_active:
         return {"status": "error", "message": "A scan is already in progress"}
@@ -117,8 +118,17 @@ async def start_dashboard_scan(request: ScanRequest, background_tasks: Backgroun
     _scan_active = True
     _cancel_event = asyncio.Event()
     
+    # Reset progress immediately so frontend doesn't see old state
+    global _last_progress
+    _last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Dashboard Scan...", progress=0)
+    await _broadcast(_last_progress)
+    
     async def progress_cb(msg):
-        await _broadcast(ScanProgress(status=ScanStatus.RUNNING, message=msg, progress=50))
+        status = ScanStatus.RUNNING
+        if msg == "EVENT:RELOAD_DEVICES":
+            status = ScanStatus.DEVICES_UPDATED
+            msg = "Host discovered..."
+        await _broadcast(ScanProgress(status=status, message=msg, progress=50))
 
     async def run_dashboard_task():
         global _scan_active
@@ -130,7 +140,7 @@ async def start_dashboard_scan(request: ScanRequest, background_tasks: Backgroun
                     from app.models.setting import Setting
                     res_sub = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
                     s_set = res_sub.scalar_one_or_none()
-                    subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else [s.subnet for s in _get_local_subnets()]
+                    subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else [s.subnet for s in get_local_subnets()]
 
             found_count = await run_dashboard_scan(subnets, progress_callback=progress_cb)
             await _broadcast(ScanProgress(status=ScanStatus.COMPLETED, message=f"Dashboard scan complete: {found_count} new devices", devices_found=found_count))
@@ -153,8 +163,17 @@ async def start_scan(request: ScanRequest):
     _scan_active = True
     _cancel_event = asyncio.Event()
     
+    # Reset progress immediately so frontend doesn't see old state
+    global _last_progress
+    _last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Planner Scan...", progress=0)
+    await _broadcast(_last_progress)
+    
     async def progress_cb(msg):
-        await _broadcast(ScanProgress(status=ScanStatus.RUNNING, message=msg, progress=50))
+        status = ScanStatus.RUNNING
+        if msg == "EVENT:RELOAD_DEVICES":
+            status = ScanStatus.DEVICES_UPDATED
+            msg = "Host discovered..."
+        await _broadcast(ScanProgress(status=status, message=msg, progress=50))
 
     async def run_scan_task():
         global _scan_active

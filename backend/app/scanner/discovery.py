@@ -4,6 +4,9 @@ import socket
 import subprocess
 import re
 import os
+import threading
+import sys
+import json
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
@@ -11,18 +14,131 @@ logger = logging.getLogger(__name__)
 # Common ports for alive check (Expanded for cross-VLAN IoT discovery where ARP fails and Ping is blocked)
 ALIVE_CHECK_PORTS = [445, 135, 80, 22, 443, 8080, 8443, 1883, 8123, 5000, 8266, 9090]
 
+OUI_MAP = {
+    "00:00:0C": "Cisco", "00:01:42": "Cisco", "00:0C:CE": "Cisco", "00:1E:C9": "Cisco",
+    "00:05:69": "VMware", "00:0C:29": "VMware", "00:50:56": "VMware",
+    "08:00:27": "VirtualBox",
+    "00:0D:3A": "Microsoft", "00:1D:D8": "Microsoft", "00:15:5D": "Hyper-V",
+    "00:14:22": "Dell", "00:1D:09": "Dell", "00:21:70": "Dell",
+    "00:11:32": "Synology", "00:11:32": "Synology",
+    "00:17:88": "Philips Hue",
+    "00:1D:C9": "Ubiquiti", "04:18:D6": "Ubiquiti", "24:A4:3C": "Ubiquiti", "78:8A:20": "Ubiquiti", "80:2A:A8": "Ubiquiti",
+    "00:E0:4C": "Realtek",
+    "B8:27:EB": "Raspberry Pi", "DC:A6:32": "Raspberry Pi", "E4:5F:01": "Raspberry Pi",
+    "00:04:20": "Slim Devices (Logitech)",
+    "00:04:4B": "NVIDIA",
+    "00:10:FA": "Apple", "00:16:CB": "Apple", "00:1C:B3": "Apple", "00:1F:F3": "Apple",
+}
+
+def guess_vendor(mac: str) -> str:
+    """Guess vendor from MAC address using local OUI map."""
+    if not mac: return ""
+    mac_clean = mac.replace("-", ":").upper()
+    prefix = ":".join(mac_clean.split(":")[:3])
+    return OUI_MAP.get(prefix, "")
+
 async def _udp_probe_async(ip: str):
     """Send a tiny UDP packet to trigger ARP."""
     try:
         # NetBIOS Name Service (137) is great for triggering responses
-        transport, _ = await asyncio.get_event_loop().create_datagram_endpoint(
-            lambda: asyncio.DatagramProtocol(),
-            remote_addr=(ip, 137)
-        )
-        transport.sendto(b'\x00', (ip, 137))
-        transport.close()
+        # Also try MDNS (5353) and LLMNR (5355)
+        loop = asyncio.get_running_loop()
+        for port in [137, 5353, 5355]:
+            try:
+                transport, _ = await loop.create_datagram_endpoint(
+                    lambda: asyncio.DatagramProtocol(),
+                    remote_addr=(ip, port)
+                )
+                transport.sendto(b'\x00', (ip, port))
+                transport.close()
+            except: pass
     except:
         pass
+
+def resolve_hostname_robust(ip: str) -> str:
+    """
+    Robust hostname resolution inspired by SchaeferAdminTool.
+    Tries: 1. Win32 GetNameInfoW, 2. socket.gethostbyaddr, 3. ping -a
+    """
+    if not ip or ip.startswith("169.254."): return ""
+    
+    # 1. Try Win32 API (fastest & most accurate on Windows)
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            from ctypes import wintypes
+            ws2_32 = ctypes.windll.ws2_32
+            
+            class sockaddr_in(ctypes.Structure):
+                _fields_ = [
+                    ("sin_family", ctypes.c_short),
+                    ("sin_port", ctypes.c_ushort),
+                    ("sin_addr", ctypes.c_ubyte * 4),
+                    ("sin_zero", ctypes.c_char * 8),
+                ]
+            
+            sa = sockaddr_in()
+            sa.sin_family = 2 # AF_INET
+            ip_parts = [int(p) for p in ip.split('.')]
+            for i, part in enumerate(ip_parts):
+                sa.sin_addr[i] = part
+            
+            host = ctypes.create_unicode_buffer(1024)
+            res = ws2_32.GetNameInfoW(
+                ctypes.byref(sa), ctypes.sizeof(sa),
+                host, ctypes.sizeof(host),
+                None, 0,
+                0x08 # NI_NAMEREQD
+            )
+            if res == 0 and host.value:
+                return host.value
+        except: pass
+
+    # 2. Try Standard Socket
+    try:
+        name, _, _ = socket.gethostbyaddr(ip)
+        if name and name != ip:
+            return name
+    except: pass
+
+            # 3. Try ping -a fallback (Windows only shell method)
+    if sys.platform == 'win32':
+        try:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            res = subprocess.run(
+                ["ping", "-a", "-n", "1", "-w", "200", ip],
+                capture_output=True, text=True, encoding="cp850",
+                startupinfo=startupinfo, creationflags=subprocess.CREATE_NO_WINDOW,
+                timeout=2.0
+            )
+            for line in res.stdout.splitlines():
+                if "ping" in line.lower() and "[" in line:
+                    name = line.split("[")[0].strip().split()[-1]
+                    if name and name != ip:
+                        return name
+        except: pass
+    
+    # 4. Try Linux specific fallbacks (Avahi / Dig)
+    if sys.platform != 'win32':
+        # Try avahi-resolve (mDNS)
+        try:
+            res = subprocess.run(["avahi-resolve", "-a", ip], capture_output=True, text=True, timeout=1.0)
+            if res.returncode == 0 and res.stdout:
+                # Output format: "IP \t Hostname"
+                parts = res.stdout.strip().split()
+                if len(parts) >= 2: return parts[1]
+        except: pass
+        
+        # Try dig (Reverse DNS)
+        try:
+            res = subprocess.run(["dig", "+short", "-x", ip], capture_output=True, text=True, timeout=1.0)
+            if res.returncode == 0 and res.stdout:
+                name = res.stdout.strip().rstrip('.')
+                if name: return name
+        except: pass
+
+    return ""
 
 async def _check_port_async(ip: str, port: int, timeout: float = 0.4) -> bool:
     """Async check if a port is open."""
@@ -75,7 +191,8 @@ async def discover_hosts_simple(
     max_workers: int = 30,
     cancel_event: asyncio.Event | None = None,
     mode: str = "gentle",
-    dns_server: str | None = None
+    dns_server: str | None = None,
+    host_found_callback = None
 ) -> list[dict]:
     """Highly accurate host discovery using Nmap (Fast) + ARP fallback."""
     discovered: list[dict] = []
@@ -93,75 +210,76 @@ async def discover_hosts_simple(
         for network in networks:
             if cancel_event and cancel_event.is_set(): break
             
-            # Filter out APIPA addresses (169.254.0.0/16) - usually indicators of no connection
+            # Optimization: If target_ips is small, scan IPs directly.
+            if len(target_ips) < 50:
+                targets = " ".join(target_ips)
+            else:
+                targets = network
+
             if network.startswith("169.254."):
-                logger.debug(f"Skipping APIPA network: {network}")
                 continue
                 
-            logger.info(f"Running nmap discovery on {network} (DNS: {dns_server or 'System'})...")
-            
-            # Use --dns-servers for better internal name resolution if provided
             dns_flag = f"--dns-servers {dns_server}" if dns_server else ""
-            cmd_str = f'nmap -sn {dns_flag} {network}'
+            cmd_str = f'nmap -sn {dns_flag} {targets}'
             
             try:
-                # Try async first
+                # 1. Async Process with line-by-line parsing
                 proc = await asyncio.create_subprocess_shell(
                     cmd_str,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
 
-                async def _monitor_cancel():
-                    if cancel_event:
-                        await cancel_event.wait()
-                        if proc.returncode is None:
-                            try: 
-                                proc.terminate()
-                                await asyncio.sleep(0.2)
-                                if proc.returncode is None: proc.kill()
-                            except: pass
-                
-                monitor_task = asyncio.create_task(_monitor_cancel())
-                try:
-                    stdout, stderr = await proc.communicate()
-                except Exception as e:
-                    logger.warning(f"Nmap communication error for {network}: {e}")
-                    stdout, stderr = b"", b""
-                finally:
-                    monitor_task.cancel()
-                
+                async def _read_stream(stream):
+                    current_host = None
+                    while True:
+                        line = await stream.readline()
+                        if not line: break
+                        line_str = line.decode(errors='ignore').strip()
+                        
+                        # Parse Nmap output line-by-line
+                        # Example: "Nmap scan report for sleeper-pc (192.168.100.10)"
+                        if "Nmap scan report for" in line_str:
+                            match = re.search(r"Nmap scan report for (?:(.+?) \()?((\d{1,3}\.){3}\d{1,3})\)?", line_str)
+                            if match:
+                                hostname = match.group(1).strip() if match.group(1) else None
+                                ip = match.group(2)
+                                
+                                if ip not in [h["ip"] for h in discovered]:
+                                    host_data = {"ip": ip, "mac": None, "hostname": hostname}
+                                    discovered.append(host_data)
+                                    if host_found_callback:
+                                        # Trigger immediate callback for UI update
+                                        asyncio.create_task(host_found_callback(host_data))
+                await _read_stream(proc.stdout)
+                stderr_data, _ = await proc.communicate()
+                stderr_str = stderr_data.decode(errors='ignore')
+                await proc.wait()
                 returncode = proc.returncode
+                if returncode != 0 and stderr_str:
+                    logger.debug(f"Nmap returned code {returncode}. Error: {stderr_str}")
 
-            except NotImplementedError:
-                # FALLBACK: Use ThreadPoolExecutor for Windows loops that don't support subprocesses
-                logger.info("Async subprocess not supported, falling back to ThreadPool for Nmap")
+            except (NotImplementedError, AttributeError):
+                # FALLBACK: Sync mode if async subprocess is not available (Windows Selector Loop)
                 import subprocess
-                from concurrent.futures import ThreadPoolExecutor
-                
                 def _run_sync_nmap():
-                    try:
-                        res = subprocess.run(cmd_str, capture_output=True, shell=True, text=False)
-                        return res.stdout, res.stderr, res.returncode
-                    except Exception as e:
-                        logger.error(f"Sync Nmap failed: {e}")
-                        return b"", b"", 1
+                    res = subprocess.run(cmd_str, capture_output=True, shell=True, text=True, errors='ignore')
+                    return res.stdout, res.returncode
 
                 loop = asyncio.get_event_loop()
-                with ThreadPoolExecutor() as pool:
-                    stdout, stderr, returncode = await loop.run_in_executor(pool, _run_sync_nmap)
-
-            if returncode == 0:
-                output = stdout.decode(errors='ignore')
-                # Match both "Nmap scan report for 1.2.3.4" and "Nmap scan report for host (1.2.3.4)"
-                matches = re.findall(r"Nmap scan report for (?:(.+?) \()?((\d{1,3}\.){3}\d{1,3})\)?", output)
-                for hostname, ip, _ in matches:
-                    hostname = hostname.strip() if hostname else None
-                    if ip in target_ips and not any(h["ip"] == ip for h in discovered):
-                        discovered.append({"ip": ip, "mac": None, "hostname": hostname})
-            else:
-                err = stderr.decode(errors='ignore')
-                logger.debug(f"Nmap returned code {returncode} for {network}. Error: {err}")
+                stdout_str, returncode = await loop.run_in_executor(None, _run_sync_nmap)
+                
+                if returncode == 0:
+                    matches = re.findall(r"Nmap scan report for (?:(.+?) \()?((\d{1,3}\.){3}\d{1,3})\)?", stdout_str)
+                    for hostname, ip, _ in matches:
+                        hostname = hostname.strip() if hostname else None
+                        if not any(h["ip"] == ip for h in discovered):
+                            host_data = {"ip": ip, "mac": None, "hostname": hostname}
+                            discovered.append(host_data)
+                            if host_found_callback:
+                                asyncio.create_task(host_found_callback(host_data))
+                elif stdout_str:
+                    logger.debug(f"Sync Nmap returned code {returncode}. Output: {stdout_str}")
         
         if len(discovered) > 0:
             if cancel_event and cancel_event.is_set(): return discovered
@@ -241,13 +359,66 @@ def get_local_arp_table() -> dict[str, str]:
         logger.error(f"ARP command failed: {e}")
         return {}
 
+def get_linux_neighbors() -> dict[str, str]:
+    """Get MAC addresses via 'ip neighbor' (Linux native)."""
+    if sys.platform == 'win32': return {}
+    try:
+        output = subprocess.check_output("ip neighbor show", shell=True, stderr=subprocess.STDOUT).decode(errors='ignore')
+        mapping = {}
+        for line in output.splitlines():
+            # Format: 192.168.100.1 dev eth0 lladdr 00:11:22:33:44:55 REACHABLE
+            parts = line.split()
+            if len(parts) >= 4:
+                ip = parts[0]
+                try:
+                    # Check if it's a valid IP
+                    socket.inet_aton(ip)
+                    # Look for the 'lladdr' keyword and the following MAC
+                    if 'lladdr' in parts:
+                        mac_idx = parts.index('lladdr') + 1
+                        if mac_idx < len(parts):
+                            mac = parts[mac_idx].lower()
+                            if len(mac) == 17:
+                                mapping[ip] = mac
+                except: continue
+        return mapping
+    except:
+        return {}
+
+def get_powershell_neighbors() -> dict[str, str]:
+    """Get MAC addresses via PowerShell Get-NetNeighbor (Windows native)."""
+    if sys.platform != 'win32': return {}
+    try:
+        ps_cmd = "Get-NetNeighbor | Select-Object IPAddress, LinkLayerAddress | ConvertTo-Json"
+        output = subprocess.check_output(["powershell", "-Command", ps_cmd], shell=True).decode('cp850')
+        data = json.loads(output)
+        if isinstance(data, dict): data = [data]
+        
+        mapping = {}
+        for item in data:
+            ip = item.get("IPAddress")
+            mac = item.get("LinkLayerAddress")
+            if ip and mac and len(mac) >= 11: # Basic MAC validation
+                mapping[ip] = mac.replace("-", ":").lower()
+        return mapping
+    except:
+        return {}
+
 async def resolve_mac_addresses(discovered_hosts: list[dict], all_target_ips: list[str] = None) -> list[dict]:
     """Resolve MAC addresses via system ARP table and find missing devices."""
     loop = asyncio.get_running_loop()
     
     try:
-        # Get ARP table (run in executor as it's a subprocess call)
+        # Get ARP table AND Native neighbors (run in executor as they are sync)
         arp_map = await loop.run_in_executor(None, get_local_arp_table)
+        
+        if sys.platform == 'win32':
+            ps_map = await loop.run_in_executor(None, get_powershell_neighbors)
+            arp_map.update(ps_map)
+        else:
+            linux_map = await loop.run_in_executor(None, get_linux_neighbors)
+            arp_map.update(linux_map)
+            
         if not arp_map:
             return
 
@@ -291,8 +462,26 @@ async def resolve_mac_addresses(discovered_hosts: list[dict], all_target_ips: li
                 discovered_hosts.append({
                     "ip": ip, 
                     "mac": mac,
-                    "hostname": None
+                    "hostname": None,
+                    "vendor": guess_vendor(mac)
                 })
+            else:
+                # Update existing vendor if missing
+                for h in discovered_hosts:
+                    if h["ip"] == ip and not h.get("vendor"):
+                        h["vendor"] = guess_vendor(mac)
+        
+        # FINAL STEP: Resolve hostnames for all found devices that are missing them
+        resolve_tasks = []
+        for host in discovered_hosts:
+            if not host.get("hostname"):
+                async def _fill_name(h):
+                    name = await loop.run_in_executor(None, resolve_hostname_robust, h["ip"])
+                    if name: h["hostname"] = name
+                resolve_tasks.append(_fill_name(host))
+        
+        if resolve_tasks:
+            await asyncio.gather(*resolve_tasks)
                 
     except Exception as e:
         logger.error(f"Error during ARP resolution: {e}")

@@ -28,6 +28,16 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
     Executes a lightweight discovery scan for the Network Planner.
     Uses ARP + Ping + DNS.
     """
+    # Ensure unique and normalized subnets
+    normalized = []
+    for s in set(subnets):
+        if not s: continue
+        if "/" not in s:
+            if s.count(".") == 2: s = f"{s}.0/24"
+            elif s.count(".") == 3: s = f"{s}/32"
+            else: s = f"{s}/24"
+        normalized.append(s)
+    subnets = sorted(normalized)
     logger.info(f"Planner: Starting discovery on {subnets}")
     
     total_found = 0
@@ -49,7 +59,18 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
         net = ipaddress.ip_network(subnet, strict=False)
         target_ips = [str(ip) for ip in net.hosts()]
         
-        alive_hosts = await discover_hosts_simple(target_ips)
+        async def _on_host(h):
+            # Immediate sync per host for real-time UI updates
+            await sync_host_to_db(
+                ip=h["ip"],
+                mac=h.get("mac"),
+                hostname=h.get("hostname"),
+                is_planner_scan=True
+            )
+            if progress_callback:
+                await progress_callback("EVENT:RELOAD_DEVICES")
+
+        alive_hosts = await discover_hosts_simple(target_ips, host_found_callback=_on_host)
         
         if progress_callback:
             await progress_callback(f"Scanner: Found {len(alive_hosts)} active hosts. Resolving MACs...")

@@ -6,7 +6,7 @@ import { DeviceList } from './DeviceList';
 import { DeviceEditor } from './DeviceEditor';
 import { Sidebar } from '../Sidebar';
 import {
-  RefreshCw, Edit3, Save, Trash2, ChevronRight, ChevronDown, Grid, ChevronUp, List
+  RefreshCw, Edit3, Save, Trash2, ChevronRight, ChevronDown, Grid, ChevronUp, List, Zap
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { NotificationCenter } from './NotificationCenter';
@@ -276,38 +276,56 @@ export function Dashboard() {
     setIsScanning(true);
     setScanProgress(null);
     setShowSubnetModal(false);
+    console.log("DEBUG: handleRescan triggered", { subnetToScan });
     try {
       const subnets = subnetToScan ? [subnetToScan] : (await api.getSubnets()).map(s => s.subnet);
-      await api.startDashboardScan({
+      console.log("DEBUG: Starting Dashboard Scan for subnets:", subnets);
+      
+      const res = await api.startDashboardScan({
         subnets: subnets,
       });
+      
+      if (res.status !== 'ok') {
+        alert("Scan Error: " + (res as any).message);
+      }
+
       const interval = setInterval(async () => {
-        const progress = await api.getScanStatus();
-        setScanProgress(progress);
-        if (progress.status !== 'running') {
-          clearInterval(interval);
-          setIsScanning(false);
-          await loadData();
+        try {
+          const progress = await api.getScanStatus();
+          setScanProgress(progress);
+          if (progress.status !== 'running') {
+            clearInterval(interval);
+            setIsScanning(false);
+            await loadData();
+          }
+        } catch (e) {
+          console.error("Progress poll failed", e);
         }
-      }, 1000);
-    } catch (err) {
-      console.error('Scan failed:', err);
+      }, 2000);
+    } catch (err: any) {
+      console.error("Scan trigger failed", err);
+      alert("Critical Scan Failure: " + err.message);
       setIsScanning(false);
     }
-  }, [loadData]);
+  }, [loadData, t]);
 
   const openSubnetModal = async () => {
+    console.log("DEBUG: opening subnet modal...");
     try {
       const subnets = await api.getSubnets();
+      console.log("DEBUG: found subnets:", subnets);
+      if (!subnets || subnets.length === 0) {
+        alert("No subnets found! Check your network settings.");
+        return;
+      }
       setAvailableSubnets(subnets);
       if (subnets.length > 0) {
         setSelectedSubnet(subnets[0].subnet);
-        setShowSubnetModal(true);
-      } else {
-        handleRescan();
       }
-    } catch (err) {
-      console.error('Failed to get subnets:', err);
+      setShowSubnetModal(true);
+    } catch (err: any) {
+      console.error('Failed to fetch subnets:', err);
+      alert("Error loading subnets: " + err.message);
     }
   };
 
@@ -553,12 +571,22 @@ export function Dashboard() {
                 </button>
 
                 <button
-                  className={`btn btn-sm ${isScanning ? 'btn-secondary' : 'btn-primary'}`}
+                  id="dashboard-scan-btn"
                   onClick={openSubnetModal}
-                  disabled={isScanning || isRefreshingAll}
+                  disabled={isScanning}
+                  className={`btn btn-sm flex items-center gap-2 ${isScanning ? 'btn-secondary' : 'btn-primary shadow-lg shadow-primary/20'}`}
                 >
-                  <RefreshCw size={16} className={isScanning ? 'spinning' : ''} />
-                  {!isMobile && (isScanning ? t('dashboard.scanning') : t('dashboard.scan'))}
+                  {isScanning ? (
+                    <>
+                      <div className="loading loading-spinner loading-xs"></div>
+                      <span>{t('dashboard.scanning', 'Scanning...')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap size={14} className="text-yellow-400" />
+                      <span>{t('dashboard.scan', 'Scan')}</span>
+                    </>
+                  )}
                 </button>
 
                 {devices.some(d => d.has_agent && d.agent_info?.agent_version !== d.agent_info?.latest_version) && (
@@ -647,33 +675,37 @@ export function Dashboard() {
                   {t('dashboard.select_subnet_prompt')}
                 </p>
                 <div className="form-group">
-                  {availableSubnets.map((s) => (
-                    <label key={s.subnet} className="radio-item" style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 'var(--space-sm)',
-                      padding: 'var(--space-md)',
-                      background: 'var(--bg-secondary)',
-                      borderRadius: 'var(--radius-md)',
-                      marginBottom: 'var(--space-xs)',
-                      cursor: 'pointer',
-                      border: selectedSubnet === s.subnet ? '1px solid var(--primary)' : '1px solid transparent'
-                    }}>
-                      <input 
-                        type="radio" 
-                        name="subnet" 
-                        value={s.subnet} 
-                        checked={selectedSubnet === s.subnet}
-                        onChange={() => setSelectedSubnet(s.subnet)}
-                      />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600 }}>{s.subnet}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                          Interface: {s.interface_name} ({s.ip_address})
+                  {availableSubnets.map((s) => {
+                    const isSelected = selectedSubnet === s.subnet;
+                    return (
+                      <label key={`${s.subnet}-${s.ip_address}`} className="radio-item" style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--space-sm)',
+                        padding: 'var(--space-md)',
+                        background: 'var(--bg-secondary)',
+                        borderRadius: 'var(--radius-md)',
+                        marginBottom: 'var(--space-xs)',
+                        cursor: 'pointer',
+                        border: isSelected ? '1px solid var(--primary)' : '1px solid transparent',
+                        transition: 'all 0.2s ease'
+                      }}>
+                        <input 
+                          type="radio" 
+                          name="subnet" 
+                          value={s.subnet} 
+                          checked={isSelected}
+                          onChange={() => setSelectedSubnet(s.subnet)}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600 }}>{s.subnet}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                            Interface: {s.interface_name} ({s.ip_address})
+                          </div>
                         </div>
-                      </div>
-                    </label>
-                  ))}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
               <div className="modal-footer">

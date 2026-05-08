@@ -70,6 +70,14 @@ export const api = {
   updateSettings: (settings: Record<string, string>) => 
     request<{ status: string }>('/api/settings', { method: 'POST', body: JSON.stringify(settings) }),
   resetDatabase: () => request<{status: string, message: string}>('/api/settings/reset-db', { method: 'POST' }),
+  
+  // Backup
+  exportBackup: () => fetch('/api/backup/export').then(res => res.json()),
+  importBackup: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch('/api/backup/import', { method: 'POST', body: formData }).then(res => res.json());
+  },
 
   // Agent
   deployAgent: (deviceId: number, data: { ssh_user: string; ssh_password?: string; ssh_key?: string; ssh_port?: number }) =>

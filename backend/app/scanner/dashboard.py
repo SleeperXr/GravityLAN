@@ -38,7 +38,18 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
             net = ipaddress.ip_network(subnet, strict=False)
             target_ips = [str(ip) for ip in net.hosts()]
             
-            alive_hosts = await discover_hosts_simple(target_ips)
+            async def _on_host(h):
+                # We sync basic info immediately. Health/Ports will be handled in Phase 2/3.
+                await sync_host_to_db(
+                    ip=h["ip"],
+                    mac=h.get("mac"),
+                    hostname=h.get("hostname"),
+                    is_planner_scan=False
+                )
+                if progress_callback:
+                    await progress_callback("EVENT:RELOAD_DEVICES")
+
+            alive_hosts = await discover_hosts_simple(target_ips, host_found_callback=_on_host)
             resolved = await resolve_mac_addresses(alive_hosts)
             all_resolved_hosts.extend(resolved)
         except Exception as e:

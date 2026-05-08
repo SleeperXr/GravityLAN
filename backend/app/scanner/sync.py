@@ -6,9 +6,13 @@ from sqlalchemy import select, delete, or_
 from app.database import async_session
 from app.models.device import Device, DiscoveredHost, Service
 import json
+from datetime import datetime, timedelta
 from app.scanner.vendor import get_vendor
+from app.scanner.discovery import _ping_host_async
 
 logger = logging.getLogger(__name__)
+ 
+IP_FLAP_THRESHOLD = timedelta(minutes=2)
 
 async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None, vendor: str | None = None, ports: list[int] | None = None, is_planner_scan: bool = True):
     """
@@ -50,12 +54,26 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
 
         # 3. Apply Updates
         if disc:
-            # Handle IP change
+            # Handle IP change with Anti-Flap logic
             if disc.ip != ip:
-                logger.info(f"Sync: Host moved {mac or 'Unknown'} from {disc.ip} -> {ip}")
-                # Clear the new IP from stale records
-                await db.execute(delete(DiscoveredHost).where(DiscoveredHost.ip == ip).where(DiscoveredHost.id != disc.id))
-                disc.ip = ip
+                # If the host was seen VERY recently at the old IP, it's likely a multi-interface device (LAN/WLAN)
+                # In this case, we don't want to flip-flop the primary IP in the DB every few seconds.
+                is_stale = (datetime.now() - disc.last_seen) > IP_FLAP_THRESHOLD
+                
+                if not is_stale:
+                    # Optional: Check if old IP is still alive. If yes, don't move.
+                    # This is a bit expensive, so we only do it if the flap is recent.
+                    logger.debug(f"Sync: Potential flap detected for {mac} ({disc.ip} vs {ip}). Checking stickiness...")
+                    # For now, we just stick to the first one found in a scan window
+                    # and ignore the second one to stop the log spam.
+                    pass 
+                else:
+                    logger.info(f"Sync: Host moved {mac or 'Unknown'} from {disc.ip} -> {ip}")
+                    # Clear the new IP from stale records to maintain uniqueness
+                    await db.execute(delete(DiscoveredHost).where(DiscoveredHost.ip == ip).where(DiscoveredHost.id != disc.id))
+                    disc.ip = ip
+                    if hasattr(disc, 'ip_changed_at'):
+                        disc.ip_changed_at = datetime.now()
             
             disc.is_online = True
             disc.last_seen = datetime.now()
@@ -97,10 +115,15 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
             dev.last_seen = datetime.now()
             if mac: dev.mac = mac
             if disc and disc.custom_name: dev.display_name = disc.custom_name
-            # If IP changed in discovery but dev is still at old IP, update it
+            # Sticky Dashboard IP: Only update if the move is stable (not flapping)
             if dev.ip != ip:
-                logger.info(f"Sync: Updating Dashboard IP for {dev.display_name}: {dev.ip} -> {ip}")
-                dev.ip = ip
+                is_stale = (datetime.now() - (dev.last_seen or datetime.min)) > IP_FLAP_THRESHOLD
+                if is_stale:
+                    logger.info(f"Sync: Updating Dashboard IP for {dev.display_name}: {dev.ip} -> {ip}")
+                    dev.ip = ip
+                    dev.ip_changed_at = datetime.now()
+                else:
+                    logger.debug(f"Sync: Suppressing dashboard IP flap for {dev.display_name} ({dev.ip} -> {ip})")
 
         await db.commit()
         return disc

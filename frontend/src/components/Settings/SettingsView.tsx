@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import type { DeviceGroup } from '../../types';
 import { 
-  Palette, Grid, Trash2, Plus, Save, AlertTriangle, Database, Activity, Globe, Check
+  Palette, Grid, Trash2, Plus, Save, AlertTriangle, Database, Activity, Globe, Check, Download, Upload
 } from 'lucide-react';
 
 import { Sidebar } from '../Sidebar';
@@ -87,6 +87,53 @@ export function SettingsView() {
     if (!confirm(t('settings.delete_group_confirm'))) return;
     await api.deleteGroup(id);
     loadGroups();
+  };
+
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const data = await api.exportBackup();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gravitylan_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+      alert('Export fehlgeschlagen: ' + err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!confirm('Bist du sicher? Alle bestehenden Daten werden überschrieben!')) {
+      e.target.value = '';
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      await api.importBackup(file);
+      alert('Backup erfolgreich importiert! Die Seite wird neu geladen.');
+      window.location.reload();
+    } catch (err) {
+      console.error('Import failed:', err);
+      alert('Import fehlgeschlagen: ' + err);
+    } finally {
+      setIsImporting(false);
+      e.target.value = '';
+    }
   };
 
   const [resetConfirm, setResetConfirm] = useState(false);
@@ -348,6 +395,44 @@ export function SettingsView() {
               <option value="de">{t('settings.language_de')}</option>
               <option value="en">{t('settings.language_en')}</option>
             </select>
+          </div>
+        </section>
+
+        {/* Backup & Restore */}
+        <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' }}>
+            <Database size={24} className="text-accent" />
+            <h2 style={{ margin: 0 }}>Backup & Restore</h2>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-lg)' }}>
+            <div className="form-group">
+              <h4 style={{ marginBottom: 'var(--space-xs)' }}>Export</h4>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
+                Sichere alle Geräte, Gruppen und Einstellungen in einer JSON-Datei.
+              </p>
+              <button className="btn btn-secondary" onClick={handleExport} disabled={isExporting}>
+                <Download size={16} /> {isExporting ? 'Exportiere...' : 'Backup herunterladen'}
+              </button>
+            </div>
+            
+            <div className="form-group">
+              <h4 style={{ marginBottom: 'var(--space-xs)' }}>Import</h4>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
+                Stelle Daten aus einer Backup-Datei wieder her. Bestehende Daten werden überschrieben!
+              </p>
+              <label className="btn btn-outline" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <Upload size={16} /> 
+                {isImporting ? 'Importiere...' : 'Datei auswählen & Importieren'}
+                <input 
+                  type="file" 
+                  accept=".json" 
+                  style={{ display: 'none' }} 
+                  onChange={handleImport}
+                  disabled={isImporting}
+                />
+              </label>
+            </div>
           </div>
         </section>
 

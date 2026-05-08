@@ -27,6 +27,7 @@ class SubnetInfo(BaseModel):
     subnet: str
     netmask: str
     is_up: bool = True
+    is_virtual: bool = False
 
 
 class ScanRequest(BaseModel):
