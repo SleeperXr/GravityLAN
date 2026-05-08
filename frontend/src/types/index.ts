@@ -27,10 +27,10 @@ export interface Device {
   sort_order: number;
   is_pinned: boolean;
   is_hidden: boolean;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+  x: number | null;
+  y: number | null;
+  w: number | null;
+  h: number | null;
   notes: string | null;
   first_seen: string;
   last_seen: string;

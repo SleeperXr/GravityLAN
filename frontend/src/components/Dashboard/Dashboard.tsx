@@ -397,7 +397,7 @@ export function Dashboard() {
                 className={`grid-stack grid-stack-${groupId} ${isEditMode ? 'is-editing' : ''}`}
                 style={{ minHeight: groupDevices.length > 0 ? '140px' : '0' }}
               >
-                {groupDevices.map((device, index) => {
+                {groupDevices.map((device) => {
                     const minW = 2;
                     const minH = 2;
                     
