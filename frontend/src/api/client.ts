@@ -26,6 +26,7 @@ export const api = {
   getSubnets: () => request<import('../types').SubnetInfo[]>('/api/scanner/subnets'),
   startScan: (data: Partial<import('../types').ScanRequest> & { dns_server?: string }) =>
     request<{ status: string }>('/api/scanner/start', { method: 'POST', body: JSON.stringify(data) }),
+  startDashboardScan: () => request<{ status: string }>('/api/scanner/start-dashboard', { method: 'POST' }),
   stopScan: () => request<{ status: string }>('/api/scanner/stop', { method: 'POST' }),
   getScanStatus: () => request<import('../types').ScanProgress>('/api/scanner/status'),
   getDiscoveredHosts: () => request<import('../types').Device[]>('/api/scanner/discovered'),
