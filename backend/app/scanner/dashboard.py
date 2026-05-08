@@ -24,19 +24,47 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
     
     # 1. Dashboard Health Check
     async with async_session() as db:
-        res_dev = await db.execute(select(Device))
+        from sqlalchemy.orm import selectinload
+        from app.scanner.port_scanner import scan_ports
+        
+        res_dev = await db.execute(
+            select(Device).options(selectinload(Device.services))
+        )
         devices = res_dev.scalars().all()
+        
         for dev in devices:
             if progress_callback: await progress_callback(f"Checking Dashboard: {dev.display_name}...")
-            # We would normally trigger service checks here
-            pass
+            
+            # Check if any port is open to determine online status
+            target_ports = [s.port for s in dev.services if s.is_up or s.is_auto_detected]
+            if not target_ports:
+                # Fallback to standard management ports if no services defined
+                target_ports = MANAGEMENT_PORTS[:3] # 22, 80, 443
+            
+            open_ports = await scan_ports(dev.ip, ports=target_ports, timeout=0.5)
+            is_online = len(open_ports) > 0
+            
+            # Update device status
+            dev.is_online = is_online
+            dev.last_seen = datetime.now() if is_online else dev.last_seen
+            
+            # Update individual service status
+            for svc in dev.services:
+                if svc.port in open_ports:
+                    svc.is_up = True
+                    svc.last_checked = datetime.now()
+                elif svc.port in target_ports:
+                    svc.is_up = False
+                    svc.last_checked = datetime.now()
+            
+        await db.commit()
 
-    # 2. Subnet Scan for Neufunde
+    # 2. Subnet Scan for Neufunde (Port-aware)
+    from app.scanner.port_scanner import nmap_scan
     all_found = []
     for subnet in subnets:
         if progress_callback: await progress_callback(f"Scanning Subnet {subnet} for management ports...")
         
-        # Convert subnet to list of IPs for the discovery function
         import ipaddress
         if "/" not in subnet:
              if subnet.count(".") == 2: subnet = f"{subnet}.0/24"
@@ -45,17 +73,22 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
         net = ipaddress.ip_network(subnet, strict=False)
         target_ips = [str(ip) for ip in net.hosts()]
         
-        alive_hosts = await discover_hosts_simple(target_ips)
+        # Use nmap with management ports for discovery
+        alive_hosts = await discover_hosts_simple(target_ips) # Fast ping first
         resolved_hosts = await resolve_mac_addresses(alive_hosts)
         
         for host in resolved_hosts:
             ip = host["ip"]
             mac = host.get("mac")
             
-            # RELEVANCE CHECK: Does it have management ports?
-            # (In a real implementation, we would call nmap -p22,80,443 here)
-            # For simplicity, we'll assume we sync them but they won't trigger "auto-add" 
-            # unless they are interesting.
+            # For each alive host, check if it has interesting ports
+            # (We only do this for hosts not already in the dashboard to save time)
+            is_dashboard = any(d.ip == ip for d in devices)
+            if not is_dashboard:
+                # Quick port check for relevance
+                found_ports = await scan_ports(ip, ports=MANAGEMENT_PORTS, timeout=0.3)
+                if found_ports:
+                    logger.info(f"Dashboard: Found interesting host {ip} with ports {found_ports}")
             
             await sync_host_to_db(
                 ip=ip,
