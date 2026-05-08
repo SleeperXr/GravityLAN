@@ -123,8 +123,8 @@ async def start_scan(request: ScanRequest):
     async def run_scan_task():
         global _scan_active
         try:
-            await run_planner_scan(request.subnets, progress_callback=progress_cb)
-            await _broadcast(ScanProgress(status=ScanStatus.IDLE, message="Scan complete"))
+            found_count = await run_planner_scan(request.subnets, progress_callback=progress_cb)
+            await _broadcast(ScanProgress(status=ScanStatus.COMPLETED, message="Scan complete", devices_found=found_count))
         except Exception as e:
             logger.error(f"Manual scan failed: {e}")
             await _broadcast(ScanProgress(status=ScanStatus.ERROR, message=f"Scan error: {str(e)}"))
