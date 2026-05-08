@@ -489,22 +489,20 @@ export function Dashboard() {
             alignItems: 'center',
             flexWrap: 'wrap'
           }}>
-            <div className="btn-group" style={{ display: 'flex', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', padding: 2 }}>
+            <div className="view-toggle">
               <button 
-                className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
+                className={`view-toggle__btn ${viewMode === 'grid' ? 'active' : ''}`}
                 onClick={() => setViewMode('grid')}
-                style={{ padding: '4px 8px' }}
                 title="Grid View"
               >
-                <Grid size={16} />
+                <Grid size={18} />
               </button>
               <button 
-                className={`btn btn-sm ${viewMode === 'list' ? 'btn-primary' : 'btn-ghost'}`}
+                className={`view-toggle__btn ${viewMode === 'list' ? 'active' : ''}`}
                 onClick={() => setViewMode('list')}
-                style={{ padding: '4px 8px' }}
                 title="List View"
               >
-                <List size={16} />
+                <List size={18} />
               </button>
             </div>
 

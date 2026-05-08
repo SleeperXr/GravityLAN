@@ -9,9 +9,9 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
     <aside className={`app-sidebar ${isOpen ? 'mobile-open' : ''}`}>
       <div className="logo">
         <div className="logo__icon">
-          <Network size={20} color="white" />
+          <Network size={22} color="white" strokeWidth={2.5} />
         </div>
-        <span className="logo__text" style={{ flexGrow: 1 }}>{t('app.title')}</span>
+        <span className="logo__text">{t('app.title')}</span>
         
         {/* Mobile Close Button */}
         <button 
