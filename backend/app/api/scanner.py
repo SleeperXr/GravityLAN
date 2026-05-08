@@ -108,7 +108,7 @@ async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate):
         return host
 
 @router.post("/start-dashboard")
-async def start_dashboard_scan(background_tasks: BackgroundTasks):
+async def start_dashboard_scan(request: ScanRequest, background_tasks: BackgroundTasks):
     """Manually trigger the 'Strongest' Dashboard scan (Health + Port Discovery)."""
     global _scan_active, _scan_task, _cancel_event
     if _scan_active:
@@ -123,12 +123,14 @@ async def start_dashboard_scan(background_tasks: BackgroundTasks):
     async def run_dashboard_task():
         global _scan_active
         try:
-            # Get subnets from settings
-            async with async_session() as db:
-                from app.models.setting import Setting
-                res_sub = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
-                s_set = res_sub.scalar_one_or_none()
-                subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else [s.subnet for s in _get_local_subnets()]
+            subnets = request.subnets
+            if not subnets:
+                # Get subnets from settings fallback
+                async with async_session() as db:
+                    from app.models.setting import Setting
+                    res_sub = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
+                    s_set = res_sub.scalar_one_or_none()
+                    subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else [s.subnet for s in _get_local_subnets()]
 
             found_count = await run_dashboard_scan(subnets, progress_callback=progress_cb)
             await _broadcast(ScanProgress(status=ScanStatus.COMPLETED, message=f"Dashboard scan complete: {found_count} new devices", devices_found=found_count))
