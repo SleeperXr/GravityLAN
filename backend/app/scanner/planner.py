@@ -34,6 +34,9 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
     all_alive_ips = set()
 
     for subnet in subnets:
+        if subnet.startswith("169.254."):
+            continue
+            
         if progress_callback:
             await progress_callback(f"Scanner: Scanning {subnet} (ARP + Ping)...")
             

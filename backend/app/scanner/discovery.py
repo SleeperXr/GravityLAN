@@ -92,6 +92,12 @@ async def discover_hosts_simple(
         
         for network in networks:
             if cancel_event and cancel_event.is_set(): break
+            
+            # Filter out APIPA addresses (169.254.0.0/16) - usually indicators of no connection
+            if network.startswith("169.254."):
+                logger.debug(f"Skipping APIPA network: {network}")
+                continue
+                
             logger.info(f"Running nmap discovery on {network} (DNS: {dns_server or 'System'})...")
             
             # Use --dns-servers for better internal name resolution if provided
@@ -169,6 +175,7 @@ async def discover_hosts_simple(
     # Fallback to manual ping/TCP loop
     async def _check_host(ip: str):
         if cancel_event and cancel_event.is_set(): return None
+        if ip.startswith("169.254."): return None
         await _udp_probe_async(ip)
         if await _ping_host_async(ip, timeout):
             return {"ip": ip, "mac": None}
