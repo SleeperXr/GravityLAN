@@ -71,49 +71,56 @@ export function LiveLogs() {
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      gap: '12px',
       height: '100%',
-      minHeight: '400px'
+      minHeight: '450px',
+      background: 'rgba(15, 23, 42, 0.4)',
+      borderRadius: 'var(--radius-xl)',
+      border: '1px solid var(--border-medium)',
+      overflow: 'hidden',
+      backdropFilter: blur('12px')
     }}>
-      <div style={{
+      <div className="log-header" style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Terminal size={18} className="text-secondary" />
-          <h3 style={{ margin: 0, fontSize: '1rem' }}>{t('settings.live_logs_title', 'System Live Logs')}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <Terminal size={20} className="log-icon" />
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, letterSpacing: '0.02em' }}>
+            {t('settings.live_logs_title', 'System Live Logs')}
+          </h3>
           <div style={{
-            width: '8px',
-            height: '8px',
+            width: '10px',
+            height: '10px',
             borderRadius: '50%',
-            background: isConnected ? '#10b981' : '#ef4444',
-            boxShadow: isConnected ? '0 0 8px #10b981' : 'none'
+            background: isConnected ? 'var(--accent-success)' : 'var(--accent-danger)',
+            boxShadow: isConnected ? '0 0 12px var(--accent-success)' : 'none',
+            transition: 'all 0.3s ease'
           }} />
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '10px' }}>
           <button
             onClick={() => setIsPaused(!isPaused)}
-            className="btn-ghost"
+            className="btn btn-ghost btn-sm"
             title={isPaused ? t('common.resume') : t('common.pause')}
-            style={{ padding: '6px' }}
+            style={{ padding: '8px' }}
           >
             {isPaused ? <PlayCircle size={18} /> : <StopCircle size={18} />}
           </button>
           <button
             onClick={copyToClipboard}
-            className="btn-ghost"
+            className="btn btn-ghost btn-sm"
             title={t('common.copy')}
-            style={{ padding: '6px' }}
+            style={{ padding: '8px' }}
           >
             <Copy size={18} />
           </button>
           <button
             onClick={clearLogs}
-            className="btn-ghost"
+            className="btn btn-ghost btn-sm"
             title={t('common.clear')}
-            style={{ padding: '6px', color: 'var(--text-danger)' }}
+            style={{ padding: '8px', color: 'var(--accent-danger)' }}
           >
             <Trash2 size={18} />
           </button>
@@ -124,17 +131,15 @@ export function LiveLogs() {
         ref={scrollRef}
         style={{
           flex: 1,
-          background: '#0a0a0a',
-          color: '#d1d1d1',
-          padding: '12px',
-          borderRadius: '8px',
+          background: '#020617',
+          color: '#cbd5e1',
+          padding: 'var(--space-md)',
           fontFamily: 'var(--font-mono)',
-          fontSize: '0.8rem',
+          fontSize: '0.825rem',
           overflowY: 'auto',
-          border: '1px solid var(--border-subtle)',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-all',
-          lineHeight: '1.4'
+          lineHeight: '1.6'
         }}
       >
         {logs.length === 0 ? (
