@@ -1,55 +1,79 @@
-"""Network scanner API — start scans, get status, WebSocket live updates."""
+"""Network scanner API.
+
+Provides endpoints for subnet discovery, health monitoring,
+and real-time updates via WebSockets.
+"""
 
 import asyncio
 import ipaddress
 import logging
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
-from sqlalchemy import select, or_
+from fastapi import APIRouter, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import async_session
 from app.models.device import DiscoveredHost
 from app.models.setting import Setting
-from app.schemas.scan import (
-    ScanProgress,
-    ScanRequest,
-    ScanStatus,
-    SubnetInfo,
-)
+from app.models.network import Subnet
 from app.schemas.device import DiscoveredHostResponse, DiscoveredHostUpdate
+from app.schemas.scan import ScanProgress, ScanRequest, ScanStatus, SubnetInfo
 from app.scanner.planner import run_planner_scan
 from app.scanner.dashboard import run_dashboard_scan
 from app.scanner.sync import sync_host_to_db
 from app.scanner.utils import get_local_subnets
+from app.scanner.port_scanner import nmap_scan, scan_ports
+from app.scanner.discovery import discover_hosts_simple, resolve_mac_addresses
+from app.scanner.hostname import resolve_hostnames
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/scanner", tags=["scanner"])
 
-# Global scan state
-_scan_task: asyncio.Task | None = None
-_cancel_event = asyncio.Event()
-_last_progress: ScanProgress | None = None
-_scan_active = False
+class ScanStateManager:
+    """Manages global scan task state and WebSocket broadcasting."""
+    
+    def __init__(self):
+        self.task: Optional[asyncio.Task] = None
+        self.cancel_event = asyncio.Event()
+        self.last_progress: Optional[ScanProgress] = None
+        self.is_active: bool = False
+        self.ws_clients: List[WebSocket] = []
 
-@router.get("/subnets", response_model=list[SubnetInfo])
-async def get_subnets() -> list[SubnetInfo]:
+    async def broadcast(self, data: ScanProgress) -> None:
+        """Sends scan progress updates to all connected clients."""
+        self.last_progress = data
+        data_dict = data.model_dump(mode="json")
+        disconnected: List[WebSocket] = []
+        
+        for ws in self.ws_clients:
+            try:
+                await ws.send_json(data_dict)
+            except Exception:
+                disconnected.append(ws)
+        
+        for ws in disconnected:
+            if ws in self.ws_clients:
+                self.ws_clients.remove(ws)
+
+# Initialize global state manager
+state = ScanStateManager()
+
+@router.get("/subnets", response_model=List[SubnetInfo])
+async def get_subnets() -> List[SubnetInfo]:
     """Get available network interfaces and subnets for scanning."""
     return get_local_subnets()
 
 @router.get("/test")
-async def test_scanner():
-    """Test endpoint to verify scanner API availability."""
+async def test_scanner() -> Dict[str, str]:
+    """Verify scanner API availability."""
     return {"status": "ok", "module": "scanner"}
 
 @router.get("/scan-ip")
-async def scan_ip(ip: str):
-    """Perform a robust scan on a specific IP."""
-    from app.scanner.port_scanner import nmap_scan, scan_ports
-    
-    logger.info(f"Manual scan requested for {ip}")
+async def scan_ip(ip: str) -> Dict[str, Any]:
+    """Perform a robust scan on a specific IP address."""
+    logger.info("Manual scan requested for %s", ip)
     
     dns_server = None
     async with async_session() as db:
@@ -61,29 +85,30 @@ async def scan_ip(ip: str):
     ports = await nmap_scan(ip, dns_server=dns_server)
     if not ports:
         ports = await scan_ports(ip, gentle=False, timeout=0.5)
-    return {"ip": ip, "ports": ports, "timestamp": datetime.now()}
+    
+    return {"ip": ip, "ports": ports, "timestamp": datetime.now().isoformat()}
 
 @router.post("/quick-subnet-scan")
-async def quick_subnet_scan(subnets: str):
+async def quick_subnet_scan(subnets: str) -> Dict[str, str]:
     """Turbo-fast subnet refresh (ARP + ICMP) via Planner scan."""
     subnet_list = [s.strip() for s in subnets.split(",") if s.strip()]
     await run_planner_scan(subnet_list)
     return {"status": "ok", "message": "Quick scan triggered"}
 
 @router.post("/discover")
-async def discover_subnet(request: ScanRequest) -> dict:
+async def discover_subnet(request: ScanRequest) -> Dict[str, str]:
     """Trigger a full host discovery on subnets."""
     return await start_scan(request)
 
 @router.get("/status", response_model=ScanProgress)
 async def get_scan_status() -> ScanProgress:
     """Get current scan job status."""
-    if _last_progress:
-        return _last_progress
+    if state.last_progress:
+        return state.last_progress
     return ScanProgress(status=ScanStatus.IDLE, message="No scan active")
 
-@router.get("/discovered", response_model=list[DiscoveredHostResponse])
-async def get_discovered_hosts():
+@router.get("/discovered", response_model=List[DiscoveredHostResponse])
+async def get_discovered_hosts() -> List[DiscoveredHost]:
     """Get all hosts from the persistent discovery table."""
     async with async_session() as db:
         result = await db.execute(
@@ -91,198 +116,156 @@ async def get_discovered_hosts():
             .where(or_(DiscoveredHost.is_online == True, DiscoveredHost.is_monitored == True))
             .order_by(DiscoveredHost.is_monitored.desc(), DiscoveredHost.last_seen.desc())
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
 @router.patch("/discovered/{host_id}", response_model=DiscoveredHostResponse)
-async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate):
-    """Update a discovered host's name or monitoring status."""
+async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate) -> DiscoveredHost:
+    """Update a discovered host's details."""
     async with async_session() as db:
         host = await db.get(DiscoveredHost, host_id)
         if not host:
             raise HTTPException(status_code=404, detail="Host not found")
+            
         update_data = update.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(host, field, value)
+            
         await db.commit()
         await db.refresh(host)
         return host
 
 @router.post("/start-dashboard")
-async def start_dashboard_scan(request: ScanRequest, background_tasks: BackgroundTasks):
-    """Manually trigger the 'Strongest' Dashboard scan (Health + Port Discovery)."""
-    logger.info(f"API: Received start-dashboard-scan request for subnets: {request.subnets}")
-    global _scan_active, _scan_task, _cancel_event
-    if _scan_active:
+async def start_dashboard_scan_api(request: ScanRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:
+    """Manually trigger the high-intensity Dashboard scan."""
+    if state.is_active:
         return {"status": "error", "message": "A scan is already in progress"}
 
-    _scan_active = True
-    _cancel_event = asyncio.Event()
+    state.is_active = True
+    state.cancel_event = asyncio.Event()
+    state.last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Dashboard Scan...", progress=0)
+    await state.broadcast(state.last_progress)
     
-    # Reset progress immediately so frontend doesn't see old state
-    global _last_progress
-    _last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Dashboard Scan...", progress=0)
-    await _broadcast(_last_progress)
-    
-    async def progress_cb(msg):
+    async def progress_cb(msg: str):
         status = ScanStatus.RUNNING
         if msg == "EVENT:RELOAD_DEVICES":
             status = ScanStatus.DEVICES_UPDATED
             msg = "Host discovered..."
-        await _broadcast(ScanProgress(status=status, message=msg, progress=50))
+        await state.broadcast(ScanProgress(status=status, message=msg, progress=50))
 
     async def run_dashboard_task():
-        global _scan_active
         try:
             subnets = request.subnets
             if not subnets:
-                # Get subnets from settings fallback
                 async with async_session() as db:
-                    from app.models.setting import Setting
                     res_sub = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
                     s_set = res_sub.scalar_one_or_none()
-                    subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else [s.subnet for s in get_local_subnets()]
+                    if s_set and s_set.value:
+                        subnets = [s.strip() for s in s_set.value.split(",") if s.strip()]
+                    else:
+                        subnets = [s.subnet for s in get_local_subnets()]
 
             found_count = await run_dashboard_scan(subnets, progress_callback=progress_cb)
-            await _broadcast(ScanProgress(status=ScanStatus.COMPLETED, message=f"Dashboard scan complete: {found_count} new devices", devices_found=found_count))
+            await state.broadcast(ScanProgress(
+                status=ScanStatus.COMPLETED, 
+                message=f"Dashboard scan complete: {found_count} devices updated", 
+                devices_found=found_count
+            ))
         except Exception as e:
-            logger.error(f"Dashboard scan failed: {e}")
-            await _broadcast(ScanProgress(status=ScanStatus.ERROR, message=f"Scan error: {str(e)}"))
+            logger.error("Dashboard scan failed: %s", e, exc_info=True)
+            await state.broadcast(ScanProgress(status=ScanStatus.ERROR, message=f"Scan error: {str(e)}"))
         finally:
-            _scan_active = False
+            state.is_active = False
 
-    _scan_task = asyncio.create_task(run_dashboard_task())
+    state.task = asyncio.create_task(run_dashboard_task())
     return {"status": "ok", "message": "Dashboard scan started"}
 
 @router.post("/start")
-async def start_scan(request: ScanRequest):
-    """Manually trigger a Network Planner scan (ARP + Ping + DNS)."""
-    global _scan_active, _scan_task, _cancel_event
-    if _scan_active:
+async def start_scan(request: ScanRequest) -> Dict[str, str]:
+    """Trigger a Network Planner scan."""
+    if state.is_active:
         return {"status": "error", "message": "Scan already in progress"}
 
-    _scan_active = True
-    _cancel_event = asyncio.Event()
+    state.is_active = True
+    state.cancel_event = asyncio.Event()
     
-    # Reset progress immediately so frontend doesn't see old state
-    global _last_progress
-    _last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Planner Scan...", progress=0)
-    await _broadcast(_last_progress)
+    state.last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Planner Scan...", progress=0)
+    await state.broadcast(state.last_progress)
     
-    async def progress_cb(msg):
+    async def progress_cb(msg: str):
         status = ScanStatus.RUNNING
         if msg == "EVENT:RELOAD_DEVICES":
             status = ScanStatus.DEVICES_UPDATED
             msg = "Host discovered..."
-        await _broadcast(ScanProgress(status=status, message=msg, progress=50))
+        await state.broadcast(ScanProgress(status=status, message=msg, progress=50))
 
     async def run_scan_task():
-        global _scan_active
         try:
             found_count = await run_planner_scan(request.subnets, progress_callback=progress_cb)
-            await _broadcast(ScanProgress(status=ScanStatus.COMPLETED, message="Scan complete", devices_found=found_count))
+            await state.broadcast(ScanProgress(status=ScanStatus.COMPLETED, message="Scan complete", devices_found=found_count))
         except Exception as e:
-            logger.error(f"Manual scan failed: {e}")
-            await _broadcast(ScanProgress(status=ScanStatus.ERROR, message=f"Scan error: {str(e)}"))
+            logger.error("Manual scan failed: %s", e, exc_info=True)
+            await state.broadcast(ScanProgress(status=ScanStatus.ERROR, message=f"Scan error: {str(e)}"))
         finally:
-            _scan_active = False
+            state.is_active = False
 
-    _scan_task = asyncio.create_task(run_scan_task())
+    state.task = asyncio.create_task(run_scan_task())
     return {"status": "ok", "message": "Planner scan started"}
+
 @router.post("/stop")
-async def stop_scan() -> dict:
-    """Cancel a running scan."""
-    global _cancel_event
-    _cancel_event.set()
+async def stop_scan() -> Dict[str, str]:
+    """Cancel any running scan."""
+    state.cancel_event.set()
     return {"status": "cancelling"}
 
 @router.get("/live-discovery")
-@router.get("/live-discovery/")
-async def live_discovery(subnets: str) -> list[dict]:
-    """Perform a fast ICMP/ARP discovery and return the results."""
+async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
+    """Perform a fast ICMP/ARP discovery and sync results to DB."""
     subnet_list = [s.strip() for s in subnets.split(",") if s.strip()]
-    
-    from app.scanner.discovery import discover_hosts_simple, resolve_mac_addresses
-    from app.scanner.hostname import resolve_hostnames
-
     all_hosts = []
-    for subnet in subnet_list:
-        try:
-            logger.info(f"Live-discovery triggered for: {subnet}")
-            if "/" not in subnet: 
-                if subnet.count(".") == 2: # e.g. 192.168.100
-                    subnet = f"{subnet}.0/24"
-                else:
-                    subnet = f"{subnet}/24"
-            
-            # NEW: Find specific DNS server for this subnet
-            dns_server = None
-            async with async_session() as db:
-                from app.models.network import Subnet
+    
+    async with async_session() as db:
+        res_dns = await db.execute(select(Setting).where(Setting.key == "dns.server"))
+        dns_s = res_dns.scalar_one_or_none()
+        global_dns = dns_s.value if dns_s else None
+
+        for subnet in subnet_list:
+            try:
+                if "/" not in subnet:
+                    subnet = f"{subnet}.0/24" if subnet.count(".") == 2 else f"{subnet}/24"
+                
                 res_sub = await db.execute(select(Subnet).where(Subnet.cidr == subnet))
                 sub_obj = res_sub.scalar_one_or_none()
-                if sub_obj:
-                    dns_server = sub_obj.dns_server
-                
-                if not dns_server:
-                    # Fallback to global DNS setting
-                    res_dns = await db.execute(select(Setting).where(Setting.key == "dns.server"))
-                    dns_s = res_dns.scalar_one_or_none()
-                    if dns_s: dns_server = dns_s.value
+                dns_server = sub_obj.dns_server if sub_obj and sub_obj.dns_server else global_dns
 
-            # Convert subnet to list of IPs for the discovery function
-            import ipaddress
-            net = ipaddress.ip_network(subnet, strict=False)
-            target_ips = [str(ip) for ip in net.hosts()]
-            
-            # Perform host discovery
-            from app.config import settings
-            alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server, timeout=settings.scan_timeout)
-            if alive_hosts:
-                # Resolve MACs and Hostnames
-                alive_hosts = await resolve_mac_addresses(alive_hosts)
-                await resolve_hostnames(alive_hosts, dns_server=dns_server)
+                net = ipaddress.ip_network(subnet, strict=False)
+                target_ips = [str(ip) for ip in net.hosts()]
                 
-                # Sync each host to DB
-                for host in alive_hosts:
-                    await sync_host_to_db(
-                        ip=host["ip"], 
-                        mac=host.get("mac"), 
-                        hostname=host.get("hostname"),
-                        vendor=host.get("vendor")
-                    )
-            
-            all_hosts.extend(alive_hosts)
-        except Exception as e:
-            logger.error(f"Live-discovery error for {subnet}: {e}")
+                alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server, timeout=2.0)
+                if alive_hosts:
+                    alive_hosts = await resolve_mac_addresses(alive_hosts)
+                    await resolve_hostnames(alive_hosts, dns_server=dns_server)
+                    
+                    for host in alive_hosts:
+                        await sync_host_to_db(
+                            ip=host["ip"], 
+                            mac=host.get("mac"), 
+                            hostname=host.get("hostname"),
+                            vendor=host.get("vendor")
+                        )
+                all_hosts.extend(alive_hosts)
+            except Exception as e:
+                logger.error("Live-discovery error for %s: %s", subnet, e)
             
     return all_hosts
-
-# --- WebSocket for live scan updates ---
-_ws_clients: list[WebSocket] = []
 
 @router.websocket("/ws")
 async def scan_websocket(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time scan progress updates."""
     await websocket.accept()
-    _ws_clients.append(websocket)
+    state.ws_clients.append(websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        if websocket in _ws_clients:
-            _ws_clients.remove(websocket)
-
-async def _broadcast(data: ScanProgress) -> None:
-    """Send a message to all connected WebSocket clients."""
-    global _last_progress
-    _last_progress = data
-    data_dict = data.model_dump(mode="json")
-    disconnected: list[WebSocket] = []
-    for ws in _ws_clients:
-        try:
-            await ws.send_json(data_dict)
-        except Exception:
-            disconnected.append(ws)
-    for ws in disconnected:
-        if ws in _ws_clients:
-            _ws_clients.remove(ws)
+        if websocket in state.ws_clients:
+            state.ws_clients.remove(websocket)
