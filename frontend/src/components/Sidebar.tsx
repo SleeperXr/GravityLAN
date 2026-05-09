@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, Network, X, Share2, Grid } from 'lucide-react';
+import { LayoutDashboard, Settings, Network, X, Grid } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import logo from '../assets/logo.svg';

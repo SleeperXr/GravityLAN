@@ -1,8 +1,13 @@
+from __future__ import annotations
 from datetime import datetime
+from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.device import Device
 
 class Rack(Base):
     """Represents a physical server rack."""
@@ -24,6 +29,9 @@ class TopologyLink(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     source_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False)
     target_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False)
+    
+    source_handle: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    target_handle: Mapped[str | None] = mapped_column(String(20), nullable=True)
     
     # Connection metadata
     link_type: Mapped[str] = mapped_column(String(50), default="1GbE") # 10GbE, 2.5GbE, 1GbE, WLAN, Fiber

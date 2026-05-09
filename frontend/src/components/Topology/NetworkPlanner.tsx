@@ -31,7 +31,7 @@ const NetworkPlanner: React.FC = () => {
         padding: '24px',
         background: 'var(--bg-app)',
       }}>
-        <MobileHeader onMenuClick={() => setIsSidebarOpen(true)} />
+        <MobileHeader title="Network Planner" onMenuClick={() => setIsSidebarOpen(true)} />
 
         {/* Header */}
         <div style={{ marginBottom: '24px', flexShrink: 0 }}>
