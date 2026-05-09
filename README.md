@@ -27,7 +27,7 @@
 
 - **⚡ Zero-Config Discovery**: Automatic subnet scanning and hostname resolution.
 - **🚀 ARP Turbo Mode**: Real-time discovery via local ARP tables.
-- **🧠 Smart Fingerprinting**: Automatic port-based device classification.
+- **🧠 Smart Fingerprinting**: Automatic port-based device classification (Home Assistant, Proxmox, etc.).
 - **🎨 Drag-&-Drop UI**: Fully customizable and persistent dashboard layout.
 - **📱 Responsive**: Optimized for desktop, tablet, and mobile.
 
@@ -50,9 +50,18 @@ Deep system insights for Linux machines.
 
 ---
 
-## 🚀 Quick Start
+## 🛠️ Tech Stack
 
-### 🐳 Docker
+GravityLAN is built with modern, high-performance frameworks:
+
+- **Backend**: [FastAPI](https://fastapi.tiangolo.com/), [SQLAlchemy 2.0](https://www.sqlalchemy.org/), [Nmap](https://nmap.org/).
+- **Frontend**: [React 18](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/).
+
+---
+
+## 🚀 Getting Started
+
+### 🐳 Docker (Recommended)
 ```yaml
 services:
   gravitylan:
@@ -67,13 +76,40 @@ services:
 > [!IMPORTANT]
 > Use **Host Network Mode** to allow the scanner to see your local LAN devices.
 
+### 🛠️ Windows Development Setup
+1.  **Install Nmap**: Download from [nmap.org](https://nmap.org/download.html) and ensure it's in your **PATH**.
+2.  **Install Python 3.12+ & Node.js 18+**.
+3.  **Run Startup Script**:
+    ```powershell
+    .\start_gravitylan.ps1
+    ```
+
 ---
 
-## 🏗️ Architecture
+## 🤖 GravityLAN Agent
 
-1.  **Planner**: Fast discovery (ARP/Ping).
-2.  **Dashboard**: Health & service monitoring.
-3.  **Sync**: MAC-based identity persistence.
+The optional resource agent provides deep system insights for Linux-based machines.
+
+- **Metrics**: CPU utilization, RAM usage, Disk space, and Temperature sensors.
+- **Deployment**:
+  - **One-Click**: Deploy via SSH directly from the Device Editor.
+  - **Manual**: Simple `curl | bash` installation script.
+- **Lightweight**: Uses standard Python libraries only (no external dependencies).
+
+---
+
+## 🔍 Under the Hood
+
+### How Scans Work
+1.  **Layer 2 Discovery**: Uses `arp-scan` to find devices even if they block ICMP (Ping).
+2.  **Layer 3 Monitoring**: Real-time status monitoring via ICMP Echo Requests.
+3.  **Hostname Resolution**: Queries gateways and DNS resolvers for local names.
+4.  **Fingerprinting**: Async TCP scanner checks common Homelab ports to assign icons and links.
+
+### Architecture
+1.  **Planner**: Fast discovery focused on finding new devices.
+2.  **Dashboard**: Continuous health monitoring for confirmed infrastructure.
+3.  **Sync**: MAC-based identity persistence for handling DHCP changes.
 
 ---
 
@@ -86,5 +122,6 @@ services:
 <p align="center">
   Made with ❤️ by <strong>SleeperXr</strong>
 </p>
+
 
 
