@@ -1,6 +1,7 @@
 import { LayoutDashboard, Settings, Network, X, Share2, Grid } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import logo from '../assets/logo.svg';
 
 export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: boolean, onClose?: () => void }) {
   const { t } = useTranslation();
@@ -9,7 +10,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
     <aside className={`app-sidebar ${isOpen ? 'mobile-open' : ''}`}>
       <div className="logo">
         <div className="logo__icon">
-          <Network size={22} color="white" strokeWidth={2.5} />
+          <img src={logo} alt="Logo" style={{ width: '28px', height: '28px' }} />
         </div>
         <span className="logo__text">{t('app.title')}</span>
         
