@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timedelta
 from app.scanner.vendor import get_vendor
 from app.scanner.discovery import _ping_host_async
+from app.scanner.hostname import is_ip_like
 
 logger = logging.getLogger(__name__)
  
@@ -29,6 +30,14 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
         if not dev:
             res_dev_ip = await db.execute(select(Device).where(Device.ip == ip))
             dev = res_dev_ip.scalar_one_or_none()
+        
+        if not dev and hostname and not is_ip_like(hostname):
+            # NEW: Fallback for MAC-less devices (IOT subnets)
+            # Match by hostname to preserve dashboard labels
+            res_dev_host = await db.execute(select(Device).where(Device.hostname == hostname))
+            dev = res_dev_host.scalar_one_or_none()
+            if dev:
+                logger.info(f"Sync: Matched device {hostname} by Hostname (MAC missing)")
 
         # 2. Discovery Table Deduplication & Search
         disc = None
@@ -127,3 +136,40 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
 
         await db.commit()
         return disc
+
+async def sync_docker_containers(containers: list[dict]):
+    """
+    Syncs local Docker container statuses to the database.
+    If a container is 'running', it overrides the offline status in the DB.
+    """
+    async with async_session() as db:
+        for container in containers:
+            ips = container.get("ips", [])
+            is_running = container.get("status") == "running"
+            
+            if not ips or not is_running:
+                continue
+                
+            for ip in ips:
+                # Update discovered hosts
+                res_disc = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == ip))
+                disc = res_disc.scalar_one_or_none()
+                if disc:
+                    if not disc.is_online:
+                        logger.info(f"Docker Sync: Marking container {container['name']} ({ip}) as ONLINE via Docker")
+                    disc.is_online = True
+                    disc.last_seen = datetime.now()
+                    # Optionally update name if unknown
+                    if not disc.custom_name or disc.custom_name == "Unknown":
+                        disc.custom_name = container["name"]
+
+                # Update dashboard devices
+                res_dev = await db.execute(select(Device).where(Device.ip == ip))
+                dev = res_dev.scalar_one_or_none()
+                if dev:
+                    if not dev.is_online:
+                        logger.info(f"Docker Sync: Marking dashboard container {dev.display_name} ({ip}) as ONLINE via Docker")
+                    dev.is_online = True
+                    dev.last_seen = datetime.now()
+        
+        await db.commit()

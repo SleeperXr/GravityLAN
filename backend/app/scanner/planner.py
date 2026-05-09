@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import select, delete, or_
 from app.database import async_session
 from app.models.device import DiscoveredHost, Device
+from app.models.network import Subnet
 from app.scanner.discovery import discover_hosts_simple, resolve_mac_addresses, get_local_arp_table
 from app.scanner.sync import sync_host_to_db
 
@@ -47,15 +48,21 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
         if subnet.startswith("169.254."):
             continue
             
+        # NEW: Find specific DNS server for this subnet
+        dns_server = None
+        async with async_session() as db:
+            res_sub = await db.execute(select(Subnet).where(Subnet.cidr == subnet))
+            sub_obj = res_sub.scalar_one_or_none()
+            if sub_obj:
+                dns_server = sub_obj.dns_server
+                if dns_server:
+                    logger.info(f"Planner: Using custom DNS {dns_server} for subnet {subnet}")
+
         if progress_callback:
             await progress_callback(f"Scanner: Scanning {subnet} (ARP + Ping)...")
             
         # 1. Fast Discovery (Nmap -sn -PR -PE)
         # Convert subnet to list of IPs for the discovery function
-        if "/" not in subnet:
-             if subnet.count(".") == 2: subnet = f"{subnet}.0/24"
-             else: subnet = f"{subnet}/24"
-        
         net = ipaddress.ip_network(subnet, strict=False)
         target_ips = [str(ip) for ip in net.hosts()]
         
@@ -70,7 +77,7 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
             if progress_callback:
                 await progress_callback("EVENT:RELOAD_DEVICES")
 
-        alive_hosts = await discover_hosts_simple(target_ips, host_found_callback=_on_host)
+        alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server, host_found_callback=_on_host)
         
         if progress_callback:
             await progress_callback(f"Scanner: Found {len(alive_hosts)} active hosts. Resolving MACs...")

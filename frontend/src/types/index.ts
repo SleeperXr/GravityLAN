@@ -41,8 +41,21 @@ export interface Device {
   agent_info?: {
     agent_version: string | null;
     latest_version: string | null;
+    metrics?: {
+      cpu_usage: number;
+      memory_usage: number;
+      disk_usage: number;
+    };
   };
   services: Service[];
+  old_ip: string | null;
+  ip_changed_at: string | null;
+  parent_id: number | null;
+  rack_id: number | null;
+  rack_unit: number | null;
+  rack_height: number;
+  topology_x: number | null;
+  topology_y: number | null;
 }
 
 export interface DeviceGroup {
@@ -61,6 +74,14 @@ export interface SubnetInfo {
   subnet: string;
   netmask: string;
   is_up: boolean;
+}
+
+export interface Subnet {
+  id: number;
+  cidr: string;
+  name: string;
+  dns_server: string | null;
+  is_enabled: boolean;
 }
 
 export interface ScanProgress {

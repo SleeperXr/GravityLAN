@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, Network, X } from 'lucide-react';
+import { LayoutDashboard, Settings, Network, X, Share2, Grid } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -36,7 +36,14 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
           className={`nav-item ${active === 'network' ? 'active' : ''}`}
           onClick={onClose}
         >
-          <Network size={18} /> {t('sidebar.network_planner')}
+          <Grid size={18} /> IP Management
+        </Link>
+        <Link 
+          to="/topology" 
+          className={`nav-item ${active === 'topology' ? 'active' : ''}`}
+          onClick={onClose}
+        >
+          <Network size={18} /> Network Planner
         </Link>
         <Link 
           to="/settings" 
