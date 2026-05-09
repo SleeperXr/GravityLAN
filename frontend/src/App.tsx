@@ -6,6 +6,7 @@ import { Dashboard } from './components/Dashboard/Dashboard';
 import { SubnetView } from './components/Network/SubnetView';
 import { SettingsView } from './components/Settings/SettingsView';
 import { LogsPage } from './components/Settings/LogsPage';
+import NetworkPlanner from './components/Topology/NetworkPlanner';
 import { ThemeManager } from './components/ThemeManager';
 import { ToastProvider } from './context/ToastContext';
 
@@ -68,6 +69,7 @@ function App() {
               <>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/network" element={<SubnetView />} />
+                <Route path="/topology" element={<NetworkPlanner />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/logs" element={<LogsPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

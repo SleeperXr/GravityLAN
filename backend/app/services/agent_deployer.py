@@ -136,7 +136,23 @@ async def deploy_agent(
         connect_kwargs["timeout"] = 15  # 15s timeout for connection
         
         logger.info("Connecting to %s@%s:%d ...", ssh_user, host_ip, ssh_port)
-        client.connect(**connect_kwargs)
+        try:
+            client.connect(**connect_kwargs)
+        except Exception as e:
+            # FALLBACK for Unraid/Docker Macvlan isolation:
+            # If we can't reach the host IP directly, try via the internal bridge gateway
+            from app.services.docker_service import docker_service
+            gateway = docker_service.get_bridge_gateway()
+            if gateway and host_ip != gateway:
+                logger.info("Direct connection failed (%s). Attempting Host Bypass via bridge gateway: %s", e, gateway)
+                connect_kwargs["hostname"] = gateway
+                try:
+                    client.connect(**connect_kwargs)
+                except Exception as fb_err:
+                    logger.error("Host Bypass also failed: %s", fb_err)
+                    raise e # Raise original error if fallback also fails
+            else:
+                raise e
 
         # --- Check Python 3 ---
         _, stdout, _ = client.exec_command("which python3 || which python", timeout=10)
@@ -414,8 +430,21 @@ async def remove_agent(
         else:
             return False, "Weder Passwort noch SSH-Key angegeben."
 
-        client.connect(**connect_kwargs)
-        
+        try:
+            client.connect(**connect_kwargs)
+        except Exception as e:
+            from app.services.docker_service import docker_service
+            gateway = docker_service.get_bridge_gateway()
+            if gateway and host_ip != gateway:
+                logger.info("Direct connection failed for removal. Attempting Host Bypass via bridge gateway: %s", gateway)
+                connect_kwargs["hostname"] = gateway
+                try:
+                    client.connect(**connect_kwargs)
+                except:
+                    raise e
+            else:
+                raise e
+
         # Check for sudo
         _, stdout, _ = client.exec_command("which sudo", timeout=5)
         has_sudo = stdout.channel.recv_exit_status() == 0

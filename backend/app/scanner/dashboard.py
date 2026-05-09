@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import select
 from app.database import async_session
 from app.models.device import Device, Service, DiscoveredHost
+from app.models.network import Subnet
 from app.scanner.discovery import discover_hosts_simple, resolve_mac_addresses
 from app.scanner.sync import sync_host_to_db
 
@@ -29,11 +30,18 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
     for subnet in subnets:
         try:
             logger.info(f"Dashboard: Running discovery on {subnet}")
-            if progress_callback: await progress_callback(f"Ping/ARP discovery on {subnet}...")
             
-            if "/" not in subnet:
-                if subnet.count(".") == 2: subnet = f"{subnet}.0/24"
-                else: subnet = f"{subnet}/24"
+            # NEW: Find specific DNS server for this subnet
+            dns_server = None
+            async with async_session() as db:
+                res_sub = await db.execute(select(Subnet).where(Subnet.cidr == subnet))
+                sub_obj = res_sub.scalar_one_or_none()
+                if sub_obj:
+                    dns_server = sub_obj.dns_server
+                    if dns_server:
+                        logger.info(f"Dashboard: Using custom DNS {dns_server} for subnet {subnet}")
+
+            if progress_callback: await progress_callback(f"Ping/ARP discovery on {subnet}...")
             
             net = ipaddress.ip_network(subnet, strict=False)
             target_ips = [str(ip) for ip in net.hosts()]
@@ -49,7 +57,7 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
                 if progress_callback:
                     await progress_callback("EVENT:RELOAD_DEVICES")
 
-            alive_hosts = await discover_hosts_simple(target_ips, host_found_callback=_on_host)
+            alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server, host_found_callback=_on_host)
             resolved = await resolve_mac_addresses(alive_hosts)
             all_resolved_hosts.extend(resolved)
         except Exception as e:

@@ -1,3 +1,7 @@
+/* Import Tailwind without its preflight base reset, so existing CSS design system is preserved */
+@import "tailwindcss/utilities";
+@import "tailwindcss/theme";
+
 /* --- Base Styles --- */
 :root {
   --bg-app: #0f172a;

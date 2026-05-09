@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Sidebar } from '../Sidebar';
 import { api, createScanSocket } from '../../api/client';
-import type { Device } from '../../types';
+import type { Device, Subnet } from '../../types';
 import { useToast } from '../../context/ToastContext';
-import { Monitor, Shield, Server, Cpu, Globe, Search, Trash2, RefreshCw, Activity, Info, Plus, Eye, EyeOff, Lock, Unlock, Save, LayoutGrid as Grid } from 'lucide-react';
+import { Monitor, Shield, Server, Cpu, Globe, Search, Trash2, RefreshCw, Activity, Info, Plus, Eye, EyeOff, Lock, Unlock, Save, Settings, LayoutGrid as Grid } from 'lucide-react';
 import { DeviceEditor } from '../Dashboard/DeviceEditor';
 import { useTranslation } from 'react-i18next';
 import { useNetwork } from '../../context/NetworkContext';
@@ -32,12 +32,13 @@ export function SubnetView() {
   }, []);
 
   const [devices, setDevices] = useState<Device[]>([]);
-  const [subnets, setSubnets] = useState<string[]>(['192.168.100']);
-  const [subnetPrefix, setSubnetPrefix] = useState('192.168.100');
+  const [subnets, setSubnets] = useState<Subnet[]>([]);
+  const [subnetPrefix, setSubnetPrefix] = useState('');
   const [zoom, setZoom] = useState(1);
   const [groups, setGroups] = useState<Record<string, any[]>>({});
   const [isRefreshing, setIsRefreshing] = useState<Record<string, boolean>>({});
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showSubnetSettings, setShowSubnetSettings] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: '', start: 0, end: 0, color: '#38bdf8' });
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [showAlarmModal, setShowAlarmModal] = useState(false);
@@ -66,20 +67,20 @@ export function SubnetView() {
       }
 
       if (sets && typeof sets['scan_subnets'] === 'string') {
-        const configuredSubnets = sets['scan_subnets'].split(',')
-          .map((s: string) => s.trim())
-          .filter((s: string) => s.length > 0)
-          .map((s: string) => {
-            const match = s.match(/(\d+\.\d+\.\d+)/);
-            return match ? match[1] : null;
-          })
-          .filter(Boolean) as string[];
-          
-        if (configuredSubnets.length > 0) {
-          setSubnets(prev => JSON.stringify(prev) !== JSON.stringify(configuredSubnets) ? configuredSubnets : prev);
-          setSubnetPrefix(prev => configuredSubnets.includes(prev) ? prev : configuredSubnets[0]);
+        // We still keep the old logic for fallback or just ignore it now that we migrate
+      }
+
+      const subnetList = await api.getSubnetsList().catch(() => []);
+      if (Array.isArray(subnetList)) {
+        setSubnets(subnetList);
+        if (subnetList.length > 0 && !subnetPrefix) {
+          const firstSub = subnetList[0].cidr;
+          const match = firstSub.match(/(\d+\.\d+\.\d+)/);
+          if (match) setSubnetPrefix(match[1]);
         }
-      } else if (safeDevices.length > 0) {
+      }
+
+      if (!subnetPrefix && safeDevices.length > 0) {
         const firstIp = safeDevices[0]?.ip;
         const match = firstIp?.match(/(\d+\.\d+\.\d+)\./);
         if (match) {
@@ -90,7 +91,7 @@ export function SubnetView() {
     } catch (err) {
       console.error('Failed to load data:', err);
     }
-  }, []);
+  }, [subnetPrefix]);
 
   useEffect(() => {
     loadData();
@@ -250,16 +251,16 @@ export function SubnetView() {
   const handleAddSubnet = async () => {
     const newSub = prompt(t('network.new_subnet_prompt'));
     if (!newSub) return;
-    const match = newSub.match(/(\d+\.\d+\.\d+)/);
-    if (!match) {
-      showToast('error', t('common.error'), t('network.invalid_format'));
-      return;
+    
+    let cidr = newSub;
+    if (!cidr.includes('/')) {
+        if (cidr.split('.').length === 3) cidr = `${cidr}.0/24`;
+        else if (cidr.split('.').length === 4) cidr = `${cidr}/32`;
+        else cidr = `${cidr}/24`;
     }
+
     try {
-      const sets: any = await api.getSettings();
-      const current = sets['scan_subnets'] || '';
-      const updated = current ? `${current}, ${newSub}` : newSub;
-      await api.updateSettings({ scan_subnets: updated });
+      await api.createSubnet({ cidr, name: `Network ${cidr}`, is_enabled: true });
       showToast('success', t('notifications.saved'), t('network.add_subnet'));
       loadData();
     } catch (err) {
@@ -284,19 +285,24 @@ export function SubnetView() {
             scrollbarWidth: 'none',
             msOverflowStyle: 'none'
           }}>
-            {subnets.map(sub => (
-              <button 
-                key={sub} 
-                style={{ 
-                  padding: '8px 16px', background: subnetPrefix === sub ? 'var(--bg-card)' : 'transparent', border: 'none', borderTopLeftRadius: '8px', borderTopRightRadius: '8px',
-                  borderBottom: subnetPrefix === sub ? '2px solid var(--accent-primary)' : '2px solid transparent',
-                  color: subnetPrefix === sub ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: subnetPrefix === sub ? 600 : 400, cursor: 'pointer', transition: 'all 0.2s'
-                }}
-                onClick={() => setSubnetPrefix(sub)}
-              >
-                {sub}.0/24
-              </button>
-            ))}
+            {subnets.map(sub => {
+              const prefixMatch = sub.cidr.match(/(\d+\.\d+\.\d+)/);
+              const prefix = prefixMatch ? prefixMatch[1] : sub.cidr;
+              return (
+                <button 
+                  key={sub.id} 
+                  style={{ 
+                    padding: '8px 16px', background: subnetPrefix === prefix ? 'var(--bg-card)' : 'transparent', border: 'none', borderTopLeftRadius: '8px', borderTopRightRadius: '8px',
+                    borderBottom: subnetPrefix === prefix ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                    color: subnetPrefix === prefix ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: subnetPrefix === prefix ? 600 : 400, cursor: 'pointer', transition: 'all 0.2s'
+                  }}
+                  onClick={() => setSubnetPrefix(prefix)}
+                  title={sub.cidr}
+                >
+                  {sub.name}
+                </button>
+              );
+            })}
             <button 
               style={{ padding: '8px 16px', background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
               onClick={handleAddSubnet}
@@ -331,6 +337,10 @@ export function SubnetView() {
 
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)}>
                   <Grid size={16} /> {!isMobile && t('network.manage_areas')}
+                </button>
+
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowSubnetSettings(true)}>
+                  <Settings size={16} /> {!isMobile && 'Subnetz-Settings'}
                 </button>
 
                 <button 
@@ -667,6 +677,81 @@ export function SubnetView() {
                 </div>
               </div>
               <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowGroupModal(false)}>{t('common.close')}</button></div>
+            </div>
+          </div>
+        )}
+
+        {showSubnetSettings && (
+          <div className="modal-overlay" onClick={() => setShowSubnetSettings(false)}>
+            <div className="modal-content" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>Subnetz-Konfiguration</h3>
+              </div>
+              <div className="modal-body">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {subnets.map(sub => (
+                    <div key={sub.id} style={{ 
+                      padding: '16px', 
+                      background: 'rgba(255,255,255,0.03)', 
+                      borderRadius: '12px', 
+                      border: '1px solid var(--border-subtle)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{sub.cidr}</div>
+                        <button className="btn btn-icon btn-sm" style={{ color: 'var(--accent-danger)' }} onClick={async () => {
+                          if (confirm(`Subnetz ${sub.cidr} wirklich löschen?`)) {
+                            await api.deleteSubnet(sub.id);
+                            loadData();
+                          }
+                        }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '0.75rem', opacity: 0.6 }}>Name</label>
+                          <input 
+                            className="input" 
+                            defaultValue={sub.name} 
+                            onBlur={async (e) => {
+                              if (e.target.value !== sub.name) {
+                                await api.updateSubnet(sub.id, { name: e.target.value });
+                                loadData();
+                              }
+                            }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '0.75rem', opacity: 0.6 }}>DNS Gateway</label>
+                          <input 
+                            className="input" 
+                            defaultValue={sub.dns_server || ''} 
+                            placeholder="z.B. 192.168.110.1"
+                            onBlur={async (e) => {
+                              if (e.target.value !== (sub.dns_server || '')) {
+                                await api.updateSubnet(sub.id, { dns_server: e.target.value || null });
+                                loadData();
+                                showToast('success', 'DNS gespeichert', `DNS für ${sub.cidr} aktualisiert.`);
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <button className="btn btn-secondary" onClick={handleAddSubnet} style={{ width: '100%' }}>
+                    <Plus size={16} /> Neues Subnetz hinzufügen
+                  </button>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-primary" onClick={() => setShowSubnetSettings(false)}>Fertig</button>
+              </div>
             </div>
           </div>
         )}

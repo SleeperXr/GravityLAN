@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Device, DeviceGroup } from '../../types';
 import { api } from '../../api/client';
-import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight, Server } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { DeviceMetrics } from './DeviceMetrics';
@@ -34,6 +34,10 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
     w: currentDevice.w || 2,
     h: currentDevice.h || 3,
     virtual_type: currentDevice.virtual_type || null,
+    parent_id: currentDevice.parent_id || null,
+    rack_id: currentDevice.rack_id || null,
+    rack_unit: currentDevice.rack_unit || null,
+    rack_height: currentDevice.rack_height || 1,
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -61,6 +65,20 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
       }
     };
     loadGroups();
+  }, []);
+
+  const [racks, setRacks] = useState<any[]>([]);
+  useEffect(() => {
+    const loadRacks = async () => {
+      try {
+        const data = await api.getRacks();
+        setRacks(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Failed to load racks:', err);
+        setRacks([]);
+      }
+    };
+    loadRacks();
   }, []);
 
   useEffect(() => {
@@ -339,7 +357,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     onChange={(e) => setFormData({ ...formData, group_id: e.target.value ? parseInt(e.target.value) : null })}
                   >
                     <option value="">{t('dashboard.unassigned_devices')}</option>
-                    {groups.map(group => (
+                    {Array.isArray(groups) && groups.map(group => (
                       <option key={group.id} value={group.id}>{group.name}</option>
                     ))}
                   </select>
@@ -352,6 +370,57 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     value={formData.vendor}
                     onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
                     placeholder={t('common.unknown')}
+                  />
+                </div>
+
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label><Monitor size={14} /> {t('editor.parent_device', 'Physischer Host')}</label>
+                  <select
+                    className="input"
+                    value={formData.parent_id || ''}
+                    onChange={(e) => setFormData({ ...formData, parent_id: e.target.value ? parseInt(e.target.value) : null })}
+                  >
+                    <option value="">{t('editor.no_parent', 'Kein Host (Physisch)')}</option>
+                    {(devices || []).filter(d => d.id !== currentDevice.id).map(dev => (
+                      <option key={dev.id} value={dev.id}>{dev.display_name || dev.hostname || dev.ip}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
+                <div className="form-group">
+                  <label><Layout size={14} /> {t('editor.rack_position', 'Rack & Position')}</label>
+                  <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+                    <select
+                      className="input"
+                      style={{ flex: 2 }}
+                      value={formData.rack_id || ''}
+                      onChange={(e) => setFormData({ ...formData, rack_id: e.target.value ? parseInt(e.target.value) : null })}
+                    >
+                      <option value="">Kein Rack</option>
+                      {Array.isArray(racks) && racks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                    <input
+                      type="number"
+                      className="input"
+                      style={{ flex: 1 }}
+                      placeholder="Unit (U)"
+                      value={formData.rack_unit || ''}
+                      onChange={(e) => setFormData({ ...formData, rack_unit: e.target.value ? parseInt(e.target.value) : null })}
+                    />
+                  </div>
+                </div>
+                
+                <div className="form-group">
+                  <label><HardDrive size={14} /> {t('editor.rack_height', 'Höhe (HE)')}</label>
+                  <input
+                    type="number"
+                    className="input"
+                    min={1}
+                    max={10}
+                    value={formData.rack_height}
+                    onChange={(e) => setFormData({ ...formData, rack_height: parseInt(e.target.value) || 1 })}
                   />
                 </div>
               </div>
@@ -612,7 +681,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-                  {history.map((item) => (
+                  {Array.isArray(history) && history.map((item) => (
                     <div key={item.id} style={{ 
                       padding: 'var(--space-md)', 
                       background: 'var(--bg-input)', 

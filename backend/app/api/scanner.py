@@ -204,13 +204,6 @@ async def live_discovery(subnets: str) -> list[dict]:
     from app.scanner.discovery import discover_hosts_simple, resolve_mac_addresses
     from app.scanner.hostname import resolve_hostnames
 
-    # Get DNS server from settings
-    dns_server = None
-    async with async_session() as db:
-        res_dns = await db.execute(select(Setting).where(Setting.key == "dns.server"))
-        dns_s = res_dns.scalar_one_or_none()
-        if dns_s: dns_server = dns_s.value
-
     all_hosts = []
     for subnet in subnet_list:
         try:
@@ -221,6 +214,21 @@ async def live_discovery(subnets: str) -> list[dict]:
                 else:
                     subnet = f"{subnet}/24"
             
+            # NEW: Find specific DNS server for this subnet
+            dns_server = None
+            async with async_session() as db:
+                from app.models.network import Subnet
+                res_sub = await db.execute(select(Subnet).where(Subnet.cidr == subnet))
+                sub_obj = res_sub.scalar_one_or_none()
+                if sub_obj:
+                    dns_server = sub_obj.dns_server
+                
+                if not dns_server:
+                    # Fallback to global DNS setting
+                    res_dns = await db.execute(select(Setting).where(Setting.key == "dns.server"))
+                    dns_s = res_dns.scalar_one_or_none()
+                    if dns_s: dns_server = dns_s.value
+
             # Convert subnet to list of IPs for the discovery function
             import ipaddress
             net = ipaddress.ip_network(subnet, strict=False)

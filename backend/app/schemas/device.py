@@ -97,6 +97,17 @@ class DeviceResponse(BaseModel):
     has_agent: bool = False
     agent_info: AgentInfo | None = None
     services: list[ServiceResponse] = []
+    # Rack placement
+    rack_id: int | None = None
+    rack_unit: int | None = None
+    rack_height: int = 1
+    # Topology map position
+    topology_x: int | None = None
+    topology_y: int | None = None
+    # Status string (online/offline/unknown)
+    status: str | None = None
+    # Parent host (for VMs)
+    parent_id: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -120,6 +131,15 @@ class DeviceUpdate(BaseModel):
     is_reserved: bool | None = None
     old_ip: str | None = None
     ip_changed_at: datetime | None = None
+    # Rack placement
+    rack_id: int | None = None
+    rack_unit: int | None = None
+    rack_height: int | None = None
+    # Topology map position
+    topology_x: int | None = None
+    topology_y: int | None = None
+    # Parent host (for VMs)
+    parent_id: int | None = None
 
 
 class GroupResponse(BaseModel):

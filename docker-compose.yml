@@ -1,18 +1,35 @@
 services:
   gravitylan:
-    container_name: gravitylan
-    build:
-      context: .
-      dockerfile: Dockerfile
-    network_mode: host
+    build: .
+    container_name: GravityLAN
+    privileged: true
     restart: unless-stopped
+
+    # Hier passiert die Magie: Wir nutzen Port-Mapping UND Macvlan
+    ports:
+      - "8000:8000"
+
+    networks:
+      home_lan:
+        ipv4_address: 192.168.100.254
+      default:
+        # Die Standard-Bridge für den Host-Kontakt
+
     volumes:
-      - ./data:/app/data
+      - /mnt/user/appdata/gravitylan/data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    environment:
+      - GRAVITYLAN_PORT=8000
+      - GRAVITYLAN_DATA_DIR=/app/data
+      - TZ=Europe/Berlin
+      - GRAVITYLAN_DEBUG=true
+
     cap_add:
       - NET_RAW
       - NET_ADMIN
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
-    environment:
-      - GRAVITYLAN_DATA_DIR=/app/data
-      - GRAVITYLAN_DEBUG=true
-      - GRAVITYLAN_PORT=8080
+
+networks:
+  home_lan:
+    external: true
+    name: br0

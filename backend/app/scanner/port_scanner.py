@@ -88,6 +88,20 @@ async def scan_ports(
             sock.settimeout(timeout)
             is_open = sock.connect_ex((ip, port)) == 0
             sock.close()
+            
+            if not is_open:
+                # FALLBACK for Unraid/Docker Macvlan isolation:
+                # If target is unreachable, try via the bridge gateway
+                from app.services.docker_service import docker_service
+                gateway = docker_service.get_bridge_gateway()
+                if gateway:
+                    sock_fb = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock_fb.settimeout(timeout)
+                    is_open = sock_fb.connect_ex((gateway, port)) == 0
+                    sock_fb.close()
+                    if is_open:
+                        logger.debug(f"Host Bypass: Port {port} reached via bridge gateway {gateway} for target {ip}")
+
             if is_open:
                 return port
         except OSError:

@@ -26,6 +26,7 @@ class ScanScheduler:
         self._task = None
         self._quick_task = None
         self._arp_task = None
+        self._docker_task = None
         self._running = False
 
     async def start(self):
@@ -35,7 +36,8 @@ class ScanScheduler:
         self._task = asyncio.create_task(self._loop())
         self._quick_task = asyncio.create_task(self._quick_loop())
         self._arp_task = asyncio.create_task(self._arp_loop())
-        logger.info("Scan scheduler started (Full + Quick + ARP Turbo)")
+        self._docker_task = asyncio.create_task(self._docker_loop())
+        logger.info("Scan scheduler started (Full + Quick + ARP Turbo + Docker Sync)")
 
     async def stop(self):
         self._running = False
@@ -45,9 +47,11 @@ class ScanScheduler:
             self._quick_task.cancel()
         if self._arp_task:
             self._arp_task.cancel()
+        if self._docker_task:
+            self._docker_task.cancel()
         
         # Wait for tasks to exit
-        await asyncio.gather(self._task, self._quick_task, self._arp_task, return_exceptions=True)
+        await asyncio.gather(self._task, self._quick_task, self._arp_task, self._docker_task, return_exceptions=True)
         logger.info("Scan scheduler stopped")
 
     async def _loop(self):
@@ -129,6 +133,27 @@ class ScanScheduler:
                 break
             except Exception as e:
                 logger.error(f"Error in quick scan loop: {e}")
+                await asyncio.sleep(60)
+
+    async def _docker_loop(self):
+        """Sync local Docker container status (1m interval)."""
+        from app.services.docker_service import docker_service
+        from app.scanner.sync import sync_docker_containers
+        
+        while self._running:
+            try:
+                if docker_service.is_available():
+                    containers = docker_service.get_local_containers()
+                    if containers:
+                        logger.info(f"Docker Sync: Syncing {len(containers)} local containers...")
+                        await sync_docker_containers(containers)
+                
+                # Sleep for 1 minute
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in docker sync loop: {e}")
                 await asyncio.sleep(60)
 
     async def _clean_old_history(self):

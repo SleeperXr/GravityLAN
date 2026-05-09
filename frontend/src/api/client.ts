@@ -92,6 +92,20 @@ export const api = {
     request<{ interval: number; disk_paths: string[]; enable_temp: boolean }>(`/api/agent/config/${deviceId}`),
   updateAgentConfig: (deviceId: number, data: { interval?: number; disk_paths?: string[]; enable_temp?: boolean }) =>
     request<any>(`/api/agent/config/${deviceId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Network (Subnets)
+  getSubnetsList: () => request<any[]>('/api/network/subnets'),
+  createSubnet: (data: any) => request<any>('/api/network/subnets', { method: 'POST', body: JSON.stringify(data) }),
+  updateSubnet: (id: number, data: any) => request<any>(`/api/network/subnets/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteSubnet: (id: number) => request<void>(`/api/network/subnets/${id}`, { method: 'DELETE' }),
+
+  // Topology
+  getRacks: () => request<any[]>('/api/topology/racks'),
+  createRack: (data: any) => request<any>('/api/topology/racks', { method: 'POST', body: JSON.stringify(data) }),
+  deleteRack: (id: number) => request<void>(`/api/topology/racks/${id}`, { method: 'DELETE' }),
+  getTopologyLinks: () => request<any[]>('/api/topology/links'),
+  createTopologyLink: (data: any) => request<any>('/api/topology/links', { method: 'POST', body: JSON.stringify(data) }),
+  deleteTopologyLink: (id: number) => request<void>(`/api/topology/links/${id}`, { method: 'DELETE' }),
 };
 
 /** Create a WebSocket connection for scan progress updates. */

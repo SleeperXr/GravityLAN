@@ -153,6 +153,81 @@ async def lifespan(app: FastAPI):
             except Exception:
                 await db.rollback()
 
+        # Migration for devices topology
+        for column, col_type in [
+            ("parent_id", "INTEGER"), 
+            ("rack_id", "INTEGER"), 
+            ("rack_unit", "INTEGER"), 
+            ("rack_height", "INTEGER DEFAULT 1")
+        ]:
+            try:
+                await db.execute(text(f"ALTER TABLE devices ADD COLUMN {column} {col_type}"))
+                await db.commit()
+                logger.info("Database Migration: Added '%s' column to 'devices'", column)
+            except Exception:
+                await db.rollback()
+        # Migration: Move scan_subnets from settings to Subnet table
+        from app.models.network import Subnet
+        from app.models.setting import Setting
+        
+        # Check if Subnet table is empty
+        res_sub_count = await db.execute(select(Subnet))
+        if not res_sub_count.scalars().first():
+            res_set = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
+            s_set = res_set.scalar_one_or_none()
+            if s_set and s_set.value:
+                logger.info("Migration: Found legacy scan_subnets, moving to Subnet table...")
+                sub_list = [s.strip() for s in s_set.value.split(",") if s.strip()]
+                for s in sub_list:
+                    cidr = s
+                    if "/" not in cidr:
+                        if cidr.count(".") == 2: cidr = f"{cidr}.0/24"
+                        else: cidr = f"{cidr}/24"
+                    
+                    # Prevent duplicate CIDR if already added in this loop
+                    check_existing = await db.execute(select(Subnet).where(Subnet.cidr == cidr))
+                    if not check_existing.scalar_one_or_none():
+                        new_sub = Subnet(cidr=cidr, name=f"Network {cidr}", is_enabled=True)
+                        db.add(new_sub)
+                await db.commit()
+                logger.info("Migration: Subnet migration complete.")
+
+        # Create default rack if empty
+        from app.models.topology import Rack
+        res_rack = await db.execute(select(Rack))
+        if not res_rack.scalars().first():
+            logger.info("Database: Creating default 'Main Rack'...")
+            default_rack = Rack(name="Main Rack", units=42)
+            db.add(default_rack)
+            await db.commit()
+
+        # --- Schema Migration: Add missing columns to existing SQLite DB ---
+        # SQLAlchemy does NOT auto-migrate existing databases.
+        # We use raw PRAGMA + ALTER TABLE to safely add new columns.
+        migration_columns = [
+            ("devices", "topology_x", "INTEGER"),
+            ("devices", "topology_y", "INTEGER"),
+            ("devices", "parent_id",  "INTEGER"),
+            ("devices", "rack_id",    "INTEGER"),
+            ("devices", "rack_unit",  "INTEGER"),
+            ("devices", "rack_height","INTEGER DEFAULT 1"),
+        ]
+        raw_conn = await db.connection()
+        for table, column, col_type in migration_columns:
+            # Check if column already exists via PRAGMA
+            result = await raw_conn.exec_driver_sql(
+                f"PRAGMA table_info({table})"
+            )
+            existing_columns = {row[1] for row in result.fetchall()}
+            if column not in existing_columns:
+                logger.info(f"Schema migration: Adding column '{column}' to '{table}'...")
+                await raw_conn.exec_driver_sql(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+                )
+                logger.info(f"Schema migration: Column '{column}' added successfully.")
+        await db.commit()
+        logger.info("Schema migration: All columns verified.")
+
     yield
 
     # Shutdown
@@ -192,8 +267,12 @@ from app.api.settings import router as settings_router  # noqa: E402
 from app.api.setup import router as setup_router  # noqa: E402
 from app.api.agent import router as agent_router  # noqa: E402
 from app.api.backup import router as backup_router  # noqa: E402
+from app.api.network import router as network_router  # noqa: E402
+from app.api.topology import router as topology_router  # noqa: E402
 
 app.include_router(backup_router)
+app.include_router(network_router)
+app.include_router(topology_router)
 app.include_router(devices_router)
 app.include_router(groups_router)
 app.include_router(router_services)

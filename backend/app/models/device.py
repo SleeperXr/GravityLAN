@@ -84,10 +84,25 @@ class Device(Base):
     status_changed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     old_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     ip_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
+    
+    # Topology & Virtualization
+    parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("devices.id"), nullable=True)
+    rack_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("racks.id"), nullable=True)
+    rack_unit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rack_height: Mapped[int] = mapped_column(Integer, default=1)
+    topology_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    topology_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    
     group: Mapped[DeviceGroup | None] = relationship(back_populates="devices")
     services: Mapped[list["Service"]] = relationship(back_populates="device", lazy="selectin", cascade="all, delete-orphan")
     history: Mapped[list["DeviceHistory"]] = relationship(back_populates="device", lazy="select", cascade="all, delete-orphan")
+    
+    # Self-referential relationship for Host/Guest mapping
+    parent: Mapped["Device"] = relationship("Device", remote_side=[id], back_populates="children")
+    children: Mapped[list["Device"]] = relationship("Device", back_populates="parent")
+    
+    # Rack mapping
+    rack: Mapped["Rack"] = relationship("Rack", back_populates="devices")
 
 
 class Service(Base):
