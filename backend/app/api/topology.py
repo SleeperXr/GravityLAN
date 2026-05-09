@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models.topology import Rack as RackModel, TopologyLink as LinkModel
 from app.schemas.topology import Rack as RackSchema, RackCreate, TopologyLink as LinkSchema, TopologyLinkCreate
 
-router = APIRouter(prefix="/topology", tags=["topology"])
+router = APIRouter(prefix="/api/topology", tags=["topology"])
 
 # --- Rack Endpoints ---
 
