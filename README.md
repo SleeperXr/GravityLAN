@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./assets/logo.png" alt="GravityLAN Logo" width="150">
+  <img src="./assets/logo.png" alt="GravityLAN Logo" width="200">
 </p>
 
-<h1 align="center">GravityLAN</h1>
+# <img src="./assets/logo.png" width="40" vertical-align="middle"> GravityLAN
 
 <p align="center">
   <strong>The Essential Network Radar for Homelab Enthusiasts.</strong>
