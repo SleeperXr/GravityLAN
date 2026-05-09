@@ -101,4 +101,4 @@ The GravityLAN Agent is a zero-dependency Python script that provides deep syste
 
 GravityLAN is open-source under the [MIT License](LICENSE). 
 
-Built with ❤️ by **SleeperXr**
+Built with Antigravity and ❤️ by **SleeperXr**
