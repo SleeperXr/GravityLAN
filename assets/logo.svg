@@ -1,0 +1,8 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Planet / Core -->
+  <circle cx="100" cy="100" r="55" fill="#1e293b" />
+  <!-- Orbital Ring -->
+  <ellipse cx="100" cy="100" rx="90" ry="35" fill="none" stroke="#06b6d4" stroke-width="10" transform="rotate(-25 100 100)" />
+  <!-- Node / Connection Point -->
+  <circle cx="180" cy="65" r="10" fill="#06b6d4" transform="rotate(-25 100 100)" />
+</svg>

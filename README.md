@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/logo_simple.png" alt="GravityLAN Logo" width="180">
+  <img src="./assets/logo.svg" alt="GravityLAN Logo" width="180">
 </p>
 
 <h1 align="center">GravityLAN 🌌</h1>
