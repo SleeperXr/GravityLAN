@@ -92,6 +92,10 @@ class Device(Base):
     rack_height: Mapped[int] = mapped_column(Integer, default=1)
     topology_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     topology_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_ports: Mapped[int] = mapped_column(Integer, default=24)
+    topology_config: Mapped[str | None] = mapped_column(Text, nullable=True) # JSON config for handles, etc.
+    is_wlan: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_ap: Mapped[bool] = mapped_column(Boolean, default=False)
     
     group: Mapped[DeviceGroup | None] = relationship(back_populates="devices")
     services: Mapped[list["Service"]] = relationship(back_populates="device", lazy="selectin", cascade="all, delete-orphan")

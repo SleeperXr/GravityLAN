@@ -78,7 +78,7 @@ export function LiveLogs() {
       borderRadius: 'var(--radius-xl)',
       border: '1px solid var(--border-medium)',
       overflow: 'hidden',
-      backdropFilter: blur('12px')
+      backdropFilter: 'blur(12px)'
     }}>
       <div className="log-header" style={{
         display: 'flex',

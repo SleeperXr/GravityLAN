@@ -51,7 +51,6 @@ async def lifespan(app: FastAPI):
     class PollingFilter(logging.Filter):
         def filter(self, record):
             msg = record.getMessage()
-            # Ignore frequent polling endpoints and binary health checks
             if any(x in msg for x in ["/api/agent/status/", "/api/devices", "/api/groups", "/api/scanner/status", "/api/health", "/api/scanner/ws"]):
                 return False
             return True
@@ -82,95 +81,62 @@ async def lifespan(app: FastAPI):
     # Ensure data directory exists
     settings.data_dir.mkdir(parents=True, exist_ok=True)
 
+    # Ensure models are imported for metadata creation
+    from app.models.device import Device, DeviceGroup, Service, DeviceHistory, DiscoveredHost
+    from app.models.topology import Rack, TopologyLink
+    from app.models.network import Subnet
+    from app.models.setting import Setting
+    from app.models.agent import AgentToken, DeviceMetrics, AgentConfig
+
     # Initialize database tables
     await init_db()
     logger.info("Database initialized: %s", settings.effective_database_url)
+
+    # --- Schema Migration: Add missing columns to existing SQLite DB ---
+    # We do this BEFORE starting any background tasks to avoid OperationalErrors
+    from app.database import async_session
+    from sqlalchemy import text
+    async with async_session() as db:
+        migration_columns = [
+            ("devices", "topology_x", "INTEGER"),
+            ("devices", "topology_y", "INTEGER"),
+            ("devices", "max_ports",  "INTEGER DEFAULT 24"),
+            ("devices", "topology_config", "TEXT"),
+            ("devices", "parent_id",  "INTEGER"),
+            ("devices", "rack_id",    "INTEGER"),
+            ("devices", "rack_unit",  "INTEGER"),
+            ("devices", "rack_height","INTEGER DEFAULT 1"),
+            ("devices", "is_wlan",    "BOOLEAN DEFAULT 0"),
+            ("devices", "is_ap",      "BOOLEAN DEFAULT 0"),
+            ("topology_links", "source_handle", "TEXT"),
+            ("topology_links", "target_handle", "TEXT"),
+            ("discovered_hosts", "is_reserved", "BOOLEAN DEFAULT 0"),
+            ("discovered_hosts", "old_ip", "VARCHAR(45)"),
+            ("discovered_hosts", "ip_changed_at", "DATETIME"),
+            ("discovered_hosts", "ports", "TEXT"),
+        ]
+        
+        raw_conn = await db.connection()
+        for table, column, col_type in migration_columns:
+            try:
+                # Check if column already exists via PRAGMA
+                result = await raw_conn.exec_driver_sql(f"PRAGMA table_info({table})")
+                existing_columns = {row[1] for row in result.fetchall()}
+                if column not in existing_columns:
+                    logger.info(f"Schema migration: Adding column '{column}' to '{table}'...")
+                    await raw_conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+                    logger.info(f"Schema migration: Column '{column}' added successfully.")
+            except Exception as e:
+                logger.error(f"Migration error on {table}.{column}: {e}")
+        await db.commit()
+        logger.info("Schema migration complete.")
 
     # Start the scan scheduler
     from app.scanner.scheduler import scheduler
     await scheduler.start()
 
-    # Migration: Fix missing/wrong service colors for existing entries
-    from app.database import async_session
-    from app.models.device import Service
-    from app.scanner.classifier import SERVICE_TEMPLATES
-    from sqlalchemy import select
-
+    # Migration: Move scan_subnets from settings to Subnet table
     async with async_session() as db:
-        res = await db.execute(select(Service).where(Service.is_auto_detected == True))
-        services = res.scalars().all()
-        fixed_count = 0
-        for svc in services:
-            # If color is missing or generic blue, try to find a better one
-            if not svc.color or svc.color == "#34495e":
-                for template in SERVICE_TEMPLATES.values():
-                    if template.get("port") == svc.port:
-                        svc.color = template["color"]
-                        fixed_count += 1
-                        break
-        if fixed_count > 0:
-            await db.commit()
-            logger.info("Auto-fixed colors for %d existing services", fixed_count)
-
-    # Auto-Migration: Ensure all new columns exist in both tables
-    from sqlalchemy import text
-    async with async_session() as db:
-        for table in ["devices", "discovered_hosts"]:
-            # Standard columns
-            for column, col_type in [("is_reserved", "BOOLEAN DEFAULT 0"), ("old_ip", "VARCHAR(45)"), ("ip_changed_at", "DATETIME")]:
-                try:
-                    await db.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
-                    await db.commit()
-                    logger.info("Database Migration: Added '%s' column to '%s'", column, table)
-                except Exception:
-                    await db.rollback()
-            
-            # Table specific columns
-            if table == "discovered_hosts":
-                for column, col_type in [("ports", "TEXT")]:
-                    try:
-                        await db.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
-                        await db.commit()
-                        logger.info("Database Migration: Added '%s' column to '%s'", column, table)
-                    except Exception:
-                        await db.rollback()
-
-        # Migration for agent_configs
-        for column, col_type in [("version", "INTEGER DEFAULT 1")]:
-            try:
-                await db.execute(text(f"ALTER TABLE agent_configs ADD COLUMN {column} {col_type}"))
-                await db.commit()
-                logger.info("Database Migration: Added '%s' column to 'agent_configs'", column)
-            except Exception:
-                await db.rollback()
-
-        # Migration for devices specifically
-        for column, col_type in [("has_agent", "BOOLEAN DEFAULT 0")]:
-            try:
-                await db.execute(text(f"ALTER TABLE devices ADD COLUMN {column} {col_type}"))
-                await db.commit()
-                logger.info("Database Migration: Added '%s' column to 'devices'", column)
-            except Exception:
-                await db.rollback()
-
-        # Migration for devices topology
-        for column, col_type in [
-            ("parent_id", "INTEGER"), 
-            ("rack_id", "INTEGER"), 
-            ("rack_unit", "INTEGER"), 
-            ("rack_height", "INTEGER DEFAULT 1")
-        ]:
-            try:
-                await db.execute(text(f"ALTER TABLE devices ADD COLUMN {column} {col_type}"))
-                await db.commit()
-                logger.info("Database Migration: Added '%s' column to 'devices'", column)
-            except Exception:
-                await db.rollback()
-        # Migration: Move scan_subnets from settings to Subnet table
-        from app.models.network import Subnet
-        from app.models.setting import Setting
-        
-        # Check if Subnet table is empty
         res_sub_count = await db.execute(select(Subnet))
         if not res_sub_count.scalars().first():
             res_set = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
@@ -184,16 +150,13 @@ async def lifespan(app: FastAPI):
                         if cidr.count(".") == 2: cidr = f"{cidr}.0/24"
                         else: cidr = f"{cidr}/24"
                     
-                    # Prevent duplicate CIDR if already added in this loop
                     check_existing = await db.execute(select(Subnet).where(Subnet.cidr == cidr))
                     if not check_existing.scalar_one_or_none():
                         new_sub = Subnet(cidr=cidr, name=f"Network {cidr}", is_enabled=True)
                         db.add(new_sub)
                 await db.commit()
-                logger.info("Migration: Subnet migration complete.")
 
         # Create default rack if empty
-        from app.models.topology import Rack
         res_rack = await db.execute(select(Rack))
         if not res_rack.scalars().first():
             logger.info("Database: Creating default 'Main Rack'...")
@@ -201,34 +164,9 @@ async def lifespan(app: FastAPI):
             db.add(default_rack)
             await db.commit()
 
-        # --- Schema Migration: Add missing columns to existing SQLite DB ---
-        # SQLAlchemy does NOT auto-migrate existing databases.
-        # We use raw PRAGMA + ALTER TABLE to safely add new columns.
-        migration_columns = [
-            ("devices", "topology_x", "INTEGER"),
-            ("devices", "topology_y", "INTEGER"),
-            ("devices", "parent_id",  "INTEGER"),
-            ("devices", "rack_id",    "INTEGER"),
-            ("devices", "rack_unit",  "INTEGER"),
-            ("devices", "rack_height","INTEGER DEFAULT 1"),
-        ]
-        raw_conn = await db.connection()
-        for table, column, col_type in migration_columns:
-            # Check if column already exists via PRAGMA
-            result = await raw_conn.exec_driver_sql(
-                f"PRAGMA table_info({table})"
-            )
-            existing_columns = {row[1] for row in result.fetchall()}
-            if column not in existing_columns:
-                logger.info(f"Schema migration: Adding column '{column}' to '{table}'...")
-                await raw_conn.exec_driver_sql(
-                    f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
-                )
-                logger.info(f"Schema migration: Column '{column}' added successfully.")
-        await db.commit()
-        logger.info("Schema migration: All columns verified.")
-
     yield
+
+    # Shutdown
 
     # Shutdown
     from app.scanner.scheduler import scheduler

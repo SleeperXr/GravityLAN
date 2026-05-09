@@ -139,7 +139,7 @@ export function DeviceMetrics({ deviceId, compact = true, onUpdate }: DeviceMetr
         {/* Disks */}
         {(metrics.disk || []).map((d, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <HardDrive size={11} style={{ color: utilizationColor(d.percent ?? 0), flexShrink: 0 }} title={d.path} />
+            <HardDrive size={11} style={{ color: utilizationColor(d.percent ?? 0), flexShrink: 0 }} />
             <div style={{ flex: 1 }}>
               <MiniBar percent={d.percent ?? 0} color={utilizationColor(d.percent ?? 0)} />
             </div>

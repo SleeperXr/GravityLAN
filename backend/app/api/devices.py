@@ -47,7 +47,7 @@ async def list_devices(
     devices = result.scalars().all()
     
     # Pre-populate has_agent and agent_info flags based on AgentToken existence
-    from app.api.agent import LATEST_AGENT_VERSION
+    from app.api.agent import LATEST_AGENT_VERSION, _latest_metrics
     for device in devices:
         token_q = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
         token = token_q.scalar_one_or_none()
@@ -55,7 +55,8 @@ async def list_devices(
         if token:
             device.agent_info = {
                 "agent_version": token.agent_version,
-                "latest_version": LATEST_AGENT_VERSION
+                "latest_version": LATEST_AGENT_VERSION,
+                "latest_metrics": _latest_metrics.get(device.id)
             }
 
     return devices

@@ -63,6 +63,7 @@ class AgentInfo(BaseModel):
     """Simplified agent status for device lists."""
     agent_version: str | None = None
     latest_version: str | None = None
+    latest_metrics: dict | None = None
 
 
 class DeviceResponse(BaseModel):
@@ -104,6 +105,10 @@ class DeviceResponse(BaseModel):
     # Topology map position
     topology_x: int | None = None
     topology_y: int | None = None
+    max_ports: int | None = None
+    topology_config: str | None = None
+    is_wlan: bool = False
+    is_ap: bool = False
     # Status string (online/offline/unknown)
     status: str | None = None
     # Parent host (for VMs)
@@ -116,6 +121,8 @@ class DeviceUpdate(BaseModel):
     """Schema for updating a device's user-editable fields."""
 
     display_name: str | None = None
+    device_type: str | None = None
+    device_subtype: str | None = None
     vendor: str | None = None
     group_id: int | None = None
     icon: str | None = None
@@ -138,6 +145,10 @@ class DeviceUpdate(BaseModel):
     # Topology map position
     topology_x: int | None = None
     topology_y: int | None = None
+    max_ports: int | None = None
+    topology_config: str | None = None
+    is_wlan: bool | None = None
+    is_ap: bool | None = None
     # Parent host (for VMs)
     parent_id: int | None = None
 

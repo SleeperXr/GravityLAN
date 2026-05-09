@@ -5,7 +5,7 @@ from typing import List
 
 from app.database import get_db
 from app.models.topology import Rack as RackModel, TopologyLink as LinkModel
-from app.schemas.topology import Rack as RackSchema, RackCreate, TopologyLink as LinkSchema, TopologyLinkCreate
+from app.schemas.topology import Rack as RackSchema, RackCreate, TopologyLink as LinkSchema, TopologyLinkCreate, TopologyLinkUpdate
 
 router = APIRouter(prefix="/api/topology", tags=["topology"])
 
@@ -42,6 +42,21 @@ async def create_link(link: TopologyLinkCreate, db: AsyncSession = Depends(get_d
     # Prevent duplicate links between same devices if needed, but for now just allow
     db_link = LinkModel(**link.model_dump())
     db.add(db_link)
+    await db.commit()
+    await db.refresh(db_link)
+    return db_link
+
+@router.patch("/links/{link_id}", response_model=LinkSchema)
+async def update_link(link_id: int, link_update: TopologyLinkUpdate, db: AsyncSession = Depends(get_db)):
+    # TopologyLinkUpdate allows partial updates
+    db_link = await db.get(LinkModel, link_id)
+    if not db_link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    
+    update_data = link_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_link, field, value)
+    
     await db.commit()
     await db.refresh(db_link)
     return db_link

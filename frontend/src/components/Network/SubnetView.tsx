@@ -84,8 +84,7 @@ export function SubnetView() {
         const firstIp = safeDevices[0]?.ip;
         const match = firstIp?.match(/(\d+\.\d+\.\d+)\./);
         if (match) {
-          setSubnetPrefix(prev => prev || match[1]);
-          setSubnets(prev => prev.length === 0 ? [match[1]] : prev);
+          setSubnetPrefix(match[1]);
         }
       }
     } catch (err) {
@@ -172,9 +171,10 @@ export function SubnetView() {
     try {
       const result = await api.scanIp(ip);
       setDiscoveredHosts(prev => prev.map(h => 
-          h.ip === ip ? { ...h, ports: result.ports, last_scan: new Date().toISOString() } : h
+          h.ip === ip ? { ...h, ports: (result as any).ports || [], last_scan: new Date().toISOString() } : h
       ));
-      showToast('success', t('notifications.scan_completed'), t('network.ports_found', { ports: result.ports.join(', ') || t('network.no_ports_found') }));
+      const portsFound = (result as any).ports || [];
+      showToast('success', t('notifications.scan_completed'), t('network.ports_found', { ports: portsFound.join(', ') || t('network.no_ports_found') }));
     } catch (err: any) {
       showToast('error', t('notifications.scan_failed'), t('notifications.scan_failed_text'));
     } finally {
@@ -196,27 +196,6 @@ export function SubnetView() {
     }
   };
 
-  const addAllDevices = async () => {
-    const toAdd = discoveredHosts.filter(h => h.is_online && !devices.find(d => d.ip === h.ip));
-    if (toAdd.length === 0) return;
-    if (!confirm(t('network.discover_all_confirm', { count: toAdd.length }))) return;
-    
-    setIsRefreshing(prev => ({ ...prev, 'bulk-add': true }));
-    let successCount = 0;
-    try {
-      for (const host of toAdd) {
-        await api.addDeviceFromIp(host.ip);
-        successCount++;
-      }
-      showToast('success', t('notifications.batch_completed'), t('notifications.batch_completed', { count: successCount }));
-      await loadData();
-      setDiscoveredHosts([]);
-    } catch (err: any) {
-      showToast('error', t('common.error'), t('common.error'));
-    } finally {
-      setIsRefreshing(prev => ({ ...prev, 'bulk-add': false }));
-    }
-  };
 
   const safeZoom = zoom || 1;
   const columns = Math.floor(16 / safeZoom) || 1;
@@ -243,10 +222,6 @@ export function SubnetView() {
   const dashboardOnlineCount = devices.filter(d => d.ip?.startsWith(subnetPrefix) && d.is_online).length;
   const discoveredInSubnet = discoveredHosts.filter(h => h.ip?.startsWith(subnetPrefix) && h.is_online);
   const discoveredOnlyCount = discoveredInSubnet.filter(h => !devices.find(d => d.ip === h.ip)).length;
-  const monitoredOfflineCount = discoveredHosts.filter(h => h.is_monitored && !h.is_online && h.ip?.startsWith(subnetPrefix)).length;
-  
-  const totalDiscoveredOnline = discoveredHosts.filter(h => h.is_online).length;
-  const otherSubnetsOnline = totalDiscoveredOnline - (dashboardOnlineCount + discoveredOnlyCount);
 
   const handleAddSubnet = async () => {
     const newSub = prompt(t('network.new_subnet_prompt'));

@@ -36,6 +36,7 @@ export interface Device {
   last_seen: string;
   is_online: boolean;
   status_changed_at: string;
+  is_reserved: boolean;
   virtual_type: 'docker' | 'lxc' | 'vm' | null;
   has_agent: boolean;
   agent_info?: {
@@ -124,6 +125,7 @@ export interface DiscoveredHost {
   is_online: boolean;
   is_monitored: boolean;
   is_reserved: boolean;
+  ports?: number[];
   first_seen: string;
   last_seen: string;
 }

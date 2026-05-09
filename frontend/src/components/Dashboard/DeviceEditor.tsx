@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Device, DeviceGroup } from '../../types';
 import { api } from '../../api/client';
-import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight, Server } from 'lucide-react';
+import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { DeviceMetrics } from './DeviceMetrics';
@@ -460,7 +460,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                       <button
                         key={String(type.id)}
                         type="button"
-                        onClick={() => setFormData({ ...formData, virtual_type: type.id })}
+                        onClick={() => setFormData({ ...formData, virtual_type: type.id as any })}
                         style={{
                           flex: 1,
                           padding: '6px 12px',
