@@ -586,21 +586,9 @@ async def get_metrics_history(
 
 @router.get("/download/agent")
 async def download_agent_file():
-    """Download the gravitylan-agent.py script."""
-    current_file = Path(__file__).resolve()
-    agent_path = Path("/app/agent/gravitylan-agent.py")
-    if not agent_path.exists():
-        # backend/app/api/agent.py -> backend/app/api -> backend/app -> backend -> root
-        root_dir = current_file.parent.parent.parent.parent
-        agent_path = root_dir / "agent" / "gravitylan-agent.py"
+    from app.services.agent_deployer import AGENT_SCRIPT_PATH
+    agent_path = AGENT_SCRIPT_PATH
     
-    logger.info("Agent download request. Path: %s", agent_path)
-    
-    if not agent_path.exists():
-        logger.error("Agent script not found at: %s", agent_path)
-        # Try fallback to project root relative to CWD
-        agent_path = Path("agent/gravitylan-agent.py").resolve()
-        
     if not agent_path.exists():
         raise HTTPException(status_code=404, detail="Agent script not found on server")
         

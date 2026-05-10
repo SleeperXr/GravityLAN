@@ -14,20 +14,37 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Identify the correct project root regardless of environment (Local vs Docker)
-_this_dir = Path(__file__).resolve().parent
-# Docker: /app/app/services -> .parent.parent is /app/
-# Dev: backend/app/services -> .parent.parent.parent is root
-_root_docker = _this_dir.parent.parent
-_root_dev = _this_dir.parent.parent.parent
+def get_agent_script_path() -> Path:
+    """Find the agent script in various possible locations."""
+    # 1. Absolute path in Docker
+    p = Path("/app/agent/gravitylan-agent.py")
+    if p.exists(): return p
+    
+    # 2. Relative to this file (backend/app/services/agent_deployer.py)
+    # Target: agent/gravitylan-agent.py
+    this_file = Path(__file__).resolve()
+    
+    # Try parents (up to 4 levels)
+    curr = this_file.parent
+    for _ in range(4):
+        candidate = curr / "agent" / "gravitylan-agent.py"
+        if candidate.exists(): return candidate
+        
+        candidate = curr / "gravitylan-agent.py" # In case it's in the same dir
+        if candidate.exists(): return candidate
+        
+        curr = curr.parent
+        
+    # 3. Fallback to CWD
+    p = Path("agent/gravitylan-agent.py").resolve()
+    if p.exists(): return p
+    
+    return Path("/app/agent/gravitylan-agent.py") # Default
 
-AGENT_SCRIPT_PATH = _root_docker / "agent" / "gravitylan-agent.py"
-if not AGENT_SCRIPT_PATH.exists():
-    AGENT_SCRIPT_PATH = _root_dev / "agent" / "gravitylan-agent.py"
+AGENT_SCRIPT_PATH = get_agent_script_path()
+logger.info(f"Agent script path resolved to: {AGENT_SCRIPT_PATH} (Exists: {AGENT_SCRIPT_PATH.exists()})")
 
-SERVICE_UNIT_PATH = _root_docker / "agent" / "gravitylan-agent.service"
-if not SERVICE_UNIT_PATH.exists():
-    SERVICE_UNIT_PATH = _root_dev / "agent" / "gravitylan-agent.service"
+SERVICE_UNIT_PATH = AGENT_SCRIPT_PATH.parent / "gravitylan-agent.service"
 
 # Standardized path matching manual install script
 REMOTE_BASE_DIR = "/opt/gravitylan-agent"
