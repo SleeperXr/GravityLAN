@@ -229,3 +229,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AI Generated Summaries
+IMPROVEMENT_SUMMARY.md
