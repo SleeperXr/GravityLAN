@@ -40,6 +40,7 @@ from pydantic import BaseModel
 
 class SetupCompleteRequest(BaseModel):
     dns_server: str | None = None
+    admin_password: str | None = None
 
 @router.post("/complete")
 async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = Depends(get_db)) -> dict:
@@ -60,6 +61,16 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
             dns_s.value = request.dns_server
         else:
             db.add(Setting(key="dns.server", value=request.dns_server, category="scan", description="Custom DNS server for hostname resolution"))
+        await db.flush()
+
+    # 0b. Save Admin Password if provided
+    if request.admin_password:
+        pass_res = await db.execute(select(Setting).where(Setting.key == "api.admin_password"))
+        pass_s = pass_res.scalar_one_or_none()
+        if pass_s:
+            pass_s.value = request.admin_password
+        else:
+            db.add(Setting(key="api.admin_password", value=request.admin_password, category="system", description="Administrator password for dashboard login"))
         await db.flush()
 
     # Get DNS server for better resolution

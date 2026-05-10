@@ -18,6 +18,8 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [dnsServer, setDnsServer] = useState<string>('');
   const [scanMode, setScanMode] = useState<'gentle' | 'fast'>('fast');
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
+  const [adminPassword, setAdminPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,8 +69,16 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   }, [selectedSubnets, scanMode, dnsServer]);
 
   const finishSetup = useCallback(async () => {
+    if (adminPassword && adminPassword !== confirmPassword) {
+      setError(t('setup.passwords_dont_match', "Passwords don't match!"));
+      return;
+    }
+    
     try {
-      await api.completeSetup({ dns_server: dnsServer || undefined });
+      await api.completeSetup({ 
+        dns_server: dnsServer || undefined,
+        admin_password: adminPassword || undefined
+      });
       
       // Give the backend a moment to stabilize after the setup transaction
       await new Promise(resolve => setTimeout(resolve, 1500));
@@ -244,8 +254,8 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       </div>
 
       {scanProgress?.status === 'completed' && (
-        <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={finishSetup}>
-          <Check size={18} /> {t('sidebar.dashboard')}
+        <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={() => setStep(3)}>
+          {t('common.next')} <ChevronRight size={18} />
         </button>
       )}
 
@@ -254,6 +264,76 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           {t('setup.abort_scan')}
         </button>
       )}
+    </div>,
+
+    // Step 3: Security Setup
+    <div key="security" className="setup-wizard__step">
+      <h2 className="setup-wizard__title">Sicherheit konfigurieren</h2>
+      <p className="setup-wizard__subtitle">
+        Lege ein Administrator-Passwort fest, um dein Dashboard zu schützen.
+      </p>
+
+      {error && (
+        <div style={{
+          padding: 'var(--space-md)', background: 'rgba(252, 92, 101, 0.1)',
+          border: '1px solid var(--accent-danger)', borderRadius: 'var(--radius-md)',
+          color: 'var(--accent-danger)', marginBottom: 'var(--space-md)',
+        }} onClick={() => setError(null)}>
+          {error}
+        </div>
+      )}
+
+      <div className="card" style={{ marginBottom: 'var(--space-xl)', border: '1px solid var(--border-subtle)' }}>
+        <div style={{ marginBottom: 'var(--space-md)' }}>
+          <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontSize: '0.875rem', fontWeight: 600 }}>
+            Administrator Passwort
+          </label>
+          <input 
+            type="password" 
+            className="input" 
+            placeholder="Passwort wählen..." 
+            value={adminPassword} 
+            onChange={(e) => setAdminPassword(e.target.value)}
+            style={{ width: '100%' }}
+          />
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontSize: '0.875rem', fontWeight: 600 }}>
+            Passwort bestätigen
+          </label>
+          <input 
+            type="password" 
+            className="input" 
+            placeholder="Passwort wiederholen..." 
+            value={confirmPassword} 
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            style={{ width: '100%' }}
+          />
+        </div>
+      </div>
+
+      <div style={{ 
+        padding: 'var(--space-md)', 
+        background: 'rgba(245, 158, 11, 0.1)', 
+        borderRadius: 'var(--radius-md)', 
+        color: '#f59e0b',
+        fontSize: '0.8rem',
+        marginBottom: 'var(--space-xl)',
+        display: 'flex',
+        gap: 'var(--space-sm)'
+      }}>
+        <Zap size={16} style={{ flexShrink: 0 }} />
+        <p>Bewahre dein Passwort gut auf. Es wird benötigt, um auf das Dashboard zuzugreifen.</p>
+      </div>
+
+      <button 
+        className="btn btn-primary btn-lg" 
+        style={{ width: '100%' }} 
+        onClick={finishSetup}
+        disabled={!adminPassword || adminPassword !== confirmPassword}
+      >
+        <Check size={18} /> {t('common.finish')}
+      </button>
     </div>,
   ];
 
