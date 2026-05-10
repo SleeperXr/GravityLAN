@@ -269,7 +269,41 @@ async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
 
 @router.websocket("/ws")
 async def scan_websocket(websocket: WebSocket) -> None:
-    """WebSocket endpoint for real-time scan progress updates."""
+    """WebSocket endpoint for real-time scan progress updates with authentication."""
+    token = websocket.query_params.get("token")
+    
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+
+    from app.database import async_session
+    from app.models.agent import AgentToken
+    from sqlalchemy import select
+    
+    async with async_session() as db:
+        # 1. Check for Master Token
+        from app.models.setting import Setting
+        master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
+        master_setting = master_res.scalar_one_or_none()
+        master_token = master_setting.value if master_setting else None
+        
+        is_authorized = (token == master_token and master_token is not None)
+        
+        if not is_authorized:
+            # 2. Fallback to any active AgentToken
+            result = await db.execute(
+                select(AgentToken).where(
+                    AgentToken.token == token,
+                    AgentToken.is_active.is_(True)
+                )
+            )
+            if result.scalar_one_or_none():
+                is_authorized = True
+        
+        if not is_authorized:
+            await websocket.close(code=4003, reason="Unauthorized")
+            return
+
     await websocket.accept()
     state.ws_clients.append(websocket)
     try:

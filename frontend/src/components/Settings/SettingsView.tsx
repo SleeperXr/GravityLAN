@@ -404,6 +404,18 @@ export function SettingsView() {
             <Database size={24} className="text-accent" />
             <h2 style={{ margin: 0 }}>Backup & Restore</h2>
           </div>
+
+          <div style={{ 
+            display: 'flex', gap: 'var(--space-md)', padding: 'var(--space-md)', 
+            background: 'rgba(234, 179, 8, 0.1)', borderRadius: 'var(--radius-md)',
+            border: '1px solid rgba(234, 179, 8, 0.2)', marginBottom: 'var(--space-lg)'
+          }}>
+            <AlertTriangle size={20} style={{ color: '#eab308', flexShrink: 0 }} />
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
+              <strong style={{ color: '#eab308' }}>Sicherheitshinweis:</strong> Backups enthalten sensitive Daten wie 
+              Master-Token und Agenten-Schlüssel. Bewahre Export-Dateien sicher auf und teile sie nicht mit Unbefugten.
+            </p>
+          </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-lg)' }}>
             <div className="form-group">

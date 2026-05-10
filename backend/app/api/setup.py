@@ -187,5 +187,14 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
             host.is_monitored = True
             db.add(host)
 
+        # 4. Initialize Master API Token if missing
+        from app.models.setting import Setting
+        import secrets
+        res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
+        if not res_token.scalar_one_or_none():
+            master_token = secrets.token_hex(32)
+            logger.info("Setup: Initializing secure Master API Token (masked for security).")
+            db.add(Setting(key="api.master_token", value=master_token))
+
     await db.commit()
     return {"status": "ok"}

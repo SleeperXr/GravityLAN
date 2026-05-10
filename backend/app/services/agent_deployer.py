@@ -112,6 +112,8 @@ async def deploy_agent(
 
     token = uuid.uuid4().hex
     client = paramiko.SSHClient()
+    # SECURITY NOTE: AutoAddPolicy is convenient for home networks but vulnerable to MITM.
+    # In a high-security environment, host-key pinning should be used.
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
     try:

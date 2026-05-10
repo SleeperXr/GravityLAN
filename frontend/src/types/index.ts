@@ -133,3 +133,53 @@ export interface DiscoveredHost {
   first_seen: string;
   last_seen: string;
 }
+export interface AgentSnapshot {
+  id: number;
+  device_id: number;
+  cpu_percent: number;
+  ram_used_mb: number;
+  ram_total_mb: number;
+  ram_percent: number;
+  disk_json: string | null;
+  temperature: number | null;
+  net_json: string | null;
+  timestamp: string;
+}
+
+export interface AgentSummary {
+  device_id: number;
+  hostname: string;
+  ip: string;
+  is_online: boolean;
+  agent_version: string | null;
+  last_seen: string | null;
+  cpu_usage: number;
+  ram_usage: number;
+  temp: number | null;
+  uptime_pct: number;
+  uptime_history: number[];
+  metrics_count: number;
+}
+
+export interface GlobalMetricPoint {
+  timestamp: string;
+  avg_cpu: number;
+  avg_ram: number;
+  data_points: number;
+}
+
+export interface Rack {
+  id: number;
+  name: string;
+  units: number;
+  notes: string | null;
+}
+
+export interface TopologyLink {
+  id: number;
+  source_id: number;
+  target_id: number;
+  source_handle: string | null;
+  target_handle: string | null;
+  link_type: string;
+}

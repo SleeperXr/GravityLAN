@@ -23,7 +23,8 @@ export function LiveLogs() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname;
     const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
-    const ws = new WebSocket(`${wsBase}/api/logs/ws`);
+    const token = localStorage.getItem('gravitylan_token') || '';
+    const ws = new WebSocket(`${wsBase}/api/logs/ws?token=${token}`);
     wsRef.current = ws;
 
     ws.onopen = () => setIsConnected(true);

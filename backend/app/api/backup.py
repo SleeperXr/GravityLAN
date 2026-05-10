@@ -82,6 +82,17 @@ async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
+        # Strict whitelist of allowed tables for import to prevent SQL injection/manipulation
+        ALLOWED_TABLE_MAP = {
+            "device_groups": "device_groups",
+            "devices": "devices",
+            "services": "services",
+            "discovered_hosts": "discovered_hosts",
+            "settings": "settings",
+            "agent_tokens": "agent_tokens",
+            "agent_configs": "agent_configs"
+        }
+
         # Disable foreign keys temporarily for bulk import
         cursor.execute("PRAGMA foreign_keys = OFF")
 
@@ -90,12 +101,20 @@ async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends
             if key == "metadata" or not rows:
                 continue
             
-            table = key
+            # Security check: Only process whitelisted tables
+            if key not in ALLOWED_TABLE_MAP:
+                logger.warning(f"Backup: Skipping unauthorized table key '{key}'")
+                continue
+                
+            table = ALLOWED_TABLE_MAP[key]
+            
+            # Validate table existence and get column info
             cursor.execute(f"PRAGMA table_info({table})")
             table_info = {col[1]: {"notnull": col[3], "default": col[4], "type": col[2]} for col in cursor.fetchall()}
             table_cols = set(table_info.keys())
             
             if not table_cols:
+                logger.error(f"Backup: Table {table} defined in whitelist but not found in DB")
                 continue
 
             valid_rows = []
@@ -125,7 +144,7 @@ async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends
             if not valid_rows:
                 continue
 
-            # Clear existing data
+            # Clear existing data safely using the whitelisted table name
             cursor.execute(f"DELETE FROM {table}")
             
             columns = list(valid_rows[0].keys())
