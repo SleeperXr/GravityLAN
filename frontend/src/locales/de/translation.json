@@ -231,6 +231,7 @@
     "scan_in_progress": "Scanne Netzwerk...",
     "scan_completed": "Scan abgeschlossen!",
     "devices_found": "{{count}} Geräte gefunden",
+    "initializing_scan": "Initialisiere Scan...",
     "abort_scan": "Scan abbrechen"
   }
 }
