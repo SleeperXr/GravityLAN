@@ -96,9 +96,13 @@ flowchart TB
 
 ### Screenshots
 
-| Dashboard | Network planner | Device / agent |
-|-----------|-----------------|----------------|
-| ![Dashboard](./docs/screenshots/GravityLanDashboard.png) | ![Network](./docs/screenshots/GravityLanNetwork-Planer.png) | ![Device editor](./docs/screenshots/GravitryLanDeviceEditor.png) |
+| Dashboard | Network planner |
+|:---:|:---:|
+| ![Dashboard overview](./docs/screenshots/GravityLanDashboard.png) | ![Network planner — subnets & scan basis](./docs/screenshots/GravityLANNetzworkPlanner.png) |
+
+| Agents | Device editor |
+|:---:|:---:|
+| ![Linux agents — metrics & deploy](./docs/screenshots/GravityLANAgents.png) | ![Device details & services](./docs/screenshots/GravitryLanDeviceEditor.png) |
 
 ### Tech stack
 
@@ -262,9 +266,13 @@ flowchart TB
 
 ### Screenshots
 
-| Dashboard | Netzwerk-Planer | Gerät / Agent |
-|-----------|-----------------|---------------|
-| ![Dashboard](./docs/screenshots/GravityLanDashboard.png) | ![Network](./docs/screenshots/GravityLanNetwork-Planer.png) | ![Device editor](./docs/screenshots/GravitryLanDeviceEditor.png) |
+| Dashboard | Netzwerk-Planer |
+|:---:|:---:|
+| ![Dashboard-Übersicht](./docs/screenshots/GravityLanDashboard.png) | ![Netzwerk-Planer — Subnetze & Scan-Basis](./docs/screenshots/GravityLANNetzworkPlanner.png) |
+
+| Agents | Gerät-Editor |
+|:---:|:---:|
+| ![Linux-Agenten — Metriken & Deploy](./docs/screenshots/GravityLANAgents.png) | ![Gerätedetails & Dienste](./docs/screenshots/GravitryLanDeviceEditor.png) |
 
 ### Tech-Stack
 
