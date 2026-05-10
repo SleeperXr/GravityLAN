@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, Network, X, Grid } from 'lucide-react';
+import { LayoutDashboard, Settings, Network, X, Grid, Server } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import logo from '../assets/logo.svg';
@@ -45,6 +45,13 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
           onClick={onClose}
         >
           <Network size={18} /> Network Planner
+        </Link>
+        <Link 
+          to="/agents" 
+          className={`nav-item ${active === 'agents' ? 'active' : ''}`}
+          onClick={onClose}
+        >
+          <Server size={18} /> Agents
         </Link>
         <Link 
           to="/settings" 

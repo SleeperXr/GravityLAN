@@ -52,6 +52,7 @@ export interface Device {
   old_ip: string | null;
   ip_changed_at: string | null;
   parent_id: number | null;
+  parent_name?: string | null;
   rack_id: number | null;
   rack_unit: number | null;
   rack_height: number;
@@ -59,6 +60,7 @@ export interface Device {
   topology_y: number | null;
   is_wlan: boolean;
   is_ap: boolean;
+  is_host: boolean;
 }
 
 export interface DeviceGroup {

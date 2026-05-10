@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { NotificationCenter } from './NotificationCenter';
 import { AgentUpdateCenter } from './AgentUpdateCenter';
 import { MobileHeader } from '../MobileHeader';
+import { useToast } from '../../context/ToastContext';
 
 // Gridstack
 import 'gridstack/dist/gridstack.min.css';
@@ -19,6 +20,7 @@ import { GridStack } from 'gridstack';
 
 export function Dashboard() {
   const { t } = useTranslation();
+  const { showToast } = useToast();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
@@ -156,7 +158,7 @@ export function Dashboard() {
   };
 
   const layoutDependencies = useMemo(() => {
-    return devices.map(d => `${d.id}:${d.group_id}`).join(',');
+    return devices.map(d => `${d.id}:${d.group_id}:${d.w}:${d.h}`).join(',');
   }, [devices]);
 
   useEffect(() => {
@@ -262,11 +264,15 @@ export function Dashboard() {
 
   const handleRefreshAll = async () => {
     setIsRefreshingAll(true);
+    showToast('info', t('dashboard.refreshing'), t('notifications.refresh_started') || 'Suche nach Hostnamen und Mac-Adressen...');
     try {
       await api.refreshAllDevices();
-      await loadData();
+      // Delay a bit to allow background task to start
+      setTimeout(() => loadData(true), 1500);
+      showToast('success', t('dashboard.refresh_all'), t('notifications.info_updated') || 'Refresh gestartet.');
     } catch (err) {
       console.error('Refresh failed:', err);
+      showToast('error', t('common.error'), 'Refresh fehlgeschlagen.');
     } finally {
       setIsRefreshingAll(false);
     }
@@ -301,7 +307,7 @@ export function Dashboard() {
         } catch (e) {
           console.error("Progress poll failed", e);
         }
-      }, 2000);
+      }, 5000);
     } catch (err: any) {
       console.error("Scan trigger failed", err);
       alert("Critical Scan Failure: " + err.message);
@@ -460,6 +466,7 @@ export function Dashboard() {
                         isEditMode={isEditMode} 
                         isSelected={selectedDeviceIds.has(device.id)}
                         onSelect={(selected) => toggleDeviceSelection(device.id, selected)}
+                        onRefresh={() => loadData(true)}
                         onEdit={(e) => {
                           e.stopPropagation();
                           setSelectedDevice(device);

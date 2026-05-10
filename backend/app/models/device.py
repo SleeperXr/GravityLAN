@@ -6,6 +6,11 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, fun
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.models.topology import Rack
+    from app.models.agent import DeviceMetrics, AgentConfig
 
 
 class DeviceGroup(Base):
@@ -96,6 +101,7 @@ class Device(Base):
     topology_config: Mapped[str | None] = mapped_column(Text, nullable=True) # JSON config for handles, etc.
     is_wlan: Mapped[bool] = mapped_column(Boolean, default=False)
     is_ap: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_host: Mapped[bool] = mapped_column(Boolean, default=False)
     
     group: Mapped[DeviceGroup | None] = relationship(back_populates="devices")
     services: Mapped[list["Service"]] = relationship(back_populates="device", lazy="selectin", cascade="all, delete-orphan")

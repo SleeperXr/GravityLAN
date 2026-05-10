@@ -108,6 +108,7 @@ async def lifespan(app: FastAPI):
             ("devices", "rack_height","INTEGER DEFAULT 1"),
             ("devices", "is_wlan",    "BOOLEAN DEFAULT 0"),
             ("devices", "is_ap",      "BOOLEAN DEFAULT 0"),
+            ("devices", "is_host",    "BOOLEAN DEFAULT 0"),
             ("topology_links", "source_handle", "TEXT"),
             ("topology_links", "target_handle", "TEXT"),
             ("discovered_hosts", "is_reserved", "BOOLEAN DEFAULT 0"),

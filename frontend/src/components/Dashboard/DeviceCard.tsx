@@ -1,7 +1,7 @@
 import type { Device } from '../../types';
 import { ServiceBadge } from './ServiceBadge';
 import { DeviceMetrics } from './DeviceMetrics';
-import { Move, Settings, Box, Database, RefreshCw, Check, Trash2 } from 'lucide-react';
+import { Move, Settings, Box, Database, RefreshCw, Check, Trash2, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 
@@ -9,11 +9,12 @@ interface DeviceCardProps {
   device: Device;
   isEditMode?: boolean;
   onEdit?: (e: React.MouseEvent) => void;
+  onRefresh?: () => void;
   isSelected?: boolean;
   onSelect?: (selected: boolean) => void;
 }
 
-export function DeviceCard({ device, isEditMode, onEdit, isSelected, onSelect }: DeviceCardProps) {
+export function DeviceCard({ device, isEditMode, onEdit, onRefresh, isSelected, onSelect }: DeviceCardProps) {
   const { t } = useTranslation();
   const displayName = device.display_name || device.hostname || device.ip;
 
@@ -54,6 +55,29 @@ export function DeviceCard({ device, isEditMode, onEdit, isSelected, onSelect }:
       {/* Header Indicators (Top Right) */}
       {!isEditMode && (
         <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', alignItems: 'center', gap: '8px', zIndex: 10 }}>
+          <button 
+            className="device-card__refresh-btn" 
+            onClick={async (e) => {
+              e.stopPropagation();
+              const btn = e.currentTarget;
+              btn.classList.add('spinning');
+              try {
+                await api.refreshDeviceInfo(device.id);
+                if (onRefresh) onRefresh(); 
+              } catch (err) {
+                console.error("Refresh failed:", err);
+              } finally {
+                setTimeout(() => btn.classList.remove('spinning'), 1000);
+              }
+            }}
+            title={t('dashboard.refresh_info')}
+            style={{ 
+              background: 'transparent', border: 'none', color: 'var(--text-tertiary)',
+              cursor: 'pointer', opacity: 0.6, display: 'flex', padding: '4px'
+            }}
+          >
+            <RefreshCw size={12} />
+          </button>
           <button 
             className="device-card__settings-btn" 
             onClick={onEdit}
@@ -139,6 +163,48 @@ export function DeviceCard({ device, isEditMode, onEdit, isSelected, onSelect }:
                 {t('dashboard.agent_updates')}
               </div>
             )}
+
+            {/* Host Badge */}
+            {device.is_host && (
+              <div className="badge-host" style={{
+                background: 'rgba(245, 158, 11, 0.15)',
+                color: '#f59e0b',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontSize: '0.6rem',
+                fontWeight: 900,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                width: 'fit-content',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                textTransform: 'uppercase'
+              }}>
+                <Server size={10} />
+                HOST
+              </div>
+            )}
+
+            {/* Parent Info */}
+            {device.parent_id && (
+              <div className="badge-parent" style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                color: 'var(--text-secondary)',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontSize: '0.6rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                width: 'fit-content',
+                border: '1px solid var(--border-subtle)',
+                marginTop: '2px'
+              }}>
+                <Server size={10} />
+                On: {device.parent_name || 'Host System'}
+              </div>
+            )}
             {/* IP Change Badge */}
             {device.old_ip && (
               <div 
@@ -147,7 +213,7 @@ export function DeviceCard({ device, isEditMode, onEdit, isSelected, onSelect }:
                   e.stopPropagation();
                   try {
                     await api.updateDevice(device.id, { old_ip: null, ip_changed_at: null });
-                    if (onEdit) onEdit({} as any); // Trigger refresh in parent if possible or just wait for poll
+                    if (onRefresh) onRefresh();
                   } catch (err) {
                     console.error("Failed to clear IP change badge:", err);
                   }
