@@ -16,7 +16,8 @@ services:
         # Erforderlich für die Kommunikation mit dem Host (Ports)
 
     volumes:
-      - /mnt/user/appdata/gravitylan/backend:/app
+      - /mnt/user/appdata/gravitylan/backend/app:/app/app
+      - /mnt/user/appdata/gravitylan/agent:/app/agent
       - /mnt/user/appdata/gravitylan/static:/app/static
       - /mnt/user/appdata/gravitylan/data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
