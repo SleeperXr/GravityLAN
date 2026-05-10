@@ -111,7 +111,7 @@ flowchart TB
 
 | Device Editor |
 |:---:|
-| ![Device details & services](./docs/screenshots/GravityLanDeviceEditor.png) |
+| <img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Device details & services" width="600"> |
 
 ### Tech stack
 
@@ -285,7 +285,7 @@ flowchart TB
 
 | Geräte-Editor |
 |:---:|
-| ![Gerätedetails & Dienste](./docs/screenshots/GravityLanDeviceEditor.png) |
+| <img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Gerätedetails & Dienste" width="600"> |
 
 ### Tech-Stack
 
