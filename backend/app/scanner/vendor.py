@@ -1,13 +1,20 @@
+"""
+Vendor lookup module using OUI-based identification and local caching.
+Supports static fallbacks, local file cache, and online API lookup.
+"""
+
 import json
+import logging
 import os
 import threading
-import logging
 import urllib.request
-from typing import Any, Dict, Optional
+import urllib.error
+from typing import Dict, Optional
 
+# Standard Logger setup
 logger = logging.getLogger(__name__)
 
-# -- Project-specific cache --------------------------------------------------
+# -- Configuration -----------------------------------------------------------
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _DATA_DIR = os.path.join(_BASE_DIR, "data", "cache")
 os.makedirs(_DATA_DIR, exist_ok=True)
@@ -38,27 +45,62 @@ COMMON_VENDORS = {
 # -- Module-level state ------------------------------------------------------
 _vendor_cache: Dict[str, str] = {}
 _cache_loaded: bool = False
+_cache_lock = threading.Lock()
 
 def _load_cache() -> None:
+    """
+    Loads the vendor cache from the local JSON file.
+    Uses a thread lock to ensure thread safety during initialization.
+    """
     global _vendor_cache, _cache_loaded
     if _cache_loaded:
         return
-    try:
-        if os.path.exists(CACHE_FILE):
+    
+    with _cache_lock:
+        if _cache_loaded:  # Double-check pattern
+            return
+            
+        if not os.path.exists(CACHE_FILE):
+            _cache_loaded = True
+            return
+
+        try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 _vendor_cache = json.load(f)
-    except Exception:
-        _vendor_cache = {}
-    _cache_loaded = True
+            logger.debug(f"Loaded {len(_vendor_cache)} vendors from cache.")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse vendor cache file {CACHE_FILE}: {e}")
+            _vendor_cache = {}
+        except IOError as e:
+            logger.error(f"Failed to read vendor cache file {CACHE_FILE}: {e}")
+            _vendor_cache = {}
+        finally:
+            _cache_loaded = True
 
 def _save_cache() -> None:
+    """
+    Saves the current module-level vendor cache to the local JSON file.
+    This is intended to be run in a separate thread.
+    """
     try:
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(_vendor_cache, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    except IOError as e:
+        logger.error(f"Failed to write vendor cache to {CACHE_FILE}: {e}")
+    except Exception as e:
+        logger.exception(f"Unexpected error saving vendor cache: {e}")
 
-def get_vendor(mac: str, use_cache: bool = True) -> str:
+def get_vendor(mac: Optional[str], use_cache: bool = True) -> str:
+    """
+    Identifies the hardware vendor based on the MAC address OUI.
+    
+    Args:
+        mac: The MAC address to look up.
+        use_cache: Whether to use and update the local file cache.
+        
+    Returns:
+        The vendor name as a string, or an empty string if not identified.
+    """
     if not mac or mac == "-" or "N/A" in mac.upper():
         return ""
 
@@ -84,31 +126,45 @@ def get_vendor(mac: str, use_cache: bool = True) -> str:
     if vendor:
         if use_cache:
             _vendor_cache[oui] = vendor
+            # Run save in background to not block the main scanning process
             threading.Thread(target=_save_cache, daemon=True).start()
         return vendor
 
     return ""
 
 def _api_lookup(mac: str) -> str:
-    """Fallback API lookup for unknown OUIs using native urllib (no curl dependency)."""
+    """
+    Fallback API lookup for unknown OUIs using native urllib.
+    
+    Args:
+        mac: The normalized MAC address.
+        
+    Returns:
+        The vendor name if found, else an empty string.
+    """
     try:
+        # Use only the first 6 hex chars (3 bytes) for the API
         mac_query = mac.replace(":", "").replace("-", "")[:6]
         url = f"https://api.macvendors.com/{mac_query}"
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) GravityLAN/1.0",
+            "User-Agent": "GravityLAN/1.1 (github.com/SleeperXr/GravityLAN)",
             "Accept": "text/plain"
         }
         
         req = urllib.request.Request(url, headers=headers)
-        # Using native urllib to avoid 'curl' dependency in minimal environments/Docker
         with urllib.request.urlopen(req, timeout=5) as response:
             if response.status == 200:
                 vendor = response.read().decode('utf-8').strip()
                 if vendor and "errors" not in vendor.lower() and "not found" not in vendor.lower():
                     return vendor
+            elif response.status == 429:
+                logger.warning(f"API rate limit hit for vendor lookup ({mac})")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:  # 404 is "Not Found", which is expected for unknown OUIs
+            logger.debug(f"API vendor lookup HTTP error {e.code} for {mac}")
     except Exception as e:
-        # Rate limiting or network issues are common with this API
-        logger.debug(f"API vendor lookup failed for {mac}: {e}")
+        # Network issues are common with this API
+        logger.debug(f"API vendor lookup network failure for {mac}: {e}")
 
     return ""

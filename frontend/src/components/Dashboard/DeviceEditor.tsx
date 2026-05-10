@@ -478,8 +478,8 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                   <div style={{ display: 'flex', gap: '6px' }}>
                     {[
                       { id: null, label: t('editor.none'), color: 'var(--bg-input)' },
-                      { id: 'vm', label: 'VM', color: 'rgba(168, 85, 247, 0.2)' },
-                      { id: 'docker', label: 'Docker', color: 'rgba(56, 189, 248, 0.2)' }
+                      { id: 'vm', label: 'VM', color: 'rgba(217, 70, 239, 0.2)' },
+                      { id: 'docker', label: 'Docker', color: 'rgba(147, 51, 234, 0.2)' }
                     ].map(type => (
                       <button
                         key={String(type.id)}
@@ -547,8 +547,8 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                   onClick={() => setFormData({ ...formData, is_ap: !formData.is_ap })}
                   style={{
                     padding: '12px',
-                    background: formData.is_ap ? 'rgba(168, 85, 247, 0.1)' : 'rgba(255,255,255,0.02)',
-                    border: `1px solid ${formData.is_ap ? '#a855f7' : 'rgba(255,255,255,0.05)'}`,
+                    background: formData.is_ap ? 'rgba(34, 211, 238, 0.1)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${formData.is_ap ? '#22d3ee' : 'rgba(255,255,255,0.05)'}`,
                     borderRadius: '12px',
                     cursor: 'pointer',
                     display: 'flex',
@@ -561,7 +561,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     width: 32, 
                     height: 32, 
                     borderRadius: '8px', 
-                    background: formData.is_ap ? '#a855f7' : 'rgba(255,255,255,0.05)', 
+                    background: formData.is_ap ? '#22d3ee' : 'rgba(255,255,255,0.05)', 
                     display: 'flex', 
                     alignItems: 'center', 
                     justifyContent: 'center' 
@@ -732,7 +732,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                           background: svc.is_up ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)', 
                           borderRadius: '8px',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          color: svc.is_up ? '#4ade80' : '#f87171'
+                          color: svc.is_up ? 'var(--accent-secondary)' : 'var(--text-tertiary)',
                         }}>
                           <ServiceIcon size={18} />
                         </div>

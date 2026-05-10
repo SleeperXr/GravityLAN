@@ -8,21 +8,50 @@ from sqlalchemy import select, delete, or_
 from app.database import async_session
 from app.models.device import DiscoveredHost, Device
 from app.models.network import Subnet
-from app.scanner.discovery import discover_hosts_simple, resolve_mac_addresses, get_local_arp_table
+from app.scanner.discovery import discover_hosts_simple
+from app.scanner.arp import resolve_mac_addresses, get_local_arp_table
 from app.scanner.sync import sync_host_to_db
+from app.services.cache_service import discovery_cache, dashboard_cache, topology_cache
 
 logger = logging.getLogger(__name__)
 
 async def run_arp_only_scan():
     """
     Extremely fast scan that only looks at the local ARP table.
-    Used for the Turbo mode.
+    Used for the Turbo mode. Filters results by configured scan_subnets.
     """
+    async with async_session() as db:
+        from app.models.setting import Setting
+        res = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
+        setting = res.scalar_one_or_none()
+        
+        allowed_nets = []
+        if setting and setting.value:
+            for s in setting.value.split(","):
+                try: allowed_nets.append(ipaddress.ip_network(s.strip(), strict=False))
+                except: pass
+        else:
+            # Fallback: Ignore virtual subnets from local interfaces
+            from app.scanner.scheduler import _get_auto_scan_subnets
+            for s in _get_auto_scan_subnets():
+                try: allowed_nets.append(ipaddress.ip_network(s, strict=False))
+                except: pass
+
     arp_hosts = get_local_arp_table()
+    synced_count = 0
     for ip, mac in arp_hosts.items():
-        if mac and mac != "00:00:00:00:00:00":
-            await sync_host_to_db(ip=ip, mac=mac, is_planner_scan=True)
-    return len(arp_hosts)
+        if not mac or mac == "00:00:00:00:00:00":
+            continue
+            
+        # Check if IP is in one of the allowed subnets
+        try:
+            ip_obj = ipaddress.IPv4Address(ip)
+            if any(ip_obj in net for net in allowed_nets):
+                await sync_host_to_db(ip=ip, mac=mac, is_planner_scan=True)
+                synced_count += 1
+        except: pass
+        
+    return synced_count
 
 async def run_planner_scan(subnets: list[str], progress_callback=None):
     """
@@ -72,7 +101,8 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
                 ip=h["ip"],
                 mac=h.get("mac"),
                 hostname=h.get("hostname"),
-                is_planner_scan=True
+                is_planner_scan=True,
+                should_invalidate_cache=False
             )
             if progress_callback:
                 await progress_callback("EVENT:RELOAD_DEVICES")
@@ -94,7 +124,8 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
                 ip=ip,
                 mac=host.get("mac"),
                 hostname=host.get("hostname"),
-                is_planner_scan=True
+                is_planner_scan=True,
+                should_invalidate_cache=False
             )
         
         total_found += len(resolved_hosts)
@@ -131,6 +162,10 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
                     dev.status_changed_at = datetime.now()
         
         await db.commit()
+        # Consolidated cache invalidation
+        discovery_cache.invalidate()
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()
 
     logger.info(f"Planner: Scan complete. Found {total_found} hosts.")
     return total_found

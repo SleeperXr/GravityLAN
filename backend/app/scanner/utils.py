@@ -1,5 +1,10 @@
 """Utility functions for network discovery and group management."""
 
+import asyncio
+import os
+import re
+import subprocess
+
 import socket
 import sys
 import ipaddress
@@ -136,4 +141,46 @@ def get_local_subnets() -> list[SubnetInfo]:
                 add_subnet("default", ip, "255.255.255.0")
         except: pass
         
-    return subnets
+    return [s for s in subnets if not s.is_virtual]
+
+async def check_port_async(ip: str, port: int, timeout: float = 0.4) -> bool:
+    """Async check if a TCP port is open."""
+    try:
+        conn = asyncio.open_connection(ip, port)
+        _, writer = await asyncio.wait_for(conn, timeout=timeout)
+        writer.close()
+        await writer.wait_closed()
+        return True
+    except:
+        return False
+
+async def ping_host_async(ip: str, timeout: float = 0.6) -> bool:
+    """Run a single ICMP ping using async-compatible subprocess execution."""
+    try:
+        param = '-n' if os.name == 'nt' else '-c'
+        timeout_val = str(int(timeout * 1000)) if os.name == 'nt' else str(max(1, int(timeout)))
+        timeout_param = '-w' if os.name == 'nt' else '-W'
+        
+        command = ['ping', param, '1', timeout_param, timeout_val, ip]
+        
+        def _run_ping():
+            # Use subprocess.run for Windows compatibility (avoids SelectorEventLoop issues)
+            return subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                errors='ignore',
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+
+        loop = asyncio.get_running_loop()
+        proc = await loop.run_in_executor(None, _run_ping)
+        
+        if proc.returncode == 0:
+            # Windows ping returns 0 even if target is unreachable, check for TTL
+            if "TTL=" in proc.stdout.upper():
+                return True
+        return False
+    except:
+        return False

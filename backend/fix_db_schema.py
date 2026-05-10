@@ -1,39 +1,41 @@
+"""
+Script to fix the database schema, ensuring all required columns exist.
+Uses centralized db_utils for safe execution and logging.
+"""
+
 import sqlite3
-import os
+from scripts.db_utils import setup_script_logging, get_db_conn
 
-def migrate_db():
-    db_path = "backend/data/homelan.db"
-    if not os.path.exists(db_path):
-        db_path = "data/homelan.db" # Try local if run from backend dir
-        
-    if not os.path.exists(db_path):
-        print(f"DB not found at {db_path}")
-        return
-    
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    print("Checking app_settings table...")
-    cursor.execute("PRAGMA table_info(app_settings)")
-    columns = [col[1] for col in cursor.fetchall()]
-    
-    if "description" not in columns:
-        print("Adding 'description' column to 'app_settings'...")
-        cursor.execute("ALTER TABLE app_settings ADD COLUMN description TEXT")
-        conn.commit()
-        print("Migration successful.")
-    else:
-        print("'description' column already exists.")
-    
-    # Also check if we need to migrate system_settings data to app_settings
-    # Actually, let's just make sure setup.complete is set correctly
-    cursor.execute("SELECT COUNT(*) FROM app_settings WHERE key = 'setup.complete'")
-    if cursor.fetchone()[0] == 0:
-        print("Adding setup.complete=true to app_settings...")
-        cursor.execute("INSERT INTO app_settings (key, value, category) VALUES ('setup.complete', 'true', 'system')")
-        conn.commit()
+logger = setup_script_logging()
 
-    conn.close()
+def add_column_if_missing(table: str, column: str, column_def: str):
+    """Safely adds a column to a table if it doesn't already exist."""
+    try:
+        with get_db_conn() as conn:
+            cursor = conn.cursor()
+            # Check if column exists via PRAGMA
+            cursor.execute(f"PRAGMA table_info({table})")
+            columns = [info[1] for info in cursor.fetchall()]
+            
+            if column not in columns:
+                logger.info(f"Adding column '{column}' to table '{table}'...")
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_def}")
+                logger.info("Column added successfully.")
+            else:
+                logger.debug(f"Column '{column}' already exists in '{table}'.")
+    except sqlite3.Error as e:
+        logger.error(f"Error modifying table {table}: {e}")
+
+def main():
+    """Verifies and repairs the database schema."""
+    logger.info("Starting schema verification...")
+    
+    # Ensure critical columns exist (examples)
+    add_column_if_missing("devices", "is_virtual", "BOOLEAN DEFAULT 0")
+    add_column_if_missing("devices", "virtual_type", "TEXT")
+    add_column_if_missing("discovered_hosts", "hostname", "TEXT")
+    
+    logger.info("Schema verification complete.")
 
 if __name__ == "__main__":
-    migrate_db()
+    main()

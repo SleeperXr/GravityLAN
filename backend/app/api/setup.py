@@ -45,6 +45,7 @@ class SetupCompleteRequest(BaseModel):
 async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = Depends(get_db)) -> dict:
     """Mark the initial setup as completed and migrate discovered hosts."""
     from app.models.device import DiscoveredHost, Device, Service
+    import ipaddress
     from app.scanner.utils import ensure_default_groups, GROUP_TYPE_MAP
     from app.scanner.classifier import classify_device
     from app.scanner.hostname import resolve_hostname, is_ip_like
@@ -78,19 +79,31 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
     
     if discovered_hosts:
         import asyncio
+        from app.scanner.utils import ensure_default_groups, get_local_subnets
+        from app.scanner.port_scanner import scan_ports, DEFAULT_SCAN_PORTS
+        
         group_map = await ensure_default_groups(db, commit=False)
+        local_subnets = get_local_subnets()
+        physical_networks = [ipaddress.ip_network(s.subnet) for s in local_subnets if not s.is_virtual]
         
         # Avoid IP duplicates
         existing_res = await db.execute(select(Device.ip))
         existing_ips = set(existing_res.scalars().all())
         
         async def process_host(host):
+            # FILTER: Only adopt if in a physical network
+            try:
+                ip_obj = ipaddress.IPv4Address(host.ip)
+                if not any(ip_obj in net for net in physical_networks):
+                    logger.debug(f"Setup: Skipping {host.ip} - not in a physical network.")
+                    return None
+            except: return None
+
             if host.ip in existing_ips:
                 return None
                 
-            # Quick discovery of key ports for better classification
-            # We check for: SSH, HTTP, HTTPS, RDP, SMB, Proxmox, Synology
-            found_ports = await scan_ports(host.ip, ports=[22, 80, 443, 3389, 445, 8006, 5001], timeout=0.4)
+            # Full discovery of key ports for better classification
+            found_ports = await scan_ports(host.ip, ports=DEFAULT_SCAN_PORTS, timeout=0.4)
             
             # Try hostname resolution again if missing or just an IP
             current_hostname = host.hostname
@@ -144,15 +157,35 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
         tasks = [process_host(h) for h in discovered_hosts]
         results = await asyncio.gather(*tasks)
         
+        # 2b. Add physical subnets to Network Planner
+        from app.models.network import Subnet
+        for net in local_subnets:
+            if not net.is_virtual:
+                # Check if already exists
+                res_sub = await db.execute(select(Subnet).where(Subnet.cidr == net.subnet))
+                if not res_sub.scalar_one_or_none():
+                    logger.info(f"Setup: Registering physical subnet {net.subnet} in Planner.")
+                    db.add(Subnet(
+                        name=net.interface_name,
+                        cidr=net.subnet,
+                        is_enabled=True
+                    ))
+        await db.flush()
+
+        # 3. Process hosts
         for res in results:
             if not res: continue
             device, services, host = res
+            
             db.add(device)
             await db.flush()
             for svc in services:
                 svc.device_id = device.id
                 db.add(svc)
+            
+            # Update discovered host status
             host.is_monitored = True
+            db.add(host)
 
     await db.commit()
     return {"status": "ok"}

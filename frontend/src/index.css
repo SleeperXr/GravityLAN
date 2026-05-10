@@ -15,7 +15,7 @@
   --text-tertiary: #64748b;
   
   --accent-primary: #38bdf8;
-  --accent-secondary: #a855f7;
+  --accent-secondary: #22d3ee;
   --accent-success: #10b981;
   --accent-danger: #ef4444;
   --accent-warning: #f59e0b;
@@ -194,6 +194,13 @@ body {
   z-index: 50;
   box-shadow: var(--shadow-lg);
   border-color: var(--accent-primary);
+}
+
+.ip-tile:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  z-index: 50;
+  transform: scale(1.05);
 }
 
 .ip-tile.online {

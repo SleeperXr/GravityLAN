@@ -8,8 +8,10 @@ from sqlalchemy import select
 from app.database import async_session
 from app.models.device import Device, Service, DiscoveredHost
 from app.models.network import Subnet
-from app.scanner.discovery import discover_hosts_simple, resolve_mac_addresses
+from app.scanner.discovery import discover_hosts_simple
+from app.scanner.arp import resolve_mac_addresses
 from app.scanner.sync import sync_host_to_db
+from app.services.cache_service import discovery_cache, dashboard_cache, topology_cache
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,8 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
                     ip=h["ip"],
                     mac=h.get("mac"),
                     hostname=h.get("hostname"),
-                    is_planner_scan=False
+                    is_planner_scan=False,
+                    should_invalidate_cache=False
                 )
                 if progress_callback:
                     await progress_callback("EVENT:RELOAD_DEVICES")
@@ -117,6 +120,11 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
                     svc.last_checked = datetime.now()
             
             await db.commit()
+            # Invalidate once per batch or once at the end? 
+            # Once at the end of the phase is better.
+        
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()
 
     # 3. Intelligent Discovery Phase (New Finds)
     from app.scanner.classifier import classify_device
@@ -147,7 +155,8 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
                     hostname=hostname,
                     vendor=host.get("vendor"),
                     ports=found_ports,
-                    is_planner_scan=False
+                    is_planner_scan=False,
+                    should_invalidate_cache=False
                 )
                 new_found_count += 1
             else:
@@ -156,7 +165,8 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
                     ip=ip,
                     mac=mac,
                     hostname=host.get("hostname"),
-                    is_planner_scan=False
+                    is_planner_scan=False,
+                    should_invalidate_cache=False
                 )
         else:
             # Refresh discovered_host entry
@@ -164,8 +174,13 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
                 ip=ip,
                 mac=mac,
                 hostname=host.get("hostname"),
-                is_planner_scan=False
+                is_planner_scan=False,
+                should_invalidate_cache=False
             )
 
     logger.info(f"Dashboard scan finished. Discovered {new_found_count} new interesting devices.")
+    # Final invalidation
+    discovery_cache.invalidate()
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
     return new_found_count

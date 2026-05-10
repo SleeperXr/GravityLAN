@@ -19,7 +19,7 @@ from fastapi import (
     Response,
 )
 from fastapi.responses import PlainTextResponse, FileResponse
-from sqlalchemy import delete, desc, select, func
+from sqlalchemy import delete, desc, select, func, case, and_
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
 # Current supported agent version
-LATEST_AGENT_VERSION = "0.1.0"
+LATEST_AGENT_VERSION = "0.2.3"
 
 # Global caches for real-time dashboard updates
 _latest_metrics: Dict[int, Dict[str, Any]] = {}
@@ -98,25 +98,27 @@ async def receive_report(
         )
         agent_token = result.scalar_one_or_none()
 
-        # 2. Token Adoption (Auto-healing after server reset)
-        # If the token is valid but not in our DB, we try to map it to a device
+        # 2. Token Adoption / Device Mapping (Auto-healing after server reset)
         if not agent_token and client_ip:
-            # 2.1 Look for a device with this IP that has NO token yet
-            from sqlalchemy import not_
-            dev_result = await db.execute(
-                select(Device).where(
-                    Device.ip == client_ip,
-                    not_(select(AgentToken).where(AgentToken.device_id == Device.id).exists())
-                )
-            )
-            potential_device = dev_result.scalar_one_or_none()
+            # 2.1 Look for a device with this IP (regardless of token status)
+            dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
+            device = dev_result.scalar_one_or_none()
             
-            if potential_device:
-                logger.info("Adopting legacy token %s... for device %d (%s)", 
-                            token[:8], potential_device.id, client_ip)
-                agent_token = AgentToken(device_id=potential_device.id, token=token)
-                db.add(agent_token)
-                await db.flush()
+            if device:
+                logger.info("Adopting token %s... for existing device %d (%s)", 
+                            token[:8], device.id, client_ip)
+                # Create token for this device if it doesn't have one, or update if it does
+                token_result = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
+                existing_token = token_result.scalar_one_or_none()
+                
+                if existing_token:
+                    existing_token.token = token
+                    existing_token.is_active = True
+                    agent_token = existing_token
+                else:
+                    agent_token = AgentToken(device_id=device.id, token=token)
+                    db.add(agent_token)
+                # We skip the flush here and let the final commit handle everything
             else:
                 # 2.2 Fallback: Check DiscoveredHost table (auto-promote to Device)
                 disc_result = await db.execute(
@@ -128,7 +130,7 @@ async def receive_report(
                     from app.scanner.utils import ensure_default_groups
                     group_map = await ensure_default_groups(db)
                     
-                    new_device = Device(
+                    device = Device(
                         ip=disc.ip,
                         mac=disc.mac,
                         hostname=disc.hostname,
@@ -137,12 +139,12 @@ async def receive_report(
                         group_id=group_map.get("Server", list(group_map.values())[0]),
                         is_online=True
                     )
-                    db.add(new_device)
+                    db.add(device)
+                    # We flush device creation immediately to ensure we have an ID for the token
                     await db.flush()
                     
-                    agent_token = AgentToken(device_id=new_device.id, token=token)
+                    agent_token = AgentToken(device_id=device.id, token=token)
                     db.add(agent_token)
-                    await db.flush()
                 else:
                     logger.warning("Rejected report from unknown token %s... for IP %s", 
                                    token[:8], client_ip)
@@ -151,8 +153,10 @@ async def receive_report(
         # 3. Handle device existence and re-discovery
         # 3. DB operations inside no_autoflush block to prevent "Query-invoked autoflush" locks
         with db.no_autoflush:
-            effective_device_id = agent_token.device_id
-            device = await db.get(Device, effective_device_id)
+            # If we didn't get a device from adoption, fetch it now
+            if 'device' not in locals() or device is None:
+                effective_device_id = agent_token.device_id
+                device = await db.get(Device, effective_device_id)
             
             if not device and client_ip:
                 # Re-map token if device was deleted but exists under a different ID or in Discovery
@@ -161,7 +165,6 @@ async def receive_report(
                 
                 if device:
                     agent_token.device_id = device.id
-                    effective_device_id = device.id
                 else:
                     disc_result = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == client_ip))
                     disc = disc_result.scalar_one_or_none()
@@ -177,9 +180,10 @@ async def receive_report(
                         db.add(device)
                         await db.flush()
                         agent_token.device_id = device.id
-                        effective_device_id = device.id
                     else:
                         raise HTTPException(status_code=404, detail="Device mapping failed")
+
+            effective_device_id = device.id
 
             # 4. Update Metadata (Throttled for 'last_seen', but immediate for 'agent_version')
             now = datetime.now()
@@ -212,52 +216,61 @@ async def receive_report(
             )
             db.add(metrics)
 
-            # 5. Prune old metrics (Faster combined query)
-            import random
-            if random.random() < 0.1:
-                await db.execute(
-                    delete(DeviceMetrics).where(
-                        DeviceMetrics.device_id == effective_device_id,
-                        DeviceMetrics.id.in_(
-                            select(DeviceMetrics.id)
-                            .where(DeviceMetrics.device_id == effective_device_id)
-                            .order_by(desc(DeviceMetrics.timestamp))
-                            .offset(MAX_METRICS_PER_DEVICE)
-                        )
-                    )
-                )
-
-            # 6. Push configuration back to agent
-            config_result = await db.execute(
-                select(AgentConfig).where(AgentConfig.device_id == effective_device_id)
-            )
-            agent_config = config_result.scalar_one_or_none()
-            if not agent_config:
-                agent_config = AgentConfig(device_id=effective_device_id)
-                db.add(agent_config)
-
-            # Capture config data BEFORE commit to avoid expiry issues in async context
-            config_to_send = {
-                "version": agent_config.version,
-                "interval": agent_config.interval,
-                "disk_paths": agent_config.disk_paths,
-                "enable_temp": agent_config.enable_temp
-            }
-
-            # 7. Commit with robust SQLite retry logic
+            # 7. Commit with robust SQLite retry logic (handles locked and stale data)
+            config_to_send = None
             for attempt in range(5):
                 try:
+                    # 7.1 Prune old metrics (Inside retry loop to handle locks)
+                    import random
+                    if random.random() < 0.1:
+                        # Optimization: Use a simpler subquery that SQLite likes better
+                        await db.execute(
+                            delete(DeviceMetrics).where(
+                                DeviceMetrics.device_id == effective_device_id,
+                                DeviceMetrics.id.in_(
+                                    select(DeviceMetrics.id)
+                                    .where(DeviceMetrics.id.in_(
+                                        select(DeviceMetrics.id)
+                                        .where(DeviceMetrics.device_id == effective_device_id)
+                                        .order_by(desc(DeviceMetrics.timestamp))
+                                        .offset(MAX_METRICS_PER_DEVICE)
+                                    ))
+                                )
+                            )
+                        )
+
+                    # 7.2 Push configuration back to agent
+                    config_result = await db.execute(
+                        select(AgentConfig).where(AgentConfig.device_id == effective_device_id)
+                    )
+                    agent_config = config_result.scalar_one_or_none()
+                    if not agent_config:
+                        agent_config = AgentConfig(device_id=effective_device_id)
+                        db.add(agent_config)
+                        await db.flush()
+
+                    # Capture config data
+                    config_to_send = {
+                        "version": agent_config.version,
+                        "interval": agent_config.interval,
+                        "disk_paths": agent_config.disk_paths,
+                        "enable_temp": agent_config.enable_temp
+                    }
+
                     await db.commit()
                     break
                 except StaleDataError:
                     await db.rollback()
-                    return {"status": "success", "message": "Report ignored (stale)"}
+                    # Re-fetch state for next attempt
+                    logger.warning("Agent report: StaleDataError, retrying...")
+                    if attempt == 4: return AgentReportResponse(status="success", message="Report stale", config={}, config_version=0, commands=[])
+                    continue
                 except OperationalError as e:
                     await db.rollback()
                     error_msg = str(e).lower()
                     if ("locked" in error_msg or "busy" in error_msg) and attempt < 4:
                         wait_time = (attempt + 1) * 0.5
-                        logger.debug(f"DB locked, retrying report in {wait_time}s... (Attempt {attempt+1}/5)")
+                        logger.debug(f"DB locked during report, retrying in {wait_time}s... ({attempt+1}/5)")
                         await asyncio.sleep(wait_time)
                         continue
                     logger.error(f"DB locked permanently during agent report: {e}")
@@ -354,82 +367,96 @@ async def update_agent_config(
 
 @router.get("/overview", response_model=AgentsOverviewResponse)
 async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverviewResponse:
-    """Get a summary of all agents and their performance for the Agents Tab."""
-    # 1. Fetch all devices that have an agent linked
+    """Get a summary of all agents for the Agents Tab.
+
+    Optimized to use 2 bulk queries instead of N×27 sequential queries.
+    Pre-fetches latest metrics and 24-hour hourly counts in one pass each,
+    then assembles the response in Python.
+    """
+    now = datetime.now()
+    cutoff_24h = now - timedelta(hours=24)
+
+    # 1. Fetch all agent-linked devices in a single JOIN
     res = await db.execute(
         select(Device, AgentToken)
         .join(AgentToken, Device.id == AgentToken.device_id)
     )
     results = res.all()
-    
+
+    if not results:
+        return AgentsOverviewResponse(
+            agents=[], total_agents=0, active_agents=0,
+            total_data_points=0, avg_cpu=0.0, avg_ram=0.0
+        )
+
+    device_ids = [d.id for d, _ in results]
+    token_map = {d.id: t for d, t in results}
+    device_map = {d.id: d for d, _ in results}
+
+    # 2. Bulk-fetch all metrics for all agents in last 24h (single query)
+    metrics_res = await db.execute(
+        select(DeviceMetrics)
+        .where(
+            DeviceMetrics.device_id.in_(device_ids),
+            DeviceMetrics.timestamp >= cutoff_24h
+        )
+        .order_by(DeviceMetrics.device_id, DeviceMetrics.timestamp.desc())
+    )
+    all_24h_metrics = metrics_res.scalars().all()
+
+    # 3. Bulk-count total metrics per device (single query)
+    total_count_res = await db.execute(
+        select(DeviceMetrics.device_id, func.count(DeviceMetrics.id).label("cnt"))
+        .where(DeviceMetrics.device_id.in_(device_ids))
+        .group_by(DeviceMetrics.device_id)
+    )
+    total_count_map: dict[int, int] = {row.device_id: row.cnt for row in total_count_res.all()}
+
+    # Index 24h metrics in Python: {device_id: [metrics...]}
+    from collections import defaultdict
+    metrics_by_device: dict[int, list] = defaultdict(list)
+    for m in all_24h_metrics:
+        metrics_by_device[m.device_id].append(m)
+
     agents_list = []
     total_metrics_count = 0
-    total_cpu = 0
-    total_ram = 0
+    total_cpu = 0.0
+    total_ram = 0.0
     active_count = 0
-    
-    now = datetime.now()
-    cutoff_24h = now - timedelta(hours=24)
 
-    for device, token in results:
-        # Get latest metrics
-        m_res = await db.execute(
-            select(DeviceMetrics)
-            .where(DeviceMetrics.device_id == device.id)
-            .order_by(desc(DeviceMetrics.timestamp))
-            .limit(1)
-        )
-        last_m = m_res.scalar_one_or_none()
-        
-        # Count total metrics for this device
-        count_res = await db.execute(
-            select(func.count(DeviceMetrics.id)).where(DeviceMetrics.device_id == device.id)
-        )
-        m_count = count_res.scalar_one()
+    for device_id in device_ids:
+        device = device_map[device_id]
+        token = token_map[device_id]
+        device_metrics_24h = metrics_by_device[device_id]  # already sorted desc
+        last_m = device_metrics_24h[0] if device_metrics_24h else None
+
+        m_count = total_count_map.get(device_id, 0)
         total_metrics_count += m_count
-        
-        # Calculate health
-        is_active = False
-        if token.last_seen:
-            is_active = (now - token.last_seen).total_seconds() < 300
-        
+
+        # Active = last heartbeat within 5 minutes
+        is_active = bool(token.last_seen and (now - token.last_seen).total_seconds() < 300)
         if is_active:
             active_count += 1
-            
-        # Uptime estimation (last 24h or since birth)
-        # Expected reports based on time since agent was first created (max 24h)
+
+        # Uptime % for last 24h
         time_known = now - (token.created_at or cutoff_24h)
         relevant_window = min(timedelta(hours=24), time_known)
-        window_seconds = max(60, relevant_window.total_seconds()) # At least 1 min
-        
-        # Expected reports (assuming 30s interval)
+        window_seconds = max(60, relevant_window.total_seconds())
         expected = window_seconds / 30.0
-        
-        day_res = await db.execute(
-            select(func.count(DeviceMetrics.id))
-            .where(DeviceMetrics.device_id == device.id, DeviceMetrics.timestamp >= cutoff_24h)
-        )
-        day_count = day_res.scalar_one()
+        day_count = len(device_metrics_24h)
         uptime_pct = min(100.0, (day_count / expected) * 100.0) if expected > 0 else 100.0
 
-        # Calculate Hourly Uptime History (24 points)
-        uptime_history = []
+        # Hourly uptime history — computed in Python from pre-fetched data (0 extra queries)
+        agent_birth = token.created_at or cutoff_24h
+        uptime_history: list[float] = []
         for h in range(24):
             h_start = cutoff_24h + timedelta(hours=h)
             h_end = h_start + timedelta(hours=1)
-            # Only count up to agent birth
-            if h_start < (token.created_at or cutoff_24h):
-                uptime_history.append(100.0) # Assume up before we knew it to not penalize new agents
+            if h_start < agent_birth:
+                uptime_history.append(100.0)  # unknown period → assume up
                 continue
-            
-            h_res = await db.execute(
-                select(func.count(DeviceMetrics.id))
-                .where(DeviceMetrics.device_id == device.id, DeviceMetrics.timestamp >= h_start, DeviceMetrics.timestamp < h_end)
-            )
-            h_count = h_res.scalar_one()
-            # 30s interval -> 120 per hour
-            h_pct = min(100.0, (h_count / 120.0) * 100.0)
-            uptime_history.append(h_pct)
+            h_count = sum(1 for m in device_metrics_24h if h_start <= m.timestamp < h_end)
+            uptime_history.append(min(100.0, (h_count / 120.0) * 100.0))
 
         if last_m:
             total_cpu += last_m.cpu_percent
@@ -450,13 +477,14 @@ async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverv
             metrics_count=m_count
         ))
 
+    n = len(agents_list)
     return AgentsOverviewResponse(
         agents=agents_list,
-        total_agents=len(agents_list),
+        total_agents=n,
         active_agents=active_count,
         total_data_points=total_metrics_count,
-        avg_cpu=total_cpu / len(agents_list) if agents_list else 0.0,
-        avg_ram=total_ram / len(agents_list) if agents_list else 0.0
+        avg_cpu=total_cpu / n if n else 0.0,
+        avg_ram=total_ram / n if n else 0.0
     )
 
 

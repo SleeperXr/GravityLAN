@@ -29,6 +29,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from app.config import settings
 from app.database import init_db
+from app.exceptions import GravityLANError
 
 logger = logging.getLogger(__name__)
 
@@ -181,13 +182,33 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Exception Handler for Validation Errors (to log 422 errors)
+# --- Exception Handlers ---
+
+@app.exception_handler(GravityLANError)
+async def gravitylan_exception_handler(request: Request, exc: GravityLANError):
+    """Handle custom application exceptions."""
+    logger.error("App Error on %s: %s", request.url.path, exc.message)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"status": "error", "message": exc.message, "type": exc.__class__.__name__},
+    )
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors (422) with detailed logging."""
     logger.error("Validation error on %s: %s", request.url.path, exc.errors())
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors(), "body": str(exc.body) if hasattr(exc, "body") else None},
+        content={"status": "validation_error", "detail": exc.errors()},
+    )
+
+@app.exception_handler(Exception)
+async def universal_exception_handler(request: Request, exc: Exception):
+    """Catch-all for any unhandled exceptions to prevent leaking server details."""
+    logger.critical("Unhandled exception on %s: %s", request.url.path, str(exc), exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"status": "error", "message": "An unexpected internal server error occurred."},
     )
 
 # CORS for development (Vite dev server)

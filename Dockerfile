@@ -30,7 +30,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy agent script and backend code
 COPY agent ./agent
-COPY backend/app ./app
+COPY backend/ .
 
 # Copy frontend build to static directory
 COPY --from=frontend-build /build/frontend/dist ./static
