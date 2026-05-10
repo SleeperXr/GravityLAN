@@ -67,6 +67,14 @@ export const api = {
   
   // Settings
   getSettings: () => request<Record<string, string>>('/api/settings'),
+  getThemeSettings: () => request<Record<string, string>>('/api/settings').then(s => {
+    // Filter only theme-related settings to keep it clean
+    const theme: Record<string, string> = {};
+    for (const k in s) {
+      if (k.startsWith('theme.')) theme[k] = s[k];
+    }
+    return theme;
+  }),
   updateSettings: (settings: Record<string, string>) => 
     request<{ status: string }>('/api/settings', { method: 'POST', body: JSON.stringify(settings) }),
   resetDatabase: () => request<{status: string, message: string}>('/api/settings/reset-db', { method: 'POST' }),
@@ -92,6 +100,17 @@ export const api = {
     request<{ interval: number; disk_paths: string[]; enable_temp: boolean }>(`/api/agent/config/${deviceId}`),
   updateAgentConfig: (deviceId: number, data: { interval?: number; disk_paths?: string[]; enable_temp?: boolean }) =>
     request<any>(`/api/agent/config/${deviceId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getAgentsOverview: () => 
+    request<{
+      agents: any[];
+      total_agents: number;
+      active_agents: number;
+      total_data_points: number;
+      avg_cpu: number;
+      avg_ram: number;
+    }>('/api/agent/overview'),
+  getGlobalMetrics: () => 
+    request<{ history: any[] }>('/api/agent/global-metrics'),
 
   // Network (Subnets)
   getSubnetsList: () => request<any[]>('/api/network/subnets'),
