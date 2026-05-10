@@ -13,6 +13,8 @@ import ReactFlow, {
   getBezierPath,
   EdgeLabelRenderer,
   OnSelectionChangeParams,
+  Node,
+  Edge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Share2, Trash2, Server, Activity, Cpu, RefreshCw, Settings, X, Save, Layers, Wifi, Radio, Smartphone, Box, Monitor } from 'lucide-react';
@@ -61,6 +63,55 @@ const DeviceNode = ({ data, selected }: NodeProps) => {
            {data.has_agent && <Activity size={12} className="text-sky-400" />}
         </div>
       </div>
+
+      {data.is_wlan && data.nearest_ap && (
+        <div className="wlan-signals" style={{
+          position: 'absolute',
+          ...(() => {
+            const dx = data.nearest_ap.x - data.x;
+            const dy = data.nearest_ap.y - data.y;
+            const w = 240;
+            const h = 100;
+            if (Math.abs(dx) * h > Math.abs(dy) * w) {
+              return dx > 0 ? { right: -15, top: '50%', transform: 'translateY(-50%)' } 
+                            : { left: -15, top: '50%', transform: 'translateY(-50%)' };
+            } else {
+              return dy > 0 ? { bottom: -15, left: '50%', transform: 'translateX(-50%)' }
+                            : { top: -15, left: '50%', transform: 'translateX(-50%)' };
+            }
+          })(),
+          display: 'flex',
+          gap: '2px',
+          alignItems: 'flex-end',
+          height: '24px',
+          pointerEvents: 'none',
+          zIndex: 10,
+          padding: '4px',
+          background: 'rgba(15, 23, 42, 0.6)',
+          borderRadius: '4px',
+          border: '1px solid rgba(56, 189, 248, 0.2)',
+          backdropFilter: 'blur(4px)'
+        }}>
+          {[1, 2, 3, 4].map(i => {
+            const dist = Math.sqrt(Math.pow(data.nearest_ap.x - data.x, 2) + Math.pow(data.nearest_ap.y - data.y, 2));
+            const strength = dist < 400 ? 4 : dist < 800 ? 3 : dist < 1200 ? 2 : 1;
+            const isActive = i <= strength;
+            
+            return (
+              <div key={i} className="signal-bar" style={{
+                width: '4px',
+                height: `${i * 25}%`,
+                background: isActive ? '#38bdf8' : 'rgba(255,255,255,0.1)',
+                borderRadius: '1px',
+                opacity: isActive ? 0.4 + (i * 0.15) : 0.2,
+                boxShadow: isActive ? '0 0 8px rgba(56, 189, 248, 0.4)' : 'none',
+                animation: isActive ? `pulse 2s ease-in-out infinite ${i * 0.2}s` : 'none',
+                transition: 'all 0.5s ease'
+              }} />
+            );
+          })}
+        </div>
+      )}
 
       {hasAgent && metrics && (
         <div className="node-metrics">
@@ -255,25 +306,47 @@ const TopologyMap: React.FC = () => {
       const devices = await devRes.json();
       const links = await linkRes.json();
 
-      const initialNodes = devices.map((dev: any, index: number) => ({
-        id: dev.id.toString(),
-        type: 'device',
-        data: {
-          ...dev,
-          label: dev.display_name || dev.hostname,
-          onDelete: async (id: string) => {
-            if (window.confirm('Gerät entfernen?')) {
-              await fetch(`/api/devices/${id}`, { method: 'DELETE' });
-              setNodes(nds => nds.filter(n => n.id !== id));
+      // Calculate nearest AP for WLAN devices
+      const aps = devices.filter((d: any) => d.is_ap);
+
+      const initialNodes = devices.map((dev: any, index: number) => {
+        const x = dev.topology_x ?? (index % 5) * 300;
+        const y = dev.topology_y ?? Math.floor(index / 5) * 200;
+        
+        let nearestAp = null;
+        if (dev.is_wlan && aps.length > 0) {
+          let minDist = Infinity;
+          aps.forEach((ap: any) => {
+            const apX = ap.topology_x ?? (devices.indexOf(ap) % 5) * 300;
+            const apY = ap.topology_y ?? Math.floor(devices.indexOf(ap) / 5) * 200;
+            const dist = Math.sqrt(Math.pow(apX - x, 2) + Math.pow(apY - y, 2));
+            if (dist < minDist) {
+              minDist = dist;
+              nearestAp = { x: apX, y: apY, id: ap.id };
             }
+          });
+        }
+
+        return {
+          id: dev.id.toString(),
+          type: 'device',
+          data: {
+            ...dev,
+            label: dev.display_name || dev.hostname,
+            nearest_ap: nearestAp,
+            x: x,
+            y: y,
+            onDelete: async (id: string) => {
+              if (window.confirm('Gerät entfernen?')) {
+                await fetch(`/api/devices/${id}`, { method: 'DELETE' });
+                setNodes(nds => nds.filter(n => n.id !== id));
+              }
+            },
+            link_count: links.filter((l: any) => l.source_id === dev.id || l.target_id === dev.id).length
           },
-          link_count: links.filter((l: any) => l.source_id === dev.id || l.target_id === dev.id).length
-        },
-        position: {
-          x: dev.topology_x ?? (index % 5) * 300,
-          y: dev.topology_y ?? Math.floor(index / 5) * 200,
-        },
-      }));
+          position: { x, y },
+        };
+      });
 
       const initialEdges = links.map((link: any) => {
         const sourceNode = devices.find((d: any) => d.id === link.source_id);
@@ -302,11 +375,11 @@ const TopologyMap: React.FC = () => {
         };
       });
 
-      setNodes(nds => initialNodes.map(n => {
+      setNodes((nds: Node[]) => initialNodes.map((n: any) => {
         const existing = nds.find(node => node.id === n.id);
-        return existing ? { ...n, selected: existing.selected, position: existing.dragging ? existing.position : n.position } : n;
+        return existing ? { ...n, selected: existing.selected, position: (existing as any).dragging ? existing.position : n.position } : n;
       }));
-      setEdges(eds => initialEdges.map(e => {
+      setEdges((eds: Edge[]) => initialEdges.map((e: any) => {
         const existing = eds.find(edge => edge.id === e.id);
         return existing ? { ...e, selected: existing.selected } : e;
       }));
@@ -743,6 +816,10 @@ const TopologyMap: React.FC = () => {
         }
         .refresh-btn.spinning svg { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.4; transform: scaleY(1); }
+          50% { opacity: 1; transform: scaleY(1.2); }
+        }
         .node-icon-container { position: relative; }
         .wlan-badge {
           position: absolute;

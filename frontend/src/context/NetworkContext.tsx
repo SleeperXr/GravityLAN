@@ -2,10 +2,11 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { api, createScanSocket } from '../api/client';
 import { useToast } from './ToastContext';
 import { useTranslation } from 'react-i18next';
+import { DiscoveredHost } from '../types';
 
 interface NetworkContextType {
-  discoveredHosts: any[];
-  setDiscoveredHosts: (hosts: any[]) => void;
+  discoveredHosts: DiscoveredHost[];
+  setDiscoveredHosts: React.Dispatch<React.SetStateAction<DiscoveredHost[]>>;
   isDiscovering: boolean;
   runDiscovery: (subnetPrefix: string) => Promise<void>;
   updateDiscoveredHost: (id: number, data: { custom_name?: string; is_monitored?: boolean; is_reserved?: boolean }) => Promise<void>;
@@ -13,12 +14,10 @@ interface NetworkContextType {
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'gravitylan_discovered_hosts';
-
 export function NetworkProvider({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
-  const [discoveredHosts, setDiscoveredHosts] = useState<any[]>([]);
+  const [discoveredHosts, setDiscoveredHosts] = useState<DiscoveredHost[]>([]);
   const [isDiscovering, setIsDiscovering] = useState(false);
 
   // Initial load and WebSocket listener

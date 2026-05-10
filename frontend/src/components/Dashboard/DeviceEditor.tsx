@@ -38,6 +38,8 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
     rack_id: currentDevice.rack_id || null,
     rack_unit: currentDevice.rack_unit || null,
     rack_height: currentDevice.rack_height || 1,
+    is_wlan: currentDevice.is_wlan || false,
+    is_ap: currentDevice.is_ap || false,
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -477,6 +479,53 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                         {type.label}
                       </button>
                     ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* WLAN / AP Settings */}
+              <div style={{ display: 'flex', gap: '16px', marginTop: '8px', marginBottom: '16px' }}>
+                <div 
+                  onClick={() => setFormData({ ...formData, is_wlan: !formData.is_wlan })}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: formData.is_wlan ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${formData.is_wlan ? '#38bdf8' : 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <Wifi size={18} color={formData.is_wlan ? '#38bdf8' : '#64748b'} />
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_wlan ? '#f8fafc' : '#94a3b8' }}>WLAN Client</span>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>Signalbalken anzeigen</span>
+                  </div>
+                </div>
+
+                <div 
+                  onClick={() => setFormData({ ...formData, is_ap: !formData.is_ap })}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: formData.is_ap ? 'rgba(168, 85, 247, 0.1)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${formData.is_ap ? '#a855f7' : 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <Radio size={18} color={formData.is_ap ? '#a855f7' : '#64748b'} />
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_ap ? '#f8fafc' : '#94a3b8' }}>Access Point</span>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>WLAN Quelle</span>
                   </div>
                 </div>
               </div>
