@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Device, DeviceGroup } from '../../types';
 import { api } from '../../api/client';
-import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight, Wifi, Radio, Server, Database } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { DeviceMetrics } from './DeviceMetrics';
@@ -40,6 +40,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
     rack_height: currentDevice.rack_height || 1,
     is_wlan: currentDevice.is_wlan || false,
     is_ap: currentDevice.is_ap || false,
+    is_host: currentDevice.is_host || false,
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -240,7 +241,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
   return (
     <div className="modal-overlay">
       <div className="modal-content animate-in" style={{ 
-        maxWidth: activeTab === 'agent' ? '1150px' : '650px', 
+        maxWidth: activeTab === 'agent' ? '1150px' : '800px', 
         maxHeight: '90vh',
         display: 'flex',
         flexDirection: 'column',
@@ -327,31 +328,41 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-lg)', minHeight: 400 }}>
           {activeTab === 'settings' ? (
             <form onSubmit={handleSubmit}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 'var(--space-md)' }}>
-                <div className="form-group" style={{ flex: 1 }}>
+              {/* Basic Information */}
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 1fr', 
+                gap: '24px', 
+                background: 'rgba(255,255,255,0.02)', 
+                padding: '20px', 
+                borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.05)',
+                marginBottom: '24px'
+              }}>
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label><Tag size={14} /> {t('editor.display_name')}</label>
-                  <input
-                    className="input"
-                    value={formData.display_name}
-                    onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-                    placeholder={currentDevice.hostname || currentDevice.ip}
-                  />
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <input
+                      className="input"
+                      style={{ flex: 1 }}
+                      value={formData.display_name}
+                      onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+                      placeholder={currentDevice.hostname || currentDevice.ip}
+                    />
+                    <button 
+                      type="button"
+                      className="btn btn-secondary" 
+                      onClick={handleRefreshInfo}
+                      disabled={isRefreshing}
+                      style={{ height: 42, padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                    >
+                      <RefreshCw size={16} className={isRefreshing ? 'spinning' : ''} />
+                      {isRefreshing ? t('common.loading') : t('editor.refresh_info')}
+                    </button>
+                  </div>
                 </div>
-                <button 
-                  type="button"
-                  className="btn btn-secondary" 
-                  onClick={handleRefreshInfo}
-                  disabled={isRefreshing}
-                  style={{ marginBottom: 'var(--space-md)', height: 42 }}
-                  title={t('editor.refresh_hint')}
-                >
-                  <RefreshCw size={16} className={isRefreshing ? 'spinning' : ''} />
-                  {isRefreshing ? t('common.loading') : t('editor.refresh_info')}
-                </button>
-              </div>
 
-              <div style={{ display: 'flex', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
-                <div className="form-group" style={{ flex: 1 }}>
+                <div className="form-group">
                   <label><Folder size={14} /> {t('editor.group')}</label>
                   <select
                     className="input"
@@ -375,7 +386,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                   />
                 </div>
 
-                <div className="form-group" style={{ flex: 1 }}>
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label><Monitor size={14} /> {t('editor.parent_device', 'Physischer Host')}</label>
                   <select
                     className="input"
@@ -383,17 +394,27 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     onChange={(e) => setFormData({ ...formData, parent_id: e.target.value ? parseInt(e.target.value) : null })}
                   >
                     <option value="">{t('editor.no_parent', 'Kein Host (Physisch)')}</option>
-                    {(devices || []).filter(d => d.id !== currentDevice.id).map(dev => (
+                    {(devices || []).filter(d => d.id !== currentDevice.id && d.is_host).map(dev => (
                       <option key={dev.id} value={dev.id}>{dev.display_name || dev.hostname || dev.ip}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
+              {/* Infrastructure & Placement */}
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 1fr', 
+                gap: '24px', 
+                background: 'rgba(255,255,255,0.02)', 
+                padding: '20px', 
+                borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.05)',
+                marginBottom: '24px'
+              }}>
                 <div className="form-group">
                   <label><Layout size={14} /> {t('editor.rack_position', 'Rack & Position')}</label>
-                  <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
                     <select
                       className="input"
                       style={{ flex: 2 }}
@@ -407,13 +428,13 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                       type="number"
                       className="input"
                       style={{ flex: 1 }}
-                      placeholder="Unit (U)"
+                      placeholder="Unit"
                       value={formData.rack_unit || ''}
                       onChange={(e) => setFormData({ ...formData, rack_unit: e.target.value ? parseInt(e.target.value) : null })}
                     />
                   </div>
                 </div>
-                
+
                 <div className="form-group">
                   <label><HardDrive size={14} /> {t('editor.rack_height', 'Höhe (HE)')}</label>
                   <input
@@ -425,39 +446,40 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     onChange={(e) => setFormData({ ...formData, rack_height: parseInt(e.target.value) || 1 })}
                   />
                 </div>
-              </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
                 <div className="form-group">
                   <label><Layout size={14} /> {t('editor.grid_size')}</label>
-                  <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <input
                       type="number"
                       className="input"
+                      style={{ flex: 1 }}
                       value={formData.w}
                       min={1}
                       max={12}
                       onChange={(e) => setFormData({ ...formData, w: parseInt(e.target.value) })}
                     />
-                    <span style={{ alignSelf: 'center' }}>x</span>
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>x</span>
                     <input
                       type="number"
                       className="input"
+                      style={{ flex: 1 }}
                       value={formData.h}
                       min={1}
                       max={10}
                       onChange={(e) => setFormData({ ...formData, h: parseInt(e.target.value) })}
                     />
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginLeft: 4 }}>Units</span>
                   </div>
                 </div>
 
-                <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '10px' }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: 0 }}>{t('editor.badge')}</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="form-group">
+                  <label>{t('editor.badge', 'Special Marker (Badge)')}</label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
                     {[
                       { id: null, label: t('editor.none'), color: 'var(--bg-input)' },
-                      { id: 'vm', label: 'VM', color: 'rgba(56, 189, 248, 0.2)' },
-                      { id: 'docker', label: 'Docker', color: 'rgba(36, 150, 237, 0.2)' }
+                      { id: 'vm', label: 'VM', color: 'rgba(168, 85, 247, 0.2)' },
+                      { id: 'docker', label: 'Docker', color: 'rgba(56, 189, 248, 0.2)' }
                     ].map(type => (
                       <button
                         key={String(type.id)}
@@ -465,13 +487,13 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                         onClick={() => setFormData({ ...formData, virtual_type: type.id as any })}
                         style={{
                           flex: 1,
-                          padding: '6px 12px',
-                          background: formData.virtual_type === type.id ? type.color : 'var(--bg-elevated)',
-                          border: `1px solid ${formData.virtual_type === type.id ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
-                          borderRadius: '6px',
+                          padding: '8px 4px',
+                          background: formData.virtual_type === type.id ? type.color : 'rgba(255,255,255,0.03)',
+                          border: `1px solid ${formData.virtual_type === type.id ? 'var(--accent-primary)' : 'rgba(255,255,255,0.1)'}`,
+                          borderRadius: '8px',
                           color: formData.virtual_type === type.id ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                          fontSize: '0.8rem',
-                          fontWeight: 600,
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
                           cursor: 'pointer',
                           transition: 'all 0.2s'
                         }}
@@ -483,15 +505,19 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                 </div>
               </div>
 
-              {/* WLAN / AP Settings */}
-              <div style={{ display: 'flex', gap: '16px', marginTop: '8px', marginBottom: '16px' }}>
+              {/* Advanced Connectivity & Role */}
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 1fr 1fr', 
+                gap: '16px', 
+                marginBottom: '24px' 
+              }}>
                 <div 
                   onClick={() => setFormData({ ...formData, is_wlan: !formData.is_wlan })}
                   style={{
-                    flex: 1,
                     padding: '12px',
-                    background: formData.is_wlan ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${formData.is_wlan ? '#38bdf8' : 'rgba(255,255,255,0.1)'}`,
+                    background: formData.is_wlan ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${formData.is_wlan ? '#38bdf8' : 'rgba(255,255,255,0.05)'}`,
                     borderRadius: '12px',
                     cursor: 'pointer',
                     display: 'flex',
@@ -500,20 +526,29 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     transition: 'all 0.2s'
                   }}
                 >
-                  <Wifi size={18} color={formData.is_wlan ? '#38bdf8' : '#64748b'} />
+                  <div style={{ 
+                    width: 32, 
+                    height: 32, 
+                    borderRadius: '8px', 
+                    background: formData.is_wlan ? '#38bdf8' : 'rgba(255,255,255,0.05)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center' 
+                  }}>
+                    <Wifi size={16} color={formData.is_wlan ? 'white' : '#64748b'} />
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
                     <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_wlan ? '#f8fafc' : '#94a3b8' }}>WLAN Client</span>
-                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>Signalbalken anzeigen</span>
+                    <span style={{ fontSize: '0.6rem', color: '#64748b' }}>Signalbalken</span>
                   </div>
                 </div>
 
                 <div 
                   onClick={() => setFormData({ ...formData, is_ap: !formData.is_ap })}
                   style={{
-                    flex: 1,
                     padding: '12px',
-                    background: formData.is_ap ? 'rgba(168, 85, 247, 0.1)' : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${formData.is_ap ? '#a855f7' : 'rgba(255,255,255,0.1)'}`,
+                    background: formData.is_ap ? 'rgba(168, 85, 247, 0.1)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${formData.is_ap ? '#a855f7' : 'rgba(255,255,255,0.05)'}`,
                     borderRadius: '12px',
                     cursor: 'pointer',
                     display: 'flex',
@@ -522,38 +557,121 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     transition: 'all 0.2s'
                   }}
                 >
-                  <Radio size={18} color={formData.is_ap ? '#a855f7' : '#64748b'} />
+                  <div style={{ 
+                    width: 32, 
+                    height: 32, 
+                    borderRadius: '8px', 
+                    background: formData.is_ap ? '#a855f7' : 'rgba(255,255,255,0.05)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center' 
+                  }}>
+                    <Radio size={16} color={formData.is_ap ? 'white' : '#64748b'} />
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
                     <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_ap ? '#f8fafc' : '#94a3b8' }}>Access Point</span>
-                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>WLAN Quelle</span>
+                    <span style={{ fontSize: '0.6rem', color: '#64748b' }}>WLAN Quelle</span>
+                  </div>
+                </div>
+
+                <div 
+                  onClick={() => setFormData({ ...formData, is_host: !formData.is_host })}
+                  style={{
+                    padding: '12px',
+                    background: formData.is_host ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${formData.is_host ? '#10b981' : 'rgba(255,255,255,0.05)'}`,
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ 
+                    width: 32, 
+                    height: 32, 
+                    borderRadius: '8px', 
+                    background: formData.is_host ? '#10b981' : 'rgba(255,255,255,0.05)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center' 
+                  }}>
+                    <Server size={16} color={formData.is_host ? 'white' : '#64748b'} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_host ? '#f8fafc' : '#94a3b8' }}>Physischer Host</span>
+                    <span style={{ fontSize: '0.6rem', color: '#64748b' }}>Beinhaltet VMs/Docker</span>
                   </div>
                 </div>
               </div>
+
+              {/* Host Assignment */}
+              {!formData.is_host && (
+                <div className="form-group" style={{ marginBottom: '24px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' }}>
+                    <Database size={14} /> {t('editor.parent_host', 'Physisches Host-System')}
+                  </label>
+                  <select
+                    className="input"
+                    value={formData.parent_id || ''}
+                    onChange={(e) => setFormData({ ...formData, parent_id: e.target.value ? parseInt(e.target.value) : null })}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      padding: '10px',
+                      color: '#f1f5f9'
+                    }}
+                  >
+                    <option value="">Kein Host (Eigenständiges System)</option>
+                    {devices.filter(d => d.is_host && d.id !== currentDevice.id).map(d => (
+                      <option key={d.id} value={d.id}>{d.display_name || d.hostname || d.ip}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
 
               <div className="form-group">
                 <label>{t('editor.notes')}</label>
                 <textarea
                   className="input"
-                  style={{ minHeight: 60, resize: 'vertical' }}
+                  style={{ minHeight: 80, resize: 'vertical' }}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="Gerätenotizen hier eingeben..."
                 />
               </div>
 
-              <div style={{ padding: 'var(--space-md)', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-sm)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Globe size={12} /> {t('editor.system_info')}
+              <div style={{ 
+                padding: '16px', 
+                background: 'rgba(15, 23, 42, 0.4)', 
+                borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.05)',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '16px'
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>System Info</div>
+                  <div style={{ fontSize: '0.85rem', display: 'grid', gridTemplateColumns: '80px 1fr', gap: '4px' }}>
+                    <span style={{ color: 'var(--text-tertiary)' }}>IP:</span> <span>{currentDevice.ip}</span>
+                    <span style={{ color: 'var(--text-tertiary)' }}>MAC:</span> <span style={{ fontFamily: 'monospace' }}>{currentDevice.mac || 'N/A'}</span>
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.8rem', display: 'grid', gridTemplateColumns: '80px 1fr', gap: '4px' }}>
-                  <span style={{ color: 'var(--text-tertiary)' }}>IP:</span> <span>{currentDevice.ip}</span>
-                  <span style={{ color: 'var(--text-tertiary)' }}>MAC:</span> <span>{currentDevice.mac || t('common.unknown')}</span>
-                  <span style={{ color: 'var(--text-tertiary)' }}>Hostname:</span> <span>{currentDevice.hostname || t('notifications.no_dns_found')}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                   <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>Network Info</div>
+                   <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                     {currentDevice.hostname || 'Kein DNS Name'}
+                     {currentDevice.hostname && currentDevice.hostname.includes('.') && (
+                       <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', marginTop: 2 }}>
+                         FQDN: {currentDevice.hostname}
+                       </div>
+                     )}
+                   </div>
                 </div>
-                {currentDevice.hostname && currentDevice.hostname.includes('.') && (
-                  <p style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', marginTop: 8 }}>
-                    FQDN: {currentDevice.hostname}
-                  </p>
-                )}
               </div>
             </form>
           ) : activeTab === 'services' ? (

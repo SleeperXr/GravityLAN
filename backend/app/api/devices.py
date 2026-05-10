@@ -47,8 +47,12 @@ async def list_devices(
     devices = result.scalars().all()
     
     # Pre-populate has_agent and agent_info flags based on AgentToken existence
+    # Also map parent names
     from app.api.agent import LATEST_AGENT_VERSION, _latest_metrics
+    device_map = {d.id: (d.display_name or d.ip) for d in devices}
+    
     for device in devices:
+        # Agent info
         token_q = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
         token = token_q.scalar_one_or_none()
         device.has_agent = token is not None
@@ -58,6 +62,14 @@ async def list_devices(
                 "latest_version": LATEST_AGENT_VERSION,
                 "latest_metrics": _latest_metrics.get(device.id)
             }
+        
+        # Parent Name
+        if device.parent_id:
+            device.parent_name = device_map.get(device.parent_id)
+            if not device.parent_name:
+                # If parent not in current list (e.g. hidden), fetch it
+                p_q = await db.execute(select(Device.display_name).where(Device.id == device.parent_id))
+                device.parent_name = p_q.scalar_one_or_none()
 
     return devices
 
@@ -78,28 +90,53 @@ async def refresh_all_devices(background_tasks: BackgroundTasks, db: AsyncSessio
         dns_s = dns_q.scalar_one_or_none()
         dns_server = dns_s.value if dns_s else None
 
-        async def run_dns_bulk_refresh():
-            logger.info(f"Starting bulk DNS refresh for {len(devices_to_refresh)} devices.")
+        async def run_bulk_metadata_refresh():
+            logger.info(f"Starting bulk metadata refresh for {len(devices_to_refresh)} devices.")
+            from app.scanner.discovery import resolve_mac_addresses
+            
+            # 1. Resolve all missing MACs in one go
+            hosts_for_mac = [{"ip": d.ip, "mac": None} for d in devices_to_refresh]
+            await resolve_mac_addresses(hosts_for_mac)
+            mac_map = {h["ip"]: h["mac"] for h in hosts_for_mac if h["mac"]}
+
             updated = 0
             for d_id, d_ip, d_display_name in devices_to_refresh:
                 try:
-                    new_hostname = await resolve_hostname(d_ip, dns_server=dns_server)
-                    if new_hostname:
-                        async with async_session() as local_db:
-                            dev = await local_db.get(Device, d_id)
-                            if dev:
-                                dev.hostname = new_hostname
-                                # Also update display name if it was just an IP
-                                if is_ip_like(dev.display_name) and not is_ip_like(new_hostname):
-                                    dev.display_name = new_hostname.split('.')[0]
-                                await local_db.commit()
-                                updated += 1
+                    async with async_session() as local_db:
+                        dev = await local_db.get(Device, d_id)
+                        if not dev: continue
+                        
+                        changed = False
+                        # Update MAC if missing
+                        if not dev.mac and d_ip in mac_map:
+                            dev.mac = mac_map[d_ip]
+                            changed = True
+                        
+                        # Update Vendor if MAC present
+                        if dev.mac:
+                            new_vendor = get_vendor(dev.mac)
+                            if new_vendor and dev.vendor != new_vendor:
+                                dev.vendor = new_vendor
+                                changed = True
+                                
+                        # Update Hostname
+                        new_hostname = await resolve_hostname(d_ip, dns_server=dns_server)
+                        if new_hostname and dev.hostname != new_hostname:
+                            dev.hostname = new_hostname
+                            if is_ip_like(dev.display_name) and not is_ip_like(new_hostname):
+                                dev.display_name = new_hostname.split('.')[0]
+                            changed = True
+                            
+                        if changed:
+                            await local_db.commit()
+                            updated += 1
                 except Exception as e:
-                    logger.debug(f"DNS refresh failed for {d_ip}: {e}")
-            logger.info(f"Bulk DNS refresh complete. Updated {updated} hostnames.")
+                    logger.debug(f"Metadata refresh failed for {d_ip}: {e}")
+            
+            logger.info(f"Bulk metadata refresh complete. Updated {updated} devices.")
 
-        background_tasks.add_task(run_dns_bulk_refresh)
-        return {"status": "success", "message": f"DNS refresh started for {len(devices_to_refresh)} devices"}
+        background_tasks.add_task(run_bulk_metadata_refresh)
+        return {"status": "success", "message": f"Bulk metadata refresh (DNS/MAC/Vendor) started for {len(devices_to_refresh)} devices"}
     except Exception as e:
         logger.error(f"Refresh all failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -249,7 +286,9 @@ async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db)
     
     # 3. Try to resolve Vendor via MAC
     if device.mac:
-        device.vendor = get_vendor(device.mac)
+        new_vendor = get_vendor(device.mac)
+        if new_vendor:
+            device.vendor = new_vendor
     
     if commit:
         await db.commit()

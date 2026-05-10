@@ -109,10 +109,12 @@ class DeviceResponse(BaseModel):
     topology_config: str | None = None
     is_wlan: bool = False
     is_ap: bool = False
+    is_host: bool = False
     # Status string (online/offline/unknown)
     status: str | None = None
     # Parent host (for VMs)
     parent_id: int | None = None
+    parent_name: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -149,6 +151,7 @@ class DeviceUpdate(BaseModel):
     topology_config: str | None = None
     is_wlan: bool | None = None
     is_ap: bool | None = None
+    is_host: bool | None = None
     # Parent host (for VMs)
     parent_id: int | None = None
 
