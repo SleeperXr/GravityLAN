@@ -234,6 +234,7 @@
     "scan_in_progress": "Scanning Network...",
     "scan_completed": "Scan completed!",
     "devices_found": "{{count}} devices found",
+    "initializing_scan": "Initializing scan...",
     "abort_scan": "Abort Scan"
   }
 }

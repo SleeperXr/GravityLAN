@@ -46,7 +46,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       hosts_scanned: 0,
       hosts_total: 0,
       devices_found: 0,
-      message: 'Initializing scan...',
+      message: t('setup.initializing_scan'),
       timestamp: new Date().toISOString(),
     });
 
