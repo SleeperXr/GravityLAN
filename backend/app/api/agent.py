@@ -19,7 +19,7 @@ from fastapi import (
     Response,
 )
 from fastapi.responses import PlainTextResponse, FileResponse
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, select, func
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
@@ -37,6 +37,10 @@ from app.schemas.agent import (
     AgentConfigUpdate,
     AgentConfigResponse,
     MetricsHistoryResponse,
+    AgentsOverviewResponse,
+    AgentSummary,
+    GlobalMetricPoint,
+    GlobalMetricsResponse,
 )
 from app.services.agent_deployer import deploy_agent, remove_agent
 
@@ -346,6 +350,155 @@ async def update_agent_config(
         disk_paths=config.disk_paths,
         enable_temp=config.enable_temp
     )
+
+
+@router.get("/overview", response_model=AgentsOverviewResponse)
+async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverviewResponse:
+    """Get a summary of all agents and their performance for the Agents Tab."""
+    # 1. Fetch all devices that have an agent linked
+    res = await db.execute(
+        select(Device, AgentToken)
+        .join(AgentToken, Device.id == AgentToken.device_id)
+    )
+    results = res.all()
+    
+    agents_list = []
+    total_metrics_count = 0
+    total_cpu = 0
+    total_ram = 0
+    active_count = 0
+    
+    now = datetime.now()
+    cutoff_24h = now - timedelta(hours=24)
+
+    for device, token in results:
+        # Get latest metrics
+        m_res = await db.execute(
+            select(DeviceMetrics)
+            .where(DeviceMetrics.device_id == device.id)
+            .order_by(desc(DeviceMetrics.timestamp))
+            .limit(1)
+        )
+        last_m = m_res.scalar_one_or_none()
+        
+        # Count total metrics for this device
+        count_res = await db.execute(
+            select(func.count(DeviceMetrics.id)).where(DeviceMetrics.device_id == device.id)
+        )
+        m_count = count_res.scalar_one()
+        total_metrics_count += m_count
+        
+        # Calculate health
+        is_active = False
+        if token.last_seen:
+            is_active = (now - token.last_seen).total_seconds() < 300
+        
+        if is_active:
+            active_count += 1
+            
+        # Uptime estimation (last 24h or since birth)
+        # Expected reports based on time since agent was first created (max 24h)
+        time_known = now - (token.created_at or cutoff_24h)
+        relevant_window = min(timedelta(hours=24), time_known)
+        window_seconds = max(60, relevant_window.total_seconds()) # At least 1 min
+        
+        # Expected reports (assuming 30s interval)
+        expected = window_seconds / 30.0
+        
+        day_res = await db.execute(
+            select(func.count(DeviceMetrics.id))
+            .where(DeviceMetrics.device_id == device.id, DeviceMetrics.timestamp >= cutoff_24h)
+        )
+        day_count = day_res.scalar_one()
+        uptime_pct = min(100.0, (day_count / expected) * 100.0) if expected > 0 else 100.0
+
+        # Calculate Hourly Uptime History (24 points)
+        uptime_history = []
+        for h in range(24):
+            h_start = cutoff_24h + timedelta(hours=h)
+            h_end = h_start + timedelta(hours=1)
+            # Only count up to agent birth
+            if h_start < (token.created_at or cutoff_24h):
+                uptime_history.append(100.0) # Assume up before we knew it to not penalize new agents
+                continue
+            
+            h_res = await db.execute(
+                select(func.count(DeviceMetrics.id))
+                .where(DeviceMetrics.device_id == device.id, DeviceMetrics.timestamp >= h_start, DeviceMetrics.timestamp < h_end)
+            )
+            h_count = h_res.scalar_one()
+            # 30s interval -> 120 per hour
+            h_pct = min(100.0, (h_count / 120.0) * 100.0)
+            uptime_history.append(h_pct)
+
+        if last_m:
+            total_cpu += last_m.cpu_percent
+            total_ram += last_m.ram_percent
+
+        agents_list.append(AgentSummary(
+            device_id=device.id,
+            hostname=device.hostname or device.display_name,
+            ip=device.ip,
+            is_online=is_active,
+            agent_version=token.agent_version,
+            last_seen=token.last_seen,
+            cpu_usage=last_m.cpu_percent if last_m else 0.0,
+            ram_usage=last_m.ram_percent if last_m else 0.0,
+            temp=last_m.temperature if last_m else None,
+            uptime_pct=uptime_pct,
+            uptime_history=uptime_history,
+            metrics_count=m_count
+        ))
+
+    return AgentsOverviewResponse(
+        agents=agents_list,
+        total_agents=len(agents_list),
+        active_agents=active_count,
+        total_data_points=total_metrics_count,
+        avg_cpu=total_cpu / len(agents_list) if agents_list else 0.0,
+        avg_ram=total_ram / len(agents_list) if agents_list else 0.0
+    )
+
+
+@router.get("/global-metrics", response_model=GlobalMetricsResponse)
+async def get_global_metrics(db: AsyncSession = Depends(get_db)) -> GlobalMetricsResponse:
+    """Get aggregated network-wide performance history for the last 24 hours."""
+    now = datetime.utcnow()
+    cutoff_24h = now - timedelta(hours=24)
+    
+    # Fetch all metrics for the last 24h
+    res = await db.execute(
+        select(DeviceMetrics.timestamp, DeviceMetrics.cpu_percent, DeviceMetrics.ram_percent)
+        .where(DeviceMetrics.timestamp >= cutoff_24h)
+        .order_by(DeviceMetrics.timestamp.asc())
+    )
+    all_metrics = res.all()
+    
+    # Group by 15-minute intervals in Python
+    buckets = {}
+    
+    for ts, cpu, ram in all_metrics:
+        # Bucket: Round down to the nearest 15 minutes
+        bucket_ts = ts.replace(minute=(ts.minute // 15) * 15, second=0, microsecond=0)
+        if bucket_ts not in buckets:
+            buckets[bucket_ts] = {"cpu": [], "ram": [], "count": 0}
+        
+        buckets[bucket_ts]["cpu"].append(cpu)
+        buckets[bucket_ts]["ram"].append(ram)
+        buckets[bucket_ts]["count"] += 1
+        
+    history_list = []
+    # Ensure we have a sorted list of buckets
+    for b_ts in sorted(buckets.keys()):
+        b_data = buckets[b_ts]
+        history_list.append(GlobalMetricPoint(
+            timestamp=b_ts,
+            avg_cpu=sum(b_data["cpu"]) / len(b_data["cpu"]) if b_data["cpu"] else 0.0,
+            avg_ram=sum(b_data["ram"]) / len(b_data["ram"]) if b_data["ram"] else 0.0,
+            data_points=b_data["count"]
+        ))
+        
+    return GlobalMetricsResponse(history=history_list)
 
 
 # ---------------------------------------------------------------------------

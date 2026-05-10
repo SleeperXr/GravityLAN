@@ -140,3 +140,46 @@ class AgentConfigResponse(BaseModel):
     interval: int = 30
     disk_paths: list[str] = ["/"]
     enable_temp: bool = True
+
+# ---------------------------------------------------------------------------
+# Agents Overview (for Agents Tab)
+# ---------------------------------------------------------------------------
+
+class AgentSummary(BaseModel):
+    """Detailed summary for the Agents Tab list."""
+    device_id: int
+    hostname: str
+    ip: str
+    is_online: bool
+    agent_version: str | None = None
+    last_seen: datetime | None = None
+    cpu_usage: float = 0.0
+    ram_usage: float = 0.0
+    temp: float | None = None
+    uptime_pct: float = 100.0
+    uptime_history: list[float] = []
+    metrics_count: int = 0
+
+class AgentsOverviewResponse(BaseModel):
+    """Aggregation of all agents and global stats."""
+    agents: list[AgentSummary]
+    total_agents: int
+    active_agents: int
+    total_data_points: int
+    avg_cpu: float
+    avg_ram: float
+
+# ---------------------------------------------------------------------------
+# Global Metrics History
+# ---------------------------------------------------------------------------
+
+class GlobalMetricPoint(BaseModel):
+    """Network-wide average for a specific point in time."""
+    timestamp: datetime
+    avg_cpu: float
+    avg_ram: float
+    data_points: int
+
+class GlobalMetricsResponse(BaseModel):
+    """History of global performance across the last 24 hours."""
+    history: list[GlobalMetricPoint]

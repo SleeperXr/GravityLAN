@@ -12,15 +12,20 @@ import ReactFlow, {
   EdgeProps,
   getBezierPath,
   EdgeLabelRenderer,
-  OnSelectionChangeParams,
   Node,
   Edge,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Share2, Trash2, Server, Activity, Cpu, RefreshCw, Settings, X, Save, Layers, Wifi, Radio, Smartphone, Box, Monitor } from 'lucide-react';
+import { Share2, Trash2, Server, Activity, Cpu, RefreshCw, Settings, X, Save, Layers, Wifi, Radio, Smartphone, Box, Monitor, Sliders, Wind, Zap, Maximize, Minimize, ChevronUp, ChevronDown } from 'lucide-react';
+
+// --- Context for Flow Settings ---
+const FlowSettingsContext = React.createContext({
+  speed: 1.0,
+  intensity: 3,
+});
 
 // --- Custom Node Component ---
-const DeviceNode = ({ data, selected }: NodeProps) => {
+const DeviceNode = React.memo(({ data, selected }: NodeProps) => {
   const isOnline = data.is_online;
   const metrics = data.metrics;
   const hasAgent = data.has_agent;
@@ -60,9 +65,22 @@ const DeviceNode = ({ data, selected }: NodeProps) => {
           <div className="node-sublabel">{data.ip}</div>
         </div>
         <div className="node-actions">
+           {data.is_host && (
+             <div className="host-badge" title="Physical Host System">
+               <Server size={10} />
+               <span>HOST</span>
+             </div>
+           )}
            {data.has_agent && <Activity size={12} className="text-sky-400" />}
         </div>
       </div>
+
+      {data.parent_name && (
+        <div className="node-parent-info">
+          <Layers size={10} />
+          <span>On: {data.parent_name}</span>
+        </div>
+      )}
 
       {data.is_wlan && data.nearest_ap && (
         <div className="wlan-signals" style={{
@@ -87,10 +105,9 @@ const DeviceNode = ({ data, selected }: NodeProps) => {
           pointerEvents: 'none',
           zIndex: 10,
           padding: '4px',
-          background: 'rgba(15, 23, 42, 0.6)',
+          background: 'rgba(15, 23, 42, 0.9)',
           borderRadius: '4px',
           border: '1px solid rgba(56, 189, 248, 0.2)',
-          backdropFilter: 'blur(4px)'
         }}>
           {[1, 2, 3, 4].map(i => {
             const dist = Math.sqrt(Math.pow(data.nearest_ap.x - data.x, 2) + Math.pow(data.nearest_ap.y - data.y, 2));
@@ -105,8 +122,7 @@ const DeviceNode = ({ data, selected }: NodeProps) => {
                 borderRadius: '1px',
                 opacity: isActive ? 0.4 + (i * 0.15) : 0.2,
                 boxShadow: isActive ? '0 0 8px rgba(56, 189, 248, 0.4)' : 'none',
-                animation: isActive ? `pulse 2s ease-in-out infinite ${i * 0.2}s` : 'none',
-                transition: 'all 0.5s ease'
+                animation: 'none'
               }} />
             );
           })}
@@ -157,10 +173,10 @@ const DeviceNode = ({ data, selected }: NodeProps) => {
       )}
     </div>
   );
-};
+});
 
 // --- Custom Edge Component ---
-const CustomEdge = ({
+const CustomEdge = React.memo(({
   id,
   sourceX,
   sourceY,
@@ -183,10 +199,13 @@ const CustomEdge = ({
   });
 
   const speed = data?.link_type || '1GbE';
-  const speedColor = 
+  const isOnline = data?.source_online && data?.target_online;
+  const speedColor = !isOnline ? 'rgba(100, 116, 139, 0.4)' : 
     speed.includes('10G') ? '#f59e0b' : 
     speed.includes('2.5G') ? '#a855f7' : 
     speed.includes('1GbE') ? '#38bdf8' : '#94a3b8';
+
+  const { speed: globalSpeed, intensity } = React.useContext(FlowSettingsContext);
 
   return (
     <>
@@ -200,15 +219,57 @@ const CustomEdge = ({
         style={{ 
           ...style, 
           stroke: speedColor, 
-          strokeWidth: selected ? 5 : 3,
-          strokeOpacity: selected ? 1 : 0.8,
-          strokeDasharray: data.is_wireless ? '5,5' : '0',
-          transition: 'all 0.2s'
+          strokeWidth: selected ? 4 : 2,
+          strokeOpacity: selected ? 1 : (isOnline ? 0.6 : 0.3),
+          strokeDasharray: data.is_wireless || !isOnline ? '5,5' : 'none',
+          transition: 'stroke-width 0.2s, stroke-opacity 0.2s',
+          shapeRendering: 'optimizeSpeed',
         }}
         className={`react-flow__edge-path ${selected ? 'selected' : ''}`}
         d={edgePath}
         markerEnd={markerEnd}
       />
+      
+      {/* Particle Animation (only if online and not wireless) */}
+      {isOnline && !data.is_wireless && intensity > 0 && (
+        <>
+          {Array.from({ length: intensity }).map((_, i) => {
+            const baseDur = speed.includes('10G') ? 1.4 : speed.includes('2.5G') ? 1.8 : 3;
+            const duration = `${baseDur / globalSpeed}s`;
+            const startOffset = i * (parseFloat(duration) / intensity);
+            
+            return (
+              <React.Fragment key={i}>
+                <circle r="4.5" fill={speedColor} opacity="0.25">
+                  <animateMotion
+                    dur={duration}
+                    repeatCount="indefinite"
+                    path={edgePath}
+                    begin={`${-startOffset}s`}
+                  />
+                </circle>
+                <circle r="3" fill={speedColor} opacity="0.9">
+                  <animateMotion
+                    dur={duration}
+                    repeatCount="indefinite"
+                    path={edgePath}
+                    begin={`${-startOffset}s`}
+                  />
+                </circle>
+                <circle r="1.5" fill="#fff" opacity="0.8">
+                  <animateMotion
+                    dur={duration}
+                    repeatCount="indefinite"
+                    path={edgePath}
+                    begin={`${-startOffset}s`}
+                  />
+                </circle>
+              </React.Fragment>
+            );
+          })}
+        </>
+      )}
+
       <EdgeLabelRenderer>
         <div
           style={{
@@ -248,7 +309,7 @@ const CustomEdge = ({
       </EdgeLabelRenderer>
     </>
   );
-};
+});
 
 const nodeTypes = {
   device: DeviceNode,
@@ -264,6 +325,14 @@ const TopologyMap: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [selectedEdge, setSelectedEdge] = useState<any>(null);
+
+  // Engine & UI State
+  const [flowSpeed, setFlowSpeed] = useState(1.0);
+  const [flowIntensity, setFlowIntensity] = useState(2);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFlowExpanded, setIsFlowExpanded] = useState(window.innerWidth > 768);
+  const [stickyDrag, setStickyDrag] = useState(false);
+  const [lastPos, setLastPos] = useState<{x: number, y: number} | null>(null);
   
   // Sidebar config state
   const [configMaxPorts, setConfigMaxPorts] = useState<number>(24);
@@ -272,14 +341,44 @@ const TopologyMap: React.FC = () => {
   const [configTopHandle, setConfigTopHandle] = useState<string>('target');
   const [configBottomHandle, setConfigBottomHandle] = useState<string>('source');
 
-  const onRotateSpeed = useCallback(async (edgeId: string, currentSpeed: string) => {
+  // Persistence for Flow Settings
+  useEffect(() => {
+    const loadFlowSettings = async () => {
+      try {
+        const settings = await api.getSettings();
+        if (settings['topology.flow_speed']) setFlowSpeed(parseFloat(settings['topology.flow_speed']));
+        if (settings['topology.flow_intensity']) setFlowIntensity(parseInt(settings['topology.flow_intensity']));
+        if (settings['topology.sticky_drag']) setStickyDrag(settings['topology.sticky_drag'] === 'true');
+      } catch (err) {
+        console.error('Failed to load flow settings:', err);
+      }
+    };
+    loadFlowSettings();
+  }, []);
+
+  const saveFlowSetting = useCallback(async (key: string, value: any) => {
+    try {
+      await api.updateSettings({ [key]: value.toString() });
+    } catch (err) {
+      console.error(`Failed to save flow setting ${key}:`, err);
+    }
+  }, []);
+
+  const onRotateSpeed = useCallback(async (edgeId: string, currentSpeed: string, forcedSpeed?: string) => {
     const speeds = ['100Mb', '1GbE', '2.5GbE', '10GbE'];
-    const nextIndex = (speeds.indexOf(currentSpeed) + 1) % speeds.length;
-    const nextSpeed = speeds[nextIndex];
+    const nextSpeed = forcedSpeed || speeds[(speeds.indexOf(currentSpeed) + 1) % speeds.length];
     const linkId = edgeId.replace('e-', '');
     
     try {
-      setEdges(eds => eds.map(e => e.id === edgeId ? { ...e, data: { ...e.data, link_type: nextSpeed } } : e));
+      setEdges(eds => eds.map(e => {
+        if (e.id === edgeId) {
+          const newEdge = { ...e, data: { ...e.data, link_type: nextSpeed } };
+          // Update selected edge if it's the one being modified
+          if (selectedEdge?.id === edgeId) setSelectedEdge(newEdge);
+          return newEdge;
+        }
+        return e;
+      }));
       await fetch(`/api/topology/links/${linkId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -363,6 +462,8 @@ const TopologyMap: React.FC = () => {
           data: { 
             link_type: link.link_type,
             is_wireless: isWireless,
+            source_online: sourceNode?.is_online,
+            target_online: targetNode?.is_online,
             onRotateSpeed,
             onDeleteLink
           },
@@ -375,16 +476,44 @@ const TopologyMap: React.FC = () => {
         };
       });
 
-      setNodes((nds: Node[]) => initialNodes.map((n: any) => {
-        const existing = nds.find(node => node.id === n.id);
-        return existing ? { ...n, selected: existing.selected, position: (existing as any).dragging ? existing.position : n.position } : n;
-      }));
-      setEdges((eds: Edge[]) => initialEdges.map((e: any) => {
-        const existing = eds.find(edge => edge.id === e.id);
-        return existing ? { ...e, selected: existing.selected } : e;
-      }));
-    } catch (err) { console.error(err); }
-    finally { setIsRefreshing(false); }
+      // Optimization: Only update if data actually changed to prevent React Flow re-renders
+      setNodes(prevNodes => {
+        const simplifiedIncoming = initialNodes.map((n: Node) => ({ id: n.id, data: n.data, position: n.position }));
+        const simplifiedCurrent = prevNodes.map((n: Node) => ({ id: n.id, data: n.data, position: n.position }));
+        
+        if (JSON.stringify(simplifiedIncoming) === JSON.stringify(simplifiedCurrent)) {
+          return prevNodes;
+        }
+
+        // Preserve selected state and dragging positions
+        return initialNodes.map((n: any) => {
+          const existing = prevNodes.find(node => node.id === n.id);
+          return existing ? { 
+            ...n, 
+            selected: existing.selected, 
+            position: (existing as any).dragging ? existing.position : n.position 
+          } : n;
+        });
+      });
+
+      setEdges(prevEdges => {
+        const simplifiedIncoming = initialEdges.map((e: Edge) => ({ id: e.id, data: e.data, source: e.source, target: e.target }));
+        const simplifiedCurrent = prevEdges.map((e: Edge) => ({ id: e.id, data: e.data, source: e.source, target: e.target }));
+        
+        if (JSON.stringify(simplifiedIncoming) === JSON.stringify(simplifiedCurrent)) {
+          return prevEdges;
+        }
+
+        return initialEdges.map((e: any) => {
+          const existing = prevEdges.find(edge => edge.id === e.id);
+          return existing ? { ...e, selected: existing.selected } : e;
+        });
+      });
+    } catch (err) { 
+      console.error('Topology fetch failed:', err); 
+    } finally { 
+      setIsRefreshing(false); 
+    }
   }, [setNodes, setEdges, onRotateSpeed, onDeleteLink]);
 
   const onConnect = useCallback((params: Connection) => {
@@ -428,30 +557,6 @@ const TopologyMap: React.FC = () => {
     });
   }, [fetchData, nodes, edges]);
 
-  const onSelectionChange = useCallback(({ nodes, edges }: OnSelectionChangeParams) => {
-    if (nodes.length === 1) {
-      const node = nodes[0];
-      setSelectedNode(node);
-      setSelectedEdge(null);
-      setConfigMaxPorts(node.data.max_ports || 24);
-      setConfigIsWlan(!!node.data.is_wlan);
-      setConfigIsAp(!!node.data.is_ap);
-      try {
-        const config = node.data.topology_config ? JSON.parse(node.data.topology_config) : {};
-        setConfigTopHandle(config.top_handle_type || 'target');
-        setConfigBottomHandle(config.bottom_handle_type || 'source');
-      } catch {
-        setConfigTopHandle('target');
-        setConfigBottomHandle('source');
-      }
-    } else if (edges.length === 1) {
-      setSelectedEdge(edges[0]);
-      setSelectedNode(null);
-    } else {
-      setSelectedNode(null);
-      setSelectedEdge(null);
-    }
-  }, [nodes]);
 
   const saveNodeSettings = async () => {
     if (!selectedNode) return;
@@ -476,29 +581,114 @@ const TopologyMap: React.FC = () => {
     } catch (err) { console.error(err); }
   };
 
-  const onNodeDragStop = useCallback(async (_: any, node: any) => {
+  const saveNodePos = async (id: string, pos: { x: number, y: number }) => {
     try {
-      await fetch(`/api/devices/${node.id}`, {
+      await fetch(`/api/devices/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          topology_x: Math.round(node.position.x),
-          topology_y: Math.round(node.position.y),
+          topology_x: Math.round(pos.x),
+          topology_y: Math.round(pos.y),
         }),
       });
     } catch (err) {
       console.error('Failed to save node position:', err);
     }
+  };
+
+
+  const onNodeDragStart = useCallback((_: any, node: any) => {
+    setLastPos({ x: node.position.x, y: node.position.y });
   }, []);
+
+  const onNodeDrag = useCallback((_: any, node: any) => {
+    if (!stickyDrag || !lastPos) return;
+
+    const dx = node.position.x - lastPos.x;
+    const dy = node.position.y - lastPos.y;
+    
+    if (dx === 0 && dy === 0) return;
+
+    const neighbors = new Set();
+    edges.forEach(e => {
+      if (e.source === node.id) neighbors.add(e.target);
+      if (e.target === node.id) neighbors.add(e.source);
+    });
+
+    setNodes(nds => nds.map(n => {
+      if (neighbors.has(n.id)) {
+        return {
+          ...n,
+          position: {
+            x: n.position.x + dx,
+            y: n.position.y + dy
+          }
+        };
+      }
+      return n;
+    }));
+    
+    setLastPos({ x: node.position.x, y: node.position.y });
+  }, [stickyDrag, lastPos, edges, setNodes]);
+
+  const onNodeDragStop = useCallback(async (_: any, node: any) => {
+    setLastPos(null);
+    await saveNodePos(node.id, node.position);
+    
+    if (stickyDrag) {
+      const neighbors = new Set();
+      edges.forEach(e => {
+        if (e.source === node.id) neighbors.add(e.target);
+        if (e.target === node.id) neighbors.add(e.source);
+      });
+
+      // Save all moved neighbors
+      for (const nid of neighbors) {
+        const n = nodes.find(x => x.id === nid);
+        if (n) await saveNodePos(n.id.toString(), n.position);
+      }
+    }
+  }, [stickyDrag, edges, nodes]);
 
   useEffect(() => {
     fetchData();
-    const timer = setInterval(fetchData, 15000);
+    const timer = setInterval(fetchData, 60000);
     return () => clearInterval(timer);
   }, [fetchData]);
 
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+    
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
   return (
-    <div style={{ height: '100%', width: '100%', minHeight: '750px', position: 'relative', background: '#0f172a', display: 'flex' }}>
+    <FlowSettingsContext.Provider value={{ speed: flowSpeed, intensity: flowIntensity }}>
+      <div 
+        ref={containerRef}
+        style={{ 
+          height: '100%', 
+          width: '100%', 
+          minHeight: isFullscreen ? '100vh' : '750px', 
+          position: 'relative', 
+          background: '#0f172a', 
+          display: 'flex' 
+        }}
+      >
       
       {/* Main Flow Area */}
       <div style={{ flex: 1, position: 'relative' }}>
@@ -507,8 +697,11 @@ const TopologyMap: React.FC = () => {
             <Share2 size={16} className="text-sky-400" />
             Topology Designer
           </div>
-          <button className={`refresh-btn ${isRefreshing ? 'spinning' : ''}`} onClick={() => fetchData()}>
+          <button className={`refresh-btn ${isRefreshing ? 'spinning' : ''}`} onClick={() => fetchData()} title="Refresh Data">
             <RefreshCw size={16} />
+          </button>
+          <button className="refresh-btn" onClick={toggleFullscreen} title="Fullscreen Toggle">
+            {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
           </button>
         </div>
 
@@ -518,16 +711,125 @@ const TopologyMap: React.FC = () => {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onSelectionChange={onSelectionChange}
+          onNodeClick={(_, node) => {
+            setSelectedNode(node);
+            setSelectedEdge(null);
+            setConfigMaxPorts(node.data.max_ports || 24);
+            setConfigIsWlan(!!node.data.is_wlan);
+            setConfigIsAp(!!node.data.is_ap);
+            try {
+              const config = node.data.topology_config ? JSON.parse(node.data.topology_config) : {};
+              setConfigTopHandle(config.top_handle_type || 'target');
+              setConfigBottomHandle(config.bottom_handle_type || 'source');
+            } catch {
+              setConfigTopHandle('target');
+              setConfigBottomHandle('source');
+            }
+          }}
+          onEdgeClick={(_, edge) => {
+            setSelectedEdge(edge);
+            setSelectedNode(null);
+          }}
+          onPaneClick={() => {
+            setSelectedNode(null);
+            setSelectedEdge(null);
+          }}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDrag={onNodeDrag}
           onNodeDragStop={onNodeDragStop}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{ padding: 0.2 }}
+          minZoom={0.05}
+          maxZoom={4}
         >
           <Background color="#1e293b" gap={32} size={1} />
           <Controls />
         </ReactFlow>
+
+        {/* --- Flow Controls Overlay --- */}
+        <div className={`flow-controls ${!isFlowExpanded ? 'collapsed' : ''}`}>
+          <div className="flow-controls__header" onClick={() => setIsFlowExpanded(!isFlowExpanded)} style={{ cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+              <Sliders size={14} />
+              <span>Flow Engine</span>
+            </div>
+            {isFlowExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </div>
+          
+          {isFlowExpanded && (
+            <>
+              <div className="flow-control-item">
+                <div className="flow-control-item__label">
+                  <Zap size={12} />
+                  <span>Speed: {flowSpeed.toFixed(1)}x</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="0.1" 
+                  max="3.0" 
+                  step="0.1" 
+                  value={flowSpeed} 
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setFlowSpeed(val);
+                    saveFlowSetting('topology.flow_speed', val);
+                  }}
+                />
+              </div>
+
+              <div className="flow-control-item">
+                <div className="flow-control-item__label">
+                  <Wind size={12} />
+                  <span>Intensity: {flowIntensity}</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="5" 
+                  step="1" 
+                  value={flowIntensity} 
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    setFlowIntensity(val);
+                    saveFlowSetting('topology.flow_intensity', val);
+                  }}
+                />
+              </div>
+
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                padding: '8px 0',
+                borderTop: '1px solid rgba(255,255,255,0.05)',
+                marginTop: '4px'
+              }}>
+                <div className="flow-control-item__label">
+                  <Layers size={12} />
+                  <span>Sticky Drag</span>
+                </div>
+                <input 
+                  type="checkbox" 
+                  checked={stickyDrag} 
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setStickyDrag(val);
+                    saveFlowSetting('topology.sticky_drag', val);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+              </div>
+              
+              {flowIntensity === 0 && (
+                <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'center', marginTop: '2px' }}>
+                  Animations Disabled
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Settings Sidebar */}
@@ -644,6 +946,20 @@ const TopologyMap: React.FC = () => {
                       <div className="preview-ip">ID: {selectedEdge.id}</div>
                     </div>
                  </div>
+
+                 <div className="input-field">
+                   <label>Geschwindigkeit</label>
+                   <select 
+                     value={selectedEdge.data.link_type} 
+                     onChange={(e) => onRotateSpeed(selectedEdge.id, selectedEdge.data.link_type, e.target.value)}
+                   >
+                     <option value="100Mb">100 Mb/s</option>
+                     <option value="1GbE">1 Gb/s (1GbE)</option>
+                     <option value="2.5GbE">2.5 Gb/s (2.5GbE)</option>
+                     <option value="10GbE">10 Gb/s (10GbE)</option>
+                   </select>
+                 </div>
+                 
                  <button className="delete-btn full" onClick={() => onDeleteLink(selectedEdge.id)}>
                     <Trash2 size={16} /> Verbindung trennen
                  </button>
@@ -672,8 +988,7 @@ const TopologyMap: React.FC = () => {
 
         .topology-sidebar {
           width: 320px;
-          background: rgba(15, 23, 42, 0.95);
-          backdrop-filter: blur(20px);
+          background: #0f172a;
           border-left: 1px solid rgba(255,255,255,0.1);
           display: flex;
           flex-direction: column;
@@ -755,19 +1070,24 @@ const TopologyMap: React.FC = () => {
         .delete-btn.full { font-size: 0.875rem; font-weight: 800; padding: 12px; }
 
         .topology-node {
-          background: rgba(30, 41, 59, 0.8);
-          backdrop-filter: blur(12px);
+          background: rgba(15, 23, 42, 0.98);
           color: #f8fafc;
-          border: 1px solid rgba(255,255,255,0.1);
+          border: 1px solid rgba(255,255,255,0.08);
           border-radius: 16px;
           padding: 16px;
           min-width: 240px;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-          transition: all 0.2s;
+          transition: border-color 0.2s;
+          transform: translateZ(0);
+        }
+        .topology-node.selected {
+          border-color: #38bdf8;
+          box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+        }
+        .topology-node:hover {
+          border-color: rgba(255,255,255,0.2);
         }
         .topology-node.online { border-left: 4px solid #10b981; }
         .topology-node.offline { border-left: 4px solid #ef4444; opacity: 0.8; }
-        .topology-node.selected { border: 2px solid #38bdf8; box-shadow: 0 0 20px rgba(56, 189, 248, 0.2); }
         
         .node-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
         .status-indicator {
@@ -831,6 +1151,43 @@ const TopologyMap: React.FC = () => {
           padding: 2px;
           box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
         }
+        
+        .host-badge {
+          background: rgba(245, 158, 11, 0.2);
+          color: #f59e0b;
+          border: 1px solid rgba(245, 158, 11, 0.3);
+          padding: 1px 4px;
+          border-radius: 4px;
+          font-size: 8px;
+          font-weight: 900;
+          display: flex;
+          align-items: center;
+          gap: 2px;
+        }
+
+        .node-parent-info {
+          font-size: 8px;
+          color: #94a3b8;
+          margin-top: 4px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-weight: 600;
+          opacity: 0.8;
+        }
+
+        .react-flow__edge-path {
+          pointer-events: none;
+        }
+        
+        /* Disable heavy effects during interaction */
+        .react-flow--dragging .topology-node {
+          background: rgba(15, 23, 42, 0.98) !important;
+          box-shadow: none !important;
+        }
+        .react-flow--dragging .react-flow__edge-path.animated {
+          animation-play-state: paused;
+        }
         .toggle-group {
           display: flex;
           gap: 10px;
@@ -867,8 +1224,129 @@ const TopologyMap: React.FC = () => {
           margin-bottom: 8px;
           font-weight: 700;
         }
+        .flow-controls {
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          background: rgba(15, 23, 42, 0.85);
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 12px;
+          padding: 12px;
+          width: 180px;
+          z-index: 1000;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          transition: all 0.3s ease;
+        }
+        .flow-controls.collapsed {
+          width: 140px;
+          gap: 0;
+          padding: 10px;
+        }
+        .flow-controls__header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.75rem;
+          font-weight: 800;
+          color: #38bdf8;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          padding-bottom: 8px;
+        }
+        .collapsed .flow-controls__header {
+          border-bottom: none;
+          padding-bottom: 0;
+        }
+        .flow-control-item {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .flow-control-item__label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.7rem;
+          color: #94a3b8;
+          font-weight: 600;
+        }
+        .flow-control-item input[type="range"] {
+          -webkit-appearance: none;
+          width: 100%;
+          height: 4px;
+          background: rgba(255,255,255,0.1);
+          border-radius: 2px;
+          outline: none;
+        }
+        .flow-control-item input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 12px;
+          height: 12px;
+          background: #38bdf8;
+          border-radius: 50%;
+          cursor: pointer;
+          box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        }
+        @media (max-width: 768px) {
+          .flow-controls {
+            top: auto;
+            bottom: 20px;
+            right: 10px;
+            background: rgba(15, 23, 42, 0.95);
+          }
+        }
+        
+        /* --- Styled React Flow Controls --- */
+        .react-flow__controls {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          background: rgba(15, 23, 42, 0.6) !important;
+          backdrop-filter: blur(12px) !important;
+          padding: 6px !important;
+          border-radius: 12px !important;
+          border: 1px solid rgba(255, 255, 255, 0.1) !important;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+          left: 20px !important;
+          bottom: 20px !important;
+        }
+        .react-flow__controls-button {
+          background: rgba(255, 255, 255, 0.03) !important;
+          border-bottom: none !important;
+          border: 1px solid rgba(255, 255, 255, 0.05) !important;
+          border-radius: 8px !important;
+          color: #94a3b8 !important;
+          width: 32px !important;
+          height: 32px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          margin-bottom: 2px !important;
+        }
+        .react-flow__controls-button:hover {
+          background: rgba(56, 189, 248, 0.15) !important;
+          color: #38bdf8 !important;
+          border-color: rgba(56, 189, 248, 0.4) !important;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
+        }
+        .react-flow__controls-button svg {
+          fill: currentColor !important;
+          width: 14px !important;
+          height: 14px !important;
+        }
+        .react-flow__controls-button:active {
+          transform: translateY(0) scale(0.95);
+        }
       `}</style>
     </div>
+    </FlowSettingsContext.Provider>
   );
 };
 
