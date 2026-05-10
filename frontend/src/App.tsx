@@ -12,6 +12,7 @@ import { ThemeManager } from './components/ThemeManager';
 import { ToastProvider } from './context/ToastContext';
 import { NetworkProvider } from './context/NetworkContext';
 import ErrorBoundary from './components/Common/ErrorBoundary';
+import { AuthGuard } from './components/Auth/AuthGuard';
 
 function App() {
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
@@ -21,9 +22,9 @@ function App() {
   useEffect(() => {
     const checkSetup = async () => {
       try {
-        console.log(`[App] Checking setup status... (Render #${renderCount.current})`);
+        if (import.meta.env.DEV) console.log(`[App] Checking setup status... (Render #${renderCount.current})`);
         const status = await api.getSetupStatus();
-        console.log('[App] Setup status response:', status);
+        if (import.meta.env.DEV) console.log('[App] Setup status response:', status);
         
         setIsSetupComplete(prev => {
           if (prev === status.is_setup_complete) return prev;
@@ -66,22 +67,26 @@ function App() {
           <ThemeManager />
           <ErrorBoundary>
             <Routes>
-              {/* Setup Route */}
+              {/* Setup Route (Public) */}
               {!isSetupComplete && (
                 <Route path="*" element={<SetupWizard onComplete={() => setIsSetupComplete(true)} />} />
               )}
 
-              {/* Dashboard Routes */}
+              {/* Dashboard Routes (Protected) */}
               {isSetupComplete && (
-                <>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/network" element={<SubnetView />} />
-                  <Route path="/topology" element={<NetworkPlanner />} />
-                  <Route path="/agents" element={<AgentsView />} />
-                  <Route path="/settings" element={<SettingsView />} />
-                  <Route path="/logs" element={<LogsPage />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </>
+                <Route path="*" element={
+                  <AuthGuard>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/network" element={<SubnetView />} />
+                      <Route path="/topology" element={<NetworkPlanner />} />
+                      <Route path="/agents" element={<AgentsView />} />
+                      <Route path="/settings" element={<SettingsView />} />
+                      <Route path="/logs" element={<LogsPage />} />
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                  </AuthGuard>
+                } />
               )}
             </Routes>
           </ErrorBoundary>

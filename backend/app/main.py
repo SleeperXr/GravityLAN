@@ -93,45 +93,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized: %s", settings.effective_database_url)
 
-    # --- Schema Migration: Add missing columns to existing SQLite DB ---
-    # We do this BEFORE starting any background tasks to avoid OperationalErrors
+    # --- Schema Migration ---
+    from app.database.migrations import run_migrations
     from app.database import async_session
-    from sqlalchemy import text
     async with async_session() as db:
-        migration_columns = [
-            ("devices", "topology_x", "INTEGER"),
-            ("devices", "topology_y", "INTEGER"),
-            ("devices", "max_ports",  "INTEGER DEFAULT 24"),
-            ("devices", "topology_config", "TEXT"),
-            ("devices", "parent_id",  "INTEGER"),
-            ("devices", "rack_id",    "INTEGER"),
-            ("devices", "rack_unit",  "INTEGER"),
-            ("devices", "rack_height","INTEGER DEFAULT 1"),
-            ("devices", "is_wlan",    "BOOLEAN DEFAULT 0"),
-            ("devices", "is_ap",      "BOOLEAN DEFAULT 0"),
-            ("devices", "is_host",    "BOOLEAN DEFAULT 0"),
-            ("topology_links", "source_handle", "TEXT"),
-            ("topology_links", "target_handle", "TEXT"),
-            ("discovered_hosts", "is_reserved", "BOOLEAN DEFAULT 0"),
-            ("discovered_hosts", "old_ip", "VARCHAR(45)"),
-            ("discovered_hosts", "ip_changed_at", "DATETIME"),
-            ("discovered_hosts", "ports", "TEXT"),
-        ]
-        
-        raw_conn = await db.connection()
-        for table, column, col_type in migration_columns:
-            try:
-                # Check if column already exists via PRAGMA
-                result = await raw_conn.exec_driver_sql(f"PRAGMA table_info({table})")
-                existing_columns = {row[1] for row in result.fetchall()}
-                if column not in existing_columns:
-                    logger.info(f"Schema migration: Adding column '{column}' to '{table}'...")
-                    await raw_conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
-                    logger.info(f"Schema migration: Column '{column}' added successfully.")
-            except Exception as e:
-                logger.error(f"Migration error on {table}.{column}: {e}")
-        await db.commit()
-        logger.info("Schema migration complete.")
+        await run_migrations(db)
 
     # Start the scan scheduler
     from app.scanner.scheduler import scheduler
@@ -167,8 +133,6 @@ async def lifespan(app: FastAPI):
             await db.commit()
 
     yield
-
-    # Shutdown
 
     # Shutdown
     from app.scanner.scheduler import scheduler
@@ -221,6 +185,7 @@ app.add_middleware(
 )
 
 # --- Register API routers ---
+from app.api.auth import router as auth_router  # noqa: E402
 from app.api.devices import groups_router, router_services, router as devices_router  # noqa: E402
 from app.api.scanner import router as scanner_router  # noqa: E402
 from app.api.settings import router as settings_router  # noqa: E402
@@ -230,6 +195,7 @@ from app.api.backup import router as backup_router  # noqa: E402
 from app.api.network import router as network_router  # noqa: E402
 from app.api.topology import router as topology_router  # noqa: E402
 
+app.include_router(auth_router)
 app.include_router(backup_router)
 app.include_router(network_router)
 app.include_router(topology_router)
@@ -255,7 +221,26 @@ async def health_check() -> dict:
 
 @app.websocket("/api/logs/ws")
 async def logs_websocket(websocket: WebSocket):
-    """WebSocket endpoint for real-time backend log streaming."""
+    """WebSocket endpoint for real-time backend log streaming with authentication."""
+    token = websocket.query_params.get("token")
+    
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+
+    from app.database import async_session
+    from app.models.setting import Setting
+    from sqlalchemy import select
+    
+    async with async_session() as db:
+        res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
+        master_setting = res_token.scalar_one_or_none()
+        master_token = master_setting.value if master_setting else None
+        
+        if not master_token or token != master_token:
+            await websocket.close(code=4003, reason="Unauthorized")
+            return
+
     from app.services.log_streamer import log_handler
     await websocket.accept()
     

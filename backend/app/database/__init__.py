@@ -21,9 +21,10 @@ engine = create_async_engine(
         "check_same_thread": False,
         "timeout": 30
     } if "sqlite" in settings.effective_database_url else {},
-    # Use a larger pool size to prevent starvation, SQLite WAL handles concurrency
-    pool_size=20 if "sqlite" in settings.effective_database_url else 20,
-    max_overflow=40 if "sqlite" in settings.effective_database_url else 20,
+    # SQLite works best with a small connection pool. 
+    # WAL mode handles concurrent reads, but writes are still serialized.
+    pool_size=5 if "sqlite" in settings.effective_database_url else 20,
+    max_overflow=10 if "sqlite" in settings.effective_database_url else 20,
 )
 
 # Enable WAL mode for SQLite to prevent "database is locked" errors

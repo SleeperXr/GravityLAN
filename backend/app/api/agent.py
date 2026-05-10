@@ -99,14 +99,22 @@ async def receive_report(
         agent_token = result.scalar_one_or_none()
 
         # 2. Token Adoption / Device Mapping (Auto-healing after server reset)
-        if not agent_token and client_ip:
-            # 2.1 Look for a device with this IP (regardless of token status)
+        # This is a security-sensitive area. We only allow adoption if explicitly enabled
+        # and if the payload provides a matching device_id.
+        from app.models.setting import Setting
+        adopt_res = await db.execute(select(Setting).where(Setting.key == "agent.allow_auto_adoption"))
+        allow_adopt_setting = adopt_res.scalar_one_or_none()
+        allow_auto_adopt = allow_adopt_setting.value.lower() == "true" if allow_adopt_setting else False
+
+        if not agent_token and client_ip and allow_auto_adopt:
+            # 2.1 Look for a device with this IP
             dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
             device = dev_result.scalar_one_or_none()
             
-            if device:
-                logger.info("Adopting token %s... for existing device %d (%s)", 
-                            token[:8], device.id, client_ip)
+            # CRITICAL: Payload device_id MUST match. This prevents random IP takeover.
+            if device and device.id == payload.device_id:
+                logger.warning("Adopting token %s... for existing device %d (%s) - Auto-Adoption is ENABLED", 
+                               token[:8], device.id, client_ip)
                 # Create token for this device if it doesn't have one, or update if it does
                 token_result = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
                 existing_token = token_result.scalar_one_or_none()
@@ -118,37 +126,15 @@ async def receive_report(
                 else:
                     agent_token = AgentToken(device_id=device.id, token=token)
                     db.add(agent_token)
-                # We skip the flush here and let the final commit handle everything
             else:
-                # 2.2 Fallback: Check DiscoveredHost table (auto-promote to Device)
-                disc_result = await db.execute(
-                    select(DiscoveredHost).where(DiscoveredHost.ip == client_ip)
-                )
-                disc = disc_result.scalar_one_or_none()
-                if disc:
-                    logger.info("Agent report from IP %s found in DiscoveredHost. Auto-promoting.", client_ip)
-                    from app.scanner.utils import ensure_default_groups
-                    group_map = await ensure_default_groups(db)
-                    
-                    device = Device(
-                        ip=disc.ip,
-                        mac=disc.mac,
-                        hostname=disc.hostname,
-                        display_name=disc.hostname.split('.')[0] if disc.hostname else disc.ip,
-                        device_type="server",
-                        group_id=group_map.get("Server", list(group_map.values())[0]),
-                        is_online=True
-                    )
-                    db.add(device)
-                    # We flush device creation immediately to ensure we have an ID for the token
-                    await db.flush()
-                    
-                    agent_token = AgentToken(device_id=device.id, token=token)
-                    db.add(agent_token)
-                else:
-                    logger.warning("Rejected report from unknown token %s... for IP %s", 
-                                   token[:8], client_ip)
-                    raise HTTPException(status_code=401, detail="Invalid token and no device found")
+                logger.warning("Rejected report from unknown token %s... for IP %s (Auto-Adoption check failed)", 
+                               token[:8], client_ip)
+                raise HTTPException(status_code=401, detail="Invalid token and adoption rejected")
+        elif not agent_token:
+            # Adoption disabled or no IP match
+            logger.warning("Rejected report from unknown token %s... for IP %s (Adoption disabled)", 
+                           token[:8], client_ip)
+            raise HTTPException(status_code=401, detail="Invalid token")
 
         # 3. Handle device existence and re-discovery
         # 3. DB operations inside no_autoflush block to prevent "Query-invoked autoflush" locks
@@ -293,7 +279,8 @@ async def receive_report(
             for ws in _ws_subscribers[effective_device_id]:
                 try:
                     await ws.send_json({"type": "metrics", "data": snapshot})
-                except:
+                except Exception as e:
+                    logger.debug(f"Metrics WebSocket error for device {effective_device_id}: {e}")
                     dead_links.add(ws)
             _ws_subscribers[effective_device_id] -= dead_links
 
@@ -871,19 +858,52 @@ async def uninstall_agent_endpoint(
 
 @router.websocket("/ws/{device_id}")
 async def agent_websocket(websocket: WebSocket, device_id: int):
-    """WebSocket for real-time metric streaming to the dashboard."""
+    """WebSocket for real-time metric streaming to the dashboard with authentication."""
+    token = websocket.query_params.get("token")
+    
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+
+    async with async_session() as db:
+        # 1. Check for Master Token
+        from app.models.setting import Setting
+        master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
+        master_setting = master_res.scalar_one_or_none()
+        master_token = master_setting.value if master_setting else None
+        
+        is_authorized = (token == master_token and master_token is not None)
+        
+        if not is_authorized:
+            # 2. Fallback to Agent-specific token
+            result = await db.execute(
+                select(AgentToken).where(
+                    AgentToken.token == token,
+                    AgentToken.is_active.is_(True)
+                )
+            )
+            agent_token = result.scalar_one_or_none()
+            
+            if agent_token and agent_token.device_id == device_id:
+                is_authorized = True
+        
+        if not is_authorized:
+            logger.warning("WebSocket auth failed for device %d (token: %s...)", 
+                           device_id, token[:8] if token else "None")
+            await websocket.close(code=4003, reason="Unauthorized")
+            return
+
     await websocket.accept()
     if device_id not in _ws_subscribers:
         _ws_subscribers[device_id] = set()
     _ws_subscribers[device_id].add(websocket)
     
     try:
-        # Send initial snapshot if available
         if device_id in _latest_metrics:
             await websocket.send_json({"type": "metrics", "data": _latest_metrics[device_id]})
             
         while True:
-            await websocket.receive_text()  # Keep connection alive
+            await websocket.receive_text()
     except WebSocketDisconnect:
         if device_id in _ws_subscribers:
             _ws_subscribers[device_id].discard(websocket)

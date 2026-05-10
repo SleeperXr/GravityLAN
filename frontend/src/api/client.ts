@@ -31,13 +31,13 @@ export const api = {
   stopScan: () => request<{ status: string }>('/api/scanner/stop', { method: 'POST' }),
   getScanStatus: () => request<import('../types').ScanProgress>('/api/scanner/status'),
   getDiscoveredHosts: () => request<import('../types').DiscoveredHost[]>('/api/scanner/discovered'),
-  scanIp: (ip: string) => request<any>(`/api/scanner/scan-ip?ip=${ip}`),
+  scanIp: (ip: string) => request<import('../types').DiscoveredHost>(`/api/scanner/scan-ip?ip=${ip}`),
   liveDiscovery: (data: { subnets: string[] }) =>
-    request<any[]>(`/api/scanner/live-discovery?subnets=${data.subnets.join(',')}`),
+    request<import('../types').DiscoveredHost[]>(`/api/scanner/live-discovery?subnets=${data.subnets.join(',')}`),
   patchDiscoveredHost: (id: number, data: { custom_name?: string; is_monitored?: boolean }) =>
     request<import('../types').DiscoveredHost>(`/api/scanner/discovered/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   quickSubnetScan: (subnets: string) =>
-    request<any>(`/api/scanner/quick-subnet-scan?subnets=${subnets}`, { method: 'POST' }),
+    request<{ status: string; hosts_found: number }>(`/api/scanner/quick-subnet-scan?subnets=${subnets}`, { method: 'POST' }),
 
   // Devices
   getDevices: () => request<import('../types').Device[]>('/api/devices'),
@@ -53,8 +53,8 @@ export const api = {
   getDeviceHistory: (id: number) => request<import('../types').DeviceHistoryResponse[]>(`/api/devices/${id}/history`),
 
   // Services
-  addService: (deviceId: number, data: any) => request<any>(`/api/devices/${deviceId}/services`, { method: 'POST', body: JSON.stringify(data) }),
-  updateService: (serviceId: number, data: any) => request<any>(`/api/services/${serviceId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  addService: (deviceId: number, data: Partial<import('../types').Service>) => request<import('../types').Service>(`/api/devices/${deviceId}/services`, { method: 'POST', body: JSON.stringify(data) }),
+  updateService: (serviceId: number, data: Partial<import('../types').Service>) => request<import('../types').Service>(`/api/services/${serviceId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteService: (serviceId: number) => request<void>(`/api/services/${serviceId}`, { method: 'DELETE' }),
 
   // Groups
@@ -95,14 +95,14 @@ export const api = {
   getAgentStatus: (deviceId: number) =>
     request<{ device_id: number; is_installed: boolean; is_active: boolean; agent_version?: string; last_seen?: string }>(`/api/agent/status/${deviceId}`),
   getAgentMetrics: (deviceId: number, limit?: number) =>
-    request<{ device_id: number; snapshots: any[] }>(`/api/agent/metrics/${deviceId}?limit=${limit || 60}`),
+    request<{ device_id: number; snapshots: import('../types').AgentSnapshot[] }>(`/api/agent/metrics/${deviceId}?limit=${limit || 60}`),
   getAgentConfig: (deviceId: number) =>
     request<{ interval: number; disk_paths: string[]; enable_temp: boolean }>(`/api/agent/config/${deviceId}`),
   updateAgentConfig: (deviceId: number, data: { interval?: number; disk_paths?: string[]; enable_temp?: boolean }) =>
-    request<any>(`/api/agent/config/${deviceId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    request<{ interval: number; disk_paths: string[]; enable_temp: boolean }>(`/api/agent/config/${deviceId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAgentsOverview: () => 
     request<{
-      agents: any[];
+      agents: import('../types').AgentSummary[];
       total_agents: number;
       active_agents: number;
       total_data_points: number;
@@ -110,21 +110,29 @@ export const api = {
       avg_ram: number;
     }>('/api/agent/overview'),
   getGlobalMetrics: () => 
-    request<{ history: any[] }>('/api/agent/global-metrics'),
+    request<{ history: import('../types').GlobalMetricPoint[] }>('/api/agent/global-metrics'),
 
   // Network (Subnets)
-  getSubnetsList: () => request<any[]>('/api/network/subnets'),
-  createSubnet: (data: any) => request<any>('/api/network/subnets', { method: 'POST', body: JSON.stringify(data) }),
-  updateSubnet: (id: number, data: any) => request<any>(`/api/network/subnets/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getSubnetsList: () => request<import('../types').Subnet[]>('/api/network/subnets'),
+  createSubnet: (data: Partial<import('../types').Subnet>) => request<import('../types').Subnet>('/api/network/subnets', { method: 'POST', body: JSON.stringify(data) }),
+  updateSubnet: (id: number, data: Partial<import('../types').Subnet>) => request<import('../types').Subnet>(`/api/network/subnets/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteSubnet: (id: number) => request<void>(`/api/network/subnets/${id}`, { method: 'DELETE' }),
 
   // Topology
-  getRacks: () => request<any[]>('/api/topology/racks'),
-  createRack: (data: any) => request<any>('/api/topology/racks', { method: 'POST', body: JSON.stringify(data) }),
+  getRacks: () => request<import('../types').Rack[]>('/api/topology/racks'),
+  createRack: (data: Partial<import('../types').Rack>) => request<import('../types').Rack>('/api/topology/racks', { method: 'POST', body: JSON.stringify(data) }),
   deleteRack: (id: number) => request<void>(`/api/topology/racks/${id}`, { method: 'DELETE' }),
-  getTopologyLinks: () => request<any[]>('/api/topology/links'),
-  createTopologyLink: (data: any) => request<any>('/api/topology/links', { method: 'POST', body: JSON.stringify(data) }),
+  getTopologyLinks: () => request<import('../types').TopologyLink[]>('/api/topology/links'),
+  createTopologyLink: (data: Partial<import('../types').TopologyLink>) => request<import('../types').TopologyLink>('/api/topology/links', { method: 'POST', body: JSON.stringify(data) }),
   deleteTopologyLink: (id: number) => request<void>(`/api/topology/links/${id}`, { method: 'DELETE' }),
+
+  // Auth
+  login: (password: string) => 
+    request<{ token: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }).then(res => {
+      localStorage.setItem('gravitylan_token', res.token);
+      return res;
+    }),
+  checkAuth: (token: string) => request<{ status: string }>('/api/auth/check', { method: 'POST', body: JSON.stringify({ token }) }),
 };
 
 /** Create a WebSocket connection for scan progress updates. */
@@ -132,7 +140,8 @@ export function createScanSocket(onMessage: (data: import('../types').ScanProgre
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
   const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
-  const ws = new WebSocket(`${wsBase}/api/scanner/ws`);
+  const token = localStorage.getItem('gravitylan_token') || '';
+  const ws = new WebSocket(`${wsBase}/api/scanner/ws?token=${token}`);
 
   ws.onmessage = (event) => {
     try {
@@ -153,7 +162,8 @@ export function createMetricsSocket(deviceId: number, onMessage: (data: any) => 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
   const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
-  const ws = new WebSocket(`${wsBase}/api/agent/ws/${deviceId}`);
+  const token = localStorage.getItem('gravitylan_token') || '';
+  const ws = new WebSocket(`${wsBase}/api/agent/ws/${deviceId}?token=${token}`);
 
   ws.onmessage = (event) => {
     try {
