@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.device import Device, DeviceGroup, Service
 from app.models.agent import AgentToken
 from app.scanner.vendor import get_vendor
+from app.services.cache_service import topology_cache, dashboard_cache
 from app.scanner.hostname import resolve_hostname, is_ip_like
 from app.schemas.device import (
     DeviceResponse,
@@ -43,6 +44,11 @@ async def list_devices(
         query = query.where(Device.group_id == group_id)
 
     query = query.order_by(Device.sort_order, Device.display_name)
+    # Cache check
+    cache_key = f"list_devices:{include_hidden}:{group_id}"
+    cached = dashboard_cache.get(cache_key)
+    if cached: return cached
+
     result = await db.execute(query)
     devices = result.scalars().all()
     
@@ -71,6 +77,7 @@ async def list_devices(
                 p_q = await db.execute(select(Device.display_name).where(Device.id == device.parent_id))
                 device.parent_name = p_q.scalar_one_or_none()
 
+    dashboard_cache.set(cache_key, devices)
     return devices
 
 
@@ -92,7 +99,7 @@ async def refresh_all_devices(background_tasks: BackgroundTasks, db: AsyncSessio
 
         async def run_bulk_metadata_refresh():
             logger.info(f"Starting bulk metadata refresh for {len(devices_to_refresh)} devices.")
-            from app.scanner.discovery import resolve_mac_addresses
+            from app.scanner.arp import resolve_mac_addresses
             
             # 1. Resolve all missing MACs in one go
             hosts_for_mac = [{"ip": d.ip, "mac": None} for d in devices_to_refresh]
@@ -180,7 +187,7 @@ async def add_device_from_ip(ip: str, db: AsyncSession = Depends(get_db)) -> Dev
         else:
             device.display_name = ip
         
-        from app.scanner.discovery import resolve_mac_addresses
+        from app.scanner.arp import resolve_mac_addresses
         hosts = [{"ip": ip, "mac": None}]
         await resolve_mac_addresses(hosts)
         if hosts[0]["mac"]:
@@ -200,7 +207,8 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     """Get a single device by ID."""
     device = await db.get(Device, device_id)
     if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
+        from app.exceptions import DeviceNotFoundError
+        raise DeviceNotFoundError(device_id)
     return device
 
 
@@ -220,6 +228,7 @@ async def update_device(
         setattr(device, field, value)
 
     await db.commit()
+    topology_cache.invalidate()
     await db.refresh(device)
     logger.info("Device %s updated: %s", device_id, update_data)
     return device
@@ -234,6 +243,7 @@ async def delete_device(device_id: int, db: AsyncSession = Depends(get_db)) -> N
 
     await db.delete(device)
     await db.commit()
+    topology_cache.invalidate()
 
 
 @router.post("/bulk-delete", status_code=204)
@@ -245,6 +255,7 @@ async def bulk_delete_devices(device_ids: list[int], db: AsyncSession = Depends(
 
     await db.execute(delete(Device).where(Device.id.in_(device_ids)))
     await db.commit()
+    topology_cache.invalidate()
     logger.info(f"Bulk deleted {len(device_ids)} devices")
 
 
@@ -278,7 +289,7 @@ async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db)
     
     # 2. Try to resolve MAC via ARP if missing
     if not device.mac:
-        from app.scanner.discovery import resolve_mac_addresses
+        from app.scanner.arp import resolve_mac_addresses
         hosts = [{"ip": device.ip, "mac": None}]
         await resolve_mac_addresses(hosts)
         if hosts[0]["mac"]:

@@ -121,7 +121,8 @@
     "nmap_scan": "Nmap Scan",
     "ports_found": "Gefundene Ports: {{ports}}",
     "no_ports_found": "Keine Ports gefunden",
-    "alarm": "Alarm"
+    "alarm": "Alarm",
+    "recent_findings": "Aktuelle Funde"
   },
   "editor": {
     "title_edit": "Gerät bearbeiten",

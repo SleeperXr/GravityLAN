@@ -2,6 +2,7 @@ pyproject.toml
 app/__init__.py
 app/config.py
 app/database.py
+app/exceptions.py
 app/main.py
 app/api/__init__.py
 app/api/devices.py

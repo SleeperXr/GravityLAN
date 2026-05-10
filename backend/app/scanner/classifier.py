@@ -9,6 +9,8 @@ subtype (Sophos, Proxmox, Synology, etc.) using a priority-based rule system.
 
 import logging
 import re
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -68,30 +70,145 @@ CLIENT_HOSTNAME_PATTERNS: list[str] = [
     "KYO", "EPSON", "HP-", "CANON", "BROTHER", "PRINTER", "DRUCKER",
 ]
 
-# --- Service Templates ---
+# --- Service Templates Database ---
 
-SERVICE_TEMPLATES: dict[str, dict] = {
-    "ssh":           {"name": "SSH",           "protocol": "ssh",   "port": 22,    "color": "#27ae60", "url_template": "ssh://{ip}"},
-    "rdp":           {"name": "RDP",           "protocol": "rdp",   "port": 3389,  "color": "#2980b9", "url_template": "ms-rdp://full%20address=s:{ip}"},
-    "http":          {"name": "HTTP",          "protocol": "http",  "port": 80,    "color": "#7f8c8d", "url_template": "http://{ip}"},
-    "https":         {"name": "HTTPS",         "protocol": "https", "port": 443,   "color": "#3498db", "url_template": "https://{ip}"},
-    "smb":           {"name": "SMB",           "protocol": "smb",   "port": 445,   "color": "#f39c12", "url_template": "smb://{ip}"},
-    "scp":           {"name": "SCP",           "protocol": "scp",   "port": 22,    "color": "#8e44ad", "url_template": "scp://{ip}"},
-    "sophos_admin":  {"name": "Sophos Admin",  "protocol": "https", "port": 4444,  "color": "#e67e22", "url_template": "https://{ip}:4444"},
-    "sophos_vpn":    {"name": "Sophos VPN",    "protocol": "https", "port": 4445,  "color": "#d68910", "url_template": "https://{ip}:4445"},
-    "securepoint":   {"name": "Securepoint",   "protocol": "https", "port": 11115, "color": "#c0392b", "url_template": "https://{ip}:11115"},
-    "proxmox":       {"name": "Proxmox",       "protocol": "https", "port": 8006,  "color": "#e57000", "url_template": "https://{ip}:8006"},
-    "esxi":          {"name": "ESXi",          "protocol": "https", "port": 443,   "color": "#607d8b", "url_template": "https://{ip}"},
-    "synology":      {"name": "Synology",      "protocol": "https", "port": 5001,  "color": "#217346", "url_template": "https://{ip}:5001"},
-    "synology_http": {"name": "Synology",      "protocol": "http",  "port": 5000,  "color": "#217346", "url_template": "http://{ip}:5000"},
-    "qnap":          {"name": "QNAP",          "protocol": "https", "port": 443,   "color": "#005a9c", "url_template": "https://{ip}"},
-    "nutanix":       {"name": "Nutanix",       "protocol": "https", "port": 9440,  "color": "#024DA1", "url_template": "https://{ip}:9440"},
-    "cockpit":       {"name": "Cockpit",       "protocol": "https", "port": 9090,  "color": "#0066cc", "url_template": "https://{ip}:9090"},
-    "webmin":        {"name": "Webmin",        "protocol": "https", "port": 10000, "color": "#336791", "url_template": "https://{ip}:10000"},
-    "homeassistant": {"name": "Home Assistant", "protocol": "http",  "port": 8123,  "color": "#41BDF5", "url_template": "http://{ip}:8123"},
-    "iobroker":      {"name": "ioBroker",      "protocol": "http",  "port": 8081,  "color": "#3399CC", "url_template": "http://{ip}:8081"},
+SERVICE_TEMPLATES: Dict[str, Dict[str, Any]] = {
+    "ssh": {
+        "name": "SSH",
+        "protocol": "ssh",
+        "port": 22,
+        "color": "#34495e",
+        "url_template": "ssh://{ip}",
+    },
+    "scp": {
+        "name": "SCP",
+        "protocol": "scp",
+        "port": 22,
+        "color": "#2c3e50",
+        "url_template": "scp://{ip}",
+    },
+    "rdp": {
+        "name": "RDP",
+        "protocol": "rdp",
+        "port": 3389,
+        "color": "#2980b9",
+        "url_template": "rdp://{ip}",
+    },
+    "http": {
+        "name": "HTTP",
+        "protocol": "http",
+        "port": 80,
+        "color": "#95a5a6",
+        "url_template": "http://{ip}",
+    },
+    "https": {
+        "name": "HTTPS",
+        "protocol": "https",
+        "port": 443,
+        "color": "#7f8c8d",
+        "url_template": "https://{ip}",
+    },
+    "smb": {
+        "name": "SMB (File Share)",
+        "protocol": "smb",
+        "port": 445,
+        "color": "#27ae60",
+        "url_template": "smb://{ip}",
+    },
+    "sophos_admin": {
+        "name": "Sophos WebAdmin",
+        "protocol": "https",
+        "port": 4444,
+        "color": "#e67e22",
+        "url_template": "https://{ip}:4444",
+    },
+    "sophos_vpn": {
+        "name": "Sophos User Portal",
+        "protocol": "https",
+        "port": 443,
+        "color": "#d35400",
+        "url_template": "https://{ip}",
+    },
+    "securepoint": {
+        "name": "Securepoint Admin",
+        "protocol": "https",
+        "port": 11115,
+        "color": "#c0392b",
+        "url_template": "https://{ip}:11115",
+    },
+    "proxmox": {
+        "name": "Proxmox WebUI",
+        "protocol": "https",
+        "port": 8006,
+        "color": "#d35400",
+        "url_template": "https://{ip}:8006",
+    },
+    "esxi": {
+        "name": "ESXi WebUI",
+        "protocol": "https",
+        "port": 443,
+        "color": "#2980b9",
+        "url_template": "https://{ip}",
+    },
+    "nutanix": {
+        "name": "Nutanix Prism",
+        "protocol": "https",
+        "port": 9440,
+        "color": "#2c3e50",
+        "url_template": "https://{ip}:9440",
+    },
+    "synology": {
+        "name": "DSM (HTTPS)",
+        "protocol": "https",
+        "port": 5001,
+        "color": "#2980b9",
+        "url_template": "https://{ip}:5001",
+    },
+    "synology_http": {
+        "name": "DSM (HTTP)",
+        "protocol": "http",
+        "port": 5000,
+        "color": "#3498db",
+        "url_template": "http://{ip}:5000",
+    },
+    "qnap": {
+        "name": "QTS WebUI",
+        "protocol": "https",
+        "port": 8080,
+        "color": "#2980b9",
+        "url_template": "https://{ip}:8080",
+    },
+    "homeassistant": {
+        "name": "Home Assistant",
+        "protocol": "http",
+        "port": 8123,
+        "color": "#3498db",
+        "url_template": "http://{ip}:8123",
+    },
+    "iobroker": {
+        "name": "ioBroker Admin",
+        "protocol": "http",
+        "port": 8081,
+        "color": "#27ae60",
+        "url_template": "http://{ip}:8081",
+    },
+    "cockpit": {
+        "name": "Cockpit Admin",
+        "protocol": "https",
+        "port": 9090,
+        "color": "#c0392b",
+        "url_template": "https://{ip}:9090",
+    },
+    "webmin": {
+        "name": "Webmin Admin",
+        "protocol": "https",
+        "port": 10000,
+        "color": "#2980b9",
+        "url_template": "https://{ip}:10000",
+    },
 }
 
+# --- Helper Functions ---
 
 def is_client_hostname(hostname: str) -> bool:
     """Check if a hostname belongs to a client device (desktop, printer, IoT).
@@ -119,154 +236,8 @@ def is_client_hostname(hostname: str) -> bool:
     return any(p in h for p in CLIENT_HOSTNAME_PATTERNS)
 
 
-def classify_device(host_info: dict) -> dict | None:
-    """Classify a network device by hostname patterns and open ports.
-
-    Priority order:
-    1. Firewalls (port-based, then hostname-based)
-    2. Hypervisors (specific management ports)
-    3. NAS devices (port + hostname combo)
-    4. Servers (hostname patterns)
-    5. Web/SSH interfaces (catch-all for admin-capable devices)
-
-    Args:
-        host_info: Dict with 'ip', 'hostname' (optional), 'ports' (list[int]).
-
-    Returns:
-        Enriched dict with 'device_type', 'device_subtype', 'services' added,
-        or None if the device should be filtered out.
-    """
-    hostname = (host_info.get("hostname") or "").upper()
-    ip = host_info.get("ip", "")
-    ports = host_info.get("ports", [])
-    port_set = set(ports)
-
-    result = {
-        **host_info,
-        "device_type": "unknown",
-        "device_subtype": "Unknown",
-        "services": [],
-    }
-
-    # === 1. FIREWALL DETECTION (highest priority) ===
-
-    if 4444 in port_set or 4445 in port_set:
-        result["device_type"] = "firewall"
-        result["device_subtype"] = "Sophos"
-        result["services"] = _build_services(port_set, firewall_type="sophos")
-        return result
-
-    if 11115 in port_set:
-        result["device_type"] = "firewall"
-        result["device_subtype"] = "Securepoint"
-        result["services"] = _build_services(port_set, firewall_type="securepoint")
-        return result
-
-    if any(p in hostname for p in FIREWALL_HOSTNAME_PATTERNS):
-        result["device_type"] = "firewall"
-        result["device_subtype"] = "Router/Firewall"
-        result["services"] = _build_services(port_set)
-        return result
-
-    # === 2. HYPERVISOR DETECTION ===
-
-    if 8006 in port_set or "PVE" in hostname:
-        result["device_type"] = "server"
-        result["device_subtype"] = "Proxmox"
-        result["services"] = _build_services(port_set, add_specific=["proxmox"])
-        return result
-
-    if 902 in port_set:
-        result["device_type"] = "server"
-        result["device_subtype"] = "ESXi"
-        result["services"] = _build_services(port_set, add_specific=["esxi"])
-        return result
-
-    if 9440 in port_set:
-        result["device_type"] = "server"
-        result["device_subtype"] = "Nutanix"
-        result["services"] = _build_services(port_set, add_specific=["nutanix"])
-        return result
-
-    if any(kw in hostname for kw in HYPERVISOR_HOSTNAME_PATTERNS):
-        result["device_type"] = "server"
-        result["device_subtype"] = "Hypervisor"
-        result["services"] = _build_services(port_set)
-        return result
-
-    # === 3. NAS DETECTION ===
-
-    is_synology_port = bool(port_set & {5000, 5001})
-    has_file_services = bool(port_set & {445, 2049})
-    is_nas_name = any(p in hostname for p in NAS_SYNOLOGY_PATTERNS)
-    is_qnap_name = any(p in hostname for p in NAS_QNAP_PATTERNS)
-
-    if (is_synology_port and has_file_services) or (is_synology_port and is_nas_name):
-        result["device_type"] = "server"
-        result["device_subtype"] = "Synology"
-        specific = ["synology" if 5001 in port_set else "synology_http"]
-        result["services"] = _build_services(port_set, add_specific=specific)
-        return result
-
-    if is_qnap_name and port_set & {80, 443, 8080}:
-        result["device_type"] = "server"
-        result["device_subtype"] = "QNAP"
-        result["services"] = _build_services(port_set, add_specific=["qnap"])
-        return result
-
-    # === 3.5 SMART HOME DETECTION ===
-
-    if 8123 in port_set:
-        result["device_type"] = "server"
-        result["device_subtype"] = "Home Assistant"
-        result["services"] = _build_services(port_set, add_specific=["homeassistant"])
-        return result
-
-    if 8081 in port_set:
-        result["device_type"] = "server"
-        result["device_subtype"] = "ioBroker"
-        result["services"] = _build_services(port_set, add_specific=["iobroker"])
-        return result
-
-    # === 4. SERVER DETECTION ===
-
-    if any(kw in hostname for kw in SERVER_HOSTNAME_PATTERNS):
-        result["device_type"] = "server"
-        result["device_subtype"] = _refine_server_subtype(hostname, port_set)
-        result["services"] = _build_services(port_set)
-        return result
-
-    # === 5. WEB/SSH INTERFACES (catch-all) ===
-
-    has_admin_services = bool(port_set & {22, 80, 443, 8080, 8443})
-
-    if is_client_hostname(hostname) and not has_admin_services:
-        return None
-
-    if has_admin_services:
-        result["device_type"] = "webui"
-        result["device_subtype"] = "SSH Device" if 22 in port_set else "Web Interface"
-        result["services"] = _build_services(port_set)
-        return result
-
-    # Even if no admin services, if we have any ports, return them as unknown device
-    if port_set:
-        result["services"] = _build_services(port_set)
-        return result
-
-    return result
-
-
 def _refine_server_subtype(hostname: str, port_set: set[int]) -> str:
-    """Determine a more specific server subtype from hostname keywords.
-
-    Args:
-        hostname: Uppercased hostname.
-        port_set: Set of open ports.
-
-    Returns:
-        Refined subtype string.
-    """
+    """Determine a more specific server subtype from hostname keywords."""
     role_map = [
         (["DC", "AD"], "Domain Controller"),
         (["DNS"], "DNS Server"),
@@ -297,19 +268,7 @@ def _build_services(
     firewall_type: str | None = None,
     add_specific: list[str] | None = None,
 ) -> list[dict]:
-    """Build a list of service dicts from open ports.
-
-    Maps open ports to known service templates and returns
-    a list of service definitions ready for database insertion.
-
-    Args:
-        port_set: Set of open ports.
-        firewall_type: If set, adds firewall-specific services.
-        add_specific: Additional specific service keys to include.
-
-    Returns:
-        List of service dicts with name, protocol, port, color, url_template.
-    """
+    """Build a list of service dicts from open ports."""
     services: list[dict] = []
     handled_ports: set[int] = set()
 
@@ -374,7 +333,6 @@ def _build_services(
     # Final catch-all for any other port not yet handled
     for port in port_set:
         if port not in handled_ports:
-            # Try to guess protocol (mostly TCP)
             services.append({
                 "name": f"Port {port}",
                 "protocol": "tcp",
@@ -386,3 +344,141 @@ def _build_services(
             handled_ports.add(port)
 
     return services
+
+
+class ClassificationRule(ABC):
+    """Abstract base class for classification rules."""
+    
+    @abstractmethod
+    def matches(self, hostname: str, port_set: Set[int]) -> bool:
+        """Check if this rule applies to the device."""
+        pass
+
+    @abstractmethod
+    def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
+        """Apply the classification logic and return updated host info."""
+        pass
+
+class FirewallRule(ClassificationRule):
+    def matches(self, hostname: str, port_set: Set[int]) -> bool:
+        if 4444 in port_set or 4445 in port_set: return True
+        if 11115 in port_set: return True
+        return any(p in hostname for p in FIREWALL_HOSTNAME_PATTERNS)
+
+    def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
+        if 4444 in port_set or 4445 in port_set:
+            return {**host_info, "device_type": "firewall", "device_subtype": "Sophos", "services": _build_services(port_set, firewall_type="sophos")}
+        if 11115 in port_set:
+            return {**host_info, "device_type": "firewall", "device_subtype": "Securepoint", "services": _build_services(port_set, firewall_type="securepoint")}
+        return {**host_info, "device_type": "firewall", "device_subtype": "Router/Firewall", "services": _build_services(port_set)}
+
+class HypervisorRule(ClassificationRule):
+    def matches(self, hostname: str, port_set: Set[int]) -> bool:
+        if 8006 in port_set: return True
+        if 902 in port_set: return True
+        if 9440 in port_set: return True
+        # Only match by name if very specific
+        h = hostname.upper()
+        if "PROXMOX" in h or h.startswith("PVE-"): return True
+        return any(kw in h for kw in ["ESXI", "VCENTER", "HYPER-V", "XEN"])
+
+    def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
+        if 8006 in port_set or "PVE" in hostname:
+            return {**host_info, "device_type": "server", "device_subtype": "Proxmox", "services": _build_services(port_set, add_specific=["proxmox"])}
+        if 902 in port_set:
+            return {**host_info, "device_type": "server", "device_subtype": "ESXi", "services": _build_services(port_set, add_specific=["esxi"])}
+        if 9440 in port_set:
+            return {**host_info, "device_type": "server", "device_subtype": "Nutanix", "services": _build_services(port_set, add_specific=["nutanix"])}
+        return {**host_info, "device_type": "server", "device_subtype": "Hypervisor", "services": _build_services(port_set)}
+
+class NasRule(ClassificationRule):
+    def matches(self, hostname: str, port_set: Set[int]) -> bool:
+        is_synology_port = bool(port_set & {5000, 5001})
+        is_nas_name = any(p in hostname for p in NAS_SYNOLOGY_PATTERNS) or any(p in hostname for p in NAS_QNAP_PATTERNS)
+        return is_synology_port or is_nas_name
+
+    def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
+        is_synology_port = bool(port_set & {5000, 5001})
+        has_file_services = bool(port_set & {445, 2049})
+        is_synology_name = any(p in hostname for p in NAS_SYNOLOGY_PATTERNS)
+        
+        if (is_synology_port and has_file_services) or (is_synology_port and is_synology_name):
+            specific = ["synology" if 5001 in port_set else "synology_http"]
+            return {**host_info, "device_type": "server", "device_subtype": "Synology", "services": _build_services(port_set, add_specific=specific)}
+        
+        if any(p in hostname for p in NAS_QNAP_PATTERNS) and port_set & {80, 443, 8080}:
+            return {**host_info, "device_type": "server", "device_subtype": "QNAP", "services": _build_services(port_set, add_specific=["qnap"])}
+        
+        return {**host_info, "device_type": "server", "device_subtype": "NAS", "services": _build_services(port_set)}
+
+class IotRule(ClassificationRule):
+    def matches(self, hostname: str, port_set: Set[int]) -> bool:
+        return bool(port_set & {8123, 8081})
+
+    def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
+        if 8123 in port_set:
+            return {**host_info, "device_type": "server", "device_subtype": "Home Assistant", "services": _build_services(port_set, add_specific=["homeassistant"])}
+        return {**host_info, "device_type": "server", "device_subtype": "ioBroker", "services": _build_services(port_set, add_specific=["iobroker"])}
+
+class ServerRule(ClassificationRule):
+    def matches(self, hostname: str, port_set: Set[int]) -> bool:
+        return any(kw in hostname for kw in SERVER_HOSTNAME_PATTERNS)
+
+    def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
+        return {**host_info, "device_type": "server", "device_subtype": _refine_server_subtype(hostname, port_set), "services": _build_services(port_set)}
+
+class GenericAdminRule(ClassificationRule):
+    def matches(self, hostname: str, port_set: Set[int]) -> bool:
+        return bool(port_set & {22, 3389, 80, 443, 8080, 8443})
+
+    def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
+        # If it has any web port, classify as webui
+        if port_set & {80, 443, 8080, 8443}:
+            return {**host_info, "device_type": "webui", "device_subtype": "Web Interface", "services": _build_services(port_set)}
+        
+        # Otherwise (SSH/RDP only), it's a server/host
+        device_subtype = "SSH Device" if 22 in port_set else "RDP Device"
+        return {**host_info, "device_type": "server", "device_subtype": device_subtype, "services": _build_services(port_set)}
+
+# Registered Rules in priority order
+CLASSIFICATION_RULES: List[ClassificationRule] = [
+    FirewallRule(),
+    HypervisorRule(),
+    NasRule(),
+    IotRule(),
+    ServerRule(),
+    GenericAdminRule()
+]
+
+def classify_device(host_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Classify a network device using the modular rule engine."""
+    hostname = (host_info.get("hostname") or "").upper()
+    ports = host_info.get("ports", [])
+    port_set = set(ports)
+
+    # Base state
+    result = {
+        **host_info,
+        "device_type": "unknown",
+        "device_subtype": "Unknown",
+        "services": [],
+    }
+
+    # Iterate through rules by priority
+    for rule in CLASSIFICATION_RULES:
+        if rule.matches(hostname, port_set):
+            return rule.apply(result, hostname, port_set)
+
+    # Filter out boring clients without admin interfaces
+    if is_client_hostname(hostname) and not port_set:
+        return None
+
+    # Even if no rule matched, if we have any ports, return them as unknown device
+    if port_set:
+        result["services"] = _build_services(port_set)
+        return result
+
+    return result
+
+
+

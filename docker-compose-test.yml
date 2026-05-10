@@ -1,0 +1,32 @@
+services:
+  gravitylan:
+    build: .
+    container_name: GravityLAN_Test
+    privileged: true
+    restart: unless-stopped
+    network_mode: host
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1
+    volumes:
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - GRAVITYLAN_PORT=8080
+      - GRAVITYLAN_DATA_DIR=/app/data
+      - TZ=Europe/Berlin
+      - GRAVITYLAN_DEBUG=true
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
+  samba:
+    image: dperson/samba
+    container_name: GravityLAN_SMB
+    restart: unless-stopped
+    ports:
+      - "139:139"
+      - "445:445"
+    volumes:
+      - ./data:/mnt/data
+    command: -u "gravity;lan" -s "data;/mnt/data;yes;no;no;gravity;gravity;gravity"
+    environment:
+      - TZ=Europe/Berlin

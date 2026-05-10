@@ -145,7 +145,8 @@ export function AgentsView() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
             <input 
               type="text" 
-              className="input pl-12 w-full h-12 bg-white/5 border-white/10" 
+              className="input w-full h-12 bg-white/5 border-white/10" 
+              style={{ paddingLeft: '3rem' }}
               placeholder="Filter by name, IP, or version..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -669,9 +670,19 @@ function AgentDetailView({ deviceId }: { deviceId: number }) {
           {latest?.disk?.map((disk: any) => (
             <div key={disk.path} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/[0.08] transition-colors group">
               <div className="flex justify-between items-start mb-3">
-                <div className="flex flex-col">
+                <div className="flex flex-col cursor-pointer group/path" 
+                  title="Click to copy full path"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(disk.path);
+                    const target = e.currentTarget;
+                    const originalText = target.innerText;
+                    target.innerHTML = '<span class="text-sky-400 text-[10px] uppercase font-bold">Copied!</span>';
+                    setTimeout(() => { target.innerText = originalText; }, 1000);
+                  }}
+                >
                   <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Mount Point</span>
-                  <span className="text-white font-bold truncate max-w-[120px]">{disk.path}</span>
+                  <span className="text-white font-bold truncate" title={disk.path}>{disk.path}</span>
                 </div>
                 <div className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                   disk.percent > 90 ? 'bg-rose-500/20 text-rose-400' : 

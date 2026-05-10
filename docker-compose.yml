@@ -13,7 +13,7 @@ services:
       home_lan:
         ipv4_address: 192.168.100.254
       default:
-        # Die Standard-Bridge für den Host-Kontakt
+        # Erforderlich für die Kommunikation mit dem Host (Ports)
 
     volumes:
       - /mnt/user/appdata/gravitylan/data:/app/data

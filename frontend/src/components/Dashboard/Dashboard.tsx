@@ -103,15 +103,17 @@ export function Dashboard() {
       }
     });
     
+    // Adaptive polling: 10s during scan, 30s normally, 60s if inactive (optional)
+    const pollInterval = isScanning ? 10000 : 30000;
     const interval = setInterval(() => {
       loadData(true);
-    }, 30000);
+    }, pollInterval);
     
     return () => {
       clearInterval(interval);
       ws.close();
     };
-  }, [loadData, isEditMode]);
+  }, [loadData, isEditMode, isScanning]);
 
   const toggleGroup = (id: number | string) => {
     const next = new Set(collapsedGroups);

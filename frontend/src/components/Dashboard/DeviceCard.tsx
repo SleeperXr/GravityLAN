@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { Device } from '../../types';
 import { ServiceBadge } from './ServiceBadge';
 import { DeviceMetrics } from './DeviceMetrics';
@@ -14,7 +15,7 @@ interface DeviceCardProps {
   onSelect?: (selected: boolean) => void;
 }
 
-export function DeviceCard({ device, isEditMode, onEdit, onRefresh, isSelected, onSelect }: DeviceCardProps) {
+export const DeviceCard = memo(({ device, isEditMode, onEdit, onRefresh, isSelected, onSelect }: DeviceCardProps) => {
   const { t } = useTranslation();
   const displayName = device.display_name || device.hostname || device.ip;
 
@@ -262,4 +263,15 @@ export function DeviceCard({ device, isEditMode, onEdit, onRefresh, isSelected, 
       </div>
     </div>
   );
-}
+}, (prev, next) => {
+  return (
+    prev.isEditMode === next.isEditMode &&
+    prev.isSelected === next.isSelected &&
+    prev.device.id === next.device.id &&
+    prev.device.is_online === next.device.is_online &&
+    prev.device.display_name === next.device.display_name &&
+    prev.device.ip === next.device.ip &&
+    prev.device.services?.length === next.device.services?.length &&
+    prev.device.agent_info?.agent_version === next.device.agent_info?.agent_version
+  );
+});

@@ -8,14 +8,15 @@ from app.models.device import Device, DiscoveredHost, Service
 import json
 from datetime import datetime, timedelta
 from app.scanner.vendor import get_vendor
-from app.scanner.discovery import _ping_host_async
+from app.scanner.utils import ping_host_async
 from app.scanner.hostname import is_ip_like
+from app.services.cache_service import discovery_cache, dashboard_cache, topology_cache
 
 logger = logging.getLogger(__name__)
  
 IP_FLAP_THRESHOLD = timedelta(minutes=2)
 
-async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None, vendor: str | None = None, ports: list[int] | None = None, is_planner_scan: bool = True):
+async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None, vendor: str | None = None, ports: list[int] | None = None, is_planner_scan: bool = True, should_invalidate_cache: bool = True):
     """
     Core synchronization logic. 
     Handles MAC-based identity, deduplication, and cross-table status updates.
@@ -134,7 +135,34 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
                 else:
                     logger.debug(f"Sync: Suppressing dashboard IP flap for {dev.display_name} ({dev.ip} -> {ip})")
 
-        await db.commit()
+        # 5. Commit with robust SQLite retry logic
+        import asyncio
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.orm.exc import StaleDataError
+        
+        for attempt in range(5):
+            try:
+                await db.commit()
+                break
+            except StaleDataError:
+                await db.rollback()
+                logger.debug(f"Sync: Stale data for {ip}, ignoring.")
+                break
+            except OperationalError as e:
+                await db.rollback()
+                error_msg = str(e).lower()
+                if ("locked" in error_msg or "busy" in error_msg) and attempt < 4:
+                    wait_time = (attempt + 1) * 0.2
+                    await asyncio.sleep(wait_time)
+                    continue
+                logger.error(f"Sync: DB locked permanently for {ip}: {e}")
+                raise
+
+        if should_invalidate_cache:
+            discovery_cache.invalidate()
+            if dev:
+                dashboard_cache.invalidate_all()
+                topology_cache.invalidate()
         return disc
 
 async def sync_docker_containers(containers: list[dict]):
@@ -173,3 +201,6 @@ async def sync_docker_containers(containers: list[dict]):
                     dev.last_seen = datetime.now()
         
         await db.commit()
+        discovery_cache.invalidate()
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()

@@ -11,6 +11,7 @@ import NetworkPlanner from './components/Topology/NetworkPlanner';
 import { ThemeManager } from './components/ThemeManager';
 import { ToastProvider } from './context/ToastContext';
 import { NetworkProvider } from './context/NetworkContext';
+import ErrorBoundary from './components/Common/ErrorBoundary';
 
 function App() {
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
@@ -63,25 +64,27 @@ function App() {
       <NetworkProvider>
         <BrowserRouter>
           <ThemeManager />
-          <Routes>
-            {/* Setup Route */}
-            {!isSetupComplete && (
-              <Route path="*" element={<SetupWizard onComplete={() => setIsSetupComplete(true)} />} />
-            )}
+          <ErrorBoundary>
+            <Routes>
+              {/* Setup Route */}
+              {!isSetupComplete && (
+                <Route path="*" element={<SetupWizard onComplete={() => setIsSetupComplete(true)} />} />
+              )}
 
-            {/* Dashboard Routes */}
-            {isSetupComplete && (
-              <>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/network" element={<SubnetView />} />
-                <Route path="/topology" element={<NetworkPlanner />} />
-                <Route path="/agents" element={<AgentsView />} />
-                <Route path="/settings" element={<SettingsView />} />
-                <Route path="/logs" element={<LogsPage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </>
-            )}
-          </Routes>
+              {/* Dashboard Routes */}
+              {isSetupComplete && (
+                <>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/network" element={<SubnetView />} />
+                  <Route path="/topology" element={<NetworkPlanner />} />
+                  <Route path="/agents" element={<AgentsView />} />
+                  <Route path="/settings" element={<SettingsView />} />
+                  <Route path="/logs" element={<LogsPage />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </>
+              )}
+            </Routes>
+          </ErrorBoundary>
         </BrowserRouter>
       </NetworkProvider>
     </ToastProvider>

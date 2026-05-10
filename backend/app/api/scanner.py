@@ -23,9 +23,11 @@ from app.schemas.scan import ScanProgress, ScanRequest, ScanStatus, SubnetInfo
 from app.scanner.planner import run_planner_scan
 from app.scanner.dashboard import run_dashboard_scan
 from app.scanner.sync import sync_host_to_db
+from app.services.cache_service import discovery_cache
 from app.scanner.utils import get_local_subnets
 from app.scanner.port_scanner import nmap_scan, scan_ports
-from app.scanner.discovery import discover_hosts_simple, resolve_mac_addresses
+from app.scanner.discovery import discover_hosts_simple
+from app.scanner.arp import resolve_mac_addresses
 from app.scanner.hostname import resolve_hostnames
 
 logger = logging.getLogger(__name__)
@@ -110,13 +112,19 @@ async def get_scan_status() -> ScanProgress:
 @router.get("/discovered", response_model=List[DiscoveredHostResponse])
 async def get_discovered_hosts() -> List[DiscoveredHost]:
     """Get all hosts from the persistent discovery table."""
+    cached = discovery_cache.get_hosts()
+    if cached is not None:
+        return cached
+
     async with async_session() as db:
         result = await db.execute(
             select(DiscoveredHost)
             .where(or_(DiscoveredHost.is_online == True, DiscoveredHost.is_monitored == True))
             .order_by(DiscoveredHost.is_monitored.desc(), DiscoveredHost.last_seen.desc())
         )
-        return list(result.scalars().all())
+        hosts = list(result.scalars().all())
+        discovery_cache.set_hosts(hosts)
+        return hosts
 
 @router.patch("/discovered/{host_id}", response_model=DiscoveredHostResponse)
 async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate) -> DiscoveredHost:
@@ -131,6 +139,7 @@ async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate) -> D
             setattr(host, field, value)
             
         await db.commit()
+        discovery_cache.invalidate()
         await db.refresh(host)
         return host
 

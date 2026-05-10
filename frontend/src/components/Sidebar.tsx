@@ -24,42 +24,59 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
         </button>
       </div>
 
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)' }}>
-        <Link 
-          to="/" 
-          className={`nav-item ${active === 'dashboard' ? 'active' : ''}`}
-          onClick={onClose}
-        >
-          <LayoutDashboard size={18} /> {t('sidebar.dashboard')}
-        </Link>
-        <Link 
-          to="/network" 
-          className={`nav-item ${active === 'network' ? 'active' : ''}`}
-          onClick={onClose}
-        >
-          <Grid size={18} /> IP Management
-        </Link>
-        <Link 
-          to="/topology" 
-          className={`nav-item ${active === 'topology' ? 'active' : ''}`}
-          onClick={onClose}
-        >
-          <Network size={18} /> Network Planner
-        </Link>
-        <Link 
-          to="/agents" 
-          className={`nav-item ${active === 'agents' ? 'active' : ''}`}
-          onClick={onClose}
-        >
-          <Server size={18} /> Agents
-        </Link>
-        <Link 
-          to="/settings" 
-          className={`nav-item ${active === 'settings' ? 'active' : ''}`}
-          onClick={onClose}
-        >
-          <Settings size={18} /> {t('sidebar.settings')}
-        </Link>
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+        <div className="nav-group">
+          <div className="nav-group__label" style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-tertiary)', padding: '0 var(--space-md)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Main
+          </div>
+          <Link 
+            to="/" 
+            className={`nav-item ${active === 'dashboard' ? 'active' : ''}`}
+            onClick={onClose}
+          >
+            <LayoutDashboard size={18} /> {t('sidebar.dashboard')}
+          </Link>
+        </div>
+
+        <div className="nav-group">
+          <div className="nav-group__label" style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-tertiary)', padding: '0 var(--space-md)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Network
+          </div>
+          <Link 
+            to="/network" 
+            className={`nav-item ${active === 'network' ? 'active' : ''}`}
+            onClick={onClose}
+          >
+            <Grid size={18} /> IP Management
+          </Link>
+          <Link 
+            to="/topology" 
+            className={`nav-item ${active === 'topology' ? 'active' : ''}`}
+            onClick={onClose}
+          >
+            <Network size={18} /> Network Planner
+          </Link>
+        </div>
+
+        <div className="nav-group">
+          <div className="nav-group__label" style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-tertiary)', padding: '0 var(--space-md)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            System
+          </div>
+          <Link 
+            to="/agents" 
+            className={`nav-item ${active === 'agents' ? 'active' : ''}`}
+            onClick={onClose}
+          >
+            <Server size={18} /> Agents
+          </Link>
+          <Link 
+            to="/settings" 
+            className={`nav-item ${active === 'settings' ? 'active' : ''}`}
+            onClick={onClose}
+          >
+            <Settings size={18} /> {t('sidebar.settings')}
+          </Link>
+        </div>
       </nav>
 
       <div style={{ marginTop: 'auto', padding: 'var(--space-md)', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>

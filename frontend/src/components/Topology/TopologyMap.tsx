@@ -49,9 +49,9 @@ const DeviceNode = React.memo(({ data, selected }: NodeProps) => {
           {data.is_ap ? (
             <Radio size={18} className="node-icon text-amber-400" />
           ) : data.virtual_type === 'docker' ? (
-            <Box size={18} className="node-icon text-cyan-400" />
+            <Box size={18} className="node-icon text-purple-400" />
           ) : data.virtual_type === 'vm' ? (
-            <Monitor size={18} className="node-icon text-purple-400" />
+            <Monitor size={18} className="node-icon text-fuchsia-400" />
           ) : data.is_wlan ? (
             <Smartphone size={18} className="node-icon text-sky-400" />
           ) : (
@@ -202,7 +202,7 @@ const CustomEdge = React.memo(({
   const isOnline = data?.source_online && data?.target_online;
   const speedColor = !isOnline ? 'rgba(100, 116, 139, 0.4)' : 
     speed.includes('10G') ? '#f59e0b' : 
-    speed.includes('2.5G') ? '#a855f7' : 
+    (speed.includes('2.5G') || speed.includes('2500')) ? '#d946ef' : 
     speed.includes('1GbE') ? '#38bdf8' : '#94a3b8';
 
   const { speed: globalSpeed, intensity } = React.useContext(FlowSettingsContext);
@@ -471,7 +471,7 @@ const TopologyMap: React.FC = () => {
           markerEnd: { 
             type: MarkerType.ArrowClosed, 
             color: link.link_type?.includes('10G') ? '#f59e0b' : 
-                   link.link_type?.includes('2.5G') ? '#a855f7' : '#38bdf8' 
+                   (link.link_type?.includes('2.5G') || link.link_type?.includes('2500')) ? '#d946ef' : '#38bdf8' 
           },
         };
       });

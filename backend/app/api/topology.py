@@ -5,9 +5,35 @@ from typing import List
 
 from app.database import get_db
 from app.models.topology import Rack as RackModel, TopologyLink as LinkModel
+from app.models.device import Device as DeviceModel
 from app.schemas.topology import Rack as RackSchema, RackCreate, TopologyLink as LinkSchema, TopologyLinkCreate, TopologyLinkUpdate
+from app.services.cache_service import topology_cache
 
 router = APIRouter(prefix="/api/topology", tags=["topology"])
+
+@router.get("/map")
+async def get_topology_map(db: AsyncSession = Depends(get_db)):
+    """Unified endpoint for the topology map, backed by in-memory cache."""
+    if not topology_cache.is_stale():
+        cached = topology_cache.get_all()
+        if cached: return cached
+
+    # Cache miss: Fetch everything
+    devices_res = await db.execute(select(DeviceModel))
+    links_res = await db.execute(select(LinkModel))
+    racks_res = await db.execute(select(RackModel))
+    
+    # Simple conversion to dict for JSON serialization
+    # In a real app, we'd use schemas, but for the cache dict is fine
+    from app.schemas.device import Device as DeviceSchema
+    from app.schemas.topology import Rack as RackSchema, TopologyLink as LinkSchema
+    
+    devices = [DeviceSchema.model_validate(d).model_dump() for d in devices_res.scalars().all()]
+    links = [LinkSchema.model_validate(l).model_dump() for l in links_res.scalars().all()]
+    racks = [RackSchema.model_validate(r).model_dump() for r in racks_res.scalars().all()]
+    
+    topology_cache.set_data(devices, links, racks)
+    return topology_cache.get_all()
 
 # --- Rack Endpoints ---
 
@@ -21,6 +47,7 @@ async def create_rack(rack: RackCreate, db: AsyncSession = Depends(get_db)):
     db_rack = RackModel(**rack.model_dump())
     db.add(db_rack)
     await db.commit()
+    topology_cache.invalidate()
     await db.refresh(db_rack)
     return db_rack
 
@@ -28,6 +55,7 @@ async def create_rack(rack: RackCreate, db: AsyncSession = Depends(get_db)):
 async def delete_rack(rack_id: int, db: AsyncSession = Depends(get_db)):
     await db.execute(delete(RackModel).where(RackModel.id == rack_id))
     await db.commit()
+    topology_cache.invalidate()
     return {"message": "Rack deleted"}
 
 # --- Link Endpoints ---
@@ -43,6 +71,7 @@ async def create_link(link: TopologyLinkCreate, db: AsyncSession = Depends(get_d
     db_link = LinkModel(**link.model_dump())
     db.add(db_link)
     await db.commit()
+    topology_cache.invalidate()
     await db.refresh(db_link)
     return db_link
 
@@ -58,6 +87,7 @@ async def update_link(link_id: int, link_update: TopologyLinkUpdate, db: AsyncSe
         setattr(db_link, field, value)
     
     await db.commit()
+    topology_cache.invalidate()
     await db.refresh(db_link)
     return db_link
 
@@ -65,4 +95,5 @@ async def update_link(link_id: int, link_update: TopologyLinkUpdate, db: AsyncSe
 async def delete_link(link_id: int, db: AsyncSession = Depends(get_db)):
     await db.execute(delete(LinkModel).where(LinkModel.id == link_id))
     await db.commit()
+    topology_cache.invalidate()
     return {"message": "Link deleted"}
