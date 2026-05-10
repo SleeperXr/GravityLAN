@@ -1,9 +1,6 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from sqlalchemy import select
-from app.database import async_session
-from app.models.setting import Setting
 from sqlalchemy import select, delete
 from app.database import async_session
 from app.models.setting import Setting
@@ -18,8 +15,6 @@ def _get_auto_scan_subnets():
     """Returns a list of CIDR subnets that are suitable for automatic scanning (non-virtual)."""
     all_subnets = get_local_subnets()
     return [s.subnet for s in all_subnets if not s.is_virtual]
-
-logger = logging.getLogger(__name__)
 
 class ScanScheduler:
     def __init__(self):
@@ -54,9 +49,23 @@ class ScanScheduler:
         await asyncio.gather(self._task, self._quick_task, self._arp_task, self._docker_task, return_exceptions=True)
         logger.info("Scan scheduler stopped")
 
+    async def _is_setup_complete(self) -> bool:
+        """Checks if the system setup is marked as complete."""
+        try:
+            async with async_session() as db:
+                result = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
+                setting = result.scalar_one_or_none()
+                return setting is not None and setting.value == "true"
+        except Exception:
+            return False
+
     async def _loop(self):
         while self._running:
             try:
+                if not await self._is_setup_complete():
+                    await asyncio.sleep(10)
+                    continue
+
                 # Run cleanup first
                 await self._clean_old_history()
 
@@ -95,6 +104,9 @@ class ScanScheduler:
         """Passive ARP monitoring loop (Turbo Mode: 10s interval)."""
         logger.info("ARP Turbo loop started (Interval: 10s)")
         while self._running:
+            if not await self._is_setup_complete():
+                await asyncio.sleep(10)
+                continue
             try:
                 await run_arp_only_scan()
             except Exception as e:
@@ -105,6 +117,9 @@ class ScanScheduler:
     async def _quick_loop(self):
         """High-frequency status check for known devices."""
         while self._running:
+            if not await self._is_setup_complete():
+                await asyncio.sleep(10)
+                continue
             try:
                 # Get quick scan interval (default 300s / 5m)
                 async with async_session() as db:
@@ -141,6 +156,9 @@ class ScanScheduler:
         from app.scanner.sync import sync_docker_containers
         
         while self._running:
+            if not await self._is_setup_complete():
+                await asyncio.sleep(10)
+                continue
             try:
                 if docker_service.is_available():
                     containers = docker_service.get_local_containers()

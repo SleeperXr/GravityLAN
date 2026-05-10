@@ -30,10 +30,14 @@ async def get_setup_status(db: AsyncSession = Depends(get_db)) -> dict:
     device_count_result = await db.execute(select(func.count(Device.id)))
     device_count = device_count_result.scalar() or 0
 
-    return {
-        "is_setup_complete": setting is not None and setting.value == "true",
-        "device_count": device_count,
+    is_complete = setting is not None and setting.value == "true"
+    device_count_val = device_count
+
+    res = {
+        "is_setup_complete": is_complete,
+        "device_count": device_count_val
     }
+    return res
 
 
 from pydantic import BaseModel
@@ -45,6 +49,8 @@ class SetupCompleteRequest(BaseModel):
 @router.post("/complete")
 async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = Depends(get_db)) -> dict:
     """Mark the initial setup as completed and migrate discovered hosts."""
+    logger.info(f"mark_setup_complete called: has_password={request.admin_password is not None}")
+    
     from app.models.device import DiscoveredHost, Device, Service
     import ipaddress
     from app.scanner.utils import ensure_default_groups, GROUP_TYPE_MAP
@@ -73,10 +79,7 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
             db.add(Setting(key="api.admin_password", value=request.admin_password, category="system", description="Administrator password for dashboard login"))
         await db.flush()
 
-    # Get DNS server for better resolution
-    dns_server = request.dns_server
-    
-    # 1. Prepare setup complete flag (will be committed at the end)
+    # 1. Prepare setup complete flag
     res_setup = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
     setting_complete = res_setup.scalar_one_or_none()
     if setting_complete:
@@ -84,7 +87,13 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
     else:
         db.add(Setting(key="setup.complete", value="true", category="system"))
 
-    # 2. Automatically add all discovered online hosts to the dashboard
+    # 2. Commit basic settings now so the user can login even if migration takes long
+    await db.commit()
+    
+    # Start a new transaction for host processing
+    dns_server = request.dns_server
+    
+    # 3. Automatically add all discovered online hosts to the dashboard
     host_result = await db.execute(select(DiscoveredHost).where(DiscoveredHost.is_online == True))
     discovered_hosts = host_result.scalars().all()
     
