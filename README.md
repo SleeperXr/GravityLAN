@@ -103,7 +103,7 @@ flowchart TB
 
 | Dashboard | Network planner |
 |:---:|:---:|
-| ![Dashboard overview](./docs/screenshots/GravityLanDashboard.png) | ![Network planner — subnets & scan basis](./docs/screenshots/GravityLANNetzworkPlanner.png) |
+| ![Dashboard overview](./docs/screenshots/GravityLanDashboard.png) | ![Network planner — subnets & scan basis](./docs/screenshots/GravityLanNetwork-Planer.png) |
 
 | Agents | Topology Designer |
 |:---:|:---:|
@@ -277,7 +277,7 @@ flowchart TB
 
 | Dashboard | Netzwerk-Planer |
 |:---:|:---:|
-| ![Dashboard-Übersicht](./docs/screenshots/GravityLanDashboard.png) | ![Netzwerk-Planer — Subnetze & Scan-Basis](./docs/screenshots/GravityLANNetzworkPlanner.png) |
+| ![Dashboard-Übersicht](./docs/screenshots/GravityLanDashboard.png) | ![Netzwerk-Planer — Subnetze & Scan-Basis](./docs/screenshots/GravityLanNetwork-Planer.png) |
 
 | Agents | Topologie-Designer |
 |:---:|:---:|
