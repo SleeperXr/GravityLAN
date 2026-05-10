@@ -230,5 +230,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# AI Generated Summaries
+# AI Generated Summaries & Agent Config
 IMPROVEMENT_SUMMARY.md
+PROJECT_STATUS.md
+implementation_plan.md
+docs/STABILIZATION_2026.md
+.agent/
