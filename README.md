@@ -15,12 +15,17 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/GravityLAN-v0.1.0-blue?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Agent-v0.2.3-green?style=flat-square" alt="Agent Version">
+  <img src="https://img.shields.io/badge/Status-Pre--Release-orange?style=flat-square" alt="Status">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white" alt="FastAPI">
-  <img src="https://img.shields.io/badge/100%25-Vibe_Coded-FF6B6B?style=flat&labelColor=1e293b" alt="Vibe coded">
 </p>
+
+> [!WARNING]
+> **Pre-Release Phase**: GravityLAN is currently in an early development stage. Features are subject to change, and while we strive for stability, you may encounter bugs. Use with caution in production environments.
 
 ---
 
@@ -100,9 +105,13 @@ flowchart TB
 |:---:|:---:|
 | ![Dashboard overview](./docs/screenshots/GravityLanDashboard.png) | ![Network planner — subnets & scan basis](./docs/screenshots/GravityLANNetzworkPlanner.png) |
 
-| Agents | Device editor |
+| Agents | Topology Designer |
 |:---:|:---:|
-| ![Linux agents — metrics & deploy](./docs/screenshots/GravityLANAgents.png) | ![Device details & services](./docs/screenshots/GravitryLanDeviceEditor.png) |
+| ![Linux agents — metrics & deploy](./docs/screenshots/GravityLANAgents.png) | ![Topology — model racks and links](./docs/screenshots/GravityLanTopology.png) |
+
+| Device Editor |
+|:---:|
+| ![Device details & services](./docs/screenshots/GravityLanDeviceEditor.png) |
 
 ### Tech stack
 
@@ -270,9 +279,13 @@ flowchart TB
 |:---:|:---:|
 | ![Dashboard-Übersicht](./docs/screenshots/GravityLanDashboard.png) | ![Netzwerk-Planer — Subnetze & Scan-Basis](./docs/screenshots/GravityLANNetzworkPlanner.png) |
 
-| Agents | Gerät-Editor |
+| Agents | Topologie-Designer |
 |:---:|:---:|
-| ![Linux-Agenten — Metriken & Deploy](./docs/screenshots/GravityLANAgents.png) | ![Gerätedetails & Dienste](./docs/screenshots/GravitryLanDeviceEditor.png) |
+| ![Linux-Agenten — Metriken & Deploy](./docs/screenshots/GravityLANAgents.png) | ![Topologie — Racks und Verbindungen modellieren](./docs/screenshots/GravityLanTopology.png) |
+
+| Geräte-Editor |
+|:---:|
+| ![Gerätedetails & Dienste](./docs/screenshots/GravityLanDeviceEditor.png) |
 
 ### Tech-Stack
 
