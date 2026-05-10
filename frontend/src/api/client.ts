@@ -30,12 +30,12 @@ export const api = {
     request<{ status: string }>('/api/scanner/start-dashboard', { method: 'POST', body: JSON.stringify(data) }),
   stopScan: () => request<{ status: string }>('/api/scanner/stop', { method: 'POST' }),
   getScanStatus: () => request<import('../types').ScanProgress>('/api/scanner/status'),
-  getDiscoveredHosts: () => request<import('../types').Device[]>('/api/scanner/discovered'),
-  scanIp: (ip: string) => request<import('../types').Device>(`/api/scanner/scan-ip?ip=${ip}`),
+  getDiscoveredHosts: () => request<import('../types').DiscoveredHost[]>('/api/scanner/discovered'),
+  scanIp: (ip: string) => request<any>(`/api/scanner/scan-ip?ip=${ip}`),
   liveDiscovery: (data: { subnets: string[] }) =>
     request<any[]>(`/api/scanner/live-discovery?subnets=${data.subnets.join(',')}`),
   patchDiscoveredHost: (id: number, data: { custom_name?: string; is_monitored?: boolean }) =>
-    request<any>(`/api/scanner/discovered/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    request<import('../types').DiscoveredHost>(`/api/scanner/discovered/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   quickSubnetScan: (subnets: string) =>
     request<any>(`/api/scanner/quick-subnet-scan?subnets=${subnets}`, { method: 'POST' }),
 

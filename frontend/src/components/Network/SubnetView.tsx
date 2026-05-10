@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Sidebar } from '../Sidebar';
 import { api, createScanSocket } from '../../api/client';
-import type { Device, Subnet } from '../../types';
+import type { Device, Subnet, DiscoveredHost } from '../../types';
 import { useToast } from '../../context/ToastContext';
 import { Monitor, Shield, Server, Cpu, Globe, Search, Trash2, RefreshCw, Activity, Info, Plus, Eye, EyeOff, Lock, Unlock, Save, Settings, LayoutGrid as Grid } from 'lucide-react';
 import { DeviceEditor } from '../Dashboard/DeviceEditor';
@@ -170,7 +170,7 @@ export function SubnetView() {
     
     try {
       const result = await api.scanIp(ip);
-      setDiscoveredHosts(prev => prev.map(h => 
+      setDiscoveredHosts((prev: DiscoveredHost[]) => prev.map((h: DiscoveredHost) => 
           h.ip === ip ? { ...h, ports: (result as any).ports || [], last_scan: new Date().toISOString() } : h
       ));
       const portsFound = (result as any).ports || [];

@@ -57,6 +57,8 @@ export interface Device {
   rack_height: number;
   topology_x: number | null;
   topology_y: number | null;
+  is_wlan: boolean;
+  is_ap: boolean;
 }
 
 export interface DeviceGroup {
