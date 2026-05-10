@@ -26,8 +26,13 @@ async def login(password: str = Body(..., embed=True), db: AsyncSession = Depend
     # If no password is set, the master token is the password (default)
     required_pass = admin_pass_setting.value if admin_pass_setting else master_setting.value
     
+
+    
     if password == required_pass:
+        logger.info("Login successful")
         return {"token": master_setting.value}
+    
+    logger.warning("Login failed: invalid password provided")
     
     raise HTTPException(status_code=401, detail="Invalid password")
 

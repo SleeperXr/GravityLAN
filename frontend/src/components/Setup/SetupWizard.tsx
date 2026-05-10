@@ -97,7 +97,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       onComplete(); // Still complete so user can enter dashboard
       navigate('/', { replace: true });
     }
-  }, [onComplete, dnsServer]);
+  }, [onComplete, dnsServer, adminPassword, confirmPassword]);
 
   const steps = [
     // Step 0: Welcome
