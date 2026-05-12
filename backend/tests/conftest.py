@@ -42,7 +42,7 @@ async def db():
 
 @pytest_asyncio.fixture
 async def client(db):
-    """Provide an AsyncClient for testing the FastAPI app."""
+    """Provide an AsyncClient for testingr the FastAPI app."""
     # Override get_db dependency
     def override_get_db():
         try:

@@ -58,6 +58,8 @@ export interface Device {
   rack_height: number;
   topology_x: number | null;
   topology_y: number | null;
+  max_ports?: number | null;
+  topology_config?: string | null;
   is_wlan: boolean;
   is_ap: boolean;
   is_host: boolean;

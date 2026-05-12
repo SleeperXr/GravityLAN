@@ -544,9 +544,9 @@ const TopologyMap: React.FC = () => {
       source_handle: params.sourceHandle,
       target_handle: params.targetHandle,
       link_type: '1GbE',
-    }).then(res => {
+    }).then(() => {
       fetchData();
-    }).catch(err => {
+    }).catch(() => {
       alert("Fehler beim Erstellen der Verbindung. Möglicherweise existiert sie bereits?");
     });
   }, [fetchData, nodes, edges]);
@@ -561,7 +561,6 @@ const TopologyMap: React.FC = () => {
     
     try {
       await api.updateDevice(selectedNode.id, {
-        max_ports: configMaxPorts,
         is_wlan: configIsWlan,
         is_ap: configIsAp,
         topology_config: JSON.stringify(config)
