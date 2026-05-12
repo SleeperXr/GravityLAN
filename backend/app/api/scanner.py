@@ -88,7 +88,7 @@ async def scan_ip(ip: str) -> Dict[str, Any]:
     if not ports:
         ports = await scan_ports(ip, gentle=False, timeout=0.5)
     
-    return {"ip": ip, "ports": ports, "timestamp": datetime.now().isoformat()}
+    return {"ip": ip, "ports": ports, "timestamp": datetime.now(timezone.utc).isoformat()}
 
 @router.post("/quick-subnet-scan")
 async def quick_subnet_scan(subnets: str) -> Dict[str, str]:
@@ -142,6 +142,19 @@ async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate) -> D
         discovery_cache.invalidate()
         await db.refresh(host)
         return host
+
+@router.delete("/discovered/{host_id}")
+async def delete_discovered_host(host_id: int) -> Dict[str, str]:
+    """Delete a discovered host from the database."""
+    async with async_session() as db:
+        host = await db.get(DiscoveredHost, host_id)
+        if not host:
+            raise HTTPException(status_code=404, detail="Host not found")
+        
+        await db.delete(host)
+        await db.commit()
+        discovery_cache.invalidate()
+        return {"status": "success", "message": "Host deleted"}
 
 @router.post("/start-dashboard")
 async def start_dashboard_scan_api(request: ScanRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:

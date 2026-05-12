@@ -67,14 +67,18 @@ async def discover_hosts_simple(
                 continue
 
             # Optimization: If target_ips is small, scan IPs directly instead of subnet
-            targets = " ".join(target_ips) if len(target_ips) < 50 else network
-            dns_flag = f"--dns-servers {dns_server}" if dns_server else ""
-            cmd_str = f'nmap -sn {dns_flag} {targets}'
+            cmd_args = ["nmap", "-sn"]
+            if dns_server:
+                cmd_args.extend(["--dns-servers", dns_server])
+            if len(target_ips) < 50:
+                cmd_args.extend(target_ips)
+            else:
+                cmd_args.append(network)
             
             try:
                 # Async Process with line-by-line parsing
-                proc = await asyncio.create_subprocess_shell(
-                    cmd_str,
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd_args,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
@@ -111,7 +115,7 @@ async def discover_hosts_simple(
                 # FALLBACK: Sync mode if async subprocess is not supported (e.g. some Windows loops)
                 def _run_sync_nmap():
                     import subprocess
-                    res = subprocess.run(cmd_str, capture_output=True, shell=True, text=True, errors='ignore')
+                    res = subprocess.run(cmd_args, capture_output=True, shell=False, text=True, errors='ignore')
                     return res.stdout, res.returncode
 
                 loop = asyncio.get_event_loop()
@@ -127,7 +131,7 @@ async def discover_hosts_simple(
                             if host_found_callback:
                                 asyncio.create_task(host_found_callback(host_data))
                 else:
-                    logger.error(f"Sync Nmap scan failed for targets: {targets}")
+                    logger.error(f"Sync Nmap scan failed for targets: {cmd_args}")
         
         if discovered:
             if cancel_event and cancel_event.is_set():

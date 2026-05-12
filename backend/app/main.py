@@ -271,7 +271,7 @@ async def root():
         return FileResponse(str(index_file))
     return {
         "app": "GravityLAN",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "status": "online",
         "api_docs": "/docs",
         "message": "Backend is running. Frontend build missing in /app/static."

@@ -122,7 +122,7 @@ async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None
     from datetime import datetime
     
     # 0. Check Cache
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     if ip in _dns_cache:
         cached_name, cached_time = _dns_cache[ip]
         if (now - cached_time).total_seconds() < DNS_CACHE_TTL:
@@ -173,15 +173,15 @@ async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None
     try:
         resolved_name = await asyncio.wait_for(loop.run_in_executor(None, _resolve), timeout=timeout + 1.0)
         # Update Cache
-        _dns_cache[ip] = (resolved_name, datetime.now())
+        _dns_cache[ip] = (resolved_name, datetime.now(timezone.utc))
         return resolved_name
     except asyncio.TimeoutError:
         logger.debug(f"DNS resolution timeout for {ip}")
-        _dns_cache[ip] = (None, datetime.now()) # Cache failure too
+        _dns_cache[ip] = (None, datetime.now(timezone.utc)) # Cache failure too
         return None
     except Exception as e:
         logger.debug(f"DNS resolution error for {ip}: {e}")
-        _dns_cache[ip] = (None, datetime.now())
+        _dns_cache[ip] = (None, datetime.now(timezone.utc))
         return None
 
 async def resolve_hostnames(

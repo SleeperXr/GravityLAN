@@ -1,30 +1,36 @@
-version: '3.8'
-
 services:
   gravitylan:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: GravityLAN
-    network_mode: host
-    privileged: true
-    restart: unless-stopped
-    
-    # Host mode for direct network access and host communication
-        
-    volumes:
-      - /mnt/user/appdata/gravitylan/data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
-      
-    environment:
-      - GRAVITYLAN_PORT=8000
-      - GRAVITYLAN_DATA_DIR=/app/data
-      - DOCKER_HOST_IP=192.168.100.26
-      - TZ=Europe/Berlin
-      
+    restart: always
     cap_add:
       - NET_RAW
       - NET_ADMIN
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    environment:
+      - DOCKER_HOST_IP=192.168.100.37
+      - GRAVITYLAN_PORT=8000
+    networks:
+      gravitylan_net:
+        ipv4_address: 192.168.100.254
+    volumes:
+      - ./data:/app/data
 
 networks:
-  # Das Macvlan wird entfernt, da es die Host-Kommunikation blockiert
-  default:
-    driver: bridge
+  gravitylan_net:
+    driver: macvlan
+    driver_opts:
+      parent: ens19
+    ipam:
+      config:
+        - subnet: 192.168.100.0/24
+          gateway: 192.168.100.1

@@ -26,7 +26,7 @@ async def export_backup():
         cursor = conn.cursor()
         data: dict = {
             "metadata": {
-                "exported_at": datetime.now().isoformat(),
+                "exported_at": datetime.now(timezone.utc).isoformat(),
                 "version": "0.1.0",
                 "source": "GravityLAN Dashboard",
             },
@@ -59,7 +59,7 @@ async def export_backup():
 
     try:
         data = await asyncio.to_thread(_read_db)
-        filename = f"gravitylan_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filename = f"gravitylan_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
         return JSONResponse(
             content=data,
             headers={"Content-Disposition": f"attachment; filename={filename}"},
@@ -117,7 +117,7 @@ async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends
                     logger.error(f"Backup: Table {table} not found in DB")
                     continue
 
-                now_str = datetime.now().isoformat().replace("T", " ")
+                now_str = datetime.now(timezone.utc).isoformat().replace("T", " ")
                 valid_rows = []
                 for row in rows:
                     clean_row = {

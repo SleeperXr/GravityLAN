@@ -170,8 +170,8 @@ async def add_device_from_ip(ip: str, db: AsyncSession = Depends(get_db)) -> Dev
         device_type="Unbekannt",
         device_subtype="Unknown",
         is_online=True,
-        first_seen=datetime.now(),
-        last_seen=datetime.now()
+        first_seen=datetime.now(timezone.utc),
+        last_seen=datetime.now(timezone.utc)
     )
     db.add(device)
     await db.commit()
@@ -354,7 +354,7 @@ async def refresh_device_services(device_id: int, db: AsyncSession = Depends(get
     for svc in device.services:
         if svc.is_auto_detected:
             svc.is_up = svc.port in open_ports
-            svc.last_checked = datetime.now()
+            svc.last_checked = datetime.now(timezone.utc)
     
     # 4. Add found ports. First use classification, then add anything else missing.
     found_ports_handled = set()
@@ -374,7 +374,7 @@ async def refresh_device_services(device_id: int, db: AsyncSession = Depends(get
                     color=svc_data.get("color", "#34495e"),
                     is_up=True,
                     is_auto_detected=True,
-                    last_checked=datetime.now()
+                    last_checked=datetime.now(timezone.utc)
                 ))
             else:
                 # Update existing
@@ -397,7 +397,7 @@ async def refresh_device_services(device_id: int, db: AsyncSession = Depends(get
                     color="#34495e",
                     is_up=True,
                     is_auto_detected=True,
-                    last_checked=datetime.now()
+                    last_checked=datetime.now(timezone.utc)
                 ))
             else:
                 existing_svc.is_up = True

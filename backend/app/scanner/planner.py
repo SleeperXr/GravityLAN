@@ -163,7 +163,7 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
              if any(ipaddress.IPv4Address(dev.ip) in ipaddress.IPv4Network(s, strict=False) for s in subnets):
                 if dev.ip not in all_alive_ips:
                     dev.is_online = False
-                    dev.status_changed_at = datetime.now()
+                    dev.status_changed_at = datetime.now(timezone.utc)
         
         await db.commit()
         # Consolidated cache invalidation
