@@ -205,6 +205,16 @@ export function SubnetView() {
     }
   }, [loadData, t, showToast, setDiscoveredHosts]);
 
+  const deleteDiscoveredHost = useCallback(async (id: number, ip: string) => {
+    try {
+      await api.deleteDiscoveredHost(id);
+      showToast('success', t('common.success'), `Host ${ip} entfernt`);
+      setDiscoveredHosts((prev: DiscoveredHost[]) => prev.filter(h => h.id !== id));
+    } catch (err: any) {
+      showToast('error', t('common.error'), 'Fehler beim Löschen');
+    }
+  }, [t, showToast, setDiscoveredHosts]);
+
   const safeZoom = zoom || 1;
   const columns = Math.floor(16 / safeZoom) || 1;
   const activeGroups = groups[subnetPrefix] || [];
@@ -318,6 +328,7 @@ export function SubnetView() {
                   onRefreshDevice={refreshDevice}
                   onScanDiscoveredHost={scanDiscoveredHost}
                   onAddDevice={addDevice}
+                  onDeleteDiscoveredHost={deleteDiscoveredHost}
                   isRefreshingServices={isRefreshing[`${tile.ip}-services`] || isRefreshing[`${tile.ip}-info`] || isRefreshing[`${tile.ip}-disc`]}
                   isRefreshingAdd={isRefreshing[`${tile.ip}-add`]}
                 />

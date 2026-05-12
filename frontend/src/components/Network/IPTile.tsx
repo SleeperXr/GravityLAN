@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Monitor, Globe, Server, Cpu, Shield, Lock, Eye, EyeOff, Info, Activity, Plus, Save } from 'lucide-react';
+import { Monitor, Globe, Server, Cpu, Shield, Lock, Eye, EyeOff, Info, Activity, Plus, Save, Trash2 } from 'lucide-react';
 import type { Device, DiscoveredHost } from '../../types';
 
 const DEVICE_ICON_MAP: Record<string, any> = {
@@ -27,6 +27,7 @@ interface IPTileProps {
   onRefreshDevice: (id: number, ip: string, type: 'info' | 'services') => void;
   onScanDiscoveredHost: (ip: string) => void;
   onAddDevice: (ip: string) => void;
+  onDeleteDiscoveredHost: (id: number, ip: string) => void;
   isRefreshingServices: boolean;
   isRefreshingAdd: boolean;
 }
@@ -34,7 +35,7 @@ interface IPTileProps {
 export const IPTile = memo(({
   i, ip, device, discovered, status, group, isFirstRows, isReserved, safeZoom, t,
   onSelectDevice, onUpdateDeviceField, onUpdateDiscoveredHost, onRefreshDevice,
-  onScanDiscoveredHost, onAddDevice, isRefreshingServices, isRefreshingAdd
+  onScanDiscoveredHost, onAddDevice, onDeleteDiscoveredHost, isRefreshingServices, isRefreshingAdd
 }: IPTileProps) => {
   const Icon = device ? (DEVICE_ICON_MAP[device.device_type] || Globe) : (discovered ? Globe : null);
   const isDashboardDevice = !!device;
@@ -137,6 +138,13 @@ export const IPTile = memo(({
                   title={discovered.is_monitored ? t('network.stop_monitoring') : t('network.start_monitoring')}
                 >
                   {discovered.is_monitored ? <Eye size={16} /> : <EyeOff size={16} />}
+                </button>
+                <button 
+                  style={{ background: 'transparent', border: 'none', color: 'var(--accent-danger)', cursor: 'pointer', padding: '0 4px', opacity: 0.8 }}
+                  onClick={(e) => { e.stopPropagation(); onDeleteDiscoveredHost(discovered.id, ip); }}
+                  title="Aus Liste entfernen"
+                >
+                  <Trash2 size={16} />
                 </button>
               </div>
             ) : null}

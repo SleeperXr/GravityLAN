@@ -184,7 +184,7 @@ class ScanScheduler:
                 days = int(setting.value) if setting and setting.value.isdigit() else 7 # Default 7 days
 
                 if days > 0:
-                    cutoff = datetime.now() - timedelta(days=days)
+                    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
                     await db.execute(delete(DeviceHistory).where(DeviceHistory.timestamp < cutoff))
                     await db.commit()
                     logger.info(f"Cleaned up history older than {days} days")

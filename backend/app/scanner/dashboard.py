@@ -120,14 +120,14 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
                 
                 dev.is_online = is_online
                 if is_online:
-                    dev.last_seen = datetime.now()
+                    dev.last_seen = datetime.now(timezone.utc)
                     if is_ping_alive and not dev.mac:
                         dev.mac = alive_map[dev.ip].get("mac")
                         if dev.mac: dev.vendor = alive_map[dev.ip].get("vendor")
                 
                 for svc in dev.services:
                     svc.is_up = svc.port in open_ports
-                    svc.last_checked = datetime.now()
+                    svc.last_checked = datetime.now(timezone.utc)
             
             await db.commit()
             # Invalidate once per batch or once at the end? 

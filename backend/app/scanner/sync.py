@@ -68,25 +68,25 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
             if disc.ip != ip:
                 # If the host was seen VERY recently at the old IP, it's likely a multi-interface device (LAN/WLAN)
                 # In this case, we don't want to flip-flop the primary IP in the DB every few seconds.
-                is_stale = (datetime.now() - disc.last_seen) > IP_FLAP_THRESHOLD
+                is_stale = (datetime.now(timezone.utc) - disc.last_seen) > IP_FLAP_THRESHOLD
                 
                 if not is_stale:
-                    # Optional: Check if old IP is still alive. If yes, don't move.
-                    # This is a bit expensive, so we only do it if the flap is recent.
                     logger.debug(f"Sync: Potential flap detected for {mac} ({disc.ip} vs {ip}). Checking stickiness...")
-                    # For now, we just stick to the first one found in a scan window
-                    # and ignore the second one to stop the log spam.
-                    pass 
-                else:
+                    old_ip_alive = await ping_host_async(disc.ip, timeout=0.5)
+                    if not old_ip_alive:
+                        logger.info(f"Sync: Old IP {disc.ip} is dead. Fast-moving host {mac or 'Unknown'} to {ip}")
+                        is_stale = True
+                
+                if is_stale:
                     logger.info(f"Sync: Host moved {mac or 'Unknown'} from {disc.ip} -> {ip}")
                     # Clear the new IP from stale records to maintain uniqueness
                     await db.execute(delete(DiscoveredHost).where(DiscoveredHost.ip == ip).where(DiscoveredHost.id != disc.id))
                     disc.ip = ip
                     if hasattr(disc, 'ip_changed_at'):
-                        disc.ip_changed_at = datetime.now()
+                        disc.ip_changed_at = datetime.now(timezone.utc)
             
             disc.is_online = True
-            disc.last_seen = datetime.now()
+            disc.last_seen = datetime.now(timezone.utc)
             if hostname: disc.hostname = hostname
             if mac: disc.mac = mac
             if vendor: disc.vendor = vendor # Use passed vendor
@@ -110,8 +110,8 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
                 vendor=vendor or (get_vendor(mac) if mac else None),
                 is_online=True,
                 is_monitored=dev is not None,
-                last_seen=datetime.now(),
-                first_seen=datetime.now(),
+                last_seen=datetime.now(timezone.utc),
+                first_seen=datetime.now(timezone.utc),
                 ports=json.dumps(ports) if ports else None
             )
             db.add(disc)
@@ -122,16 +122,22 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
                 logger.info(f"Sync: Dashboard device {dev.ip} ({dev.display_name}) back ONLINE via scan")
             
             dev.is_online = True
-            dev.last_seen = datetime.now()
+            dev.last_seen = datetime.now(timezone.utc)
             if mac: dev.mac = mac
             if disc and disc.custom_name: dev.display_name = disc.custom_name
             # Sticky Dashboard IP: Only update if the move is stable (not flapping)
             if dev.ip != ip:
-                is_stale = (datetime.now() - (dev.last_seen or datetime.min)) > IP_FLAP_THRESHOLD
+                is_stale = (datetime.now(timezone.utc) - (dev.last_seen or datetime.min)) > IP_FLAP_THRESHOLD
+                
+                if not is_stale:
+                    old_ip_alive = await ping_host_async(dev.ip, timeout=0.5)
+                    if not old_ip_alive:
+                        is_stale = True
+                        
                 if is_stale:
                     logger.info(f"Sync: Updating Dashboard IP for {dev.display_name}: {dev.ip} -> {ip}")
                     dev.ip = ip
-                    dev.ip_changed_at = datetime.now()
+                    dev.ip_changed_at = datetime.now(timezone.utc)
                 else:
                     logger.debug(f"Sync: Suppressing dashboard IP flap for {dev.display_name} ({dev.ip} -> {ip})")
 
@@ -186,7 +192,7 @@ async def sync_docker_containers(containers: list[dict]):
                     if not disc.is_online:
                         logger.info(f"Docker Sync: Marking container {container['name']} ({ip}) as ONLINE via Docker")
                     disc.is_online = True
-                    disc.last_seen = datetime.now()
+                    disc.last_seen = datetime.now(timezone.utc)
                     # Optionally update name if unknown
                     if not disc.custom_name or disc.custom_name == "Unknown":
                         disc.custom_name = container["name"]
@@ -198,7 +204,7 @@ async def sync_docker_containers(containers: list[dict]):
                     if not dev.is_online:
                         logger.info(f"Docker Sync: Marking dashboard container {dev.display_name} ({ip}) as ONLINE via Docker")
                     dev.is_online = True
-                    dev.last_seen = datetime.now()
+                    dev.last_seen = datetime.now(timezone.utc)
         
         await db.commit()
         discovery_cache.invalidate()

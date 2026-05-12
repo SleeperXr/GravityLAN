@@ -1,4 +1,5 @@
 import hmac
+from pydantic import RootModel
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select
@@ -19,10 +20,12 @@ async def get_all_settings(db: AsyncSession = Depends(get_db)):
     settings = result.scalars().all()
     return {s.key: s.value for s in settings}
 
+SettingsUpdate = RootModel[dict[str, str]]
+
 @router.post("")
-async def update_settings(settings: dict[str, str], db: AsyncSession = Depends(get_db)):
+async def update_settings(settings: SettingsUpdate, db: AsyncSession = Depends(get_db)):
     """Update or create system settings."""
-    for key, value in settings.items():
+    for key, value in settings.root.items():
         result = await db.execute(select(Setting).where(Setting.key == key))
         setting = result.scalar_one_or_none()
         
@@ -34,9 +37,9 @@ async def update_settings(settings: dict[str, str], db: AsyncSession = Depends(g
     await db.commit()
     
     # Apply log level if changed
-    if "system.log_level" in settings:
+    if "system.log_level" in settings.root:
         from app.services.log_streamer import apply_log_level
-        apply_log_level(settings["system.log_level"])
+        apply_log_level(settings.root["system.log_level"])
         
     return {"status": "success"}
 

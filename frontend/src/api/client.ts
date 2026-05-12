@@ -51,8 +51,10 @@ export const api = {
   scanIp: (ip: string) => request<import('../types').DiscoveredHost>(`/api/scanner/scan-ip?ip=${ip}`),
   liveDiscovery: (data: { subnets: string[] }) =>
     request<import('../types').DiscoveredHost[]>(`/api/scanner/live-discovery?subnets=${data.subnets.join(',')}`),
-  patchDiscoveredHost: (id: number, data: { custom_name?: string; is_monitored?: boolean }) =>
+  patchDiscoveredHost: (id: number, data: { custom_name?: string; is_monitored?: boolean; is_reserved?: boolean }) =>
     request<import('../types').DiscoveredHost>(`/api/scanner/discovered/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteDiscoveredHost: (id: number) =>
+    request<{ status: string; message: string }>(`/api/scanner/discovered/${id}`, { method: 'DELETE' }),
   quickSubnetScan: (subnets: string) =>
     request<{ status: string; hosts_found: number }>(`/api/scanner/quick-subnet-scan?subnets=${subnets}`, { method: 'POST' }),
 

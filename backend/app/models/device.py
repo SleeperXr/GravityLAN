@@ -29,7 +29,7 @@ class DeviceGroup(Base):
     __tablename__ = "device_groups"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
     color: Mapped[str | None] = mapped_column(String(7), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
@@ -133,7 +133,7 @@ class Service(Base):
     __tablename__ = "services"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False)
+    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     protocol: Mapped[str] = mapped_column(String(20), nullable=False)
     port: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -153,8 +153,8 @@ class DeviceHistory(Base):
     __tablename__ = "device_history"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False)
-    service_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("services.id"), nullable=True)
+    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
+    service_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("services.id"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)  # online, offline, up, down
     message: Mapped[str | None] = mapped_column(String(255), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

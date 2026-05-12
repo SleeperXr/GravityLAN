@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dnsutils \
     gcc \
     python3-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -40,7 +41,7 @@ RUN mkdir -p /app/data
 
 # Environment
 ENV GRAVITYLAN_DATA_DIR=/app/data
-ENV GRAVITYLAN_DEBUG=true
+ENV GRAVITYLAN_DEBUG=false
 
 # Expose port
 EXPOSE 8000
@@ -48,5 +49,9 @@ EXPOSE 8000
 # Run as root (Required for raw socket nmap scans)
 USER root
 
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:${GRAVITYLAN_PORT:-8000}/api/setup/status || exit 1
+
 # Start server
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${GRAVITYLAN_PORT:-8000} --workers 1"]

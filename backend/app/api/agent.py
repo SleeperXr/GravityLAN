@@ -123,10 +123,10 @@ async def receive_report(
                     token_obj = token_res.scalar_one_or_none()
                     if token_obj:
                         token_obj.pending_token = token
-                        token_obj.pending_at = datetime.now()
+                        token_obj.pending_at = datetime.now(timezone.utc)
                     else:
                         # Should not happen usually as deploy creates it, but for robustness:
-                        new_token = AgentToken(device_id=device.id, token="TEMP_INVALID_" + token[:8], pending_token=token, pending_at=datetime.now())
+                        new_token = AgentToken(device_id=device.id, token="TEMP_INVALID_" + token[:8], pending_token=token, pending_at=datetime.now(timezone.utc))
                         db.add(new_token)
                     
                     await db.commit()
@@ -171,7 +171,7 @@ async def receive_report(
             effective_device_id = device.id
 
             # 4. Update Metadata (Throttled for 'last_seen', but immediate for 'agent_version')
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             
             # Update last_seen only if older than 60s to save DB writes
             if not agent_token.last_seen or (now - agent_token.last_seen).total_seconds() > 60:
@@ -269,7 +269,7 @@ async def receive_report(
             "disk": [d.model_dump() for d in payload.disk],
             "temperature": payload.temperature,
             "network": payload.network,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         _latest_metrics[effective_device_id] = snapshot
         
@@ -359,7 +359,7 @@ async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverv
     Pre-fetches latest metrics and 24-hour hourly counts in one pass each,
     then assembles the response in Python.
     """
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     cutoff_24h = now - timedelta(hours=24)
 
     # 1. Fetch all agent-linked devices in a single JOIN
@@ -547,7 +547,7 @@ async def get_agent_status(device_id: int, db: AsyncSession = Depends(get_db)) -
     # Calculate health (Healthy if seen within last 5 minutes)
     is_healthy = False
     if token.last_seen:
-        is_healthy = (datetime.now() - token.last_seen).total_seconds() < 300
+        is_healthy = (datetime.now(timezone.utc) - token.last_seen).total_seconds() < 300
 
     return AgentStatusResponse(
         device_id=device_id,

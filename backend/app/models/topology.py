@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -14,7 +14,7 @@ class Rack(Base):
     __tablename__ = "racks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     units: Mapped[int] = mapped_column(Integer, default=42) # Total Height in U
     width: Mapped[int] = mapped_column(Integer, default=19) # Standard 19"
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -27,8 +27,8 @@ class TopologyLink(Base):
     __tablename__ = "topology_links"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    source_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False)
-    target_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False)
+    source_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
+    target_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
     
     source_handle: Mapped[str | None] = mapped_column(String(20), nullable=True)
     target_handle: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -40,3 +40,7 @@ class TopologyLink(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    
+    __table_args__ = (
+        UniqueConstraint("source_id", "target_id", name="uix_topology_link"),
+    )
