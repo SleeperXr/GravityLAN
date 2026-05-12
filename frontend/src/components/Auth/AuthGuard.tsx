@@ -8,18 +8,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('gravitylan_token');
-      if (!token) {
-        setIsAuthenticated(false);
-        return;
-      }
-
       try {
-        await api.checkAuth(token);
+        await api.checkAuth();
         setIsAuthenticated(true);
       } catch (err) {
         console.error('Auth verification failed:', err);
-        localStorage.removeItem('gravitylan_token');
         setIsAuthenticated(false);
       }
     };

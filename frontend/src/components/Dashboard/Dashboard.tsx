@@ -305,6 +305,11 @@ export function Dashboard() {
             clearInterval(interval);
             setIsScanning(false);
             await loadData();
+            showToast(
+              'success',
+              t('dashboard.scan_complete', 'Scan abgeschlossen'),
+              t('dashboard.scan_complete_msg', `${progress.devices_found ?? '?'} Geräte gefunden`)
+            );
           }
         } catch (e) {
           console.error("Progress poll failed", e);

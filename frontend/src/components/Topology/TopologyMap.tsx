@@ -17,6 +17,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Share2, Trash2, Server, Activity, Cpu, RefreshCw, Settings, X, Save, Layers, Wifi, Radio, Smartphone, Box, Monitor, Sliders, Wind, Zap, Maximize, Minimize, ChevronUp, ChevronDown } from 'lucide-react';
+import { api } from '../../api/client';
 
 // --- Context for Flow Settings ---
 const FlowSettingsContext = React.createContext({
@@ -379,31 +380,29 @@ const TopologyMap: React.FC = () => {
         }
         return e;
       }));
-      await fetch(`/api/topology/links/${linkId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ link_type: nextSpeed }),
-      });
+      await api.updateTopologyLink(parseInt(linkId), { link_type: nextSpeed as any });
     } catch (err) { console.error(err); }
-  }, [setEdges]);
+  }, [setEdges, selectedEdge]);
 
   const onDeleteLink = useCallback(async (edgeId: string) => {
     const linkId = edgeId.replace('e-', '');
     try {
       setEdges(eds => eds.filter(e => e.id !== edgeId));
-      await fetch(`/api/topology/links/${linkId}`, { method: 'DELETE' });
+      await api.deleteTopologyLink(parseInt(linkId));
     } catch (err) { console.error(err); }
   }, [setEdges]);
 
   const fetchData = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const [devRes, linkRes] = await Promise.all([
-        fetch('/api/devices'),
-        fetch('/api/topology/links'),
-      ]);
-      const devices = await devRes.json();
-      const links = await linkRes.json();
+      const { devices, links } = await api.getTopologyMap();
+      console.log(`Topology: Loaded ${devices?.length || 0} devices and ${links?.length || 0} links`);
+
+      if (!devices || devices.length === 0) {
+        setNodes([]);
+        setEdges([]);
+        return;
+      }
 
       // Calculate nearest AP for WLAN devices
       const aps = devices.filter((d: any) => d.is_ap);
@@ -437,7 +436,7 @@ const TopologyMap: React.FC = () => {
             y: y,
             onDelete: async (id: string) => {
               if (window.confirm('Gerät entfernen?')) {
-                await fetch(`/api/devices/${id}`, { method: 'DELETE' });
+                await api.deleteDevice(parseInt(id));
                 setNodes(nds => nds.filter(n => n.id !== id));
               }
             },
@@ -539,21 +538,16 @@ const TopologyMap: React.FC = () => {
       }
     }
 
-    fetch('/api/topology/links', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source_id: parseInt(params.source!),
-        target_id: parseInt(params.target!),
-        source_handle: params.sourceHandle,
-        target_handle: params.targetHandle,
-        link_type: '1GbE',
-      }),
+    api.createTopologyLink({
+      source_id: parseInt(params.source!),
+      target_id: parseInt(params.target!),
+      source_handle: params.sourceHandle,
+      target_handle: params.targetHandle,
+      link_type: '1GbE',
     }).then(res => {
-      if (!res.ok) {
-        alert("Fehler beim Erstellen der Verbindung. Möglicherweise existiert sie bereits?");
-      }
       fetchData();
+    }).catch(err => {
+      alert("Fehler beim Erstellen der Verbindung. Möglicherweise existiert sie bereits?");
     });
   }, [fetchData, nodes, edges]);
 
@@ -566,15 +560,11 @@ const TopologyMap: React.FC = () => {
     };
     
     try {
-      await fetch(`/api/devices/${selectedNode.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          max_ports: configMaxPorts,
-          is_wlan: configIsWlan,
-          is_ap: configIsAp,
-          topology_config: JSON.stringify(config)
-        }),
+      await api.updateDevice(selectedNode.id, {
+        max_ports: configMaxPorts,
+        is_wlan: configIsWlan,
+        is_ap: configIsAp,
+        topology_config: JSON.stringify(config)
       });
       fetchData();
       setSelectedNode(null);
@@ -583,13 +573,9 @@ const TopologyMap: React.FC = () => {
 
   const saveNodePos = async (id: string, pos: { x: number, y: number }) => {
     try {
-      await fetch(`/api/devices/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topology_x: Math.round(pos.x),
-          topology_y: Math.round(pos.y),
-        }),
+      await api.updateDevice(parseInt(id), {
+        topology_x: Math.round(pos.x),
+        topology_y: Math.round(pos.y),
       });
     } catch (err) {
       console.error('Failed to save node position:', err);

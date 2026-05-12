@@ -28,6 +28,7 @@ from app.config import settings
 from app.database import async_session, get_db
 from app.models.agent import AgentConfig, DeviceMetrics, AgentToken
 from app.models.device import Device, DeviceHistory, DiscoveredHost
+from app.api.auth import get_current_admin
 from app.schemas.agent import (
     AgentReportPayload,
     AgentReportResponse,
@@ -106,35 +107,33 @@ async def receive_report(
         allow_adopt_setting = adopt_res.scalar_one_or_none()
         allow_auto_adopt = allow_adopt_setting.value.lower() == "true" if allow_adopt_setting else False
 
-        if not agent_token and client_ip and allow_auto_adopt:
-            # 2.1 Look for a device with this IP
+        if not agent_token and client_ip:
+            # Look for a device with this IP to flag it for manual adoption
             dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
             device = dev_result.scalar_one_or_none()
             
-            # CRITICAL: Payload device_id MUST match. This prevents random IP takeover.
-            if device and device.id == payload.device_id:
-                logger.warning("Adopting token %s... for existing device %d (%s) - Auto-Adoption is ENABLED", 
-                               token[:8], device.id, client_ip)
-                # Create token for this device if it doesn't have one, or update if it does
-                token_result = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
-                existing_token = token_result.scalar_one_or_none()
+            if device:
+                # Store the rejected token as pending if it matches the payload device_id
+                # This verifies the agent intent before showing it in the UI
+                if device.id == payload.device_id:
+                    logger.warning("Token mismatch for device %d (%s). Storing as pending_token for manual adoption.", 
+                                   device.id, client_ip)
+                    
+                    token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
+                    token_obj = token_res.scalar_one_or_none()
+                    if token_obj:
+                        token_obj.pending_token = token
+                        token_obj.pending_at = datetime.now()
+                    else:
+                        # Should not happen usually as deploy creates it, but for robustness:
+                        new_token = AgentToken(device_id=device.id, token="TEMP_INVALID_" + token[:8], pending_token=token, pending_at=datetime.now())
+                        db.add(new_token)
+                    
+                    await db.commit()
                 
-                if existing_token:
-                    existing_token.token = token
-                    existing_token.is_active = True
-                    agent_token = existing_token
-                else:
-                    agent_token = AgentToken(device_id=device.id, token=token)
-                    db.add(agent_token)
-            else:
-                logger.warning("Rejected report from unknown token %s... for IP %s (Auto-Adoption check failed)", 
-                               token[:8], client_ip)
-                raise HTTPException(status_code=401, detail="Invalid token and adoption rejected")
-        elif not agent_token:
-            # Adoption disabled or no IP match
-            logger.warning("Rejected report from unknown token %s... for IP %s (Adoption disabled)", 
+            logger.warning("Rejected report from unknown token %s... for IP %s", 
                            token[:8], client_ip)
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
 
         # 3. Handle device existence and re-discovery
         # 3. DB operations inside no_autoflush block to prevent "Query-invoked autoflush" locks
@@ -461,7 +460,9 @@ async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverv
             temp=last_m.temperature if last_m else None,
             uptime_pct=uptime_pct,
             uptime_history=uptime_history,
-            metrics_count=m_count
+            metrics_count=m_count,
+            has_pending_token=bool(token.pending_token),
+            pending_at=token.pending_at
         ))
 
     n = len(agents_list)
@@ -637,9 +638,11 @@ async def download_agent_config(device_id: int, db: AsyncSession = Depends(get_d
                 if any(x in iface for x in ["docker", "br-", "veth"]): score -= 100
                 return score
             best = max(subnets, key=ip_priority)
-            server_url = f"http://{best.ip_address}:8000"
+            port = settings.port
+            server_url = f"http://{best.ip_address}:{port}" if port != 80 else f"http://{best.ip_address}"
         else:
-            server_url = "http://localhost:8000"
+            port = settings.port
+            server_url = f"http://localhost:{port}" if port != 80 else "http://localhost"
 
     # Generate JSON config
     config_data = {
@@ -676,9 +679,11 @@ async def download_install_script(device_id: int, db: AsyncSession = Depends(get
                 if ip.startswith("192.168."): score += 50
                 return score
             best = max(subnets, key=ip_priority)
-            server_url = f"http://{best.ip_address}:8000"
+            port = settings.port
+            server_url = f"http://{best.ip_address}:{port}" if port != 80 else f"http://{best.ip_address}"
         else:
-            server_url = "http://localhost:8000"
+            port = settings.port
+            server_url = f"http://localhost:{port}" if port != 80 else "http://localhost"
 
     script = f"""#!/bin/bash
 set -e
@@ -768,10 +773,12 @@ async def deploy_agent_endpoint(
 
             best_subnet = max(subnets, key=ip_priority)
             local_ip = best_subnet.ip_address
-            server_url = f"http://{local_ip}:8000"
+            port = settings.port
+            server_url = f"http://{local_ip}:{port}" if port != 80 else f"http://{local_ip}"
             logger.info("Auto-detected server URL: %s (via %s)", server_url, best_subnet.interface_name)
         else:
-            server_url = f"http://localhost:8000" # Last resort fallback
+            port = settings.port
+            server_url = f"http://localhost:{port}" if port != 80 else "http://localhost"
             logger.warning("Could not detect local IP, falling back to localhost for Agent URL")
 
     # 2. Run Deployment
@@ -847,7 +854,8 @@ async def uninstall_agent_endpoint(
 @router.websocket("/ws/{device_id}")
 async def agent_websocket(websocket: WebSocket, device_id: int):
     """WebSocket for real-time metric streaming to the dashboard with authentication."""
-    token = websocket.query_params.get("token")
+    # Try query param first, then cookie
+    token = websocket.query_params.get("token") or websocket.cookies.get("gravitylan_token")
     
     if not token:
         await websocket.close(code=4001, reason="Missing authentication token")
@@ -923,3 +931,25 @@ systemctl daemon-reload
 echo "--- Uninstallation Complete ---"
 """
     return PlainTextResponse(script)
+    
+@router.post("/adopt/{device_id}")
+async def adopt_agent_token(device_id: int, db: AsyncSession = Depends(get_db), current_user: str = Depends(get_current_admin)):
+    """Manually adopt a pending token for a device."""
+    token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device_id))
+    token_obj = token_res.scalar_one_or_none()
+    
+    if not token_obj or not token_obj.pending_token:
+        raise HTTPException(status_code=400, detail="No pending token found for this device")
+    
+    # Move pending token to active token
+    old_token = token_obj.token
+    token_obj.token = token_obj.pending_token
+    token_obj.pending_token = None
+    token_obj.pending_at = None
+    token_obj.is_active = True
+    
+    await db.commit()
+    logger.info("Device %d adopted new token (Replaced %s... with %s...)", 
+                device_id, old_token[:8], token_obj.token[:8])
+    
+    return {"status": "ok", "message": "Token adopted successfully"}

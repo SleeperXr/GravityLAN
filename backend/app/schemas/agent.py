@@ -159,6 +159,8 @@ class AgentSummary(BaseModel):
     uptime_pct: float = 100.0
     uptime_history: list[float] = []
     metrics_count: int = 0
+    has_pending_token: bool = False
+    pending_at: datetime | None = None
 
 class AgentsOverviewResponse(BaseModel):
     """Aggregation of all agents and global stats."""

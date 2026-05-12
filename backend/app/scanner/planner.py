@@ -29,13 +29,15 @@ async def run_arp_only_scan():
         if setting and setting.value:
             for s in setting.value.split(","):
                 try: allowed_nets.append(ipaddress.ip_network(s.strip(), strict=False))
-                except: pass
+                except ValueError:
+                    pass
         else:
             # Fallback: Ignore virtual subnets from local interfaces
             from app.scanner.scheduler import _get_auto_scan_subnets
             for s in _get_auto_scan_subnets():
                 try: allowed_nets.append(ipaddress.ip_network(s, strict=False))
-                except: pass
+                except ValueError:
+                    pass
 
     arp_hosts = get_local_arp_table()
     synced_count = 0
@@ -49,7 +51,8 @@ async def run_arp_only_scan():
             if any(ip_obj in net for net in allowed_nets):
                 await sync_host_to_db(ip=ip, mac=mac, is_planner_scan=True)
                 synced_count += 1
-        except: pass
+        except (ValueError, OSError):
+            pass
         
     return synced_count
 
@@ -141,7 +144,8 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
                     if ipaddress.IPv4Address(host.ip) in ipaddress.IPv4Network(s, strict=False):
                         is_in_scanned_subnet = True
                         break
-                except: continue
+                except (ValueError, OSError):
+                    continue
             
             if is_in_scanned_subnet and host.ip not in all_alive_ips:
                 # IMPORTANT: Only delete if NOT monitored. 

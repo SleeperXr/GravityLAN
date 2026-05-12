@@ -61,7 +61,8 @@ def _resolve_win32(ip: str) -> Optional[str]:
         )
         if res == 0 and host.value:
             return host.value
-    except: pass
+    except Exception:
+        pass
     return None
 
 def _resolve_shell(ip: str) -> Optional[str]:
@@ -81,7 +82,8 @@ def _resolve_shell(ip: str) -> Optional[str]:
                     name = line.split("[")[0].strip().split()[-1]
                     if name and name != ip:
                         return name
-        except: pass
+        except (subprocess.SubprocessError, OSError):
+            pass
     else:
         # Try avahi-resolve (mDNS)
         try:
@@ -89,7 +91,8 @@ def _resolve_shell(ip: str) -> Optional[str]:
             if res.returncode == 0 and res.stdout:
                 parts = res.stdout.strip().split()
                 if len(parts) >= 2: return parts[1]
-        except: pass
+        except (subprocess.SubprocessError, OSError):
+            pass
         
         # Try dig (Reverse DNS)
         try:
@@ -97,7 +100,8 @@ def _resolve_shell(ip: str) -> Optional[str]:
             if res.returncode == 0 and res.stdout:
                 name = res.stdout.strip().rstrip('.')
                 if name: return name
-        except: pass
+        except (subprocess.SubprocessError, OSError):
+            pass
 
         # Try nmap resolution (Final powerful fallback)
         try:
@@ -109,7 +113,8 @@ def _resolve_shell(ip: str) -> Optional[str]:
                     name = match.group(1).strip()
                     if name and not is_ip_like(name):
                         return name
-        except: pass
+        except (subprocess.SubprocessError, OSError):
+            pass
     return None
 
 async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None = None) -> str | None:

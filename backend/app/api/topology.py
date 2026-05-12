@@ -25,7 +25,7 @@ async def get_topology_map(db: AsyncSession = Depends(get_db)):
     
     # Simple conversion to dict for JSON serialization
     # In a real app, we'd use schemas, but for the cache dict is fine
-    from app.schemas.device import Device as DeviceSchema
+    from app.schemas.device import DeviceResponse as DeviceSchema
     from app.schemas.topology import Rack as RackSchema, TopologyLink as LinkSchema
     
     devices = [DeviceSchema.model_validate(d).model_dump() for d in devices_res.scalars().all()]

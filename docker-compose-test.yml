@@ -2,7 +2,6 @@ services:
   gravitylan:
     build: .
     container_name: GravityLAN_Test
-    privileged: true
     restart: unless-stopped
     network_mode: host
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1
@@ -16,7 +15,7 @@ services:
       - GRAVITYLAN_PORT=8080
       - GRAVITYLAN_DATA_DIR=/app/data
       - TZ=Europe/Berlin
-      - GRAVITYLAN_DEBUG=true
+      - GRAVITYLAN_DEBUG=false
     cap_add:
       - NET_RAW
       - NET_ADMIN

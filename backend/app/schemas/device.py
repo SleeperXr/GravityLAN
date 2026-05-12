@@ -112,6 +112,7 @@ class DeviceResponse(BaseModel):
     is_host: bool = False
     # Status string (online/offline/unknown)
     status: str | None = None
+    has_pending_token: bool = False
     # Parent host (for VMs)
     parent_id: int | None = None
     parent_name: str | None = None

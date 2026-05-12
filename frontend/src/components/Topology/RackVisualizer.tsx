@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Server, Layout, Network, RefreshCw } from 'lucide-react';
+import { api } from '../../api/client';
 
 interface Device {
   id: number;
@@ -24,8 +25,7 @@ const RackVisualizer: React.FC<RackVisualizerProps> = ({ devices }) => {
   useEffect(() => {
     const loadRacks = async () => {
       try {
-        const res = await fetch('/api/topology/racks');
-        const data = await res.json();
+        const data = await api.getRacks();
         setRacks(data);
         if (data.length > 0) setSelectedRack(data[0]);
       } catch (err) {
@@ -40,16 +40,9 @@ const RackVisualizer: React.FC<RackVisualizerProps> = ({ devices }) => {
   const createDefaultRack = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/topology/racks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'Main Rack', units: 42, width: 19 })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setRacks([data]);
-        setSelectedRack(data);
-      }
+      const data = await api.createRack({ name: 'Main Rack', units: 42, width: 19 });
+      setRacks([data]);
+      setSelectedRack(data);
     } catch (err) {
       console.error('Failed to create default rack:', err);
     } finally {

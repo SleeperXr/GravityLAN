@@ -53,17 +53,25 @@ export function SubnetView() {
       const safeDevices = Array.isArray(devs) ? devs : [];
       setDevices(safeDevices);
       
-      if (sets && typeof sets['network_groups'] === 'string') {
+      if (sets && sets['network_groups']) {
         try {
-          const g = JSON.parse(sets['network_groups']);
-          if (Array.isArray(g)) {
-            setGroups({ '192.168.100': g });
+          const rawGroups = typeof sets['network_groups'] === 'string' 
+            ? JSON.parse(sets['network_groups']) 
+            : sets['network_groups'];
+          
+          console.log('Loaded network groups:', rawGroups);
+          console.log('Current subnet prefix:', subnetPrefix);
+          
+          if (Array.isArray(rawGroups)) {
+            // Legacy format or single subnet: Try to find which prefix this belongs to
+            setGroups({ [subnetPrefix]: rawGroups });
           } else {
-            setGroups(g || {});
+            setGroups(rawGroups || {});
           }
-        } catch { setGroups({}); }
-      } else if (sets && sets['network_groups']) {
-        setGroups(sets['network_groups'] as any);
+        } catch (e) {
+          console.warn('Failed to parse network_groups:', e);
+          setGroups({});
+        }
       }
 
       const subnetList = await api.getSubnetsList().catch(() => []);
@@ -71,8 +79,11 @@ export function SubnetView() {
         setSubnets(subnetList);
         if (subnetList.length > 0 && !subnetPrefix) {
           const firstSub = subnetList[0].cidr;
-          const match = firstSub.match(/(\d+\.\d+\.\d+)/);
-          if (match) setSubnetPrefix(match[1]);
+          const match = firstSub.match(/^(\d+\.\d+\.\d+)/);
+          if (match) {
+            console.log('Auto-detected prefix from subnet:', match[1]);
+            setSubnetPrefix(match[1]);
+          }
         }
       }
 
@@ -364,14 +375,51 @@ export function SubnetView() {
             <div className="modal-content" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
               <div className="modal-header"><h3>{t('network.manage_areas')}</h3></div>
               <div className="modal-body">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 60px 50px auto', gap: '10px', marginBottom: '20px' }}>
-                  <input className="input" placeholder="Name" value={newGroup.name} onChange={e => setNewGroup({...newGroup, name: e.target.value})} />
-                  <input className="input" type="number" value={newGroup.start} onChange={e => setNewGroup({...newGroup, start: parseInt(e.target.value)})} />
-                  <input className="input" type="number" value={newGroup.end} onChange={e => setNewGroup({...newGroup, end: parseInt(e.target.value)})} />
-                  <input className="input" type="color" value={newGroup.color} onChange={e => setNewGroup({...newGroup, color: e.target.value})} />
-                  <button className="btn btn-primary" onClick={() => { saveGroups([...(groups[subnetPrefix] || []), newGroup]); setNewGroup({ name: '', start: 0, end: 0, color: '#38bdf8' }); }}>+</button>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 60px 40px', gap: '12px', marginBottom: '24px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <input className="input" placeholder="Area Name" value={newGroup.name} onChange={e => setNewGroup({...newGroup, name: e.target.value})} />
+                  <input className="input" type="number" placeholder="Start" value={newGroup.start} onChange={e => setNewGroup({...newGroup, start: parseInt(e.target.value)})} />
+                  <input className="input" type="number" placeholder="End" value={newGroup.end} onChange={e => setNewGroup({...newGroup, end: parseInt(e.target.value)})} />
+                  <div className="relative group">
+                    <input className="w-full h-10 rounded bg-slate-800 border border-white/10 cursor-pointer" type="color" value={newGroup.color} onChange={e => setNewGroup({...newGroup, color: e.target.value})} />
+                  </div>
+                  <button className="btn btn-primary h-10 flex items-center justify-center" onClick={() => { saveGroups([...(groups[subnetPrefix] || []), newGroup]); setNewGroup({ name: '', start: 0, end: 0, color: '#38bdf8' }); }}>
+                    <Plus size={18} />
+                  </button>
                 </div>
-                {/* List ... */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {(groups[subnetPrefix] || []).map((group, idx) => (
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 60px 40px', gap: '12px', alignItems: 'center', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <input className="input" value={group.name} onChange={e => {
+                        const next = [...groups[subnetPrefix]];
+                        next[idx].name = e.target.value;
+                        saveGroups(next);
+                      }} />
+                      <input className="input text-center" type="number" value={group.start} onChange={e => {
+                        const next = [...groups[subnetPrefix]];
+                        next[idx].start = parseInt(e.target.value);
+                        saveGroups(next);
+                      }} />
+                      <input className="input text-center" type="number" value={group.end} onChange={e => {
+                        const next = [...groups[subnetPrefix]];
+                        next[idx].end = parseInt(e.target.value);
+                        saveGroups(next);
+                      }} />
+                      <input className="w-full h-8 rounded bg-transparent border-none cursor-pointer" type="color" value={group.color} onChange={e => {
+                        const next = [...groups[subnetPrefix]];
+                        next[idx].color = e.target.value;
+                        saveGroups(next);
+                      }} />
+                      <button 
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all border border-rose-500/20" 
+                        onClick={() => saveGroups(groups[subnetPrefix].filter((_, i) => i !== idx))}
+                        title="Löschen"
+                      >
+                        <Trash2 size={14} className="min-w-[14px]" />
+                        <span className="sr-only">X</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

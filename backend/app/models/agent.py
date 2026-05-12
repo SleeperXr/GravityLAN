@@ -35,6 +35,10 @@ class AgentToken(Base):
     agent_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    
+    # Support for manual adoption: when a token mismatch occurs, we store the rejected token
+    pending_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pending_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     device: Mapped["Device"] = relationship()  # noqa: F821
 

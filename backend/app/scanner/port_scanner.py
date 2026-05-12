@@ -96,7 +96,8 @@ async def scan_ports(
                     if "445/tcp open" in nres.stdout:
                         return 445
                     return None
-                except: return None
+                except (OSError, subprocess.SubprocessError):
+                    return None
 
             # Standard check for other ports
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -184,20 +185,19 @@ async def nmap_scan(ip: str, cancel_event: asyncio.Event | None = None, dns_serv
     logger.info(f"Starting async nmap -Pn scan for {ip} (DNS: {dns_server or 'System'})...")
     proc = None
     try:
-        # -Pn: Skip host discovery
-        # --top-ports 1000: Scan the most common ports
-        # -oG -: Greppable output for easier parsing
-        dns_flag = f"--dns-servers {dns_server}" if dns_server else ""
-        cmd_str = f'nmap -Pn --top-ports 1000 -oG - {dns_flag} {ip}'
-        
+        # Build argument list — never interpolate into a shell string
+        cmd = ["nmap", "-Pn", "--top-ports", "1000", "-oG", "-"]
+        if dns_server:
+            cmd += ["--dns-servers", dns_server]
+        cmd.append(ip)
+
         try:
-            proc = await asyncio.create_subprocess_shell(
-                cmd_str,
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
             )
-            
-            # Helper task to monitor cancellation
+
             async def _wait_for_cancel():
                 if cancel_event:
                     await cancel_event.wait()
@@ -206,31 +206,31 @@ async def nmap_scan(ip: str, cancel_event: asyncio.Event | None = None, dns_serv
                         try:
                             proc.terminate()
                             await asyncio.sleep(0.2)
-                            if proc.returncode is None: proc.kill()
-                        except: pass
+                            if proc.returncode is None:
+                                proc.kill()
+                        except Exception:
+                            pass
 
             cancel_task = asyncio.create_task(_wait_for_cancel())
-            
             try:
-                # Wait for nmap to finish or timeout (max 45s for 1000 ports)
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=45.0)
             except Exception as e:
                 logger.warning(f"Nmap communication error for {ip}: {e}")
                 stdout, stderr = b"", b""
             finally:
                 cancel_task.cancel()
-            
+
             returncode = proc.returncode
 
         except NotImplementedError:
             # FALLBACK: Use ThreadPoolExecutor for Windows
-            logger.info(f"Async subprocess not supported for port scan, falling back to ThreadPool for {ip}")
+            logger.info(f"Async subprocess not supported, falling back to ThreadPool for {ip}")
             import subprocess
             from concurrent.futures import ThreadPoolExecutor
-            
+
             def _run_sync_nmap():
                 try:
-                    res = subprocess.run(cmd_str, capture_output=True, shell=True, text=False, timeout=45)
+                    res = subprocess.run(cmd, capture_output=True, shell=False, text=False, timeout=45)
                     return res.stdout, res.stderr, res.returncode
                 except subprocess.TimeoutExpired:
                     return b"", b"Timeout", 1
@@ -266,12 +266,16 @@ async def nmap_scan(ip: str, cancel_event: asyncio.Event | None = None, dns_serv
     except asyncio.TimeoutError:
         logger.warning(f"Nmap scan for {ip} timed out")
         if proc and proc.returncode is None:
-            try: proc.kill()
-            except: pass
+            try:
+                proc.kill()
+            except OSError:
+                pass
         return []
     except Exception as e:
         logger.error(f"Error during nmap scan for {ip}: {str(e)}", exc_info=True)
         if proc and proc.returncode is None:
-            try: proc.kill()
-            except: pass
+            try:
+                proc.kill()
+            except OSError:
+                pass
         return []

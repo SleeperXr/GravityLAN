@@ -12,6 +12,7 @@
 
 services:
   gravitylan:
+    image: oliver/gravitylan:v0.1.0  # Ersetze 'oliver' durch deinen DockerHub Namen
     build:
       context: ..
       dockerfile: docker/Dockerfile
