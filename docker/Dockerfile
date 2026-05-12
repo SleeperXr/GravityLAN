@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     avahi-utils \
     iproute2 \
     dnsutils \
+    gcc \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -29,7 +31,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy agent script and backend code
 COPY agent ./agent
 COPY backend/app ./app
-COPY backend/app/main.py ./app/main.py
 
 # Copy frontend build to static directory
 COPY --from=frontend-build /build/frontend/dist ./static
@@ -39,13 +40,15 @@ RUN mkdir -p /app/data
 
 # Environment
 ENV GRAVITYLAN_DATA_DIR=/app/data
-ENV GRAVITYLAN_DEBUG=true
+ENV GRAVITYLAN_PORT=80
+ENV GRAVITYLAN_DEBUG=false
+ENV PYTHONPATH=/app
 
 # Expose port
-EXPOSE 8000
+EXPOSE 80
 
 # Run as root (Required for raw socket nmap scans)
 USER root
 
-# Start server
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Start server on Port 80
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80", "--workers", "1"]

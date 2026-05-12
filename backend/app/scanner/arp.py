@@ -25,8 +25,9 @@ async def trigger_arp_probe(ip: str):
                 )
                 transport.sendto(b'\x00', (ip, port))
                 transport.close()
-            except: pass
-    except:
+            except OSError:
+                pass
+    except Exception:
         pass
 
 def get_local_arp_table() -> Dict[str, str]:
@@ -35,10 +36,10 @@ def get_local_arp_table() -> Dict[str, str]:
         # Try 'arp -a' first, then 'arp -g' as fallback
         try:
             stdout = subprocess.check_output("arp -a", shell=True, stderr=subprocess.STDOUT)
-        except:
+        except subprocess.SubprocessError:
             try:
                 stdout = subprocess.check_output("arp -g", shell=True, stderr=subprocess.STDOUT)
-            except:
+            except subprocess.SubprocessError:
                 return {}
         
         if not stdout:
@@ -91,9 +92,10 @@ def get_linux_neighbors() -> Dict[str, str]:
                             mac = parts[mac_idx].lower()
                             if len(mac) == 17:
                                 mapping[ip] = mac
-                except: continue
+                except (socket.error, ValueError, IndexError):
+                    continue
         return mapping
-    except:
+    except Exception:
         return {}
 
 def get_powershell_neighbors() -> Dict[str, str]:
@@ -112,7 +114,7 @@ def get_powershell_neighbors() -> Dict[str, str]:
             if ip and mac and len(mac) >= 11:
                 mapping[ip] = mac.replace("-", ":").lower()
         return mapping
-    except:
+    except Exception:
         return {}
 
 async def resolve_mac_addresses(discovered_hosts: List[Dict[str, Any]], all_target_ips: Optional[List[str]] = None) -> List[Dict[str, Any]]:

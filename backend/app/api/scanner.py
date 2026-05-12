@@ -270,7 +270,8 @@ async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
 @router.websocket("/ws")
 async def scan_websocket(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time scan progress updates with authentication."""
-    token = websocket.query_params.get("token")
+    # Try query param first, then cookie
+    token = websocket.query_params.get("token") or websocket.cookies.get("gravitylan_token")
     
     async with async_session() as db:
         # 0. Check if setup is complete (allow bypass during setup)

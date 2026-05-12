@@ -117,7 +117,8 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
                 if not any(ip_obj in net for net in physical_networks):
                     logger.debug(f"Setup: Skipping {host.ip} - not in a physical network.")
                     return None
-            except: return None
+            except (ValueError, OSError):
+                return None
 
             if host.ip in existing_ips:
                 return None

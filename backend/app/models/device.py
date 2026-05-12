@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -161,6 +161,10 @@ class DeviceHistory(Base):
 
     device: Mapped[Device] = relationship(back_populates="history")
     service: Mapped[Service | None] = relationship()
+
+    __table_args__ = (
+        Index("ix_device_history_device_ts", "device_id", "timestamp"),
+    )
 
 
 class DiscoveredHost(Base):

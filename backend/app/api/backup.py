@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sqlite3
 import os
@@ -19,51 +20,50 @@ async def export_backup():
     if not os.path.exists(db_path):
         raise HTTPException(status_code=404, detail="Database file not found")
 
-    try:
+    def _read_db() -> dict:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-
-        data = {
+        data: dict = {
             "metadata": {
                 "exported_at": datetime.now().isoformat(),
                 "version": "0.1.0",
-                "source": "GravityLAN Dashboard"
+                "source": "GravityLAN Dashboard",
             },
             "device_groups": [],
             "devices": [],
             "services": [],
             "discovered_hosts": [],
-            "settings": []
+            "settings": [],
         }
-
         tables = {
             "device_groups": "device_groups",
             "devices": "devices",
             "services": "services",
             "discovered_hosts": "discovered_hosts",
-            "settings": "settings",
+            "settings": "app_settings",
             "agent_tokens": "agent_tokens",
-            "agent_configs": "agent_configs"
+            "agent_configs": "agent_configs",
+            "subnets": "subnets",
+            "topology_links": "topology_links",
+            "racks": "racks",
         }
-
         for key, table in tables.items():
             try:
                 cursor.execute(f"SELECT * FROM {table}")
-                rows = cursor.fetchall()
-                data[key] = [dict(row) for row in rows]
+                data[key] = [dict(row) for row in cursor.fetchall()]
             except sqlite3.OperationalError as e:
                 logger.warning(f"Backup: Table {table} skipped ({e})")
-
         conn.close()
-        
-        # We return the JSON directly
+        return data
+
+    try:
+        data = await asyncio.to_thread(_read_db)
         filename = f"gravitylan_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         return JSONResponse(
             content=data,
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
-
     except Exception as e:
         logger.error(f"Backup: Export failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -77,89 +77,86 @@ async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends
     try:
         content = await file.read()
         data = json.loads(content)
-        
-        db_path = settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
 
-        # Strict whitelist of allowed tables for import to prevent SQL injection/manipulation
+        db_path = settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
+
         ALLOWED_TABLE_MAP = {
             "device_groups": "device_groups",
             "devices": "devices",
             "services": "services",
             "discovered_hosts": "discovered_hosts",
-            "settings": "settings",
+            "settings": "app_settings",
             "agent_tokens": "agent_tokens",
-            "agent_configs": "agent_configs"
+            "agent_configs": "agent_configs",
+            "subnets": "subnets",
+            "topology_links": "topology_links",
+            "racks": "racks",
         }
 
-        # Disable foreign keys temporarily for bulk import
-        cursor.execute("PRAGMA foreign_keys = OFF")
+        def _write_db() -> dict:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA foreign_keys = OFF")
+            imported: dict[str, int] = {}
 
-        # Get all table info to validate columns
-        for key, rows in data.items():
-            if key == "metadata" or not rows:
-                continue
-            
-            # Security check: Only process whitelisted tables
-            if key not in ALLOWED_TABLE_MAP:
-                logger.warning(f"Backup: Skipping unauthorized table key '{key}'")
-                continue
-                
-            table = ALLOWED_TABLE_MAP[key]
-            
-            # Validate table existence and get column info
-            cursor.execute(f"PRAGMA table_info({table})")
-            table_info = {col[1]: {"notnull": col[3], "default": col[4], "type": col[2]} for col in cursor.fetchall()}
-            table_cols = set(table_info.keys())
-            
-            if not table_cols:
-                logger.error(f"Backup: Table {table} defined in whitelist but not found in DB")
-                continue
+            for key, rows in data.items():
+                if key == "metadata" or not rows:
+                    continue
+                if key not in ALLOWED_TABLE_MAP:
+                    logger.warning(f"Backup: Skipping unauthorized table key '{key}'")
+                    continue
 
-            valid_rows = []
-            now_str = datetime.now().isoformat().replace("T", " ")
+                table = ALLOWED_TABLE_MAP[key]
+                cursor.execute(f"PRAGMA table_info({table})")
+                table_info = {
+                    col[1]: {"notnull": col[3], "default": col[4], "type": col[2]}
+                    for col in cursor.fetchall()
+                }
+                table_cols = set(table_info.keys())
+                if not table_cols:
+                    logger.error(f"Backup: Table {table} not found in DB")
+                    continue
 
-            for row in rows:
-                clean_row = {}
-                # Filter valid columns and fill mandatory ones
-                for col, val in row.items():
-                    if col in table_cols:
-                        if val is None and table_info[col]["notnull"]:
-                            continue
-                        clean_row[col] = val
-                
-                # Force fill mandatory missing columns
-                for col, info in table_info.items():
-                    if info["notnull"] and (col not in clean_row or clean_row[col] is None):
-                        if "DATETIME" in info["type"].upper() or "TIMESTAMP" in info["type"].upper():
-                            clean_row[col] = now_str
-                        elif "INT" in info["type"].upper() or "BOOLEAN" in info["type"].upper():
-                            clean_row[col] = 0
-                        else:
-                            clean_row[col] = ""
-                
-                valid_rows.append(clean_row)
+                now_str = datetime.now().isoformat().replace("T", " ")
+                valid_rows = []
+                for row in rows:
+                    clean_row = {
+                        col: val
+                        for col, val in row.items()
+                        if col in table_cols and not (val is None and table_info[col]["notnull"])
+                    }
+                    for col, info in table_info.items():
+                        if info["notnull"] and (col not in clean_row or clean_row[col] is None):
+                            if any(t in info["type"].upper() for t in ("DATETIME", "TIMESTAMP")):
+                                clean_row[col] = now_str
+                            elif any(t in info["type"].upper() for t in ("INT", "BOOLEAN")):
+                                clean_row[col] = 0
+                            else:
+                                clean_row[col] = ""
+                    valid_rows.append(clean_row)
 
-            if not valid_rows:
-                continue
+                if not valid_rows:
+                    continue
 
-            # Clear existing data safely using the whitelisted table name
-            cursor.execute(f"DELETE FROM {table}")
-            
-            columns = list(valid_rows[0].keys())
-            placeholders = ", ".join(["?"] * len(columns))
-            col_names = ", ".join(columns)
-            insert_query = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})"
-            
-            values = [tuple(row.get(col) for col in columns) for row in valid_rows]
-            cursor.executemany(insert_query, values)
-            logger.info(f"Backup: Imported {len(valid_rows)} rows into {table}")
+                cursor.execute(f"DELETE FROM {table}")
+                columns = list(valid_rows[0].keys())
+                placeholders = ", ".join(["?"] * len(columns))
+                col_names = ", ".join(columns)
+                cursor.executemany(
+                    f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})",
+                    [tuple(r.get(c) for c in columns) for r in valid_rows],
+                )
+                imported[table] = len(valid_rows)
 
-        conn.commit()
-        cursor.execute("PRAGMA foreign_keys = ON")
-        conn.close()
-        
+            conn.commit()
+            cursor.execute("PRAGMA foreign_keys = ON")
+            conn.close()
+            return imported
+
+        imported = await asyncio.to_thread(_write_db)
+        for table, count in imported.items():
+            logger.info(f"Backup: Imported {count} rows into {table}")
+
         return {"status": "ok", "message": "Backup successfully imported"}
 
     except Exception as e:

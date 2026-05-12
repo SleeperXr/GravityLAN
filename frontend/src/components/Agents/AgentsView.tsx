@@ -207,6 +207,29 @@ export function AgentsView() {
                                 <span>{agent.ip}</span>
                                 <span className="w-1 h-1 rounded-full bg-slate-700"></span>
                                 <span className="bg-white/5 px-1.5 py-0.5 rounded">v{agent.agent_version || '0.0.0'}</span>
+                                {agent.has_pending_token && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-1 h-1 rounded-full bg-rose-500"></span>
+                                    <span className="bg-rose-500/20 text-rose-400 px-1.5 py-0.5 rounded border border-rose-500/30 flex items-center gap-1 animate-pulse">
+                                      <ShieldCheck size={10} />
+                                      TOKEN MISMATCH
+                                    </span>
+                                    <button 
+                                      className="text-[10px] bg-sky-500 hover:bg-sky-400 text-white px-2 py-0.5 rounded font-black transition-colors"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (confirm("Diesen neuen Agent-Key dauerhaft akzeptieren?")) {
+                                          api.adoptAgent(agent.device_id).then(() => {
+                                             alert("Agent erfolgreich adoptiert!");
+                                             window.location.reload();
+                                          });
+                                        }
+                                      }}
+                                    >
+                                      ADOPT
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -263,8 +286,8 @@ export function AgentsView() {
                                }`}>{agent.uptime_pct.toFixed(1)}%</span>
                                <span className="text-[10px] text-slate-500 font-bold mb-1">AVAILABILITY</span>
                              </div>
-                             <div className="h-8 w-full">
-                                <UptimeSparkline data={agent.uptime_history} color={agent.uptime_pct > 95 ? '#0ea5e9' : '#f59e0b'} />
+                             <div className="flex items-center gap-1.5 h-10">
+                                <UptimeStatusGrid data={agent.uptime_history} />
                              </div>
                           </div>
                         </td>
@@ -315,35 +338,53 @@ export function AgentsView() {
   );
 }
 
-function UptimeSparkline({ data, color }: { data: number[], color: string }) {
-  if (!data || data.length === 0) return <div className="h-full bg-white/5 rounded"></div>;
+function UptimeStatusGrid({ data }: { data: number[] }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex gap-1">
+        {[...Array(24)].map((_, i) => (
+          <div key={i} className="w-1.5 h-6 rounded-sm bg-white/5 animate-pulse"></div>
+        ))}
+      </div>
+    );
+  }
 
-  // Fixed coordinate space — no distortion
-  const W = 400; const H = 60;
-  const PAD_T = 4; const PAD_B = 4;
-  const chartH = H - PAD_T - PAD_B;
-
-  const pts = data.map((val, i) => {
-    const x = (i / Math.max(data.length - 1, 1)) * W;
-    const y = PAD_T + chartH - (Math.min(val, 100) / 100) * chartH;
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
-  });
-
-  const lineD = `M ${pts.join(' L ')}`;
-  const areaD = `M 0,${H} L ${pts.join(' L ')} L ${W},${H} Z`;
-  const gradId = `uptime-grad-${color.replace('#', '')}`;
-
+  // We have 24 blocks for 24 hours
   return (
-    <svg className="w-full h-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
-      <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      <path d={areaD} fill={`url(#${gradId})`} />
-      <path d={lineD} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div className="flex items-center gap-1">
+      {data.map((val, i) => {
+        let colorClass = "bg-slate-800";
+        let glowClass = "";
+
+        if (val >= 100) {
+          colorClass = "bg-emerald-500";
+          glowClass = "shadow-[0_0_12px_rgba(16,185,129,0.5)] ring-1 ring-emerald-400/30";
+        } else if (val > 0) {
+          colorClass = "bg-amber-400";
+          glowClass = "shadow-[0_0_12px_rgba(251,191,36,0.4)] ring-1 ring-amber-300/30";
+        } else if (val === 0) {
+          colorClass = "bg-rose-500";
+          glowClass = "shadow-[0_0_12px_rgba(244,63,94,0.5)] ring-1 ring-rose-400/30";
+        }
+
+        return (
+          <div 
+            key={i} 
+            className={`relative group/bar w-[7px] h-8 rounded-[3px] transition-all duration-300 hover:scale-135 hover:z-20 ${colorClass} ${glowClass} cursor-help`}
+          >
+            {/* Premium Tooltip */}
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 px-3 py-1.5 bg-slate-900/95 backdrop-blur-md border border-white/10 rounded-lg text-[10px] text-white font-black whitespace-nowrap opacity-0 group-hover/bar:opacity-100 pointer-events-none transition-all transform scale-90 group-hover/bar:scale-100 shadow-2xl z-50">
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-slate-400 font-bold uppercase tracking-tighter">{23 - i}h ago</span>
+                <span className="text-sky-400">{val.toFixed(1)}%</span>
+              </div>
+              {/* Tooltip Arrow */}
+              <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-900/95"></div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

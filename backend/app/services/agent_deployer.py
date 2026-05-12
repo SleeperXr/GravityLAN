@@ -459,7 +459,7 @@ async def remove_agent(
                 connect_kwargs["hostname"] = gateway
                 try:
                     client.connect(**connect_kwargs)
-                except:
+                except Exception:
                     raise e
             else:
                 raise e

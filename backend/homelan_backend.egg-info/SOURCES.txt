@@ -1,7 +1,6 @@
 pyproject.toml
 app/__init__.py
 app/config.py
-app/database.py
 app/exceptions.py
 app/main.py
 app/api/__init__.py
@@ -23,3 +22,5 @@ homelan_backend.egg-info/SOURCES.txt
 homelan_backend.egg-info/dependency_links.txt
 homelan_backend.egg-info/requires.txt
 homelan_backend.egg-info/top_level.txt
+tests/test_auth.py
+tests/test_basic.py

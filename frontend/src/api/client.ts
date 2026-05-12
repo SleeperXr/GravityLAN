@@ -1,11 +1,28 @@
 /** API client for HomeLan backend. */
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = path;
-  const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+export async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = localStorage.getItem('master_token');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((options?.headers as Record<string, string>) || {}),
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(path, {
+    credentials: 'include',
+    headers,
     ...options,
   });
+
+  if (response.status === 401) {
+    // Redirect to login if unauthorized and not already on auth/setup pages
+    if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
+      window.location.href = '/login';
+    }
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
@@ -100,6 +117,8 @@ export const api = {
     request<{ interval: number; disk_paths: string[]; enable_temp: boolean }>(`/api/agent/config/${deviceId}`),
   updateAgentConfig: (deviceId: number, data: { interval?: number; disk_paths?: string[]; enable_temp?: boolean }) =>
     request<{ interval: number; disk_paths: string[]; enable_temp: boolean }>(`/api/agent/config/${deviceId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  adoptAgent: (deviceId: number) => 
+    request<{ status: string }>(`/api/agent/adopt/${deviceId}`, { method: 'POST' }),
   getAgentsOverview: () => 
     request<{
       agents: import('../types').AgentSummary[];
@@ -123,24 +142,40 @@ export const api = {
   createRack: (data: Partial<import('../types').Rack>) => request<import('../types').Rack>('/api/topology/racks', { method: 'POST', body: JSON.stringify(data) }),
   deleteRack: (id: number) => request<void>(`/api/topology/racks/${id}`, { method: 'DELETE' }),
   getTopologyLinks: () => request<import('../types').TopologyLink[]>('/api/topology/links'),
+  getTopologyMap: async () => {
+    const [devices, links] = await Promise.all([
+      request<import('../types').Device[]>('/api/devices?include_hidden=false'),
+      request<import('../types').TopologyLink[]>('/api/topology/links'),
+    ]);
+    return { devices, links };
+  },
   createTopologyLink: (data: Partial<import('../types').TopologyLink>) => request<import('../types').TopologyLink>('/api/topology/links', { method: 'POST', body: JSON.stringify(data) }),
+  updateTopologyLink: (id: number, data: Partial<import('../types').TopologyLink>) => request<import('../types').TopologyLink>(`/api/topology/links/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteTopologyLink: (id: number) => request<void>(`/api/topology/links/${id}`, { method: 'DELETE' }),
 
   // Auth
   login: (password: string) => 
-    request<{ token: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }).then(res => {
-      localStorage.setItem('gravitylan_token', res.token);
-      return res;
+    request<{ status: string; token?: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) })
+      .then(res => {
+        if (res.token) {
+          localStorage.setItem('gravitylan_token', res.token);
+        }
+        return res;
+      }),
+  logout: () => 
+    request<{ status: string }>('/api/auth/logout', { method: 'POST' }).then(() => {
+      localStorage.removeItem('gravitylan_token');
+      window.location.href = '/login';
     }),
-  checkAuth: (token: string) => request<{ status: string }>('/api/auth/check', { method: 'POST', body: JSON.stringify({ token }) }),
+  checkAuth: () => request<{ status: string }>('/api/auth/check', { method: 'POST' }),
 };
 
 /** Create a WebSocket connection for scan progress updates. */
 export function createScanSocket(onMessage: (data: import('../types').ScanProgress) => void): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
   const token = localStorage.getItem('gravitylan_token') || '';
+  const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
   const ws = new WebSocket(`${wsBase}/api/scanner/ws?token=${token}`);
 
   ws.onmessage = (event) => {
@@ -161,8 +196,8 @@ export function createScanSocket(onMessage: (data: import('../types').ScanProgre
 export function createMetricsSocket(deviceId: number, onMessage: (data: any) => void): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
   const token = localStorage.getItem('gravitylan_token') || '';
+  const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
   const ws = new WebSocket(`${wsBase}/api/agent/ws/${deviceId}?token=${token}`);
 
   ws.onmessage = (event) => {

@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import ipaddress
+import os
 from datetime import datetime
 from sqlalchemy import select
 from app.database import async_session
@@ -106,7 +107,16 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
             for dev, open_ports in zip(batch, batch_results):
                 is_ping_alive = dev.ip in alive_map
                 is_port_alive = len(open_ports) > 0
-                is_online = is_ping_alive or is_port_alive
+                
+                # Special case: If this is the Docker Host and we have the socket, it is online
+                from app.services.docker_service import docker_service
+                host_ip = os.getenv("DOCKER_HOST_IP")
+                is_docker_host = dev.ip == host_ip and docker_service.is_available()
+                
+                if is_docker_host:
+                    logger.debug(f"Dashboard: Forcing {dev.ip} ONLINE (Docker Host match with socket)")
+                
+                is_online = is_ping_alive or is_port_alive or is_docker_host
                 
                 dev.is_online = is_online
                 if is_online:

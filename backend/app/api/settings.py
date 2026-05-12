@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException
+import hmac
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from app.database import get_db
 from app.models.device import Device, Service, DeviceGroup
+from app.models.setting import Setting
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+from app.api.auth import get_current_admin
 
-from sqlalchemy import select
-from app.models.setting import Setting
+router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 @router.get("")
 async def get_all_settings(db: AsyncSession = Depends(get_db)):
@@ -40,7 +41,7 @@ async def update_settings(settings: dict[str, str], db: AsyncSession = Depends(g
     return {"status": "success"}
 
 
-@router.post("/reset-db", status_code=200)
+@router.post("/reset-db", status_code=200, dependencies=[Depends(get_current_admin)])
 async def reset_database(db: AsyncSession = Depends(get_db)):
     """Wipe all devices, services, and reset setup status for a fresh start."""
     try:
@@ -54,14 +55,24 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
         except Exception as se:
             logger.warning(f"Scheduler stop failed/timed out: {se}")
 
-        from app.models.device import DeviceHistory, DiscoveredHost
+        from app.models.device import DeviceHistory, DiscoveredHost, Device, Service, DeviceGroup
         from app.models.agent import AgentToken, DeviceMetrics, AgentConfig
+        from app.models.topology import TopologyLink, Rack
+        
+        # 2. Wipe tables in correct order (Dependent tables first)
+        logger.info("Wiping database tables...")
+        await db.execute(delete(TopologyLink))
         await db.execute(delete(DeviceMetrics))
         await db.execute(delete(AgentToken))
         await db.execute(delete(AgentConfig))
         await db.execute(delete(Service))
         await db.execute(delete(DeviceHistory))
+        
+        # Clear parent_id first to avoid self-referential FK issues in some SQLite versions
+        await db.execute(text("UPDATE devices SET parent_id = NULL"))
+        
         await db.execute(delete(Device))
+        await db.execute(delete(Rack))
         await db.execute(delete(DiscoveredHost))
         await db.execute(delete(DeviceGroup).where(DeviceGroup.is_default == False))
         

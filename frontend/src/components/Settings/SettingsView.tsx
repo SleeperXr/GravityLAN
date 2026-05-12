@@ -14,7 +14,6 @@ export function SettingsView() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     loadGroups();

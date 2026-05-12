@@ -1,38 +1,41 @@
+version: '3.8'
+
 services:
   gravitylan:
     build: .
     container_name: GravityLAN
     privileged: true
     restart: unless-stopped
-
-    # Hier passiert die Magie: Wir nutzen Port-Mapping UND Macvlan
+    
+    # Port-Mapping UND Macvlan für Host-Kommunikation
     ports:
       - "8000:8000"
-
+      
     networks:
       home_lan:
         ipv4_address: 192.168.100.254
-      default:
-        # Erforderlich für die Kommunikation mit dem Host (Ports)
-
+      default: # Die Standard-Bridge für den Host-Kontakt
+      
     volumes:
-      # - ./backend/app:/app/app
-      # - ./agent:/app/agent
-      # - ./static:/app/static
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
-
+      
     environment:
       - GRAVITYLAN_PORT=8000
       - GRAVITYLAN_DATA_DIR=/app/data
+      - DOCKER_HOST_IP=192.168.100.37
       - TZ=Europe/Berlin
-      - GRAVITYLAN_DEBUG=true
-
+      
     cap_add:
       - NET_RAW
       - NET_ADMIN
 
 networks:
   home_lan:
-    external: true
-    name: br0
+    driver: macvlan
+    driver_opts:
+      parent: ens18
+    ipam:
+      config:
+        - subnet: 192.168.100.0/24
+          gateway: 192.168.100.1

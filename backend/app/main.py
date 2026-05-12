@@ -20,7 +20,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -195,17 +195,19 @@ from app.api.backup import router as backup_router  # noqa: E402
 from app.api.network import router as network_router  # noqa: E402
 from app.api.topology import router as topology_router  # noqa: E402
 
+from app.api.auth import get_current_admin
+
 app.include_router(auth_router)
-app.include_router(backup_router)
-app.include_router(network_router)
-app.include_router(topology_router)
-app.include_router(devices_router)
-app.include_router(groups_router)
-app.include_router(router_services)
-app.include_router(scanner_router)
-app.include_router(settings_router)
-app.include_router(setup_router)
-app.include_router(agent_router)
+app.include_router(backup_router, dependencies=[Depends(get_current_admin)])
+app.include_router(network_router, dependencies=[Depends(get_current_admin)])
+app.include_router(topology_router, dependencies=[Depends(get_current_admin)])
+app.include_router(devices_router, dependencies=[Depends(get_current_admin)])
+app.include_router(groups_router, dependencies=[Depends(get_current_admin)])
+app.include_router(router_services, dependencies=[Depends(get_current_admin)])
+app.include_router(scanner_router, dependencies=[Depends(get_current_admin)])
+app.include_router(settings_router, dependencies=[Depends(get_current_admin)])
+app.include_router(setup_router) # Setup manages its own logic
+app.include_router(agent_router) # Contains both public report and protected metrics (internally handled)
 logger.info("Registered Agent API routes under /api/agent")
 
 
@@ -222,7 +224,8 @@ async def health_check() -> dict:
 @app.websocket("/api/logs/ws")
 async def logs_websocket(websocket: WebSocket):
     """WebSocket endpoint for real-time backend log streaming with authentication."""
-    token = websocket.query_params.get("token")
+    # Try query param first, then cookie
+    token = websocket.query_params.get("token") or websocket.cookies.get("gravitylan_token")
     
     if not token:
         await websocket.close(code=4001, reason="Missing authentication token")

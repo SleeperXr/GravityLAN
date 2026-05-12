@@ -186,6 +186,48 @@ export const DeviceCard = memo(({ device, isEditMode, onEdit, onRefresh, isSelec
               </div>
             )}
 
+            {/* Token Mismatch Badge */}
+            {!isEditMode && device.has_pending_token && (
+              <div 
+                className="badge-security" 
+                style={{
+                  background: 'rgba(244, 63, 94, 0.1)',
+                  color: '#f43f5e',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontSize: '0.6rem',
+                  fontWeight: 900,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  width: 'fit-content',
+                  border: '1px solid rgba(244, 63, 94, 0.3)',
+                  textTransform: 'uppercase',
+                  marginTop: '2px',
+                  animation: 'pulse 1.5s infinite'
+                }}
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-rose-500"></div>
+                SECURITY ALERT
+                <button 
+                  className="ml-1 bg-rose-500 hover:bg-rose-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black transition-colors"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (window.confirm("Diesen neuen Agent-Key dauerhaft akzeptieren?")) {
+                      try {
+                        await api.adoptAgent(device.id);
+                        if (onRefresh) onRefresh();
+                      } catch (err) {
+                        console.error("Adoption failed:", err);
+                      }
+                    }
+                  }}
+                >
+                  ADOPT
+                </button>
+              </div>
+            )}
+
             {/* Parent Info */}
             {device.parent_id && (
               <div className="badge-parent" style={{

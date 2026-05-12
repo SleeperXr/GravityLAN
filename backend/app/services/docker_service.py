@@ -36,7 +36,8 @@ class DockerService:
             # assume the host has the same subnets.
             # But the most reliable way is to just use the bridge gateway as a trigger.
             pass
-        except: pass
+        except Exception:
+            pass
 
     def is_available(self) -> bool:
         """Check if the Docker service is connected and available."""
@@ -107,7 +108,7 @@ class DockerService:
             ipam = net.attrs.get("IPAM", {}).get("Config", [])
             if ipam:
                 return ipam[0].get("Gateway")
-        except:
+        except Exception:
             pass
         return None
 

@@ -57,7 +57,7 @@ def get_local_subnets() -> list[SubnetInfo]:
     # Filter list for common virtual/tunnel interfaces (Windows & Linux)
     VIRTUAL_IFACE_KEYWORDS = [
         'virtual', 'vbox', 'vmware', 'vEthernet', 'tailscale', 'zerotier', 
-        'wsl', 'docker', 'tunnel', 'loopback', 'pseudo', 'veth', 'br-', 'virbr', 'bridge'
+        'wsl', 'docker', 'tunnel', 'loopback', 'pseudo', 'veth'
     ]
 
     def add_subnet(name, ip, mask):
@@ -83,7 +83,8 @@ def get_local_subnets() -> list[SubnetInfo]:
                     is_virtual=is_virtual
                 ))
                 seen_subnets.add(subnet_str)
-        except: pass
+        except (ValueError, OSError):
+            pass
 
     # STAGE 1: psutil (Very reliable if installed)
     try:
@@ -99,7 +100,8 @@ def get_local_subnets() -> list[SubnetInfo]:
             for addr in addrs:
                 if addr.family == socket.AF_INET:
                     add_subnet(name, addr.address, addr.netmask or "255.255.255.0")
-    except Exception: pass
+    except Exception:
+        pass
 
     # STAGE 2: netifaces (Alternative if psutil is missing)
     if not subnets:
@@ -110,7 +112,8 @@ def get_local_subnets() -> list[SubnetInfo]:
                 if netifaces.AF_INET in addrs:
                     for addr_info in addrs[netifaces.AF_INET]:
                         add_subnet(iface, addr_info.get("addr"), addr_info.get("netmask", "255.255.255.0"))
-        except Exception: pass
+        except Exception:
+            pass
 
     # STAGE 3: PowerShell (Native Windows Truth)
     if not subnets and sys.platform == 'win32':
@@ -129,7 +132,8 @@ def get_local_subnets() -> list[SubnetInfo]:
                     # Convert prefix to mask
                     mask = str(ipaddress.IPv4Network(f"0.0.0.0/{prefix}").netmask)
                     add_subnet(name, ip, mask)
-        except Exception: pass
+        except Exception:
+            pass
 
     # STAGE 4: Final socket fallback
     if not subnets:
@@ -139,7 +143,8 @@ def get_local_subnets() -> list[SubnetInfo]:
             _, _, ip_list = socket.gethostbyname_ex(hostname)
             for ip in ip_list:
                 add_subnet("default", ip, "255.255.255.0")
-        except: pass
+        except (OSError, socket.error):
+            pass
         
     return [s for s in subnets if not s.is_virtual]
 
@@ -151,7 +156,7 @@ async def check_port_async(ip: str, port: int, timeout: float = 0.4) -> bool:
         writer.close()
         await writer.wait_closed()
         return True
-    except:
+    except (OSError, asyncio.TimeoutError, ConnectionRefusedError):
         return False
 
 async def ping_host_async(ip: str, timeout: float = 0.6) -> bool:
@@ -182,5 +187,5 @@ async def ping_host_async(ip: str, timeout: float = 0.6) -> bool:
             if "TTL=" in proc.stdout.upper():
                 return True
         return False
-    except:
+    except Exception:
         return False

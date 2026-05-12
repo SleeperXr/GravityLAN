@@ -9,6 +9,9 @@ httpx>=0.28.0
 netifaces>=0.11.0
 paramiko>=3.4.0
 dnspython>=2.6.0
+psutil>=5.9.0
+python-multipart
+docker>=7.1.0
 
 [dev]
 pytest>=8.0

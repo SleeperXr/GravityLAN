@@ -61,13 +61,17 @@ async def list_devices(
         # Agent info
         token_q = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
         token = token_q.scalar_one_or_none()
-        device.has_agent = token is not None
         if token:
+            device.has_agent = True
+            device.has_pending_token = token.pending_token is not None
             device.agent_info = {
                 "agent_version": token.agent_version,
                 "latest_version": LATEST_AGENT_VERSION,
                 "latest_metrics": _latest_metrics.get(device.id)
             }
+        else:
+            device.has_agent = False
+            device.has_pending_token = False
         
         # Parent Name
         if device.parent_id:

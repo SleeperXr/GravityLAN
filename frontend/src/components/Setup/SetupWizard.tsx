@@ -16,8 +16,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [subnets, setSubnets] = useState<SubnetInfo[]>([]);
   const [selectedSubnets, setSelectedSubnets] = useState<string[]>([]);
   const [dnsServer, setDnsServer] = useState<string>('');
-  const [scanMode, setScanMode] = useState<'gentle' | 'fast'>('fast');
+  const scanMode = 'fast' as const;
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
+  const [isFinishing, setIsFinishing] = useState(false);
+  const [finishProgress, setFinishProgress] = useState(0);
+  const [finishStatus, setFinishStatus] = useState('');
   const [adminPassword, setAdminPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -73,28 +76,42 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       setError(t('setup.passwords_dont_match', "Passwords don't match!"));
       return;
     }
-    
+
+    setIsFinishing(true);
+    setFinishProgress(10);
+    setFinishStatus('Saving configuration...');
+
     try {
-      await api.completeSetup({ 
+      await api.completeSetup({
         dns_server: dnsServer || undefined,
-        admin_password: adminPassword || undefined
+        admin_password: adminPassword || undefined,
       });
-      
-      // Give the backend a moment to stabilize after the setup transaction
+
+      setFinishProgress(40);
+      setFinishStatus('Stabilizing backend...');
       await new Promise(resolve => setTimeout(resolve, 1500));
 
-      console.log('Setup complete, triggering initial full refresh of all devices...');
+      setFinishProgress(65);
+      setFinishStatus('Scanning your network...');
       try {
         await api.refreshAllDevices();
       } catch (e) {
         console.warn('Initial refresh trigger failed, but setup is complete:', e);
       }
-      
+
+      setFinishProgress(90);
+      setFinishStatus('Almost done...');
+      await new Promise(resolve => setTimeout(resolve, 600));
+
+      setFinishProgress(100);
+      setFinishStatus('Welcome to GravityLAN!');
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       onComplete();
       navigate('/', { replace: true });
     } catch (err) {
       console.error('Final setup step failed:', err);
-      onComplete(); // Still complete so user can enter dashboard
+      onComplete();
       navigate('/', { replace: true });
     }
   }, [onComplete, dnsServer, adminPassword, confirmPassword]);
@@ -336,6 +353,47 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       </button>
     </div>,
   ];
+
+  if (isFinishing) {
+    return (
+      <div className="setup-wizard" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="setup-wizard__step" style={{ textAlign: 'center' }}>
+          <div style={{
+            width: 80, height: 80, borderRadius: 'var(--radius-xl)',
+            background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto var(--space-lg)', fontSize: '2rem',
+            animation: 'pulse 1.5s ease-in-out infinite',
+          }}>
+            🚀
+          </div>
+          <h2 className="setup-wizard__title">Setting up GravityLAN</h2>
+          <p className="setup-wizard__subtitle" style={{ minHeight: '1.5rem' }}>
+            {finishStatus}
+          </p>
+
+          {/* Progress Bar */}
+          <div style={{
+            width: '100%', height: 8, background: 'var(--bg-input)',
+            borderRadius: 'var(--radius-full)', overflow: 'hidden',
+            margin: 'var(--space-xl) 0 var(--space-md)',
+          }}>
+            <div style={{
+              height: '100%',
+              width: `${finishProgress}%`,
+              background: 'linear-gradient(90deg, var(--accent-primary), var(--accent-secondary))',
+              borderRadius: 'var(--radius-full)',
+              transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+              boxShadow: '0 0 12px var(--accent-primary)',
+            }} />
+          </div>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>
+            {finishProgress}%
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="setup-wizard">
