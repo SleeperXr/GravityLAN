@@ -236,3 +236,7 @@ PROJECT_STATUS.md
 implementation_plan.md
 docs/STABILIZATION_2026.md
 .agent/
+
+# Keys and Secrets
+antigravity_key
+antigravity_key.pub
