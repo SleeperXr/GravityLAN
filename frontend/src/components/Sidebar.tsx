@@ -80,7 +80,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
       </nav>
 
       <div style={{ marginTop: 'auto', padding: 'var(--space-md)', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-        {t('app.title')} v0.1.0
+        {t('app.title')} v0.2.0
       </div>
     </aside>
   );

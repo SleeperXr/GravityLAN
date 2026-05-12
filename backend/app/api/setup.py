@@ -142,8 +142,8 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
             }) or {"device_type": "unknown", "device_subtype": "Unknown", "services": []}
             
             device_type = classified.get("device_type", "unknown")
-            group_name = GROUP_TYPE_MAP.get(device_type, "Neu entdeckt")
-            group_id = group_map.get(group_name, group_map.get("Neu entdeckt"))
+            group_name = GROUP_TYPE_MAP.get(device_type, "Newly discovered")
+            group_id = group_map.get(group_name, group_map.get("Newly discovered"))
             
             # Format display name (strip domain)
             display_name = host.ip
