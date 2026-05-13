@@ -64,4 +64,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:${GRAVITYLAN_PORT:-8000}/api/setup/status || exit 1
 
 # Start server
+# Using 1 worker for stability and predictability in homelab environments.
+# For larger deployments, increase workers or use a task queue for heavy jobs.
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${GRAVITYLAN_PORT:-8000} --workers 1"]

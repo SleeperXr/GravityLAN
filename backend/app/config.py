@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # CORS (development)
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: list[str] = []
 
     model_config = {"env_prefix": "GRAVITYLAN_", "env_file": ".env"}
 
