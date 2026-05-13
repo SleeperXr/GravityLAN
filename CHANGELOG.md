@@ -6,9 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - **Infrastructure Hardening:** Upgraded backend to Python 3.12-slim and implemented a non-root user security model for the container.
-- **Security:** Added `SECURITY.md` and configured conditional `Secure` flag for authentication cookies.
+- **Central Versioning:** Implemented a single source of truth via root `VERSION` file, with a Python sync script and dynamic API/UI versioning.
+- **Security:** Added `SECURITY.md`, `SOUL.md`, `AGENT.md`, and `CONTRIBUTING.md`. Configured conditional `Secure` flag for authentication cookies.
 - **CI/CD:** Added GitHub Actions workflow for automated linting and build checks.
-- **Docker:** Parameterized `docker-compose.yml` to support custom subnets and interfaces via `.env`.
+- **Docker:** Refactored Compose files into `docker-compose.yml` (Bridge), `docker-compose.macvlan.yml`, and `docker-compose.hostnet.yml` for clearer deployment options.
 
 ### Fixed
 - **Database:** Resolved critical `sqlite3.OperationalError` by adding missing schema migrations for `agent_tokens` table.
