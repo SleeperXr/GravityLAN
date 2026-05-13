@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Layout, Network, RefreshCw } from 'lucide-react';
+import { Server, Layout, RefreshCw } from 'lucide-react';
 import { api } from '../../api/client';
 
 interface Device {

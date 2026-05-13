@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.setting import Setting
+from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ async def login(
             value=master_setting.value,
             httponly=True,
             samesite="lax",
-            secure=False, # Set to True if using HTTPS in prod
+            secure=settings.secure_cookies, # Set to True if using HTTPS in prod
             path="/",
             max_age=60 * 60 * 24 * 7 # 7 days
         )

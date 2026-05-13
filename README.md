@@ -7,7 +7,7 @@
 <p align="center">
   <strong>EN:</strong> Your homelab radar — discover the network, organise devices, sketch topology, add agents.<br>
   <strong>DE:</strong> Dein Homelab-Radar — Netz finden, Geräte sortieren, Topologie skizzieren, Agenten draufpacken.<br><br>
-  <em>EN: No enterprise drama. Run it and see what’s on your LAN. · DE: Kein Enterprise-Drama. Einfach laufen lassen und gucken, was im LAN passiert.</em>
+  <em>EN: Started fast, now hardened for reliability. Run it and see what’s on your LAN. · DE: Schnell gestartet, jetzt für Zuverlässigkeit gehärtet. Einfach laufen lassen und gucken, was im LAN passiert.</em>
 </p>
 
 <p align="center">
@@ -33,7 +33,7 @@
 
 ## English
 
-> **100% vibe coded** — Built with enthusiasm, velocity, and a healthy “ship it first” attitude: FastAPI backend, React UI, SQLite, Nmap, WebSockets. Meant for your **homelab**, not bare exposure on the public internet (use VPN like you already would).
+> **Homelab ready, hardened for reliability** — Built with enthusiasm, velocity, and a healthy “ship it first” attitude, but now matured into a secure, stable tool: FastAPI backend, React UI, SQLite, Nmap, WebSockets. Meant for your **homelab**, not bare exposure on the public internet (use VPN like you already would).
 
 ### What GravityLAN does
 
@@ -145,7 +145,7 @@ docker run -d --name gravitylan \
 
 Open **http://localhost:8000** → finish setup → log in.
 
-- **Compose**: see `docker-compose.yml` / `docker-compose-test.yml` for examples (e.g. Macvlan / fixed LAN IP — tune `parent`, subnet, IP).  
+- **Compose**: see `docker-compose.yml` / `docker-compose-test.yml` for examples (e.g. Macvlan / fixed LAN IP). Use `.env` variables or inline variables like `GRAVITYLAN_SUBNET` and `GRAVITYLAN_GATEWAY` to configure your specific subnets.
 - **Host networking** trades container isolation for the simplest LAN interface access during scans — valid when you want that.
 
 ### Development (Windows)
@@ -171,6 +171,10 @@ Runs **Uvicorn** on `http://0.0.0.0:8000` and **Vite** on `http://127.0.0.1:5173
 | `GRAVITYLAN_CORS_ORIGINS` | CORS for dev split frontend | includes localhost:5173 |
 | `GRAVITYLAN_SCAN_TIMEOUT` | Per-target timeout (seconds) | `1.5` |
 | `GRAVITYLAN_SCAN_WORKERS` | Scanner concurrency | `20` |
+| `GRAVITYLAN_SUBNET` | Subnet for docker-compose macvlan | `192.168.100.0/24` |
+| `GRAVITYLAN_GATEWAY` | Gateway for docker-compose macvlan | `192.168.100.1` |
+| `GRAVITYLAN_IP` | Fixed container IP for macvlan | `192.168.100.254` |
+| `GRAVITYLAN_INTERFACE` | Parent interface for macvlan | `ens19` |
 
 Keys like **`api.master_token`** / **`api.admin_password`** live in the DB via setup/UI — see `backend/app/config.py` and the settings API.
 
@@ -207,7 +211,7 @@ Open source under the [MIT License](LICENSE). Built with **Antigravity** and “
 
 ## Deutsch
 
-> **100% vibe coded** — Dieses Projekt ist mit Ideenfeuer, Schnelligkeit und „erst mal shippen“ entstanden: FastAPI-Backend, React-UI, SQLite, Nmap, WebSockets. Perfekt fürs **Heimnetz / Homelab**, nicht fürs öffentliche Internet ohne VPN.
+> **Homelab ready, hardened for reliability** — Dieses Projekt ist mit Ideenfeuer und Schnelligkeit entstanden, wurde aber nun für den stabilen Betrieb gehärtet: FastAPI-Backend, React-UI, SQLite, Nmap, WebSockets. Perfekt fürs **Heimnetz / Homelab**, nicht fürs öffentliche Internet ohne VPN.
 
 ### Was GravityLAN für dich tut
 

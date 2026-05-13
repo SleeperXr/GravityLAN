@@ -17,11 +17,11 @@ services:
           cpus: '0.25'
           memory: 256M
     environment:
-      - DOCKER_HOST_IP=192.168.100.37
-      - GRAVITYLAN_PORT=8000
+      - DOCKER_HOST_IP=${DOCKER_HOST_IP:-192.168.100.37}
+      - GRAVITYLAN_PORT=${GRAVITYLAN_PORT:-8000}
     networks:
       gravitylan_net:
-        ipv4_address: 192.168.100.254
+        ipv4_address: ${GRAVITYLAN_IP:-192.168.100.254}
     volumes:
       - ./data:/app/data
 
@@ -29,8 +29,8 @@ networks:
   gravitylan_net:
     driver: macvlan
     driver_opts:
-      parent: ens19
+      parent: ${GRAVITYLAN_INTERFACE:-ens19}
     ipam:
       config:
-        - subnet: 192.168.100.0/24
-          gateway: 192.168.100.1
+        - subnet: ${GRAVITYLAN_SUBNET:-192.168.100.0/24}
+          gateway: ${GRAVITYLAN_GATEWAY:-192.168.100.1}

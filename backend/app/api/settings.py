@@ -2,7 +2,7 @@ import hmac
 from pydantic import RootModel
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from app.database import get_db
 from app.models.device import Device, Service, DeviceGroup
 from app.models.setting import Setting

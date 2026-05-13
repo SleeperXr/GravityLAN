@@ -23,9 +23,10 @@ class Settings(BaseSettings):
     app_name: str = "GravityLAN"
     app_version: str = "0.1.0"
     debug: bool = False
+    secure_cookies: bool = False
 
     # Paths
-    data_dir: Path = Path("/data")
+    data_dir: Path = Path("/app/data")
     database_url: str = ""
 
     # Scanner

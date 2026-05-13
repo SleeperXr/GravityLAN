@@ -9,11 +9,12 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Python Runtime with FastAPI
-FROM python:3.11-slim AS runtime
+FROM python:3.12-slim AS runtime
 
 # Install system dependencies for network scanning
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap \
+    libcap2-bin \
     iputils-ping \
     avahi-utils \
     iproute2 \
@@ -22,6 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Grant nmap capabilities so we don't need to run as root
+RUN setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/nmap
 
 WORKDIR /app
 
@@ -36,8 +40,13 @@ COPY backend/ .
 # Copy frontend build to static directory
 COPY --from=frontend-build /build/frontend/dist ./static
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data directory and user
+RUN mkdir -p /app/data && \
+    useradd -m -s /bin/bash gravitylan && \
+    chown -R gravitylan:gravitylan /app
+
+# Define Volume
+VOLUME ["/app/data"]
 
 # Environment
 ENV GRAVITYLAN_DATA_DIR=/app/data
@@ -46,8 +55,8 @@ ENV GRAVITYLAN_DEBUG=false
 # Expose port
 EXPOSE 8000
 
-# Run as root (Required for raw socket nmap scans)
-USER root
+# Run as non-root user
+USER gravitylan
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
