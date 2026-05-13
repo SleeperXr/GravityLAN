@@ -1,60 +1,42 @@
-# GravityLAN - Projekt-Zusammenfassung & Status (13.05.2026)
+# GravityLAN - Projekt-Zusammenfassung & Status (14.05.2026)
 
 ## 🎯 Über das Tool
-**GravityLAN** ist ein hochperformantes Netzwerk-Monitoring-Dashboard, das speziell für die Überwachung von Heimnetzen und IoT-Infrastrukturen entwickelt wurde. Es kombiniert schnelle Erreichbarkeits-Checks (Pings) mit tiefgehenden Sicherheits-Scans (Nmap).
-
-### Kern-Features:
-- **Dual-Mode Scanning:** Ein schneller 10-Sekunden-Check für den Online-Status und ein konfigurierbarer Hintergrund-Scanner für die Entdeckung neuer Geräte.
-- **Interaktiver Netzwerk-Plan:** Visualisierung des gesamten Subnetzes (z.B. /24) in einer übersichtlichen Grid-Ansicht inklusive Zoom-Funktion.
-- **Service-Monitoring:** Automatische Erkennung von offenen Ports und Diensten pro Gerät.
-- **Agent-Monitoring:** Real-Time Metriken (CPU, RAM, Disk, Temp) für Linux-Geräte via leichtgewichtigem SSH-deployed Agent.
-- **Real-Time Updates:** Dank WebSocket-Integration aktualisiert sich die Oberfläche sofort, wenn sich der Status eines Geräts ändert.
+**GravityLAN** ist ein hochperformantes Netzwerk-Monitoring-Dashboard, das speziell für die Überwachung von Heimnetzen und IoT-Infrastrukturen entwickelt wurde.
 
 ---
 
-## ✅ Heutige Fortschritte & Optimierungen (Nachtschicht)
+## ✅ Aktueller Meilenstein: Hardening & Cleanup (v0.2.3.1)
 
-### 1. Massive Performance-Steigerung (`python-performance`)
-- **DNS-Caching-System:** Implementierung eines In-Memory DNS-Caches mit 1-Stunde-TTL. Dies eliminiert den "DNS-Spam" in den Logs und senkt die CPU-Last des Backends drastisch.
-- **DB Write Throttling:** Reduzierung der SQLite-Schreiblast um ca. 80% durch intelligentes Update-Intervall (60s statt 10s für Zeitstempel).
-- **SQLite Pool Optimierung:** Vermeidung von Locks durch erhöhte Pool-Kapazitäten.
+### 1. Massive Sicherheits-Härtung (Critical)
+- **Authentifizierte Endpunkte:** Alle administrativen Routen (Settings, Backup, Scanner-Control) sind nun strikt durch `Depends(get_current_admin)` geschützt. Ein unbefugter Zugriff auf Datenbank-Exporte oder Systemeinstellungen ist nicht mehr möglich.
+- **Sicheres Agent-Deployment:** Der SSH-Deployer nutzt nun `stdin` zur Passwortübertragung statt Shell-Pipes, was Shell-Injections verhindert und die Sicherheit auf den Ziel-Hosts erhöht.
+- **Master-Token Protection:** Alle Reports von Agenten werden gegen den Master-Token validiert. Unbekannte oder ungültige Tokens führen zum sofortigen Reject.
 
-### 2. UI/UX & Layout-Veredelung (`frontend-specialist`)
-- **Smart Default Layout:** Implementierung einer Logik, die frisch entdeckte Geräte automatisch in einem kompakten, sauberen Gitter anordnet (`Auto-Compact`).
-- **Optimierte Kachel-Dimensionen:** Anpassung der Standardhöhen (h=3 für Standard, h=5-6 für Agenten) und Verfeinerung des Rasters auf 40px Zellenhöhe. Services sind jetzt sofort sichtbar.
-- **Zuverlässiger Setup-Wizard:** Integration eines garantierten "Alle aktualisieren"-Calls als finalen Setup-Schritt, damit das Dashboard sofort mit Service-Daten befüllt wird.
-- **Zwei-Klick-Reset:** Sicherer Datenbank-Reset ohne fehleranfällige Browser-Dialoge.
+### 2. Stabilität & Fehlertoleranz (Hotfix)
+- **Scanner-Resilienz:** Implementierung robuster `try-except` Blöcke für die Netzwerk-Validierung. Ungültige Subnetze (z.B. Tippfehler wie 999.999.999.0/24) führen nicht mehr zum Absturz der gesamten Anwendung, sondern werden sicher übersprungen und geloggt.
+- **Echtzeit-Validierung:** Die Settings-API prüft nun Subnetze bereits beim Speichern auf korrekte CIDR-Syntax (400 Bad Request bei Fehlern).
 
-### 3. Agent-Infrastruktur & Stabilisierung (`v0.1.0`)
-- **Vollständige Synchronisation:** Backend, Frontend und Agenten-Skript wurden einheitlich auf Version **v0.1.0** gehoben.
-- **Scorched-Earth Deployment:** Der Agent-Deployer führt nun einen proaktiven, aggressiven Cleanup durch (Kills alter Prozesse, Löschen von Restdateien unter /opt und /root), um "Geister-Reports" an alte Testserver zu verhindern.
-- **Intelligente IP-Erkennung:** Automatische Priorisierung von physikalischen LAN-Schnittstellen gegenüber Docker-Bridges beim Deployment.
-- **Token-Adoption:** Automatische Wiedererkennung bestehender Agenten nach Datenbank-Resets, um unnötige Re-Deployments zu vermeiden.
-- **Datenbank-Auto-Migration:** Automatisches Ergänzen fehlender Spalten (z.B. `agent_configs.version`) beim Serverstart.
+### 3. Repository-Sanierung (Großputz)
+- **Daten-Hygiene:** Löschung sensibler Dateien (`migration.json`, private Keys) und Reduzierung von über 20 veralteten Debug-Skripten im Root und Backend.
+- **Konsolidierung:** Migration der Datenbank-Update-Logik direkt in den Server-Kern (`app.database.migrations`), wodurch externe Migrations-Skripte überflüssig wurden.
 
-### 4. Hardening & Bugfixing (v0.2.2)
-- **Database Reset Integrity:** Implementierung der "Nuclear Option" via `db.run_sync()`, um Foreign-Key-Konflikte bei Wartungsarbeiten zuverlässig zu lösen.
-- **Container Hardening:** Migration auf Python 3.12-slim und Einführung eines Non-Root-Users (`gravitylan`). Nmap nutzt nun gezielte Linux-Capabilities statt Root-Rechte.
-- **Zentrale Versionierung:** Implementierung einer Single Source of Truth (`VERSION`-Datei) für Backend, Frontend und API. Inklusive `scripts/sync_version.py`.
-- **Deployment-Klarheit:** Aufteilung der Docker-Compose-Beispiele in Bridge (Standard), Macvlan und Hostnet Varianten.
-- **Governance-Dokumentation:** Ergänzung von `SOUL.md` (Philosophie), `AGENT.md` (KI-Protokoll) und `CONTRIBUTING.md` (Mitarbeit).
-- **WebSocket Stabilisierung:** Behebung des `token=undefined` Fehlers in der Frontend-Kommunikation.
-- **Migrations-Reparatur:** Fix des kritischen Datenbank-Crashs durch manuelle Schema-Updates für das Agent-Adoption-Feature.
-- **Umgebungs-Flexibilität:** Unterstützung für variable Netzwerk-Interfaces und Subnetze via `.env` im Docker-Compose.
+### 4. UI/UX Polishing
+- **Bereiche verwalten:** Komplette Überarbeitung der Steuerungselemente für Netzwerk-Bereiche. Buttons sind nun kontrastreich, mit klaren Icons versehen und funktional stabil.
+- **Subnetz-Management:** Direkte Lösch-Möglichkeiten für Subnetze im Konfigurations-Modal.
+- **Versions-Sync:** Einheitliche Anzeige von **v0.2.3.1** in allen Logs, dem Dashboard und der Agent-Software.
 
 ---
 
 ## 🛠 Genutzte Skills & Standards
-- **python-patterns:** Asynchrone Task-Steuerung.
-- **python-performance:** Effizientes I/O und Caching.
-- **clean-code:** Defensive Programmierung.
-- **UI-UX-Pro-Max:** Benutzerfreundliches Feedback und reaktive Layouts.
+- **python-patterns:** Asynchrone Task-Steuerung & Error-Handling.
+- **clean-code:** Radikaler Cleanup von "Code-Leichen".
+- **Security-First:** Schutz kritischer Endpunkte & Secure-Coding bei Shell-Befehlen.
 
 ---
 
 ## 📋 Offene Punkte / Nächste Schritte
-- [ ] **Nmap-Optimierung:** Prüfung der Scan-Dauer bei sehr großen Netzwerken (z.B. /16 Subnetze).
 - [ ] **Agent-Auto-Update:** Mechanismus zum automatischen Aktualisieren der installierten Agenten.
+- [ ] **Erweiterte Topologie:** Visualisierung von VLAN-Trennung und komplexeren Switching-Strukturen.
 
 ---
-*Dokumentation aktualisiert am 08.05.2026 von Antigravity.*
+*Dokumentation aktualisiert am 14.05.2026 von Antigravity (v0.2.3.1).*

@@ -51,8 +51,7 @@ from app.services.agent_deployer import deploy_agent, remove_agent
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
-# Current supported agent version
-LATEST_AGENT_VERSION = "0.2.3"
+from app.version import VERSION as LATEST_AGENT_VERSION
 
 # Global caches for real-time dashboard updates
 _latest_metrics: Dict[int, Dict[str, Any]] = {}
