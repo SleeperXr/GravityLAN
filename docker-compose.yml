@@ -1,36 +1,15 @@
 services:
   gravitylan:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: sleeperxr/gravitylan:latest
     container_name: GravityLAN
-    restart: always
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
     cap_add:
       - NET_RAW
       - NET_ADMIN
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 1G
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    environment:
-      - DOCKER_HOST_IP=${DOCKER_HOST_IP:-192.168.100.37}
-      - GRAVITYLAN_PORT=${GRAVITYLAN_PORT:-8000}
-    networks:
-      gravitylan_net:
-        ipv4_address: ${GRAVITYLAN_IP:-192.168.100.254}
     volumes:
       - ./data:/app/data
-
-networks:
-  gravitylan_net:
-    driver: macvlan
-    driver_opts:
-      parent: ${GRAVITYLAN_INTERFACE:-ens19}
-    ipam:
-      config:
-        - subnet: ${GRAVITYLAN_SUBNET:-192.168.100.0/24}
-          gateway: ${GRAVITYLAN_GATEWAY:-192.168.100.1}
+    environment:
+      - TZ=UTC
+      - GRAVITYLAN_DEBUG=false

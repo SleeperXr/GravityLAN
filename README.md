@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/GravityLAN-v0.1.0-blue?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/GravityLAN-v0.2.1-blue?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/Agent-v0.2.3-green?style=flat-square" alt="Agent Version">
   <img src="https://img.shields.io/badge/Status-Pre--Release-orange?style=flat-square" alt="Status">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
@@ -33,7 +33,7 @@
 
 ## English
 
-> **Homelab ready, hardened for reliability** — Built with enthusiasm, velocity, and a healthy “ship it first” attitude, but now matured into a secure, stable tool: FastAPI backend, React UI, SQLite, Nmap, WebSockets. Meant for your **homelab**, not bare exposure on the public internet (use VPN like you already would).
+> **Homelab ready, hardened for reliability** — Built with enthusiasm, velocity, and a healthy “ship it first” attitude, but now significantly improved in reliability and security posture: FastAPI backend, React UI, SQLite, Nmap, WebSockets. Meant for your **homelab**, not bare exposure on the public internet (use VPN like you already would).
 
 ### What GravityLAN does
 
@@ -132,10 +132,10 @@ flowchart TB
 
 ### Quick start (Docker)
 
-Single build: `docker/Dockerfile` (multi-stage: Vite → static assets + Python). Persistent data: **`GRAVITYLAN_DATA_DIR`** (often `/app/data` in the image — confirm in your Compose/image).
+Single build: `Dockerfile` (multi-stage: Vite → static assets + Python). Persistent data: **`GRAVITYLAN_DATA_DIR`** (often `/app/data` in the image — confirm in your Compose/image).
 
 ```bash
-docker build -f docker/Dockerfile -t gravitylan:local .
+docker build -t gravitylan:local .
 docker run -d --name gravitylan \
   -p 8000:8000 \
   -v gravitylan-data:/app/data \
@@ -145,7 +145,10 @@ docker run -d --name gravitylan \
 
 Open **http://localhost:8000** → finish setup → log in.
 
-- **Compose**: see `docker-compose.yml` / `docker-compose-test.yml` for examples (e.g. Macvlan / fixed LAN IP). Use `.env` variables or inline variables like `GRAVITYLAN_SUBNET` and `GRAVITYLAN_GATEWAY` to configure your specific subnets.
+- **Compose**: 
+  - `docker-compose.yml`: Standard bridge mode (simplest).
+  - `docker-compose.macvlan.yml`: Advanced mode with fixed IP in LAN.
+  - `docker-compose.hostnet.yml`: Host networking for direct LAN access.
 - **Host networking** trades container isolation for the simplest LAN interface access during scans — valid when you want that.
 
 ### Development (Windows)
@@ -184,8 +187,11 @@ Keys like **`api.master_token`** / **`api.admin_password`** live in the DB via s
 agent/                 # gravitylan-agent.py (+ systemd unit template)
 backend/app/           # FastAPI: api/, models/, scanner/, services/, …
 frontend/              # React (Vite, TypeScript)
-docker/                # Dockerfile
 docs/screenshots/      # README images
+SECURITY.md            # Security policy & trust model
+SOUL.md                # Project philosophy
+AGENT.md               # Agent protocol
+CONTRIBUTING.md        # How to contribute
 ```
 
 Interactive API: **`/docs`** (Swagger) while the server runs.
@@ -211,7 +217,7 @@ Open source under the [MIT License](LICENSE). Built with **Antigravity** and “
 
 ## Deutsch
 
-> **Homelab ready, hardened for reliability** — Dieses Projekt ist mit Ideenfeuer und Schnelligkeit entstanden, wurde aber nun für den stabilen Betrieb gehärtet: FastAPI-Backend, React-UI, SQLite, Nmap, WebSockets. Perfekt fürs **Heimnetz / Homelab**, nicht fürs öffentliche Internet ohne VPN.
+> **Homelab ready, hardened for reliability** — Dieses Projekt ist mit Ideenfeuer und Schnelligkeit entstanden, wurde aber nun für den zuverlässigen Homelab-Betrieb gehärtet: FastAPI-Backend, React-UI, SQLite, Nmap, WebSockets. Perfekt fürs **Heimnetz / Homelab**, nicht fürs öffentliche Internet ohne VPN.
 
 ### Was GravityLAN für dich tut
 
@@ -310,10 +316,10 @@ flowchart TB
 
 ### Schnellstart mit Docker
 
-Einheitlicher Build unter `docker/Dockerfile`. Persistente Daten: **`GRAVITYLAN_DATA_DIR`** (im Image oft `/app/data`).
+Einheitlicher Build unter `Dockerfile`. Persistente Daten: **`GRAVITYLAN_DATA_DIR`** (im Image oft `/app/data`).
 
 ```bash
-docker build -f docker/Dockerfile -t gravitylan:local .
+docker build -t gravitylan:local .
 docker run -d --name gravitylan \
   -p 8000:8000 \
   -v gravitylan-data:/app/data \
@@ -323,7 +329,10 @@ docker run -d --name gravitylan \
 
 Öffne **http://localhost:8000** → Setup abschließen → einloggen.
 
-- **Compose:** `docker-compose.yml` / `docker-compose-test.yml` als Beispiele (Macvlan/Unraid usw.).  
+- **Compose:**
+  - `docker-compose.yml`: Standard-Modus (Bridge).
+  - `docker-compose.macvlan.yml`: Advanced (feste IP im LAN).
+  - `docker-compose.hostnet.yml`: Host-Netzwerk für maximale LAN-Nähe.
 - **Host-Netzwerk-Mode:** mehr LAN-Nähe, weniger Container-Isolation — bewusst so nutzbar.
 
 ### Entwicklung unter Windows
@@ -358,8 +367,11 @@ Weitere Schlüssel wie **`api.master_token`**, **`api.admin_password`** → Setu
 agent/                 # gravitylan-agent.py (+ systemd-Vorlage)
 backend/app/           # FastAPI: api/, models/, scanner/, …
 frontend/              # React (Vite, TypeScript)
-docker/                # Dockerfile
 docs/screenshots/      # README-Bilder
+SECURITY.md            # Sicherheitsrichtlinien
+SOUL.md                # Projekt-Philosophie
+AGENT.md               # Agenten-Protokoll
+CONTRIBUTING.md        # Mitwirken
 ```
 
 **API:** `/docs` (Swagger).

@@ -1,0 +1,29 @@
+# Advanced Deployment: Macvlan (Fixed IP in LAN)
+# Ideal for Unraid or Proxmox setups where the container needs its own IP.
+services:
+  gravitylan:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: GravityLAN_Macvlan
+    restart: always
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      - GRAVITYLAN_PORT=${GRAVITYLAN_PORT:-8000}
+    networks:
+      gravitylan_net:
+        ipv4_address: ${GRAVITYLAN_IP:-192.168.100.254}
+    volumes:
+      - ./data:/app/data
+
+networks:
+  gravitylan_net:
+    driver: macvlan
+    driver_opts:
+      parent: ${GRAVITYLAN_INTERFACE:-ens19}
+    ipam:
+      config:
+        - subnet: ${GRAVITYLAN_SUBNET:-192.168.100.0/24}
+          gateway: ${GRAVITYLAN_GATEWAY:-192.168.100.1}
