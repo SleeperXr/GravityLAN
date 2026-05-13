@@ -10,7 +10,7 @@ from app.models.network import Subnet
 from app.schemas.network import SubnetCreate, SubnetResponse, SubnetUpdate
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/network", tags=["network"])
+from app.api.auth import get_current_admin
 
 
 async def get_db():
@@ -18,14 +18,14 @@ async def get_db():
         yield session
 
 
-@router.get("/subnets", response_model=list[SubnetResponse])
+@router.get("/subnets", response_model=list[SubnetResponse], dependencies=[Depends(get_current_admin)])
 async def get_subnets(db: AsyncSession = Depends(get_db)):
     """Get all configured subnets."""
     result = await db.execute(select(Subnet).order_by(Subnet.name))
     return result.scalars().all()
 
 
-@router.post("/subnets", response_model=SubnetResponse)
+@router.post("/subnets", response_model=SubnetResponse, dependencies=[Depends(get_current_admin)])
 async def create_subnet(subnet_in: SubnetCreate, db: AsyncSession = Depends(get_db)):
     """Create a new subnet configuration."""
     subnet = Subnet(**subnet_in.model_dump())
@@ -35,7 +35,7 @@ async def create_subnet(subnet_in: SubnetCreate, db: AsyncSession = Depends(get_
     return subnet
 
 
-@router.patch("/subnets/{subnet_id}", response_model=SubnetResponse)
+@router.patch("/subnets/{subnet_id}", response_model=SubnetResponse, dependencies=[Depends(get_current_admin)])
 async def update_subnet(subnet_id: int, subnet_in: SubnetUpdate, db: AsyncSession = Depends(get_db)):
     """Update a subnet configuration."""
     subnet = await db.get(Subnet, subnet_id)
@@ -51,7 +51,7 @@ async def update_subnet(subnet_id: int, subnet_in: SubnetUpdate, db: AsyncSessio
     return subnet
 
 
-@router.delete("/subnets/{subnet_id}")
+@router.delete("/subnets/{subnet_id}", dependencies=[Depends(get_current_admin)])
 async def delete_subnet(subnet_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a subnet configuration."""
     subnet = await db.get(Subnet, subnet_id)
