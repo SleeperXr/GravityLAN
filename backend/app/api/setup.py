@@ -1,6 +1,6 @@
 """Setup wizard API — checks setup state and provides initial configuration."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,8 +60,15 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
     from app.scanner.hostname import resolve_hostname, is_ip_like
     from app.scanner.port_scanner import scan_ports
     from app.models.setting import Setting
+    from app.services.auth_service import hash_password
     
-    # 0. Save DNS server if provided
+    # 0. Idempotency check: don't allow setup to run again if already complete
+    res_setup = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
+    setting_complete = res_setup.scalar_one_or_none()
+    if setting_complete and setting_complete.value == "true":
+        raise HTTPException(status_code=400, detail="Setup already completed. Use Settings UI to change configuration.")
+
+    # 0a. Save DNS server if provided
     if request.dns_server:
         dns_res = await db.execute(select(Setting).where(Setting.key == "dns.server"))
         dns_s = dns_res.scalar_one_or_none()
@@ -71,19 +78,18 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
             db.add(Setting(key="dns.server", value=request.dns_server, category="scan", description="Custom DNS server for hostname resolution"))
         await db.flush()
 
-    # 0b. Save Admin Password if provided
+    # 0b. Save Admin Password if provided (hashed!)
     if request.admin_password:
+        hashed_password = hash_password(request.admin_password)
         pass_res = await db.execute(select(Setting).where(Setting.key == "api.admin_password"))
         pass_s = pass_res.scalar_one_or_none()
         if pass_s:
-            pass_s.value = request.admin_password
+            pass_s.value = hashed_password
         else:
-            db.add(Setting(key="api.admin_password", value=request.admin_password, category="system", description="Administrator password for dashboard login"))
+            db.add(Setting(key="api.admin_password", value=hashed_password, category="system", description="Administrator password for dashboard login"))
         await db.flush()
 
     # 1. Prepare setup complete flag
-    res_setup = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
-    setting_complete = res_setup.scalar_one_or_none()
     if setting_complete:
         setting_complete.value = "true"
     else:

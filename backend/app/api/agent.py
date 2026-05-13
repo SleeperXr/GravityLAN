@@ -134,8 +134,7 @@ async def receive_report(
                     
                     await db.commit()
                 
-            logger.warning("Rejected report from unknown token %s... for IP %s", 
-                           token[:8], client_ip)
+            logger.warning("Rejected report from unknown token for IP %s", client_ip)
             raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
 
         # 3. Handle device existence and re-discovery
@@ -875,24 +874,24 @@ async def agent_websocket(websocket: WebSocket, device_id: int):
         master_setting = master_res.scalar_one_or_none()
         master_token = master_setting.value if master_setting else None
         
-        is_authorized = (token == master_token and master_token is not None)
+        from app.services.auth_service import secure_compare
+        is_authorized = (master_token is not None and secure_compare(token, master_token))
         
         if not is_authorized:
             # 2. Fallback to Agent-specific token
             result = await db.execute(
                 select(AgentToken).where(
-                    AgentToken.token == token,
+                    AgentToken.device_id == device_id,
                     AgentToken.is_active.is_(True)
                 )
             )
-            agent_token = result.scalar_one_or_none()
+            agent_token_obj = result.scalar_one_or_none()
             
-            if agent_token and agent_token.device_id == device_id:
+            if agent_token_obj and secure_compare(token, agent_token_obj.token):
                 is_authorized = True
         
         if not is_authorized:
-            logger.warning("WebSocket auth failed for device %d (token: %s...)", 
-                           device_id, token[:8] if token else "None")
+            logger.warning("WebSocket auth failed for device %d", device_id)
             await websocket.close(code=4003, reason="Unauthorized")
             return
 
