@@ -88,12 +88,12 @@ class ScanStateManager:
 # Initialize global state manager
 state = ScanStateManager()
 
-@router.get("/subnets", response_model=List[SubnetInfo])
+@router.get("/subnets", response_model=List[SubnetInfo], dependencies=[Depends(get_current_admin)])
 async def get_subnets() -> List[SubnetInfo]:
     """Get available network interfaces and subnets for scanning."""
     return get_local_subnets()
 
-@router.get("/test")
+@router.get("/test", dependencies=[Depends(get_current_admin)])
 async def test_scanner() -> Dict[str, str]:
     """Verify scanner API availability."""
     return {"status": "ok", "module": "scanner"}
@@ -134,14 +134,14 @@ async def discover_subnet(request: ScanRequest) -> Dict[str, str]:
     """Trigger a full host discovery on subnets."""
     return await start_scan(request)
 
-@router.get("/status", response_model=ScanProgress)
+@router.get("/status", response_model=ScanProgress, dependencies=[Depends(get_current_admin)])
 async def get_scan_status() -> ScanProgress:
     """Get current scan job status."""
     if state.last_progress:
         return state.last_progress
     return ScanProgress(status=ScanStatus.IDLE, message="No scan active")
 
-@router.get("/discovered", response_model=List[DiscoveredHostResponse])
+@router.get("/discovered", response_model=List[DiscoveredHostResponse], dependencies=[Depends(get_current_admin)])
 async def get_discovered_hosts() -> List[DiscoveredHost]:
     """Get all hosts from the persistent discovery table."""
     cached = discovery_cache.get_hosts()
@@ -158,7 +158,7 @@ async def get_discovered_hosts() -> List[DiscoveredHost]:
         discovery_cache.set_hosts(hosts)
         return hosts
 
-@router.patch("/discovered/{host_id}", response_model=DiscoveredHostResponse)
+@router.patch("/discovered/{host_id}", response_model=DiscoveredHostResponse, dependencies=[Depends(get_current_admin)])
 async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate) -> DiscoveredHost:
     """Update a discovered host's details."""
     async with async_session() as db:
@@ -175,7 +175,7 @@ async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate) -> D
         await db.refresh(host)
         return host
 
-@router.delete("/discovered/{host_id}")
+@router.delete("/discovered/{host_id}", dependencies=[Depends(get_current_admin)])
 async def delete_discovered_host(host_id: int) -> Dict[str, str]:
     """Delete a discovered host from the database."""
     async with async_session() as db:

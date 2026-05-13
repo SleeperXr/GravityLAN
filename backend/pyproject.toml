@@ -1,7 +1,7 @@
 [project]
-name = "homelan-backend"
-version = "0.2.1"
-description = "HomeLan - Network Dashboard Backend"
+name = "gravitylan-backend"
+version = "0.2.3.1"
+description = "GravityLAN - Network Dashboard Backend"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
