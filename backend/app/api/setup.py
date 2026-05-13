@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.device import Device
 from app.models.setting import Setting
+from app.version import VERSION
 
 import logging
 logger = logging.getLogger(__name__)
@@ -35,7 +36,8 @@ async def get_setup_status(db: AsyncSession = Depends(get_db)) -> dict:
 
     res = {
         "is_setup_complete": is_complete,
-        "device_count": device_count_val
+        "device_count": device_count_val,
+        "version": VERSION
     }
     return res
 

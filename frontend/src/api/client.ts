@@ -36,7 +36,7 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
 
 export const api = {
   // Setup
-  getSetupStatus: () => request<{ is_setup_complete: boolean; device_count: number }>('/api/setup/status'),
+  getSetupStatus: () => request<{ is_setup_complete: boolean; device_count: number; version?: string }>('/api/setup/status'),
   completeSetup: (data?: { dns_server?: string; admin_password?: string }) => 
     request<{ status: string }>('/api/setup/complete', { method: 'POST', body: JSON.stringify(data || {}) }),
 

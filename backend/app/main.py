@@ -28,6 +28,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.config import settings
+from app.version import VERSION
 from app.database import init_db
 from app.exceptions import GravityLANError
 
@@ -271,7 +272,7 @@ async def root():
         return FileResponse(str(index_file))
     return {
         "app": "GravityLAN",
-        "version": "0.2.0",
+        "version": VERSION,
         "status": "online",
         "api_docs": "/docs",
         "message": "Backend is running. Frontend build missing in /app/static."
