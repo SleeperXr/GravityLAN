@@ -4,8 +4,10 @@ import { MobileHeader } from '../MobileHeader';
 import TopologyMap from './TopologyMap';
 import RackVisualizer from './RackVisualizer';
 import { Network, Layout } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const NetworkPlanner: React.FC = () => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'topology' | 'rack'>('topology');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [devices, setDevices] = useState([]);
@@ -31,12 +33,12 @@ const NetworkPlanner: React.FC = () => {
         padding: '24px',
         background: 'var(--bg-app)',
       }}>
-        <MobileHeader title="Network Planner" onMenuClick={() => setIsSidebarOpen(true)} />
+        <MobileHeader title={t('sidebar.topology')} onMenuClick={() => setIsSidebarOpen(true)} />
 
         {/* Header */}
         <div style={{ marginBottom: '24px', flexShrink: 0 }}>
           <h1 className="text-4xl font-extrabold text-white tracking-tight mb-1">
-            Network Planner
+            {t('sidebar.topology')}
           </h1>
           <p className="text-slate-400 text-base">
             Design and visualize your infrastructure topology

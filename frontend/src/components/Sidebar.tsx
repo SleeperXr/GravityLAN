@@ -47,14 +47,14 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
             className={`nav-item ${active === 'network' ? 'active' : ''}`}
             onClick={onClose}
           >
-            <Grid size={18} /> IP Management
+            <Grid size={18} /> {t('sidebar.network_planner')}
           </Link>
           <Link 
             to="/topology" 
             className={`nav-item ${active === 'topology' ? 'active' : ''}`}
             onClick={onClose}
           >
-            <Network size={18} /> Network Planner
+            <Network size={18} /> {t('sidebar.topology')}
           </Link>
         </div>
 
@@ -80,7 +80,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
       </nav>
 
       <div style={{ marginTop: 'auto', padding: 'var(--space-md)', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-        {t('app.title')} v{(window as any).APP_VERSION || '0.2.1'}
+        {t('app.title')} v{(window as any).APP_VERSION || '0.2.2'}
       </div>
     </aside>
   );

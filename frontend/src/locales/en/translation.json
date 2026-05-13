@@ -5,6 +5,7 @@
   "sidebar": {
     "dashboard": "Dashboard",
     "network_planner": "Network Planner",
+    "topology": "Topology",
     "settings": "Settings"
   },
   "common": {

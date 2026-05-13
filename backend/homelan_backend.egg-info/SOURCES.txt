@@ -3,6 +3,7 @@ app/__init__.py
 app/config.py
 app/exceptions.py
 app/main.py
+app/version.py
 app/api/__init__.py
 app/api/devices.py
 app/api/scanner.py
@@ -24,3 +25,4 @@ homelan_backend.egg-info/requires.txt
 homelan_backend.egg-info/top_level.txt
 tests/test_auth.py
 tests/test_basic.py
+tests/test_security.py

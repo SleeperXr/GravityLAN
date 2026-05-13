@@ -27,8 +27,8 @@ class TopologyLink(Base):
     __tablename__ = "topology_links"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    source_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
-    target_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
+    source_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
     
     source_handle: Mapped[str | None] = mapped_column(String(20), nullable=True)
     target_handle: Mapped[str | None] = mapped_column(String(20), nullable=True)

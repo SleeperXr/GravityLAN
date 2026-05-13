@@ -3,20 +3,14 @@ import { Sidebar } from '../Sidebar';
 import { api, createScanSocket } from '../../api/client';
 import type { Device, Subnet, DiscoveredHost } from '../../types';
 import { useToast } from '../../context/ToastContext';
-import { Monitor, Shield, Server, Cpu, Globe, Search, Trash2, RefreshCw, Activity, Info, Plus, Eye, EyeOff, Lock, Unlock, Save, Settings, LayoutGrid as Grid } from 'lucide-react';
+import { Search, Trash2, RefreshCw, Activity, Plus, Settings, LayoutGrid as Grid } from 'lucide-react';
 import { DeviceEditor } from '../Dashboard/DeviceEditor';
 import { useTranslation } from 'react-i18next';
 import { useNetwork } from '../../context/NetworkContext';
 import { MobileHeader } from '../MobileHeader';
 import { IPTile } from './IPTile';
 
-const DEVICE_ICON_MAP: Record<string, any> = {
-  'Workstation': Monitor,
-  'Server': Server,
-  'Smartphone': Cpu,
-  'Netzwerk': Shield,
-  'Unbekannt': Globe,
-};
+
 
 export function SubnetView() {
   const { t } = useTranslation();
@@ -42,7 +36,6 @@ export function SubnetView() {
   const [showSubnetSettings, setShowSubnetSettings] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: '', start: 0, end: 0, color: '#38bdf8' });
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
-  const [showAlarmModal, setShowAlarmModal] = useState(false);
   const lastScannedPrefix = useRef<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -267,7 +260,7 @@ export function SubnetView() {
     <div className="app-layout">
       <Sidebar active="network" isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <main className="app-main">
-        <MobileHeader title="Netzwerk-Planer" onMenuClick={() => setIsSidebarOpen(true)} />
+        <MobileHeader title={t('sidebar.network_planner')} onMenuClick={() => setIsSidebarOpen(true)} />
         <div className="subnet-container">
           {/* Subnet Tabs */}
           <div style={{ display: 'flex', gap: '8px', padding: 'var(--space-md) var(--space-xl) 0', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-surface)', overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none' }}>

@@ -69,7 +69,7 @@ class Device(Base):
     device_type: Mapped[str] = mapped_column(String(30), nullable=False, default="unknown")
     device_subtype: Mapped[str] = mapped_column(String(50), nullable=False, default="Unknown")
     vendor: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("device_groups.id"), nullable=True)
+    group_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("device_groups.id", ondelete="SET NULL"), nullable=True)
     icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -91,8 +91,8 @@ class Device(Base):
     ip_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     
     # Topology & Virtualization
-    parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("devices.id"), nullable=True)
-    rack_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("racks.id"), nullable=True)
+    parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
+    rack_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("racks.id", ondelete="SET NULL"), nullable=True)
     rack_unit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rack_height: Mapped[int] = mapped_column(Integer, default=1)
     topology_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -133,7 +133,7 @@ class Service(Base):
     __tablename__ = "services"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
+    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     protocol: Mapped[str] = mapped_column(String(20), nullable=False)
     port: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -153,8 +153,8 @@ class DeviceHistory(Base):
     __tablename__ = "device_history"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
-    service_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("services.id"), nullable=True, index=True)
+    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    service_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("services.id", ondelete="CASCADE"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)  # online, offline, up, down
     message: Mapped[str | None] = mapped_column(String(255), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

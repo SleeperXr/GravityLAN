@@ -1,13 +1,14 @@
+# GravityLAN Unraid Development Compose
+# Forces local build and host networking for physical interface access.
+
 services:
   gravitylan:
     build:
       context: .
       dockerfile: Dockerfile
-    image: gravitylan:local
+    image: gravitylan:local-build
     container_name: GravityLAN
     restart: unless-stopped
-    # ports:
-    #   - "8000:8000"
     network_mode: host
     cap_add:
       - NET_RAW
@@ -15,6 +16,6 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      - TZ=UTC
+      - TZ=Europe/Berlin
       - GRAVITYLAN_DEBUG=false
-      - GRAVITYLAN_PORT=8000 # Since we are in host mode, we use this port directly
+      - GRAVITYLAN_PORT=8000

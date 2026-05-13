@@ -63,22 +63,33 @@ def get_local_subnets() -> list[SubnetInfo]:
     subnets: list[SubnetInfo] = []
     seen_subnets = set()
     
-    # Filter list for common virtual/tunnel interfaces (Windows & Linux)
+    # Filter list for common virtual/tunnel interfaces
+    # We are more selective now: 
+    # 'br-' is usually docker, but 'br0' is often the main physical bridge on Unraid/NAS.
     VIRTUAL_IFACE_KEYWORDS = [
-        'virtual', 'vbox', 'vmware', 'vEthernet', 'tailscale', 'zerotier', 
-        'wsl', 'docker', 'tunnel', 'loopback', 'pseudo', 'veth'
+        'vbox', 'vmware', 'vEthernet', 'tailscale', 'zerotier', 
+        'wsl', 'tunnel', 'loopback', 'pseudo', 'veth'
     ]
 
     def add_subnet(name, ip, mask):
         if not ip or ip.startswith("127.") or ip.startswith("169.254."):
             return
             
-        # Detect virtual/internal junk networks
-        # On Linux, bridges often start with br-, docker, or veth
+        # Robust detection:
+        # 1. Explicitly virtual names
         is_virtual = any(kw.lower() in name.lower() for kw in VIRTUAL_IFACE_KEYWORDS)
         
-        # Also check common internal IP ranges often used for docker bridges if we're unsure
-        # but name-based detection is usually enough.
+        # 2. Docker bridges (usually 'docker0' or 'br-XXXXX')
+        if name.lower().startswith('docker') or name.lower().startswith('br-'):
+            is_virtual = True
+            
+        # 3. Known virtual IP ranges (fallback check)
+        # 172.17.0.0/16 is the default docker bridge
+        if ip.startswith("172."):
+            # If the interface name is generic like 'eth0' but has a 172 IP, 
+            # and we are NOT in host mode, it's likely a docker bridge.
+            if name.lower() == 'eth0' or name.lower().startswith('veth'):
+                is_virtual = True
             
         try:
             network = ipaddress.IPv4Network(f"{ip}/{mask}", strict=False)
@@ -155,7 +166,10 @@ def get_local_subnets() -> list[SubnetInfo]:
         except (OSError, socket.error):
             pass
         
-    return [s for s in subnets if not s.is_virtual]
+    # LAST RESORT: If no "physical" subnets were found, return all of them 
+    # so the user isn't stuck with an empty list during setup.
+    physical_subnets = [s for s in subnets if not s.is_virtual]
+    return physical_subnets if physical_subnets else subnets
 
 async def check_port_async(ip: str, port: int, timeout: float = 0.4) -> bool:
     """Async check if a TCP port is open."""
