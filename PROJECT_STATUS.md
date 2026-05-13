@@ -34,6 +34,9 @@
 
 ### 4. Hardening & Bugfixing (v0.2.1)
 - **Container Hardening:** Migration auf Python 3.12-slim und Einführung eines Non-Root-Users (`gravitylan`). Nmap nutzt nun gezielte Linux-Capabilities statt Root-Rechte.
+- **Zentrale Versionierung:** Implementierung einer Single Source of Truth (`VERSION`-Datei) für Backend, Frontend und API. Inklusive `scripts/sync_version.py`.
+- **Deployment-Klarheit:** Aufteilung der Docker-Compose-Beispiele in Bridge (Standard), Macvlan und Hostnet Varianten.
+- **Governance-Dokumentation:** Ergänzung von `SOUL.md` (Philosophie), `AGENT.md` (KI-Protokoll) und `CONTRIBUTING.md` (Mitarbeit).
 - **WebSocket Stabilisierung:** Behebung des `token=undefined` Fehlers in der Frontend-Kommunikation.
 - **Migrations-Reparatur:** Fix des kritischen Datenbank-Crashs durch manuelle Schema-Updates für das Agent-Adoption-Feature.
 - **Umgebungs-Flexibilität:** Unterstützung für variable Netzwerk-Interfaces und Subnetze via `.env` im Docker-Compose.
