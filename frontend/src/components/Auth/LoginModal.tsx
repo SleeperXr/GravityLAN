@@ -98,7 +98,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
 
           <div className="mt-8 pt-8 border-t border-white/5">
             <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-              GravityLAN Security Node v{window.location.hostname === 'localhost' ? 'DEV' : '0.2.0'}
+              GravityLAN Security Node v{window.location.hostname === 'localhost' ? 'DEV' : ((window as any).APP_VERSION || '0.2.1')}
             </div>
           </div>
         </div>

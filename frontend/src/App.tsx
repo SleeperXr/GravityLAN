@@ -30,6 +30,10 @@ function App() {
           if (prev === status.is_setup_complete) return prev;
           return status.is_setup_complete;
         });
+
+        if (status.version) {
+          (window as any).APP_VERSION = status.version;
+        }
       } catch (err) {
         console.error('[App] Failed to check setup status:', err);
         setIsSetupComplete(false);
