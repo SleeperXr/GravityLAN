@@ -13,6 +13,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
           <img src={logo} alt="Logo" style={{ width: '28px', height: '28px' }} />
         </div>
         <span className="logo__text">{t('app.title')}</span>
+        <p className="text-xs text-slate-500 font-mono mt-1">v0.2.3.1</p>
         
         {/* Mobile Close Button */}
         <button 
@@ -80,7 +81,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
       </nav>
 
       <div style={{ marginTop: 'auto', padding: 'var(--space-md)', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-        {t('app.title')} v{(window as any).APP_VERSION || '0.2.2'}
+        {t('app.title')} v{(window as any).APP_VERSION || '0.2.3.1'}
       </div>
     </aside>
   );

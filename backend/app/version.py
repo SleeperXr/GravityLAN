@@ -17,6 +17,6 @@ def get_version() -> str:
         except Exception:
             continue
             
-    return "0.2.2"
+    return "0.2.3.1"
 
 VERSION = get_version()

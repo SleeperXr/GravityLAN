@@ -13,7 +13,7 @@ from app.api.auth import get_current_admin
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-@router.get("")
+@router.get("", dependencies=[Depends(get_current_admin)])
 async def get_all_settings(db: AsyncSession = Depends(get_db)):
     """Fetch all system settings as a key-value dictionary."""
     result = await db.execute(select(Setting))
@@ -22,10 +22,28 @@ async def get_all_settings(db: AsyncSession = Depends(get_db)):
 
 SettingsUpdate = RootModel[dict[str, str]]
 
-@router.post("")
+@router.post("", dependencies=[Depends(get_current_admin)])
 async def update_settings(settings: SettingsUpdate, db: AsyncSession = Depends(get_db)):
     """Update or create system settings."""
     for key, value in settings.root.items():
+        # Validate scan_subnets if provided
+        if key == "scan_subnets" and value:
+            import ipaddress
+            invalid_subnets = []
+            for sub in value.split(","):
+                sub = sub.strip()
+                if not sub: continue
+                try:
+                    ipaddress.ip_network(sub, strict=False)
+                except ValueError:
+                    invalid_subnets.append(sub)
+            
+            if invalid_subnets:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Ungültige Subnetze: {', '.join(invalid_subnets)}. Bitte im Format 192.168.1.0/24 angeben."
+                )
+
         result = await db.execute(select(Setting).where(Setting.key == key))
         setting = result.scalar_one_or_none()
         

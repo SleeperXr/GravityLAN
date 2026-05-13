@@ -110,6 +110,8 @@ async def receive_report(
         allow_adopt_setting = adopt_res.scalar_one_or_none()
         allow_auto_adopt = allow_adopt_setting.value.lower() == "true" if allow_adopt_setting else False
 
+        device = None
+
         if not agent_token and client_ip:
             # Look for a device with this IP to flag it for manual adoption
             dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
@@ -141,7 +143,7 @@ async def receive_report(
         # 3. DB operations inside no_autoflush block to prevent "Query-invoked autoflush" locks
         with db.no_autoflush:
             # If we didn't get a device from adoption, fetch it now
-            if 'device' not in locals() or device is None:
+            if device is None:
                 effective_device_id = agent_token.device_id
                 device = await db.get(Device, effective_device_id)
             

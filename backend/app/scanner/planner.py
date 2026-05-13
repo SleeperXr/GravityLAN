@@ -94,10 +94,14 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
             await progress_callback(f"Scanner: Scanning {subnet} (ARP + Ping)...")
             
         # 1. Fast Discovery (Nmap -sn -PR -PE)
-        # Convert subnet to list of IPs for the discovery function
-        net = ipaddress.ip_network(subnet, strict=False)
-        target_ips = [str(ip) for ip in net.hosts()]
-        
+        try:
+            # Convert subnet to list of IPs for the discovery function
+            net = ipaddress.ip_network(subnet, strict=False)
+            target_ips = [str(ip) for ip in net.hosts()]
+        except ValueError as e:
+            logger.error(f"Planner: Skipping invalid subnet '{subnet}': {e}")
+            continue
+            
         async def _on_host(h):
             # Immediate sync per host for real-time UI updates
             await sync_host_to_db(
@@ -141,7 +145,8 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
             is_in_scanned_subnet = False
             for s in subnets:
                 try:
-                    if ipaddress.IPv4Address(host.ip) in ipaddress.IPv4Network(s, strict=False):
+                    net_obj = ipaddress.IPv4Network(s, strict=False)
+                    if ipaddress.IPv4Address(host.ip) in net_obj:
                         is_in_scanned_subnet = True
                         break
                 except (ValueError, OSError):
@@ -160,8 +165,18 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
         # Dashboard Sync: Set monitored devices to offline if they are in these subnets but not found
         res_dev = await db.execute(select(Device).where(Device.is_online == True))
         for dev in res_dev.scalars().all():
-             if any(ipaddress.IPv4Address(dev.ip) in ipaddress.IPv4Network(s, strict=False) for s in subnets):
-                if dev.ip not in all_alive_ips:
+             # Robust check for each subnet
+             in_any_scanned = False
+             for s in subnets:
+                 try:
+                     net_obj = ipaddress.IPv4Network(s, strict=False)
+                     if ipaddress.IPv4Address(dev.ip) in net_obj:
+                         in_any_scanned = True
+                         break
+                 except (ValueError, OSError):
+                     continue
+                     
+             if in_any_scanned and dev.ip not in all_alive_ips:
                     dev.is_online = False
                     dev.status_changed_at = datetime.now(timezone.utc)
         

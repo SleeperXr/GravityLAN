@@ -5,7 +5,7 @@ import hmac
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:
-    """Hash a password using bcrypt."""
+    """Hash a password using Argon2 (fallback to bcrypt)."""
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -15,7 +15,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def looks_hashed(value: str) -> bool:
     """Check if a value looks like a hashed password."""
     # passlib hashes usually start with $
-    return value.startswith("$2b$") or value.startswith("$2a$") or value.startswith("$argon2")
+    return value.startswith("$argon2") or value.startswith("$2b$") or value.startswith("$2a$")
 
 def secure_compare(a: str, b: str) -> bool:
     """Constant-time comparison for tokens/secrets."""

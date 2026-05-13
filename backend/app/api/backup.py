@@ -10,10 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.config import settings
 
+from app.api.auth import get_current_admin
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/backup", tags=["backup"])
 
-@router.get("/export")
+@router.get("/export", dependencies=[Depends(get_current_admin)])
 async def export_backup():
     """Export the current database state as a JSON file."""
     db_path = settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
@@ -42,7 +44,7 @@ async def export_backup():
             "services": "services",
             "discovered_hosts": "discovered_hosts",
             "settings": "app_settings",
-            "agent_tokens": "agent_tokens",
+            # "agent_tokens": "agent_tokens", # EXCLUDED for security (Issue 13)
             "agent_configs": "agent_configs",
             "subnets": "subnets",
             "topology_links": "topology_links",
@@ -68,14 +70,18 @@ async def export_backup():
         logger.error(f"Backup: Export failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/import")
+@router.post("/import", dependencies=[Depends(get_current_admin)])
 async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     """Import a JSON backup file into the database."""
     if not file.filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Only JSON files are supported")
 
     try:
-        content = await file.read()
+        # Issue 8: Read with size limit (10MB max) to prevent memory exhaustion DOS
+        content = await file.read(size=10 * 1024 * 1024)
+        if len(content) >= 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Backup file too large (max 10MB)")
+            
         data = json.loads(content)
 
         db_path = settings.effective_database_url.replace("sqlite+aiosqlite:///", "")

@@ -207,7 +207,9 @@ async def deploy_agent(
         # Synology specific init check
         has_syno_rc = is_synology and not has_systemd
         
-        sudo_cmd = f"echo '{ssh_password}' | sudo -S " if has_sudo and ssh_user != "root" and ssh_password else ("sudo " if has_sudo and ssh_user != "root" else "")
+        # Securely pass password via stdin if needed, instead of shell echo injection
+        needs_sudo_pass = has_sudo and ssh_user != "root" and ssh_password
+        sudo_cmd = "sudo -S " if needs_sudo_pass else ("sudo " if has_sudo and ssh_user != "root" else "")
         
         # --- Cleanup stale processes and legacy services first ---
         cleanup_msg = ""
@@ -252,15 +254,15 @@ async def deploy_agent(
         # --- Create directory with fallback ---
         try:
             # Try specified base_dir first
-            _exec(client, f"{sudo_cmd}mkdir -p {base_dir}")
-            _exec(client, f"{sudo_cmd}chmod 755 {base_dir}")
+            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}mkdir -p {base_dir}")
+            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}chmod 755 {base_dir}")
             # Test if writable
-            _exec(client, f"{sudo_cmd}touch {base_dir}/.test_write && {sudo_cmd}rm {base_dir}/.test_write")
+            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}touch {base_dir}/.test_write && {sudo_cmd}rm {base_dir}/.test_write")
         except Exception as e:
             # Fallback to home directory
             logger.info("Restricted %s (%s). Falling back to home directory...", base_dir, e)
-            _exec(client, "mkdir -p ~/gravitylan-agent")
-            base_dir = _exec(client, "cd ~/gravitylan-agent && pwd")
+            _exec(client, sudo_pass=ssh_password, command="mkdir -p ~/gravitylan-agent")
+            base_dir = _exec(client, sudo_pass=ssh_password, command="cd ~/gravitylan-agent && pwd")
         
         remote_agent_path = f"{base_dir}/gravitylan-agent.py"
         remote_config_path = f"{base_dir}/agent.conf"
@@ -274,9 +276,9 @@ async def deploy_agent(
 
         # Use staging in /tmp first
         tmp_agent = f"/tmp/gravitylan_agent_{device_id}.py"
-        _exec(client, f"cat > {tmp_agent} << 'GRAVITYLAN_EOF'\n{agent_content}\nGRAVITYLAN_EOF")
-        _exec(client, f"{sudo_cmd}mv {tmp_agent} {remote_agent_path}")
-        _exec(client, f"{sudo_cmd}chmod +x {remote_agent_path}")
+        _exec(client, sudo_pass=ssh_password, command=f"cat > {tmp_agent} << 'GRAVITYLAN_EOF'\n{agent_content}\nGRAVITYLAN_EOF")
+        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}mv {tmp_agent} {remote_agent_path}")
+        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}chmod +x {remote_agent_path}")
         logger.info("Agent script deployed to %s", remote_agent_path)
 
         # --- Write config ---
@@ -292,27 +294,27 @@ async def deploy_agent(
 
         # Write via staging
         tmp_config = f"/tmp/gravitylan_config_{device_id}.json"
-        _exec(client, f"cat > {tmp_config} << 'GRAVITYLAN_EOF'\n{config_json}\nGRAVITYLAN_EOF")
-        _exec(client, f"{sudo_cmd}rm -f {remote_config_path} || true")
-        _exec(client, f"{sudo_cmd}cp {tmp_config} {remote_config_path}")
-        _exec(client, f"{sudo_cmd}rm -f {tmp_config} || true")
-        _exec(client, f"{sudo_cmd}chmod 644 {remote_config_path} || true")
+        _exec(client, sudo_pass=ssh_password, command=f"cat > {tmp_config} << 'GRAVITYLAN_EOF'\n{config_json}\nGRAVITYLAN_EOF")
+        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {remote_config_path} || true")
+        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}cp {tmp_config} {remote_config_path}")
+        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {tmp_config} || true")
+        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}chmod 644 {remote_config_path} || true")
         logger.info("Agent config deployed to %s", remote_config_path)
 
         if has_systemd:
             tmp_service = f"/tmp/gravitylan_service_{device_id}.service"
             unit = _generate_service_unit(python_path, remote_agent_path, base_dir)
-            _exec(client, f"cat > {tmp_service} << 'GRAVITYLAN_EOF'\n{unit}\nGRAVITYLAN_EOF")
+            _exec(client, sudo_pass=ssh_password, command=f"cat > {tmp_service} << 'GRAVITYLAN_EOF'\n{unit}\nGRAVITYLAN_EOF")
             
             try:
-                _exec(client, f"{sudo_cmd}rm -f {REMOTE_SERVICE_PATH} || true")
-                _exec(client, f"{sudo_cmd}cp {tmp_service} {REMOTE_SERVICE_PATH}")
-                _exec(client, f"{sudo_cmd}rm -f {tmp_service} || true")
-                _exec(client, f"{sudo_cmd}chmod 644 {REMOTE_SERVICE_PATH} || true")
+                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {REMOTE_SERVICE_PATH} || true")
+                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}cp {tmp_service} {REMOTE_SERVICE_PATH}")
+                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {tmp_service} || true")
+                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}chmod 644 {REMOTE_SERVICE_PATH} || true")
 
-                _exec(client, f"{sudo_cmd}systemctl daemon-reload || true")
-                _exec(client, f"{sudo_cmd}systemctl enable gravitylan-agent || true")
-                _exec(client, f"{sudo_cmd}systemctl restart gravitylan-agent || true")
+                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}systemctl daemon-reload || true")
+                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}systemctl enable gravitylan-agent || true")
+                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}systemctl restart gravitylan-agent || true")
             except Exception as e:
                 logger.warning("Failed to install systemd service (%s). Will fallback to nohup.", e)
                 has_systemd = False
@@ -341,19 +343,19 @@ esac
 exit 0
 """
             tmp_rc = f"/tmp/gravitylan_rc_{device_id}.sh"
-            _exec(client, f"cat > {tmp_rc} << 'GRAVITYLAN_EOF'\n{rc_content}\nGRAVITYLAN_EOF")
-            _exec(client, f"{sudo_cmd}rm -f {rc_script_path} || true")
-            _exec(client, f"{sudo_cmd}cp {tmp_rc} {rc_script_path}")
-            _exec(client, f"{sudo_cmd}rm -f {tmp_rc} || true")
-            _exec(client, f"{sudo_cmd}chmod +x {rc_script_path} || true")
+            _exec(client, sudo_pass=ssh_password, command=f"cat > {tmp_rc} << 'GRAVITYLAN_EOF'\n{rc_content}\nGRAVITYLAN_EOF")
+            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {rc_script_path} || true")
+            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}cp {tmp_rc} {rc_script_path}")
+            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {tmp_rc} || true")
+            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}chmod +x {rc_script_path} || true")
             # Start it now
-            _exec(client, f"{sudo_cmd}{rc_script_path} restart || true")
+            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}{rc_script_path} restart || true")
             logger.info("Synology rc.d script deployed to %s", rc_script_path)
         
         # --- Final Verification & Last Resort Fallback ---
         # Give it a moment to stabilize
-        import time
-        time.sleep(2)
+        import asyncio
+        await asyncio.sleep(2)
         
         # Check if running (via ps)
         _, stdout, _ = client.exec_command(f"ps aux | grep -v grep | grep {remote_agent_path}")
@@ -370,7 +372,7 @@ exit 0
         # Start new agent - cd to base dir so it finds config.json
         client.exec_command(f"cd {base_dir} && nohup {python_path} {remote_agent_path} > {base_dir}/gravitylan-agent.log 2>&1 &")
         
-        time.sleep(3) # Give it more time
+        await asyncio.sleep(3) # Give it more time
         
         # Final verify
         _, stdout, _ = client.exec_command(f"ps aux | grep -v grep | grep {remote_agent_path}")
@@ -491,8 +493,8 @@ async def remove_agent(
         client.close()
 
 
-def _exec(client: "paramiko.SSHClient", command: str, timeout: int = 10) -> str:
-    """Execute a remote command and return stdout.
+def _exec(client: "paramiko.SSHClient", command: str, timeout: int = 10, sudo_pass: str = None) -> str:
+    """Execute a remote command and return stdout, optionally passing a sudo password to stdin.
 
     Args:
         client: Active paramiko SSH client.
@@ -504,7 +506,11 @@ def _exec(client: "paramiko.SSHClient", command: str, timeout: int = 10) -> str:
     Raises:
         RuntimeError: If the command exits with non-zero status.
     """
-    _, stdout, stderr = client.exec_command(command, timeout=timeout)
+    stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+    if sudo_pass and "sudo -S" in command:
+        stdin.write(f"{sudo_pass}\n")
+        stdin.flush()
+        
     exit_code = stdout.channel.recv_exit_status()
     out = stdout.read().decode().strip()
     err = stderr.read().decode().strip()

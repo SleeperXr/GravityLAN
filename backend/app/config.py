@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     """
 
     app_name: str = "GravityLAN"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.3.1"
     debug: bool = False
     secure_cookies: bool = False
 
