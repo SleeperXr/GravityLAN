@@ -32,7 +32,8 @@
 - **Token-Adoption:** Automatische Wiedererkennung bestehender Agenten nach Datenbank-Resets, um unnötige Re-Deployments zu vermeiden.
 - **Datenbank-Auto-Migration:** Automatisches Ergänzen fehlender Spalten (z.B. `agent_configs.version`) beim Serverstart.
 
-### 4. Hardening & Bugfixing (v0.2.1)
+### 4. Hardening & Bugfixing (v0.2.2)
+- **Database Reset Integrity:** Implementierung der "Nuclear Option" via `db.run_sync()`, um Foreign-Key-Konflikte bei Wartungsarbeiten zuverlässig zu lösen.
 - **Container Hardening:** Migration auf Python 3.12-slim und Einführung eines Non-Root-Users (`gravitylan`). Nmap nutzt nun gezielte Linux-Capabilities statt Root-Rechte.
 - **Zentrale Versionierung:** Implementierung einer Single Source of Truth (`VERSION`-Datei) für Backend, Frontend und API. Inklusive `scripts/sync_version.py`.
 - **Deployment-Klarheit:** Aufteilung der Docker-Compose-Beispiele in Bridge (Standard), Macvlan und Hostnet Varianten.

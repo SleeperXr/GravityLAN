@@ -62,26 +62,37 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
         from app.models.agent import AgentToken, DeviceMetrics, AgentConfig
         from app.models.topology import TopologyLink, Rack
         
-        # 2. Wipe tables in correct order (Dependent tables first)
+        # 2. Wipe tables (Nuclear Option: sync_wipe with PRAGMA foreign_keys=OFF)
         logger.info("Wiping database tables...")
-        await db.execute(delete(TopologyLink))
-        await db.execute(delete(DeviceMetrics))
-        await db.execute(delete(AgentToken))
-        await db.execute(delete(AgentConfig))
-        await db.execute(delete(Service))
-        await db.execute(delete(DeviceHistory))
         
-        # Clear parent_id first to avoid self-referential FK issues in some SQLite versions
-        await db.execute(text("UPDATE devices SET parent_id = NULL"))
-        
-        await db.execute(delete(Device))
-        await db.execute(delete(Rack))
-        await db.execute(delete(DiscoveredHost))
-        await db.execute(delete(DeviceGroup).where(DeviceGroup.is_default == False))
-        
-        # Reset setup status
-        await db.execute(delete(Setting).where(Setting.key == "setup.complete"))
-        
+        def sync_wipe(sync_conn):
+            """Synchronous wipe executed on the raw connection to bypass FK constraints."""
+            sync_conn.execute(text("PRAGMA foreign_keys=OFF"))
+            
+            # List of tables to clear in order (Leaf to Root)
+            # Using raw table names to be independent of model mapping issues
+            tables = [
+                "topology_links", "device_metrics", "agent_tokens", "agent_configs",
+                "device_history", "services", "devices", "racks", "discovered_hosts",
+                "subnets", "app_settings"
+            ]
+            
+            for table in tables:
+                try:
+                    sync_conn.execute(text(f"DELETE FROM {table}"))
+                    logger.debug(f"Table {table} wiped.")
+                except Exception as te:
+                    # Ignore errors for tables that might not exist yet
+                    logger.debug(f"Skipping table {table}: {te}")
+
+            # Special resets (where we don't want to delete everything)
+            sync_conn.execute(text("DELETE FROM device_groups WHERE is_default = 0"))
+            sync_conn.execute(text("DELETE FROM app_settings WHERE key = 'setup.complete'"))
+            
+            sync_conn.execute(text("PRAGMA foreign_keys=ON"))
+
+        # Run the sync wipe in the async context
+        await db.run_sync(sync_wipe)
         await db.commit()
         logger.info("Database objects deleted and changes committed.")
         

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-05-13
+
+### Changed
+- **UI/UX Nomenclature:** Standardized navigation by renaming "IP Management" to **"Netzwerk-Planer"** (Grid/IP logic) and "Network Planner" to **"Topologie"** (Visual Map/Racks) to resolve user confusion.
+- **Frontend Cleanup:** Removed unused Lucide icons and redundant state variables in `SubnetView.tsx` for cleaner code and smaller bundle size.
+
+### Fixed
+- **Database Reset:** Enhanced the "Nuclear Option" to include the `app_settings` table, ensuring that "Network Groups" (Bereiche) and the setup state are completely wiped during a reset.
+- **Production Sync:** Added a dedicated `docker-compose.unraid.yml` to force local builds and prevent Docker from pulling outdated images from registries.
+- **Version Detection:** Improved `version.py` logic to be container-aware, fixing an issue where `v0.2.0` was reported due to missing path resolution in Docker.
+- **Security:** Hardened password hashing with Argon2 and improved token security (master tokens are no longer returned in API bodies).
+
 ## [0.2.1] - 2026-05-13
 
 ### Added

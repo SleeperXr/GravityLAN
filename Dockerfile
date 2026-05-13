@@ -33,7 +33,8 @@ WORKDIR /app
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy agent script and backend code
+# Copy version file, agent script and backend code
+COPY VERSION .
 COPY agent ./agent
 COPY backend/ .
 

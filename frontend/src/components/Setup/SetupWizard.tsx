@@ -307,11 +307,14 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           </label>
           <input 
             type="password" 
-            className="input" 
+            className={`input ${adminPassword && confirmPassword && adminPassword !== confirmPassword ? 'input--error' : ''}`}
             placeholder="Passwort wählen..." 
             value={adminPassword} 
             onChange={(e) => setAdminPassword(e.target.value)}
-            style={{ width: '100%' }}
+            style={{ 
+              width: '100%',
+              borderColor: adminPassword && confirmPassword && adminPassword !== confirmPassword ? 'var(--accent-danger)' : undefined
+            }}
           />
         </div>
         <div>
@@ -320,12 +323,20 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           </label>
           <input 
             type="password" 
-            className="input" 
+            className={`input ${adminPassword && confirmPassword && adminPassword !== confirmPassword ? 'input--error' : ''}`}
             placeholder="Passwort wiederholen..." 
             value={confirmPassword} 
             onChange={(e) => setConfirmPassword(e.target.value)}
-            style={{ width: '100%' }}
+            style={{ 
+              width: '100%',
+              borderColor: adminPassword && confirmPassword && adminPassword !== confirmPassword ? 'var(--accent-danger)' : undefined
+            }}
           />
+          {adminPassword && confirmPassword && adminPassword !== confirmPassword && (
+            <p style={{ color: 'var(--accent-danger)', fontSize: '0.75rem', marginTop: 'var(--space-xs)' }}>
+              ⚠️ Passwörter stimmen nicht überein
+            </p>
+          )}
         </div>
       </div>
 
