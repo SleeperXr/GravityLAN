@@ -129,9 +129,9 @@ async def deploy_agent(
 
     token = uuid.uuid4().hex
     client = paramiko.SSHClient()
-    # SECURITY NOTE: AutoAddPolicy is convenient for home networks but vulnerable to MITM.
-    # In a high-security environment, host-key pinning should be used.
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # SECURITY NOTE: WarningPolicy is used to log unknown hosts. 
+    # TODO: Implement RejectPolicy + Manual UI Confirmation.
+    client.set_missing_host_key_policy(paramiko.WarningPolicy())
 
     try:
         # --- Connect ---
@@ -431,7 +431,7 @@ async def remove_agent(
         return False, "paramiko is not installed."
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(paramiko.WarningPolicy())
 
     try:
         connect_kwargs: dict = {
