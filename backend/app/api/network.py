@@ -12,6 +12,8 @@ from app.schemas.network import SubnetCreate, SubnetResponse, SubnetUpdate
 logger = logging.getLogger(__name__)
 from app.api.auth import get_current_admin
 
+router = APIRouter(prefix="/api/network", tags=["network"])
+
 
 async def get_db():
     async with async_session() as session:
