@@ -238,5 +238,4 @@ docs/STABILIZATION_2026.md
 .agent/
 
 # Keys and Secrets
-antigravity_key
-antigravity_key.pub
+antigravity_key*
