@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
 from app.models.network import Subnet
+from sqlalchemy import delete
+import ipaddress
 from app.schemas.network import SubnetCreate, SubnetResponse, SubnetUpdate
 
 logger = logging.getLogger(__name__)
@@ -14,6 +16,26 @@ from app.api.auth import get_current_admin
 
 router = APIRouter(prefix="/api/network", tags=["network"])
 
+
+async def cleanup_invalid_subnets():
+    """Remove subnets that are not valid IP networks."""
+    async with async_session() as session:
+        try:
+            result = await session.execute(select(Subnet))
+            subnets = result.scalars().all()
+            for sub in subnets:
+                try:
+                    ipaddress.ip_network(sub.cidr, strict=False)
+                except ValueError:
+                    logger.warning(f"Removing invalid subnet from database: {sub.cidr}")
+                    await session.execute(delete(Subnet).where(Subnet.id == sub.id))
+            await session.commit()
+        except Exception as e:
+            logger.error(f"Failed to cleanup invalid subnets: {e}")
+
+@router.on_event("startup")
+async def on_startup():
+    await cleanup_invalid_subnets()
 
 async def get_db():
     async with async_session() as session:
