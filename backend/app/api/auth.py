@@ -12,9 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-def _secure_compare(a: str, b: str) -> bool:
-    """Constant-time string comparison to prevent timing attacks."""
-    return hmac.compare_digest(a.encode(), b.encode())
+from app.services.auth_service import hash_password, verify_password, looks_hashed, secure_compare
 
 async def get_current_admin(
     conn: HTTPConnection,
@@ -26,16 +24,6 @@ async def get_current_admin(
     Dependency to validate authentication via Cookie, Authorization header, or Query param.
     Works for both HTTP Requests and WebSockets.
     """
-    token_val = None
-    
-    # 1. Try Header (only for HTTP)
-    if authorization and authorization.startswith("Bearer "):
-        token_val = authorization.removeprefix("Bearer ").strip()
-    
-    # 2. Try Cookie (works for both)
-    if not token:
-        token = conn.cookies.get("gravitylan_token")
-        
     # 0. Check if setup is complete (Bypass if not)
     from app.models.setting import Setting
     setup_res = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
@@ -45,14 +33,28 @@ async def get_current_admin(
     if not is_setup_done:
         return "setup_mode"
 
-    if not token:
+    token_val = None
+    
+    # 1. Try Header (priority)
+    if authorization and authorization.startswith("Bearer "):
+        token_val = authorization.removeprefix("Bearer ").strip()
+    
+    # 2. Try Query Param (legacy/fallback for WebSockets)
+    if not token_val and token:
+        token_val = token
+        
+    # 3. Try Cookie
+    if not token_val:
+        token_val = conn.cookies.get("gravitylan_token")
+        
+    if not token_val:
         raise HTTPException(status_code=401, detail="Missing authentication token")
         
     res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
     master_setting = res_token.scalar_one_or_none()
     
-    if master_setting and _secure_compare(token, master_setting.value):
-        return token
+    if master_setting and secure_compare(token_val, master_setting.value):
+        return token_val
         
     raise HTTPException(status_code=401, detail="Invalid or expired token")
 
@@ -74,23 +76,43 @@ async def login(
     
     required_pass = admin_pass_setting.value if admin_pass_setting else master_setting.value
     
-    if _secure_compare(password, required_pass):
+    is_valid = False
+    needs_migration = False
+
+    if looks_hashed(required_pass):
+        is_valid = verify_password(password, required_pass)
+    else:
+        # Legacy plaintext comparison
+        is_valid = secure_compare(password, required_pass)
+        if is_valid:
+            needs_migration = True
+    
+    if is_valid:
         logger.info("Login successful, setting httpOnly cookie")
         
+        # Auto-migrate to hashed password if it was plaintext
+        if needs_migration:
+            logger.info("Migrating legacy plaintext password to hash")
+            hashed = hash_password(password)
+            if admin_pass_setting:
+                admin_pass_setting.value = hashed
+            else:
+                db.add(Setting(key="api.admin_password", value=hashed, category="system"))
+            await db.commit()
+
         # Set httpOnly cookie
         response.set_cookie(
             key="gravitylan_token",
             value=master_setting.value,
             httponly=True,
             samesite="lax",
-            secure=settings.secure_cookies, # Set to True if using HTTPS in prod
+            secure=settings.secure_cookies,
             path="/",
             max_age=60 * 60 * 24 * 7 # 7 days
         )
         return {
             "status": "ok", 
-            "message": "Login successful",
-            "token": master_setting.value
+            "message": "Login successful"
         }
     
     logger.warning("Login failed: invalid password provided")

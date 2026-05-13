@@ -236,12 +236,14 @@ async def logs_websocket(websocket: WebSocket):
     from app.models.setting import Setting
     from sqlalchemy import select
     
+    from app.services.auth_service import secure_compare
+    
     async with async_session() as db:
         res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
         master_setting = res_token.scalar_one_or_none()
         master_token = master_setting.value if master_setting else None
         
-        if not master_token or token != master_token:
+        if not master_token or not secure_compare(token, master_token):
             await websocket.close(code=4003, reason="Unauthorized")
             return
 

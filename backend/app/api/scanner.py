@@ -302,23 +302,12 @@ async def scan_websocket(websocket: WebSocket) -> None:
                 return
 
             # 1. Check for Master Token
+            from app.services.auth_service import secure_compare
             master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
             master_setting = master_res.scalar_one_or_none()
             master_token = master_setting.value if master_setting else None
             
-            is_authorized = (token == master_token and master_token is not None)
-            
-            if not is_authorized:
-                # 2. Fallback to any active AgentToken
-                from app.models.agent import AgentToken
-                result = await db.execute(
-                    select(AgentToken).where(
-                        AgentToken.token == token,
-                        AgentToken.is_active.is_(True)
-                    )
-                )
-                if result.scalar_one_or_none():
-                    is_authorized = True
+            is_authorized = (master_token is not None and secure_compare(token, master_token))
         
         if not is_authorized:
             await websocket.close(code=4003, reason="Unauthorized")
