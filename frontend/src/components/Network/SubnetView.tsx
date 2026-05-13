@@ -385,13 +385,12 @@ export function SubnetView() {
                     <div key={sub.id} style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                         <strong>{sub.cidr}</strong>
-                                                <button className="btn btn-icon btn-sm text-danger" onClick={async () => { 
+                        <button className="btn btn-danger btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={async () => { 
                           if (confirm(`${t('common.delete')} ${sub.cidr}?`)) { 
                             try {
                               await api.deleteSubnet(sub.id); 
                               showToast('success', t('common.success'), t('notifications.deleted'));
                               await loadData();
-                              // If we deleted the current prefix, switch to first available
                               if (subnetPrefix === (sub.cidr.match(/(\d+\.\d+\.\d+)/)?.[1] || sub.cidr)) {
                                 setSubnetPrefix('');
                               }
@@ -399,7 +398,9 @@ export function SubnetView() {
                               showToast('error', t('common.error'), t('notifications.save_failed'));
                             }
                           } 
-                        }}><Trash2 size={14} /></button>
+                        }}>
+                          <Trash2 size={14} /> <span>Löschen</span>
+                        </button>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <input className="input" defaultValue={sub.name} onBlur={e => api.updateSubnet(sub.id, { name: e.target.value }).then(loadData)} />
