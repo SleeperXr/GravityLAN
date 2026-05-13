@@ -7,7 +7,7 @@ and real-time updates via WebSockets.
 import asyncio
 import ipaddress
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect

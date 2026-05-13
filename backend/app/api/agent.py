@@ -5,8 +5,11 @@ import json
 import os
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+
+
+from app.scanner.utils import ensure_utc
 
 from fastapi import (
     APIRouter,
@@ -174,7 +177,8 @@ async def receive_report(
             now = datetime.now(timezone.utc)
             
             # Update last_seen only if older than 60s to save DB writes
-            if not agent_token.last_seen or (now - agent_token.last_seen).total_seconds() > 60:
+            last_seen = ensure_utc(agent_token.last_seen)
+            if not last_seen or (now - last_seen).total_seconds() > 60:
                 agent_token.last_seen = now
                 device.is_online = True
                 device.last_seen = now
@@ -384,7 +388,7 @@ async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverv
         select(DeviceMetrics)
         .where(
             DeviceMetrics.device_id.in_(device_ids),
-            DeviceMetrics.timestamp >= cutoff_24h
+            DeviceMetrics.timestamp >= cutoff_24h.replace(tzinfo=None)
         )
         .order_by(DeviceMetrics.device_id, DeviceMetrics.timestamp.desc())
     )
@@ -420,12 +424,14 @@ async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverv
         total_metrics_count += m_count
 
         # Active = last heartbeat within 5 minutes
-        is_active = bool(token.last_seen and (now - token.last_seen).total_seconds() < 300)
+        last_seen = ensure_utc(token.last_seen)
+        created_at = ensure_utc(token.created_at)
+        is_active = bool(last_seen and (now - last_seen).total_seconds() < 300)
         if is_active:
             active_count += 1
 
         # Uptime % for last 24h
-        time_known = now - (token.created_at or cutoff_24h)
+        time_known = now - (created_at or cutoff_24h)
         relevant_window = min(timedelta(hours=24), time_known)
         window_seconds = max(60, relevant_window.total_seconds())
         expected = window_seconds / 30.0
@@ -433,7 +439,7 @@ async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverv
         uptime_pct = min(100.0, (day_count / expected) * 100.0) if expected > 0 else 100.0
 
         # Hourly uptime history — computed in Python from pre-fetched data (0 extra queries)
-        agent_birth = token.created_at or cutoff_24h
+        agent_birth = created_at or cutoff_24h
         uptime_history: list[float] = []
         for h in range(24):
             h_start = cutoff_24h + timedelta(hours=h)
@@ -441,7 +447,7 @@ async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverv
             if h_start < agent_birth:
                 uptime_history.append(100.0)  # unknown period → assume up
                 continue
-            h_count = sum(1 for m in device_metrics_24h if h_start <= m.timestamp < h_end)
+            h_count = sum(1 for m in device_metrics_24h if h_start.replace(tzinfo=None) <= m.timestamp < h_end.replace(tzinfo=None))
             uptime_history.append(min(100.0, (h_count / 120.0) * 100.0))
 
         if last_m:
@@ -479,13 +485,13 @@ async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverv
 @router.get("/global-metrics", response_model=GlobalMetricsResponse)
 async def get_global_metrics(db: AsyncSession = Depends(get_db)) -> GlobalMetricsResponse:
     """Get aggregated network-wide performance history for the last 24 hours."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     cutoff_24h = now - timedelta(hours=24)
     
     # Fetch all metrics for the last 24h
     res = await db.execute(
         select(DeviceMetrics.timestamp, DeviceMetrics.cpu_percent, DeviceMetrics.ram_percent)
-        .where(DeviceMetrics.timestamp >= cutoff_24h)
+        .where(DeviceMetrics.timestamp >= cutoff_24h.replace(tzinfo=None))
         .order_by(DeviceMetrics.timestamp.asc())
     )
     all_metrics = res.all()
@@ -546,8 +552,9 @@ async def get_agent_status(device_id: int, db: AsyncSession = Depends(get_db)) -
     
     # Calculate health (Healthy if seen within last 5 minutes)
     is_healthy = False
-    if token.last_seen:
-        is_healthy = (datetime.now(timezone.utc) - token.last_seen).total_seconds() < 300
+    last_seen = ensure_utc(token.last_seen)
+    if last_seen:
+        is_healthy = (datetime.now(timezone.utc) - last_seen).total_seconds() < 300
 
     return AgentStatusResponse(
         device_id=device_id,

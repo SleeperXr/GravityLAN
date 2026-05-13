@@ -64,8 +64,8 @@ def _load_ssh_key(ssh_key: str):
     # Check for PuTTY keys which paramiko doesn't support
     if "PuTTY-User-Key-File" in ssh_key:
         raise ValueError(
-            "PuTTY-Key (.ppk) erkannt. Bitte konvertieren Sie den Key mit PuTTYgen "
-            "ins OpenSSH-Format (Export -> Export OpenSSH key) oder nutzen Sie ein Passwort."
+            "PuTTY-Key (.ppk) detected. Please convert the key using PuTTYgen "
+            "(Export -> Export OpenSSH key) or use a password instead."
         )
 
     key_types = [
@@ -83,7 +83,7 @@ def _load_ssh_key(ssh_key: str):
             errors.append(f"{key_cls.__name__}: {str(e)}")
             continue
             
-    raise ValueError(f"Ungültiges Key-Format oder verschlüsselter Key (Passphrase nicht unterstützt). Details: {'; '.join(errors)}")
+    raise ValueError(f"Invalid key format or encrypted key (passphrase not supported). Details: {'; '.join(errors)}")
 
 
 async def deploy_agent(
@@ -125,7 +125,7 @@ async def deploy_agent(
     try:
         import paramiko
     except ImportError:
-        return False, "paramiko ist nicht installiert. Bitte 'pip install paramiko' ausführen.", ""
+        return False, "paramiko is not installed. Please run 'pip install paramiko'.", ""
 
     token = uuid.uuid4().hex
     client = paramiko.SSHClient()
@@ -150,7 +150,7 @@ async def deploy_agent(
         elif ssh_password:
             connect_kwargs["password"] = ssh_password
         else:
-            return False, "Weder Passwort noch SSH-Key angegeben.", ""
+            return False, "Neither password nor SSH key provided.", ""
 
         connect_kwargs["timeout"] = 15  # 15s timeout for connection
         
@@ -181,7 +181,7 @@ async def deploy_agent(
         python_version = stdout.read().decode().strip()
         
         if not python_path or not python_version:
-            return False, "Python 3 wurde auf dem Zielsystem nicht gefunden.", ""
+            return False, "Python 3 was not found on the target system.", ""
         
         logger.info("Target Python: %s (%s)", python_version, python_path)
 
@@ -268,7 +268,7 @@ async def deploy_agent(
 
         # Upload agent script via cat (Avoid SFTP which is often disabled on NAS) ---
         if not AGENT_SCRIPT_PATH.exists():
-            return False, f"Agent-Skript nicht gefunden: {AGENT_SCRIPT_PATH}", ""
+            return False, f"Agent script not found: {AGENT_SCRIPT_PATH}", ""
 
         agent_content = AGENT_SCRIPT_PATH.read_text()
 
@@ -359,7 +359,7 @@ exit 0
         _, stdout, _ = client.exec_command(f"ps aux | grep -v grep | grep {remote_agent_path}")
         is_running = stdout.read().decode().strip() != ""
         if is_running:
-            return True, f"Agent erfolgreich gestartet{cleanup_msg} (Verzeichnis: {base_dir}, URL: {server_url})", token
+            return True, f"Agent started successfully{cleanup_msg} (Directory: {base_dir}, URL: {server_url})", token
 
         # Fallback for Unraid / non-systemd / Restricted systems
         logger.info("Agent not running via service. Falling back to nohup...")
@@ -377,30 +377,30 @@ exit 0
         is_running = stdout.read().decode().strip() != ""
         
         if is_running:
-            msg = f"Agent gestartet (Nohup-Fallback, URL: {server_url})"
+            msg = f"Agent started (Nohup fallback, URL: {server_url})"
             # Check if it's Unraid
             _, stdout, _ = client.exec_command("test -f /etc/unraid-version && echo 'unraid'")
             if stdout.read().decode().strip() == "unraid":
-                msg += ". HINWEIS: Auf Unraid für Persistenz den Befehl in /boot/config/go eintragen."
+                msg += ". NOTE: On Unraid, add the command to /boot/config/go for persistence."
             return True, msg, token
         
         # If still not running, get the log content
         _, stdout, _ = client.exec_command(f"tail -n 20 {base_dir}/gravitylan-agent.log")
         log_content = stdout.read().decode().strip()
         
-        error_msg = "Agent konnte nicht gestartet werden (Service-Start und Nohup-Fallback fehlgeschlagen)."
+        error_msg = "Agent could not be started (service start and nohup fallback both failed)."
         if log_content:
-            error_msg += f"\nLetzte Log-Einträge:\n{log_content}"
+            error_msg += f"\nLast log entries:\n{log_content}"
             
         return False, error_msg, token
 
     except paramiko.AuthenticationException:
-        return False, "SSH-Authentifizierung fehlgeschlagen. Bitte Zugangsdaten prüfen.", ""
+        return False, "SSH authentication failed. Please check your credentials.", ""
     except paramiko.SSHException as exc:
-        return False, f"SSH-Verbindungsfehler: {exc}", ""
+        return False, f"SSH connection error: {exc}", ""
     except Exception as exc:
         logger.exception("Agent deployment failed")
-        return False, f"Deployment fehlgeschlagen: {exc}", ""
+        return False, f"Deployment failed: {exc}", ""
     finally:
         client.close()
         # Credentials are local variables — garbage collected after return
@@ -426,7 +426,7 @@ async def remove_agent(
     try:
         import paramiko
     except ImportError:
-        return False, "paramiko ist nicht installiert."
+        return False, "paramiko is not installed."
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -447,7 +447,7 @@ async def remove_agent(
         elif ssh_password:
             connect_kwargs["password"] = ssh_password
         else:
-            return False, "Weder Passwort noch SSH-Key angegeben."
+            return False, "Neither password nor SSH key provided."
 
         try:
             client.connect(**connect_kwargs)
@@ -482,11 +482,11 @@ async def remove_agent(
         for cmd in cleanup_commands:
             client.exec_command(f"{sudo_cmd}{cmd}")
         
-        return True, "Agent wurde vollständig entfernt und alle Prozesse gestoppt."
+        return True, "Agent has been completely removed and all processes stopped."
 
     except Exception as exc:
         logger.exception("Agent removal failed")
-        return False, f"Deinstallation fehlgeschlagen: {exc}"
+        return False, f"Deinstallation failed: {exc}"
     finally:
         client.close()
 

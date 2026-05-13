@@ -34,13 +34,18 @@ def get_local_arp_table() -> Dict[str, str]:
     """Read and parse the system ARP table. Returns {ip: mac}."""
     try:
         # Try 'arp -a' first, then 'arp -g' as fallback
-        try:
-            stdout = subprocess.check_output("arp -a", shell=True, stderr=subprocess.STDOUT)
-        except subprocess.SubprocessError:
+        import shutil
+        if shutil.which("arp"):
             try:
-                stdout = subprocess.check_output("arp -g", shell=True, stderr=subprocess.STDOUT)
+                stdout = subprocess.check_output(["arp", "-a"], stderr=subprocess.STDOUT)
             except subprocess.SubprocessError:
-                return {}
+                try:
+                    stdout = subprocess.check_output(["arp", "-g"], stderr=subprocess.STDOUT)
+                except subprocess.SubprocessError:
+                    return {}
+        else:
+            # If 'arp' is missing, return empty and let other methods (like 'ip neighbor') handle it
+            return {}
         
         if not stdout:
             return {}
@@ -78,7 +83,7 @@ def get_linux_neighbors() -> Dict[str, str]:
     """Get MAC addresses via 'ip neighbor' (Linux native)."""
     if sys.platform == 'win32': return {}
     try:
-        output = subprocess.check_output("ip neighbor show", shell=True, stderr=subprocess.STDOUT).decode(errors='ignore')
+        output = subprocess.check_output(["ip", "neighbor", "show"], stderr=subprocess.STDOUT).decode(errors='ignore')
         mapping = {}
         for line in output.splitlines():
             parts = line.split()
@@ -103,7 +108,7 @@ def get_powershell_neighbors() -> Dict[str, str]:
     if sys.platform != 'win32': return {}
     try:
         ps_cmd = "Get-NetNeighbor | Select-Object IPAddress, LinkLayerAddress | ConvertTo-Json"
-        output = subprocess.check_output(["powershell", "-Command", ps_cmd], shell=True).decode('cp850')
+        output = subprocess.check_output(["powershell", "-Command", ps_cmd]).decode('cp850')
         data = json.loads(output)
         if isinstance(data, dict): data = [data]
         
