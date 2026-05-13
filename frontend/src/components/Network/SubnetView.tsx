@@ -268,9 +268,35 @@ export function SubnetView() {
               const prefixMatch = sub.cidr.match(/(\d+\.\d+\.\d+)/);
               const prefix = prefixMatch ? prefixMatch[1] : sub.cidr;
               return (
-                <button key={sub.id} style={{ padding: '8px 16px', background: subnetPrefix === prefix ? 'var(--bg-card)' : 'transparent', border: 'none', borderTopLeftRadius: '8px', borderTopRightRadius: '8px', borderBottom: subnetPrefix === prefix ? '2px solid var(--accent-primary)' : '2px solid transparent', color: subnetPrefix === prefix ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: subnetPrefix === prefix ? 600 : 400, cursor: 'pointer', transition: 'all 0.2s' }} onClick={() => setSubnetPrefix(prefix)}>
-                  {sub.name}
-                </button>
+                <div key={sub.id} style={{ display: 'flex', alignItems: 'center', background: subnetPrefix === prefix ? 'var(--bg-card)' : 'transparent', borderTopLeftRadius: '8px', borderTopRightRadius: '8px', borderBottom: subnetPrefix === prefix ? '2px solid var(--accent-primary)' : '2px solid transparent', transition: 'all 0.2s' }}>
+                  <button 
+                    style={{ padding: '8px 12px 8px 16px', background: 'transparent', border: 'none', color: subnetPrefix === prefix ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: subnetPrefix === prefix ? 600 : 400, cursor: 'pointer' }} 
+                    onClick={() => setSubnetPrefix(prefix)}
+                  >
+                    {sub.name}
+                  </button>
+                  {subnetPrefix === prefix && (
+                    <button 
+                      style={{ padding: '8px 12px 8px 4px', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', opacity: 0.6 }}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (confirm(`${t('common.delete')} ${sub.cidr}?`)) {
+                          try {
+                            await api.deleteSubnet(sub.id);
+                            showToast('success', t('common.success'), t('notifications.deleted'));
+                            await loadData();
+                            setSubnetPrefix('');
+                          } catch (e) {
+                            showToast('error', t('common.error'), t('notifications.save_failed'));
+                          }
+                        }
+                      }}
+                      title={t('common.delete')}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
               );
             })}
             <button style={{ padding: '8px 16px', background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={handleAddSubnet}>
@@ -359,7 +385,21 @@ export function SubnetView() {
                     <div key={sub.id} style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                         <strong>{sub.cidr}</strong>
-                        <button className="btn btn-icon btn-sm text-danger" onClick={async () => { if (confirm(`Löschen?`)) { await api.deleteSubnet(sub.id); loadData(); } }}><Trash2 size={14} /></button>
+                                                <button className="btn btn-icon btn-sm text-danger" onClick={async () => { 
+                          if (confirm(`${t('common.delete')} ${sub.cidr}?`)) { 
+                            try {
+                              await api.deleteSubnet(sub.id); 
+                              showToast('success', t('common.success'), t('notifications.deleted'));
+                              await loadData();
+                              // If we deleted the current prefix, switch to first available
+                              if (subnetPrefix === (sub.cidr.match(/(\d+\.\d+\.\d+)/)?.[1] || sub.cidr)) {
+                                setSubnetPrefix('');
+                              }
+                            } catch (e) {
+                              showToast('error', t('common.error'), t('notifications.save_failed'));
+                            }
+                          } 
+                        }}><Trash2 size={14} /></button>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <input className="input" defaultValue={sub.name} onBlur={e => api.updateSubnet(sub.id, { name: e.target.value }).then(loadData)} />
