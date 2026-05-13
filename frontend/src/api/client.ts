@@ -1,7 +1,8 @@
 /** API client for HomeLan backend. */
 
 export async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem('master_token');
+  let token = localStorage.getItem('gravitylan_token');
+  if (token === 'undefined') token = null;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...((options?.headers as Record<string, string>) || {}),
@@ -176,7 +177,9 @@ export const api = {
 export function createScanSocket(onMessage: (data: import('../types').ScanProgress) => void): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  const token = localStorage.getItem('gravitylan_token') || '';
+  let token = localStorage.getItem('gravitylan_token');
+  if (token === 'undefined') token = null;
+  token = token || '';
   const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
   const ws = new WebSocket(`${wsBase}/api/scanner/ws?token=${token}`);
 
@@ -198,7 +201,9 @@ export function createScanSocket(onMessage: (data: import('../types').ScanProgre
 export function createMetricsSocket(deviceId: number, onMessage: (data: any) => void): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  const token = localStorage.getItem('gravitylan_token') || '';
+  let token = localStorage.getItem('gravitylan_token');
+  if (token === 'undefined') token = null;
+  token = token || '';
   const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
   const ws = new WebSocket(`${wsBase}/api/agent/ws/${deviceId}?token=${token}`);
 

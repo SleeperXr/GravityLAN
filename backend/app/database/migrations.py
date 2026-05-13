@@ -29,6 +29,8 @@ async def run_migrations(db: AsyncSession):
         ("discovered_hosts", "old_ip", "VARCHAR(45)"),
         ("discovered_hosts", "ip_changed_at", "DATETIME"),
         ("discovered_hosts", "ports", "TEXT"),
+        ("agent_tokens", "pending_token", "VARCHAR(64)"),
+        ("agent_tokens", "pending_at", "DATETIME"),
     ]
     
     raw_conn = await db.connection()

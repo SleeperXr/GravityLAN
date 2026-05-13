@@ -174,6 +174,7 @@ export interface Rack {
   id: number;
   name: string;
   units: number;
+  width: number;
   notes: string | null;
 }
 
