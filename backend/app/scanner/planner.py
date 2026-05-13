@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import ipaddress
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select, delete, or_
 from app.database import async_session
 from app.models.device import DiscoveredHost, Device

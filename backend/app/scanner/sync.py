@@ -1,14 +1,14 @@
 """Shared synchronization logic for both Planner and Dashboard scans."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select, delete, or_
 from app.database import async_session
 from app.models.device import Device, DiscoveredHost, Service
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.scanner.vendor import get_vendor
-from app.scanner.utils import ping_host_async
+from app.scanner.utils import ping_host_async, ensure_utc
 from app.scanner.hostname import is_ip_like
 from app.services.cache_service import discovery_cache, dashboard_cache, topology_cache
 
@@ -68,7 +68,8 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
             if disc.ip != ip:
                 # If the host was seen VERY recently at the old IP, it's likely a multi-interface device (LAN/WLAN)
                 # In this case, we don't want to flip-flop the primary IP in the DB every few seconds.
-                is_stale = (datetime.now(timezone.utc) - disc.last_seen) > IP_FLAP_THRESHOLD
+                last_seen = ensure_utc(disc.last_seen)
+                is_stale = not last_seen or (datetime.now(timezone.utc) - last_seen) > IP_FLAP_THRESHOLD
                 
                 if not is_stale:
                     logger.debug(f"Sync: Potential flap detected for {mac} ({disc.ip} vs {ip}). Checking stickiness...")
@@ -127,7 +128,8 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
             if disc and disc.custom_name: dev.display_name = disc.custom_name
             # Sticky Dashboard IP: Only update if the move is stable (not flapping)
             if dev.ip != ip:
-                is_stale = (datetime.now(timezone.utc) - (dev.last_seen or datetime.min)) > IP_FLAP_THRESHOLD
+                last_seen = ensure_utc(dev.last_seen)
+                is_stale = not last_seen or (datetime.now(timezone.utc) - last_seen) > IP_FLAP_THRESHOLD
                 
                 if not is_stale:
                     old_ip_alive = await ping_host_async(dev.ip, timeout=0.5)

@@ -15,7 +15,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 IP_PATTERN = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
@@ -119,7 +119,7 @@ def _resolve_shell(ip: str) -> Optional[str]:
 
 async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None = None) -> str | None:
     """Resolve an IP address to its hostname via reverse DNS (FQDN)."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     
     # 0. Check Cache
     now = datetime.now(timezone.utc)

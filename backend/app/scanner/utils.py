@@ -13,6 +13,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.device import DeviceGroup
 from app.schemas.scan import SubnetInfo
+from datetime import datetime, timezone
+
+def ensure_utc(dt: datetime | None) -> datetime | None:
+    """Ensure a datetime is timezone-aware (UTC). SQLite stores naive datetimes."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +30,7 @@ DEFAULT_GROUPS = [
     {"name": "Server", "icon": "server", "sort_order": 1, "is_default": True},
     {"name": "NAS / Storage", "icon": "hard-drive", "sort_order": 2, "is_default": True},
     {"name": "Web Interfaces", "icon": "globe", "sort_order": 3, "is_default": True},
-    {"name": "Neu entdeckt", "icon": "sparkles", "sort_order": 99, "is_default": True},
+    {"name": "Newly discovered", "icon": "sparkles", "sort_order": 99, "is_default": True},
 ]
 
 GROUP_TYPE_MAP = {
@@ -29,7 +38,7 @@ GROUP_TYPE_MAP = {
     "server": "Server",
     "nas": "NAS / Storage",
     "webui": "Web Interfaces",
-    "unknown": "Neu entdeckt",
+    "unknown": "Newly discovered",
 }
 
 async def ensure_default_groups(db: AsyncSession, commit: bool = True) -> dict[str, int]:
@@ -121,7 +130,7 @@ def get_local_subnets() -> list[SubnetInfo]:
             import subprocess
             import json
             ps_cmd = "Get-NetIPAddress -AddressFamily IPv4 | Select-Object InterfaceAlias, IPAddress, PrefixLength | ConvertTo-Json"
-            output = subprocess.check_output(["powershell", "-Command", ps_cmd], shell=True).decode('cp850')
+            output = subprocess.check_output(["powershell", "-Command", ps_cmd]).decode('cp850')
             data = json.loads(output)
             if isinstance(data, dict): data = [data]
             for item in data:

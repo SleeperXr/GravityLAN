@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, delete
 from app.database import async_session
 from app.models.setting import Setting
@@ -185,7 +185,7 @@ class ScanScheduler:
 
                 if days > 0:
                     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-                    await db.execute(delete(DeviceHistory).where(DeviceHistory.timestamp < cutoff))
+                    await db.execute(delete(DeviceHistory).where(DeviceHistory.timestamp < cutoff.replace(tzinfo=None)))
                     await db.commit()
                     logger.info(f"Cleaned up history older than {days} days")
         except Exception as e:
