@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-05-13
+
+### Added
+- **Infrastructure Hardening:** Upgraded backend to Python 3.12-slim and implemented a non-root user security model for the container.
+- **Security:** Added `SECURITY.md` and configured conditional `Secure` flag for authentication cookies.
+- **CI/CD:** Added GitHub Actions workflow for automated linting and build checks.
+- **Docker:** Parameterized `docker-compose.yml` to support custom subnets and interfaces via `.env`.
+
+### Fixed
+- **Database:** Resolved critical `sqlite3.OperationalError` by adding missing schema migrations for `agent_tokens` table.
+- **Frontend Auth:** Fixed token mismatch between `master_token` and `gravitylan_token` causing 401 Unauthorized errors.
+- **WebSockets:** Fixed `token=undefined` issue in WebSocket connections for Scanner, Metrics, and Live Logs.
+- **Capabilities:** Properly granted `NET_RAW` and `NET_ADMIN` to the non-root `gravitylan` user via `setcap` on `nmap`.
+
 ## [0.2.0] - 2026-05-12
 
 ### Added
