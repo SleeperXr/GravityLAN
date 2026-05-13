@@ -48,6 +48,26 @@ async def discover_hosts_simple(
     """
     discovered: List[Dict[str, Any]] = []
     
+    async def _read_stream(stream: asyncio.StreamReader):
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            line_str = line.decode(errors='ignore').strip()
+            
+            # Example: "Nmap scan report for sleeper-pc (192.168.100.10)"
+            if "Nmap scan report for" in line_str:
+                match = re.search(r"Nmap scan report for (?:(.+?) \()?((\d{1,3}\.){3}\d{1,3})\)?", line_str)
+                if match:
+                    hostname = match.group(1).strip() if match.group(1) else None
+                    ip_addr = match.group(2)
+                    
+                    if not any(h["ip"] == ip_addr for h in discovered):
+                        host_data = {"ip": ip_addr, "mac": None, "hostname": hostname}
+                        discovered.append(host_data)
+                        if host_found_callback:
+                            asyncio.create_task(host_found_callback(host_data))
+    
     # -- 1. Nmap Discovery (Primary) ------------------------------------------
     try:
         networks: Set[str] = set()
@@ -83,25 +103,7 @@ async def discover_hosts_simple(
                     stderr=asyncio.subprocess.PIPE
                 )
 
-                async def _read_stream(stream: asyncio.StreamReader):
-                    while True:
-                        line = await stream.readline()
-                        if not line:
-                            break
-                        line_str = line.decode(errors='ignore').strip()
-                        
-                        # Example: "Nmap scan report for sleeper-pc (192.168.100.10)"
-                        if "Nmap scan report for" in line_str:
-                            match = re.search(r"Nmap scan report for (?:(.+?) \()?((\d{1,3}\.){3}\d{1,3})\)?", line_str)
-                            if match:
-                                hostname = match.group(1).strip() if match.group(1) else None
-                                ip_addr = match.group(2)
-                                
-                                if not any(h["ip"] == ip_addr for h in discovered):
-                                    host_data = {"ip": ip_addr, "mac": None, "hostname": hostname}
-                                    discovered.append(host_data)
-                                    if host_found_callback:
-                                        asyncio.create_task(host_found_callback(host_data))
+                # Stream is read using the hoisted _read_stream function
 
                 await _read_stream(proc.stdout)
                 stderr_data, _ = await proc.communicate()

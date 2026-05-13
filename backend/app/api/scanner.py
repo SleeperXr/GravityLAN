@@ -13,6 +13,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
+
+from app.api.auth import get_current_admin
 
 from app.database import async_session
 from app.models.device import DiscoveredHost
@@ -42,22 +45,45 @@ class ScanStateManager:
         self.last_progress: Optional[ScanProgress] = None
         self.is_active: bool = False
         self.ws_clients: List[WebSocket] = []
+        self._lock = asyncio.Lock()
+
+    async def set_active(self, active: bool) -> None:
+        async with self._lock:
+            self.is_active = active
+
+    async def get_active(self) -> bool:
+        async with self._lock:
+            return self.is_active
+
+    async def add_client(self, ws: WebSocket) -> None:
+        async with self._lock:
+            self.ws_clients.append(ws)
+
+    async def remove_client(self, ws: WebSocket) -> None:
+        async with self._lock:
+            if ws in self.ws_clients:
+                self.ws_clients.remove(ws)
 
     async def broadcast(self, data: ScanProgress) -> None:
         """Sends scan progress updates to all connected clients."""
-        self.last_progress = data
-        data_dict = data.model_dump(mode="json")
+        async with self._lock:
+            self.last_progress = data
+            data_dict = data.model_dump(mode="json")
+            clients = list(self.ws_clients)
+
         disconnected: List[WebSocket] = []
         
-        for ws in self.ws_clients:
+        for ws in clients:
             try:
                 await ws.send_json(data_dict)
             except Exception:
                 disconnected.append(ws)
         
-        for ws in disconnected:
-            if ws in self.ws_clients:
-                self.ws_clients.remove(ws)
+        if disconnected:
+            async with self._lock:
+                for ws in disconnected:
+                    if ws in self.ws_clients:
+                        self.ws_clients.remove(ws)
 
 # Initialize global state manager
 state = ScanStateManager()
@@ -72,9 +98,15 @@ async def test_scanner() -> Dict[str, str]:
     """Verify scanner API availability."""
     return {"status": "ok", "module": "scanner"}
 
-@router.get("/scan-ip")
+@router.get("/scan-ip", dependencies=[Depends(get_current_admin)])
 async def scan_ip(ip: str) -> Dict[str, Any]:
     """Perform a robust scan on a specific IP address."""
+    # Issue 6: Validate IP address
+    try:
+        ipaddress.IPv4Address(ip)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid IP address format")
+        
     logger.info("Manual scan requested for %s", ip)
     
     dns_server = None
@@ -90,14 +122,14 @@ async def scan_ip(ip: str) -> Dict[str, Any]:
     
     return {"ip": ip, "ports": ports, "timestamp": datetime.now(timezone.utc).isoformat()}
 
-@router.post("/quick-subnet-scan")
+@router.post("/quick-subnet-scan", dependencies=[Depends(get_current_admin)])
 async def quick_subnet_scan(subnets: str) -> Dict[str, str]:
     """Turbo-fast subnet refresh (ARP + ICMP) via Planner scan."""
     subnet_list = [s.strip() for s in subnets.split(",") if s.strip()]
     await run_planner_scan(subnet_list)
     return {"status": "ok", "message": "Quick scan triggered"}
 
-@router.post("/discover")
+@router.post("/discover", dependencies=[Depends(get_current_admin)])
 async def discover_subnet(request: ScanRequest) -> Dict[str, str]:
     """Trigger a full host discovery on subnets."""
     return await start_scan(request)
@@ -156,13 +188,13 @@ async def delete_discovered_host(host_id: int) -> Dict[str, str]:
         discovery_cache.invalidate()
         return {"status": "success", "message": "Host deleted"}
 
-@router.post("/start-dashboard")
+@router.post("/start-dashboard", dependencies=[Depends(get_current_admin)])
 async def start_dashboard_scan_api(request: ScanRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:
     """Manually trigger the high-intensity Dashboard scan."""
-    if state.is_active:
+    if await state.get_active():
         return {"status": "error", "message": "A scan is already in progress"}
 
-    state.is_active = True
+    await state.set_active(True)
     state.cancel_event = asyncio.Event()
     state.last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Dashboard Scan...", progress=0)
     await state.broadcast(state.last_progress)
@@ -196,18 +228,18 @@ async def start_dashboard_scan_api(request: ScanRequest, background_tasks: Backg
             logger.error("Dashboard scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.ERROR, message=f"Scan error: {str(e)}"))
         finally:
-            state.is_active = False
+            await state.set_active(False)
 
     state.task = asyncio.create_task(run_dashboard_task())
     return {"status": "ok", "message": "Dashboard scan started"}
 
-@router.post("/start")
+@router.post("/start", dependencies=[Depends(get_current_admin)])
 async def start_scan(request: ScanRequest) -> Dict[str, str]:
     """Trigger a Network Planner scan."""
-    if state.is_active:
+    if await state.get_active():
         return {"status": "error", "message": "Scan already in progress"}
 
-    state.is_active = True
+    await state.set_active(True)
     state.cancel_event = asyncio.Event()
     
     state.last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Planner Scan...", progress=0)
@@ -228,18 +260,18 @@ async def start_scan(request: ScanRequest) -> Dict[str, str]:
             logger.error("Manual scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.ERROR, message=f"Scan error: {str(e)}"))
         finally:
-            state.is_active = False
+            await state.set_active(False)
 
     state.task = asyncio.create_task(run_scan_task())
     return {"status": "ok", "message": "Planner scan started"}
 
-@router.post("/stop")
+@router.post("/stop", dependencies=[Depends(get_current_admin)])
 async def stop_scan() -> Dict[str, str]:
     """Cancel any running scan."""
     state.cancel_event.set()
     return {"status": "cancelling"}
 
-@router.get("/live-discovery")
+@router.get("/live-discovery", dependencies=[Depends(get_current_admin)])
 async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
     """Perform a fast ICMP/ARP discovery and sync results to DB."""
     subnet_list = [s.strip() for s in subnets.split(",") if s.strip()]
@@ -314,10 +346,9 @@ async def scan_websocket(websocket: WebSocket) -> None:
             return
 
     await websocket.accept()
-    state.ws_clients.append(websocket)
+    await state.add_client(websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        if websocket in state.ws_clients:
-            state.ws_clients.remove(websocket)
+        await state.remove_client(websocket)

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3.1] - 2026-05-14
+### Fixed
+- Critical vulnerability in scanner: Added robust input validation and try-except blocks to prevent application crashes when invalid network subnets (e.g., octets > 255) are provided.
+- Cleanup Logic: Secured the scanner cleanup phase against malformed IP ranges.
+
+## [0.2.3] - 2026-05-13
+
+### Security Hardening (Critical)
+- **API Lockdown**: Enforced strict `Depends(get_current_admin)` authentication on all high-risk endpoints (Backup, Settings, and Scanner APIs) to prevent unauthenticated access and data manipulation.
+- **SSH Deployment Security**: Eliminated vulnerable `echo` password piping in `agent_deployer.py`. Deployment now utilizes secure `stdin` piping via Paramiko and is primed for future SSH key-only support.
+- **Atomic Setup**: Restructured the Setup Wizard to ensure `setup.complete` and `api.master_token` are committed atomically, preventing unrecoverable states during server initialization.
+- **Data Protection**: Excluded sensitive `agent_tokens` from JSON backups and added strict 10MB upload limits to prevent DoS attacks.
+- **Validation**: Implemented robust IPv4 validation for manual IP scans to mitigate command injection risks.
+
+### Fixed & Improved
+- **Concurrency**: Added `asyncio.Lock()` to `ScanStateManager` for thread-safe scan state management and WebSocket broadcasting.
+- **Memory Optimization**: Refactored network discovery loops to prevent redundant function allocations, improving scan performance.
+- **Stability**: Fixed a potential `UnboundLocalError` in the agent report handler by properly initializing device mapping variables.
+- **Documentation**: Updated hashing service docstrings to accurately reflect the use of Argon2.
+
 ## [0.2.2] - 2026-05-13
 
 ### Changed

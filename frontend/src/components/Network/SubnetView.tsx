@@ -379,20 +379,29 @@ export function SubnetView() {
             <div className="modal-content" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
               <div className="modal-header"><h3>{t('network.manage_areas')}</h3></div>
               <div className="modal-body">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 60px 40px', gap: '12px', marginBottom: '24px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 60px 48px', gap: '12px', marginBottom: '24px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
                   <input className="input" placeholder="Area Name" value={newGroup.name} onChange={e => setNewGroup({...newGroup, name: e.target.value})} />
                   <input className="input" type="number" placeholder="Start" value={newGroup.start} onChange={e => setNewGroup({...newGroup, start: parseInt(e.target.value)})} />
                   <input className="input" type="number" placeholder="End" value={newGroup.end} onChange={e => setNewGroup({...newGroup, end: parseInt(e.target.value)})} />
-                  <div className="relative group">
-                    <input className="w-full h-10 rounded bg-slate-800 border border-white/10 cursor-pointer" type="color" value={newGroup.color} onChange={e => setNewGroup({...newGroup, color: e.target.value})} />
+                  <div style={{ position: 'relative', height: '40px' }}>
+                    <input 
+                      style={{ width: '100%', height: '100%', padding: '2px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', cursor: 'pointer' }} 
+                      type="color" 
+                      value={newGroup.color} 
+                      onChange={e => setNewGroup({...newGroup, color: e.target.value})} 
+                    />
                   </div>
-                  <button className="btn btn-primary h-10 flex items-center justify-center" onClick={() => { saveGroups([...(groups[subnetPrefix] || []), newGroup]); setNewGroup({ name: '', start: 0, end: 0, color: '#38bdf8' }); }}>
-                    <Plus size={18} />
+                  <button 
+                    className="btn btn-primary" 
+                    style={{ height: '40px', padding: 0, display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center' }}
+                    onClick={() => { saveGroups([...(groups[subnetPrefix] || []), newGroup]); setNewGroup({ name: '', start: 0, end: 0, color: '#38bdf8' }); }}
+                  >
+                    <Plus size={20} strokeWidth={3} />
                   </button>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
                   {(groups[subnetPrefix] || []).map((group, idx) => (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 60px 40px', gap: '12px', alignItems: 'center', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 60px 48px', gap: '12px', alignItems: 'center', padding: '12px', background: 'rgba(255,255,255,0.04)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <input className="input" value={group.name} onChange={e => {
                         const next = [...groups[subnetPrefix]];
                         next[idx].name = e.target.value;
@@ -408,18 +417,23 @@ export function SubnetView() {
                         next[idx].end = parseInt(e.target.value);
                         saveGroups(next);
                       }} />
-                      <input className="w-full h-8 rounded bg-transparent border-none cursor-pointer" type="color" value={group.color} onChange={e => {
-                        const next = [...groups[subnetPrefix]];
-                        next[idx].color = e.target.value;
-                        saveGroups(next);
-                      }} />
+                      <input 
+                        style={{ width: '100%', height: '32px', padding: '2px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', cursor: 'pointer' }} 
+                        type="color" 
+                        value={group.color} 
+                        onChange={e => {
+                          const next = [...groups[subnetPrefix]];
+                          next[idx].color = e.target.value;
+                          saveGroups(next);
+                        }} 
+                      />
                       <button 
-                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all border border-rose-500/20" 
+                        className="btn btn-icon"
+                        style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', width: '40px', height: '40px' }} 
                         onClick={() => saveGroups(groups[subnetPrefix].filter((_, i) => i !== idx))}
                         title="Löschen"
                       >
-                        <Trash2 size={14} className="min-w-[14px]" />
-                        <span className="sr-only">X</span>
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   ))}

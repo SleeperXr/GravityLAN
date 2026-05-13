@@ -95,9 +95,17 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
     else:
         db.add(Setting(key="setup.complete", value="true", category="system"))
 
-    # 2. Commit basic settings now so the user can login even if migration takes long
+    # 1b. Initialize Master API Token if missing (ATOMIC WITH SETUP COMPLETE)
+    import secrets
+    res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
+    if not res_token.scalar_one_or_none():
+        master_token = secrets.token_hex(32)
+        logger.info("Setup: Initializing secure Master API Token (masked for security).")
+        db.add(Setting(key="api.master_token", value=master_token))
+
+    # 2. Commit basic settings and token now so the user can login even if migration takes long
     await db.commit()
-    
+
     # Start a new transaction for host processing
     dns_server = request.dns_server
     
@@ -215,15 +223,6 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
             # Update discovered host status
             host.is_monitored = True
             db.add(host)
-
-        # 4. Initialize Master API Token if missing
-        from app.models.setting import Setting
-        import secrets
-        res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-        if not res_token.scalar_one_or_none():
-            master_token = secrets.token_hex(32)
-            logger.info("Setup: Initializing secure Master API Token (masked for security).")
-            db.add(Setting(key="api.master_token", value=master_token))
 
     await db.commit()
     return {"status": "ok"}
