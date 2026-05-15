@@ -2,9 +2,7 @@
 # Simplest LAN access for scans, but removes container isolation.
 services:
   gravitylan:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: sleeperxr/gravitylan:latest
     container_name: GravityLAN_Host
     restart: unless-stopped
     network_mode: host
