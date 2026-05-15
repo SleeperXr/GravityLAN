@@ -1,9 +1,6 @@
 services:
   gravitylan:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: gravitylan:local
+    image: sleeperxr/gravitylan:latest
     container_name: GravityLAN
     restart: unless-stopped
     # ports:

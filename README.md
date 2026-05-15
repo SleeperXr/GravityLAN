@@ -22,6 +22,7 @@
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white" alt="FastAPI">
+  <a href="https://hub.docker.com/r/sleeperxr/gravitylan"><img src="https://img.shields.io/docker/pulls/sleeperxr/gravitylan?style=flat-square&logo=docker" alt="Docker Pulls"></a>
 </p>
 
 > [!WARNING]
@@ -130,9 +131,24 @@ flowchart TB
 - **Nmap** (included in the image mindset; install locally too if not using containers)  
 - **Node 20+** / **npm** — only when building the frontend yourself  
 
-### Quick start (Docker)
+### Quick start (Docker Hub)
 
-Single build: `Dockerfile` (multi-stage: Vite → static assets + Python). Persistent data: **`GRAVITYLAN_DATA_DIR`** (often `/app/data` in the image — confirm in your Compose/image).
+The easiest way to run GravityLAN is using the official image from [Docker Hub](https://hub.docker.com/r/sleeperxr/gravitylan).
+
+```bash
+docker pull sleeperxr/gravitylan:latest
+docker run -d --name gravitylan \
+  -p 8000:8000 \
+  -v gravitylan-data:/app/data \
+  --cap-add=NET_RAW --cap-add=NET_ADMIN \
+  sleeperxr/gravitylan:latest
+```
+
+Open **http://localhost:8000** → finish setup → log in.
+
+### Quick start (Local Build)
+
+If you want to build the image yourself (multi-stage: Vite → static assets + Python):
 
 ```bash
 docker build -t gravitylan:local .
@@ -314,9 +330,24 @@ flowchart TB
 - **Nmap** (im Docker-Image mitgedacht; lokal installieren wenn du ohne Container scannst)  
 - **Node 20+** und **npm** — nur wenn du das Frontend selbst baust  
 
-### Schnellstart mit Docker
+### Schnellstart (Docker Hub)
 
-Einheitlicher Build unter `Dockerfile`. Persistente Daten: **`GRAVITYLAN_DATA_DIR`** (im Image oft `/app/data`).
+Der einfachste Weg GravityLAN zu nutzen, ist das offizielle Image vom [Docker Hub](https://hub.docker.com/r/sleeperxr/gravitylan).
+
+```bash
+docker pull sleeperxr/gravitylan:latest
+docker run -d --name gravitylan \
+  -p 8000:8000 \
+  -v gravitylan-data:/app/data \
+  --cap-add=NET_RAW --cap-add=NET_ADMIN \
+  sleeperxr/gravitylan:latest
+```
+
+Öffne **http://localhost:8000** → Setup abschließen → einloggen.
+
+### Schnellstart (Lokaler Build)
+
+Wenn du das Image selbst bauen möchtest (Multi-Stage: Vite → statische Dateien + Python):
 
 ```bash
 docker build -t gravitylan:local .

@@ -3,10 +3,10 @@
 
 services:
   gravitylan:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: gravitylan:local-build
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    image: sleeperxr/gravitylan:latest
     container_name: GravityLAN
     restart: unless-stopped
     network_mode: host
