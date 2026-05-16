@@ -66,7 +66,7 @@ async def discover_hosts_simple(
                         host_data = {"ip": ip_addr, "mac": None, "hostname": hostname}
                         discovered.append(host_data)
                         if host_found_callback:
-                            asyncio.create_task(host_found_callback(host_data))
+                            await host_found_callback(host_data)
     
     # -- 1. Nmap Discovery (Primary) ------------------------------------------
     try:
@@ -131,7 +131,7 @@ async def discover_hosts_simple(
                             host_data = {"ip": ip_addr, "mac": None, "hostname": hostname}
                             discovered.append(host_data)
                             if host_found_callback:
-                                asyncio.create_task(host_found_callback(host_data))
+                                await host_found_callback(host_data)
                 else:
                     logger.error(f"Sync Nmap scan failed for targets: {cmd_args}")
         

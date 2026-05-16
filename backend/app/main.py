@@ -20,7 +20,9 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Depends
+import asyncio
+from datetime import datetime, timedelta
+from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -46,8 +48,13 @@ async def lifespan(app: FastAPI):
         level=logging.DEBUG if settings.debug else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    # Aggressively suppress aiosqlite logs (usually not needed even with SQL logs)
+    # Aggressively suppress noisy logs
     logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+    logging.getLogger("paramiko").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    # If not in debug, also suppress the transport layer specifically
+    if not settings.debug:
+        logging.getLogger("paramiko.transport").setLevel(logging.WARNING)
 
     # Custom filter for Uvicorn access logs to ignore polling noise
     class PollingFilter(logging.Filter):
@@ -80,8 +87,23 @@ async def lifespan(app: FastAPI):
     logger.info("GravityLAN v%s starting (Loop: %s, Timeout: %ss)...", 
                 settings.app_version, loop.__class__.__name__, settings.scan_timeout)
 
-    # Ensure data directory exists
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    # Ensure data directory exists and is writable
+    try:
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        # Test write permission by creating a temporary file
+        test_file = settings.data_dir / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+    except PermissionError:
+        logger.critical(
+            "PERMISSION ERROR: Cannot write to data directory '%s'. "
+            "If using Docker, ensure the volume has correct permissions (e.g., chown -R 1000:1000 ./data on the host).",
+            settings.data_dir
+        )
+        sys.exit(1)
+    except Exception as e:
+        logger.critical("Failed to initialize data directory '%s': %s", settings.data_dir, e)
+        sys.exit(1)
 
     # Ensure models are imported for metadata creation
     from app.models.device import Device, DeviceGroup, Service, DeviceHistory, DiscoveredHost
@@ -93,6 +115,9 @@ async def lifespan(app: FastAPI):
     # Initialize database tables
     await init_db()
     logger.info("Database initialized: %s", settings.effective_database_url)
+
+    # Start Background Tasks
+    asyncio.create_task(prune_metrics_loop())
 
     # --- Schema Migration ---
     from app.database.migrations import run_migrations
@@ -281,7 +306,11 @@ async def root():
     }
 
 if FRONTEND_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
+    # Only mount if the directories actually exist to prevent startup crashes
+    assets_dir = FRONTEND_DIR / "assets"
+    if assets_dir.exists() and assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+    
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
     @app.get("/{full_path:path}")
@@ -300,3 +329,28 @@ if FRONTEND_DIR.exists():
         return FileResponse(index_file)
 
     logger.info("Serving SPA frontend from: %s", FRONTEND_DIR)
+
+
+async def prune_metrics_loop():
+    """Background task to prune old metrics periodically."""
+    from app.models.agent import DeviceMetrics
+    from app.database import async_session
+    from sqlalchemy import delete
+    
+    while True:
+        try:
+            # Wait 1 hour between runs
+            await asyncio.sleep(3600)
+            
+            async with async_session() as db:
+                logger.info("Starting background metrics pruning...")
+                # Keep last 24h of metrics
+                cutoff = datetime.now() - timedelta(hours=24)
+                result = await db.execute(
+                    delete(DeviceMetrics).where(DeviceMetrics.timestamp < cutoff)
+                )
+                await db.commit()
+                logger.info("Pruned %d old metric entries.", result.rowcount)
+        except Exception as e:
+            logger.error("Background pruning failed: %s", e)
+            await asyncio.sleep(60) # Wait a bit before retry if failed

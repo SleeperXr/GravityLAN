@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3.2] - 2026-05-16
+### Fixed
+- **Agent Deployment**: Resolved "Permission denied" errors during manual agent installation by updating the UI to suggest `sudo bash` and adding root privilege checks to the generated `install-sh` and `uninstall-sh` scripts.
+- **Installer Safety**: The agent installer now provides clear error messages if run without sufficient privileges.
+
 ## [0.2.3.1] - 2026-05-14
 ### Fixed
 - Critical vulnerability in scanner: Added robust input validation and try-except blocks to prevent application crashes when invalid network subnets (e.g., octets > 255) are provided.

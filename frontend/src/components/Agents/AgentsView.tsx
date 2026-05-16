@@ -32,6 +32,7 @@ interface AgentSummary {
   hostname: string;
   ip: string;
   is_online: boolean;
+  has_pending_token?: boolean;
   agent_version: string | null;
   last_seen: string | null;
   cpu_usage: number;
