@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.4] - 2026-05-17
+
+### Security Hardening
+- **SSH Strict Mode**: Added an optional SSH strict host key verification toggle (`GRAVITYLAN_SSH_STRICT_MODE`) to prevent Man-in-the-Middle (MITM) attacks during remote agent deployment.
+- **Symmetric SSH Policy**: Harmonized host key policies across both agent deployment and removal flows, checking/loading container host keys symmetrically.
+- **Docker Mount Guide**: Documented host key seeding and `/root/.ssh/known_hosts` mounting strategies for containerized environments.
+- **Sober Documentation**: Rewrote newly added security and threat modeling documentation to replace absolute claims with precise engineering metrics.
+
+### Changed & Improved
+- **Cleanup & Pruning**: Consolidated historical metric and event data pruning under `ScanScheduler._clean_old_history`, completely removing duplicate routines in `main.py`.
+- **Database Retention**: Added configurable retention via `history_retention_days` and `GRAVITYLAN_HISTORY_RETENTION_DAYS` (default 30 days) with robust validation checks (`1 <= days <= 365`).
+- **Throttled DB Operations**: Implemented a 12-hour pruning drossel to limit repetitive SQLite delete operations when scans are disabled.
+- **Error Diagnostics**: Added detailed error exceptions and operational guidance when SSH connections fail due to unknown or mismatched host keys in Strict Mode.
+
+### Tests
+- **Coverage**: Expanded test suite to cover configuration settings range limits, paramiko host key policies (Strict and Warning), and database pruning logic (all 29 tests passing).
+
 ## [0.2.3.2] - 2026-05-16
 ### Fixed
 - **Agent Deployment**: Resolved "Permission denied" errors during manual agent installation by updating the UI to suggest `sudo bash` and adding root privilege checks to the generated `install-sh` and `uninstall-sh` scripts.
