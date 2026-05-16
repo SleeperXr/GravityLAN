@@ -60,8 +60,8 @@ EXPOSE 8000
 USER gravitylan
 
 # Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:${GRAVITYLAN_PORT:-8000}/api/setup/status || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://127.0.0.1:${GRAVITYLAN_PORT:-8000}/api/health || exit 1
 
 # Start server
 # Using 1 worker for stability and predictability in homelab environments.

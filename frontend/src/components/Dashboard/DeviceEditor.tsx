@@ -1036,7 +1036,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                           const host = window.location.hostname;
                           const port = window.location.port === '5173' ? ':8000' : (window.location.port ? `:${window.location.port}` : '');
                           const protocol = window.location.protocol;
-                          const cmd = `curl -sSL ${protocol}//${host}${port}/api/agent/download/install-sh/${currentDevice.id} | bash`;
+                          const cmd = `curl -sSL ${protocol}//${host}${port}/api/agent/download/install-sh/${currentDevice.id} | sudo bash`;
                           
                           if (navigator.clipboard && window.isSecureContext) {
                             navigator.clipboard.writeText(cmd);
@@ -1055,7 +1055,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                             document.body.removeChild(textArea);
                           }
                         }}>
-                          <code>install-sh/{currentDevice.id} | bash</code>
+                          <code>install-sh/{currentDevice.id} | sudo bash</code>
                         </div>
                       </div>
 
@@ -1080,7 +1080,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                           const host = window.location.hostname;
                           const port = window.location.port === '5173' ? ':8000' : (window.location.port ? `:${window.location.port}` : '');
                           const protocol = window.location.protocol;
-                          const cmd = `curl -sSL ${protocol}//${host}${port}/api/agent/download/uninstall-sh/${currentDevice.id} | bash`;
+                          const cmd = `curl -sSL ${protocol}//${host}${port}/api/agent/download/uninstall-sh/${currentDevice.id} | sudo bash`;
                           
                           if (navigator.clipboard && window.isSecureContext) {
                             navigator.clipboard.writeText(cmd);
@@ -1099,7 +1099,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                             document.body.removeChild(textArea);
                           }
                         }}>
-                          <code>uninstall-sh/{currentDevice.id} | bash</code>
+                          <code>uninstall-sh/{currentDevice.id} | sudo bash</code>
                         </div>
                       </div>
                     </div>

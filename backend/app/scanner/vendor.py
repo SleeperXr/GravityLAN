@@ -7,12 +7,17 @@ import json
 import logging
 import os
 import threading
+import time
 import urllib.request
 import urllib.error
 from typing import Dict, Optional
 
 # Standard Logger setup
 logger = logging.getLogger(__name__)
+
+# -- Global State for Rate Limiting ------------------------------------------
+_last_429_time = 0.0
+_COOLDOWN_SECONDS = 300  # 5 minutes
 
 # -- Configuration -----------------------------------------------------------
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -142,6 +147,12 @@ def _api_lookup(mac: str) -> str:
     Returns:
         The vendor name if found, else an empty string.
     """
+    global _last_429_time
+    
+    # Check cooldown
+    if time.time() - _last_429_time < _COOLDOWN_SECONDS:
+        return ""
+
     try:
         # Use only the first 6 hex chars (3 bytes) for the API
         mac_query = mac.replace(":", "").replace("-", "")[:6]
@@ -159,9 +170,13 @@ def _api_lookup(mac: str) -> str:
                 if vendor and "errors" not in vendor.lower() and "not found" not in vendor.lower():
                     return vendor
             elif response.status == 429:
-                logger.warning(f"API rate limit hit for vendor lookup ({mac})")
+                _last_429_time = time.time()
+                logger.warning(f"API rate limit hit for vendor lookup. Entering {(_COOLDOWN_SECONDS // 60)}m cooldown.")
     except urllib.error.HTTPError as e:
-        if e.code != 404:  # 404 is "Not Found", which is expected for unknown OUIs
+        if e.code == 429:
+            _last_429_time = time.time()
+            logger.warning(f"API rate limit hit (HTTP {e.code}). Entering {(_COOLDOWN_SECONDS // 60)}m cooldown.")
+        elif e.code != 404:  # 404 is "Not Found", which is expected for unknown OUIs
             logger.debug(f"API vendor lookup HTTP error {e.code} for {mac}")
     except Exception as e:
         # Network issues are common with this API

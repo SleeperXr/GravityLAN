@@ -40,21 +40,24 @@ async def run_arp_only_scan():
                     pass
 
     arp_hosts = get_local_arp_table()
-    synced_count = 0
+    hosts_to_sync = []
+    
     for ip, mac in arp_hosts.items():
         if not mac or mac == "00:00:00:00:00:00":
             continue
             
-        # Check if IP is in one of the allowed subnets
         try:
             ip_obj = ipaddress.IPv4Address(ip)
             if any(ip_obj in net for net in allowed_nets):
-                await sync_host_to_db(ip=ip, mac=mac, is_planner_scan=True)
-                synced_count += 1
+                hosts_to_sync.append({"ip": ip, "mac": mac})
         except (ValueError, OSError):
             pass
+    
+    if hosts_to_sync:
+        from app.scanner.sync import sync_hosts_batch
+        await sync_hosts_batch(hosts_to_sync, is_planner_scan=True)
         
-    return synced_count
+    return len(hosts_to_sync)
 
 async def run_planner_scan(subnets: list[str], progress_callback=None):
     """
@@ -75,12 +78,12 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
     
     total_found = 0
     all_alive_ips = set()
+    from app.scanner.sync import sync_hosts_batch
 
     for subnet in subnets:
         if subnet.startswith("169.254."):
             continue
             
-        # NEW: Find specific DNS server for this subnet
         dns_server = None
         async with async_session() as db:
             res_sub = await db.execute(select(Subnet).where(Subnet.cidr == subnet))
@@ -95,47 +98,29 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
             
         # 1. Fast Discovery (Nmap -sn -PR -PE)
         try:
-            # Convert subnet to list of IPs for the discovery function
             net = ipaddress.ip_network(subnet, strict=False)
             target_ips = [str(ip) for ip in net.hosts()]
         except ValueError as e:
             logger.error(f"Planner: Skipping invalid subnet '{subnet}': {e}")
             continue
             
-        async def _on_host(h):
-            # Immediate sync per host for real-time UI updates
-            await sync_host_to_db(
-                ip=h["ip"],
-                mac=h.get("mac"),
-                hostname=h.get("hostname"),
-                is_planner_scan=True,
-                should_invalidate_cache=False
-            )
-            if progress_callback:
-                await progress_callback("EVENT:RELOAD_DEVICES")
-
-        alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server, host_found_callback=_on_host)
+        # No more immediate per-host callback to DB to prevent locks
+        alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server)
         
         if progress_callback:
             await progress_callback(f"Scanner: Found {len(alive_hosts)} active hosts. Resolving MACs...")
 
-        # 2. MAC Resolution
-        # This fills the ARP cache and returns host details
+        # 2. MAC Resolution & Batch Sync
         resolved_hosts = await resolve_mac_addresses(alive_hosts)
         
-        # 3. Sync to DB
-        for host in resolved_hosts:
-            ip = host["ip"]
-            all_alive_ips.add(ip)
-            await sync_host_to_db(
-                ip=ip,
-                mac=host.get("mac"),
-                hostname=host.get("hostname"),
-                is_planner_scan=True,
-                should_invalidate_cache=False
-            )
-        
-        total_found += len(resolved_hosts)
+        if resolved_hosts:
+            await sync_hosts_batch(resolved_hosts, is_planner_scan=True)
+            for h in resolved_hosts:
+                all_alive_ips.add(h["ip"])
+                total_found += 1
+            
+            if progress_callback:
+                await progress_callback("EVENT:RELOAD_DEVICES")
 
     # 4. Offline Cleanup (Exclusive to Planner)
     # Delete hosts in scanned subnets that were not found

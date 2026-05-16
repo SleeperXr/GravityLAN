@@ -56,6 +56,8 @@ from app.version import VERSION as LATEST_AGENT_VERSION
 # Global caches for real-time dashboard updates
 _latest_metrics: Dict[int, Dict[str, Any]] = {}
 _ws_subscribers: Dict[int, set[WebSocket]] = {}
+_setting_cache: Dict[str, Any] = {}
+_setting_cache_time: datetime = datetime.min.replace(tzinfo=timezone.utc)
 
 # Maximum metrics rows to keep per device (prevents unbounded growth)
 MAX_METRICS_PER_DEVICE = 2880  # ~24h at 30s intervals
@@ -92,7 +94,7 @@ async def receive_report(
     client_ip = request.client.host if request.client else None
 
     async with async_session() as db:
-        # 1. Validate token
+        # 1. Validate token (Read-only phase)
         result = await db.execute(
             select(AgentToken).where(
                 AgentToken.token == token, 
@@ -101,169 +103,107 @@ async def receive_report(
         )
         agent_token = result.scalar_one_or_none()
 
-        # 2. Token Adoption / Device Mapping (Auto-healing after server reset)
-        # This is a security-sensitive area. We only allow adoption if explicitly enabled
-        # and if the payload provides a matching device_id.
-        from app.models.setting import Setting
-        adopt_res = await db.execute(select(Setting).where(Setting.key == "agent.allow_auto_adoption"))
-        allow_adopt_setting = adopt_res.scalar_one_or_none()
-        allow_auto_adopt = allow_adopt_setting.value.lower() == "true" if allow_adopt_setting else False
+        # 2. Settings Cache (Global)
+        global _setting_cache, _setting_cache_time
+        now = datetime.now(timezone.utc)
+        if "allow_auto_adopt" not in _setting_cache or (now - _setting_cache_time).total_seconds() > 300:
+            from app.models.setting import Setting
+            adopt_res = await db.execute(select(Setting).where(Setting.key == "agent.allow_auto_adoption"))
+            allow_adopt_setting = adopt_res.scalar_one_or_none()
+            _setting_cache["allow_auto_adopt"] = allow_adopt_setting.value.lower() == "true" if allow_adopt_setting else False
+            _setting_cache_time = now
+        allow_auto_adopt = _setting_cache["allow_auto_adopt"]
 
-        device = None
-
+        # 3. Handle Token Mismatch / Pending Adoption
         if not agent_token and client_ip:
-            # Look for a device with this IP to flag it for manual adoption
             dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
             device = dev_result.scalar_one_or_none()
-            
-            if device:
-                # Store the rejected token as pending if it matches the payload device_id
-                # This verifies the agent intent before showing it in the UI
-                if device.id == payload.device_id:
-                    logger.warning("Token mismatch for device %d (%s). Storing as pending_token for manual adoption.", 
-                                   device.id, client_ip)
-                    
-                    token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
-                    token_obj = token_res.scalar_one_or_none()
-                    if token_obj:
-                        token_obj.pending_token = token
-                        token_obj.pending_at = datetime.now(timezone.utc)
-                    else:
-                        # Should not happen usually as deploy creates it, but for robustness:
-                        new_token = AgentToken(device_id=device.id, token="TEMP_INVALID_" + token[:8], pending_token=token, pending_at=datetime.now(timezone.utc))
-                        db.add(new_token)
-                    
-                    await db.commit()
-                
-            logger.warning("Rejected report from unknown token for IP %s", client_ip)
-            raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
-
-        # 3. Handle device existence and re-discovery
-        # 3. DB operations inside no_autoflush block to prevent "Query-invoked autoflush" locks
-        with db.no_autoflush:
-            # If we didn't get a device from adoption, fetch it now
-            if device is None:
-                effective_device_id = agent_token.device_id
-                device = await db.get(Device, effective_device_id)
-            
-            if not device and client_ip:
-                # Re-map token if device was deleted but exists under a different ID or in Discovery
-                dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
-                device = dev_result.scalar_one_or_none()
-                
-                if device:
-                    agent_token.device_id = device.id
+            if device and device.id == payload.device_id:
+                logger.warning(f"Token mismatch for device {device.id} ({client_ip}). Storing pending_token.")
+                token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
+                token_obj = token_res.scalar_one_or_none()
+                if token_obj:
+                    token_obj.pending_token = token
+                    token_obj.pending_at = datetime.now(timezone.utc)
                 else:
-                    disc_result = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == client_ip))
-                    disc = disc_result.scalar_one_or_none()
-                    if disc:
-                        from app.scanner.utils import ensure_default_groups
-                        group_map = await ensure_default_groups(db, commit=False)
-                        device = Device(
-                            ip=disc.ip, mac=disc.mac, hostname=disc.hostname,
-                            display_name=disc.hostname.split('.')[0] if disc.hostname else disc.ip,
-                            device_type="server", group_id=group_map.get("Server", list(group_map.values())[0]),
-                            is_online=True
-                        )
-                        db.add(device)
-                        await db.flush()
-                        agent_token.device_id = device.id
+                    new_token = AgentToken(device_id=device.id, token="TEMP_INVALID_" + token[:8], pending_token=token, pending_at=datetime.now(timezone.utc))
+                    db.add(new_token)
+                await db.commit()
+            raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
+        elif not agent_token:
+            raise HTTPException(status_code=401, detail="Invalid token.")
+
+        # 4. Main Persistence Transaction (with Retry)
+        effective_device_id = agent_token.device_id
+        config_to_send = None
+
+        for attempt in range(5):
+            try:
+                # Refresh objects in this transaction
+                db_token = await db.get(AgentToken, agent_token.id)
+                device = await db.get(Device, effective_device_id)
+
+                if not device:
+                    # Fallback mapping if device was deleted/recreated
+                    dev_res = await db.execute(select(Device).where(Device.ip == client_ip))
+                    device = dev_res.scalar_one_or_none()
+                    if device:
+                        db_token.device_id = device.id
+                        effective_device_id = device.id
                     else:
-                        raise HTTPException(status_code=404, detail="Device mapping failed")
+                        raise HTTPException(status_code=404, detail="Device mapping lost")
 
-            effective_device_id = device.id
-
-            # 4. Update Metadata (Throttled for 'last_seen', but immediate for 'agent_version')
-            now = datetime.now(timezone.utc)
-            
-            # Update last_seen only if older than 60s to save DB writes
-            last_seen = ensure_utc(agent_token.last_seen)
-            if not last_seen or (now - last_seen).total_seconds() > 60:
-                agent_token.last_seen = now
-                device.is_online = True
-                device.last_seen = now
-
-            # ALWAYS update version if it changed
-            if agent_token.agent_version != payload.agent_version:
-                logger.info("Agent version changed for device %d: %s -> %s", 
-                            effective_device_id, agent_token.agent_version, payload.agent_version)
-                agent_token.agent_version = payload.agent_version
-            
-            # Ensure device is marked as having an agent
-            if not device.has_agent:
+                # Update metadata (throttled)
+                now = datetime.now(timezone.utc)
+                last_seen = ensure_utc(db_token.last_seen)
+                if not last_seen or (now - last_seen).total_seconds() > 60:
+                    db_token.last_seen = now
+                    device.is_online = True
+                    device.last_seen = now
+                
+                if db_token.agent_version != payload.agent_version:
+                    db_token.agent_version = payload.agent_version
                 device.has_agent = True
-            
-            metrics = DeviceMetrics(
-                device_id=effective_device_id,
-                cpu_percent=payload.cpu_percent,
-                ram_used_mb=payload.ram.used_mb,
-                ram_total_mb=payload.ram.total_mb,
-                ram_percent=payload.ram.percent,
-                disk_json=json.dumps([d.model_dump() for d in payload.disk]) if payload.disk else None,
-                temperature=payload.temperature,
-                net_json=json.dumps(payload.network) if payload.network else None,
-            )
-            db.add(metrics)
 
-            # 7. Commit with robust SQLite retry logic (handles locked and stale data)
-            config_to_send = None
-            for attempt in range(5):
-                try:
-                    # 7.1 Prune old metrics (Inside retry loop to handle locks)
-                    import random
-                    if random.random() < 0.1:
-                        # Optimization: Use a simpler subquery that SQLite likes better
-                        await db.execute(
-                            delete(DeviceMetrics).where(
-                                DeviceMetrics.device_id == effective_device_id,
-                                DeviceMetrics.id.in_(
-                                    select(DeviceMetrics.id)
-                                    .where(DeviceMetrics.id.in_(
-                                        select(DeviceMetrics.id)
-                                        .where(DeviceMetrics.device_id == effective_device_id)
-                                        .order_by(desc(DeviceMetrics.timestamp))
-                                        .offset(MAX_METRICS_PER_DEVICE)
-                                    ))
-                                )
-                            )
-                        )
+                # Add Metrics
+                metrics = DeviceMetrics(
+                    device_id=effective_device_id,
+                    cpu_percent=payload.cpu_percent,
+                    ram_used_mb=payload.ram.used_mb,
+                    ram_total_mb=payload.ram.total_mb,
+                    ram_percent=payload.ram.percent,
+                    disk_json=json.dumps([d.model_dump() for d in payload.disk]) if payload.disk else None,
+                    temperature=payload.temperature,
+                    net_json=json.dumps(payload.network) if payload.network else None,
+                )
+                db.add(metrics)
 
-                    # 7.2 Push configuration back to agent
-                    config_result = await db.execute(
-                        select(AgentConfig).where(AgentConfig.device_id == effective_device_id)
-                    )
-                    agent_config = config_result.scalar_one_or_none()
-                    if not agent_config:
-                        agent_config = AgentConfig(device_id=effective_device_id)
-                        db.add(agent_config)
-                        await db.flush()
+                # Fetch Config
+                config_res = await db.execute(select(AgentConfig).where(AgentConfig.device_id == effective_device_id))
+                agent_config = config_res.scalar_one_or_none()
+                if not agent_config:
+                    agent_config = AgentConfig(device_id=effective_device_id)
+                    db.add(agent_config)
+                    await db.flush()
 
-                    # Capture config data
-                    config_to_send = {
-                        "version": agent_config.version,
-                        "interval": agent_config.interval,
-                        "disk_paths": agent_config.disk_paths,
-                        "enable_temp": agent_config.enable_temp
-                    }
+                config_to_send = {
+                    "version": agent_config.version,
+                    "interval": agent_config.interval,
+                    "disk_paths": agent_config.disk_paths,
+                    "enable_temp": agent_config.enable_temp
+                }
 
-                    await db.commit()
-                    break
-                except StaleDataError:
-                    await db.rollback()
-                    # Re-fetch state for next attempt
-                    logger.warning("Agent report: StaleDataError, retrying...")
-                    if attempt == 4: return AgentReportResponse(status="success", message="Report stale", config={}, config_version=0, commands=[])
+                await db.commit()
+                break
+
+            except (StaleDataError, OperationalError) as e:
+                await db.rollback()
+                if attempt < 4:
+                    wait = (attempt + 1) * 0.3
+                    await asyncio.sleep(wait)
                     continue
-                except OperationalError as e:
-                    await db.rollback()
-                    error_msg = str(e).lower()
-                    if ("locked" in error_msg or "busy" in error_msg) and attempt < 4:
-                        wait_time = (attempt + 1) * 0.5
-                        logger.debug(f"DB locked during report, retrying in {wait_time}s... ({attempt+1}/5)")
-                        await asyncio.sleep(wait_time)
-                        continue
-                    logger.error(f"DB locked permanently during agent report: {e}")
-                    raise
+                logger.error(f"Agent report persistence failed after 5 attempts: {e}")
+                raise
 
         # 8. Broadcast to WebSocket subscribers
         snapshot = {
@@ -700,6 +640,13 @@ INSTALL_DIR="/opt/gravitylan-agent"
 SERVER_URL="{server_url}"
 DEVICE_ID="{device_id}"
 
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Error: This script must be run as root to install the agent."
+  echo "Please run the command with sudo bash:"
+  echo "curl -sSL $SERVER_URL/api/agent/download/install-sh/$DEVICE_ID | sudo bash"
+  exit 1
+fi
+
 echo "1. Cleaning up old versions..."
 systemctl stop gravitylan-agent.service 2>/dev/null || true
 pkill -9 -f gravitylan-agent.py 2>/dev/null || true
@@ -923,6 +870,12 @@ async def download_uninstall_script(device_id: int, db: AsyncSession = Depends(g
 echo "--- GravityLAN Agent Uninstaller ---"
 
 INSTALL_DIR="/opt/gravitylan-agent"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Error: This script must be run as root to uninstall the agent."
+  echo "Please run the command with sudo bash (e.g. curl -sSL ... | sudo bash)"
+  exit 1
+fi
 
 echo "1. Stopping and disabling service..."
 systemctl stop gravitylan-agent.service 2>/dev/null || true

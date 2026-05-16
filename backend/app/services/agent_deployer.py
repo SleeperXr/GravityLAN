@@ -12,6 +12,9 @@ import logging
 import uuid
 from pathlib import Path
 
+import paramiko
+import shlex
+
 logger = logging.getLogger(__name__)
 
 def get_agent_script_path() -> Path:
@@ -59,7 +62,6 @@ def _load_ssh_key(ssh_key: str):
     Supports RSA, Ed25519, ECDSA, and DSS. Detects PuTTY keys to provide better errors.
     """
     import io
-    import paramiko
     
     # Check for PuTTY keys which paramiko doesn't support
     if "PuTTY-User-Key-File" in ssh_key:
@@ -122,10 +124,6 @@ async def deploy_agent(
     # Defensive protocol check
     if server_url and not server_url.startswith(("http://", "https://")):
         server_url = f"http://{server_url}"
-    try:
-        import paramiko
-    except ImportError:
-        return False, "paramiko is not installed. Please run 'pip install paramiko'.", ""
 
     token = uuid.uuid4().hex
     client = paramiko.SSHClient()
@@ -209,60 +207,92 @@ async def deploy_agent(
         
         # Securely pass password via stdin if needed, instead of shell echo injection
         needs_sudo_pass = has_sudo and ssh_user != "root" and ssh_password
-        sudo_cmd = "sudo -S " if needs_sudo_pass else ("sudo " if has_sudo and ssh_user != "root" else "")
         
-        # --- Cleanup stale processes and legacy services first ---
+        def run_cmd(cmd_list: list[str], use_sudo: bool = True):
+            """Helper to run a list of commands as a single batched operation via a temp script."""
+            if not cmd_list: return
+            
+            # Combine into a single script body
+            # Remove any existing sudo prefixes from individual commands to avoid nesting
+            clean_cmds = [cmd.replace("sudo -S ", "").replace("sudo ", "") for cmd in cmd_list]
+            script_content = "set -e\n" + "\n".join(clean_cmds)
+            
+            # Use a unique temp file for this operation
+            tmp_script = f"/tmp/gravitylan_task_{uuid.uuid4().hex[:8]}.sh"
+            
+            try:
+                # 1. Upload the script content using cat (works without SFTP)
+                # We use a heredoc here, but it's okay because cat doesn't need stdin for a password
+                _exec(client, command=f"cat > {tmp_script} << 'GRAVITYLAN_TASK_EOF'\n{script_content}\nGRAVITYLAN_TASK_EOF")
+                _exec(client, command=f"chmod +x {tmp_script}")
+                
+                # 2. Execute the script
+                if use_sudo and needs_sudo_pass:
+                    # Now sudo -S can read the password from stdin, 
+                    # while bash reads the script from the file! No conflict.
+                    full_cmd = f"sudo -S bash {tmp_script}"
+                    return _exec(client, command=full_cmd, sudo_pass=ssh_password, timeout=30)
+                elif use_sudo and has_sudo and ssh_user != "root":
+                    full_cmd = f"sudo bash {tmp_script}"
+                    return _exec(client, command=full_cmd, timeout=30)
+                else:
+                    return _exec(client, command=f"bash {tmp_script}", timeout=30)
+            finally:
+                # 3. Cleanup the temp script
+                try:
+                    _exec(client, command=f"rm -f {tmp_script}")
+                except Exception:
+                    pass
+        
+        # --- Cleanup stale processes and legacy services first (BATCHED) ---
         cleanup_msg = ""
         try:
-            # 1. Stop legacy systemd services if they exist
+            # Construct a single multi-line script for cleanup
+            cleanup_script = []
+            
+            # 1. systemd services
             if has_systemd:
                 legacy_services = ["homelan-agent.service", "agent.service", "gravitylan-agent.service"]
                 for svc in legacy_services:
-                    _, stdout, _ = client.exec_command(f"systemctl is-active {svc}")
-                    if stdout.channel.recv_exit_status() == 0:
-                        logger.info("Stopping service %s on %s...", svc, host_ip)
-                        client.exec_command(f"{sudo_cmd}systemctl stop {svc} || true")
-                        client.exec_command(f"{sudo_cmd}systemctl disable {svc} || true")
-                        client.exec_command(f"{sudo_cmd}rm -f /etc/systemd/system/{svc} || true")
+                    cleanup_script.append(f"if systemctl is-active {svc} --quiet; then echo 'Stopping {svc}'; systemctl stop {svc} && systemctl disable {svc} && rm -f /etc/systemd/system/{svc}; fi")
             
-            # 2. Stop legacy Synology scripts
+            # 2. Synology legacy scripts
             if has_syno_rc:
                 legacy_rc = ["/usr/local/etc/rc.d/S99homelan-agent.sh", "/usr/local/etc/rc.d/S99gravitylan-agent.sh"]
                 for rc in legacy_rc:
-                    _, stdout, _ = client.exec_command(f"test -f {rc}")
-                    if stdout.channel.recv_exit_status() == 0:
-                        logger.info("Stopping legacy Synology script %s...", rc)
-                        client.exec_command(f"{sudo_cmd}{rc} stop || true")
-                        client.exec_command(f"{sudo_cmd}rm -f {rc} || true")
+                    cleanup_script.append(f"if [ -f {rc} ]; then echo 'Stopping Synology script {rc}'; {rc} stop && rm -f {rc}; fi")
 
-            # 3. Kill any processes matching legacy names - aggressive kill
-            _, stdout, _ = client.exec_command("pgrep -f 'agent.py|homelan-agent.py|gravitylan-agent.py'")
-            old_pids = stdout.read().decode().strip().split()
-            if old_pids:
-                logger.info("Cleaning up %d stale processes on %s...", len(old_pids), host_ip)
-                client.exec_command(f"{sudo_cmd}pkill -9 -f 'agent.py|homelan-agent.py|gravitylan-agent.py' || true")
-                cleanup_msg = f" ({len(old_pids)} Prozesse gestoppt)"
+            # 3. Kill processes
+            cleanup_script.append("pkill -9 -f 'agent.py|homelan-agent.py|gravitylan-agent.py' || true")
             
-            # 4. Remove legacy and current directories for a clean slate
+            # 4. Remove directories
             legacy_dirs = ["/opt/homelan", "/usr/local/homelan", "/opt/gravitylan", "/opt/gravitylan-agent", "/root/gravitylan-agent"]
             for ldir in legacy_dirs:
-                client.exec_command(f"{sudo_cmd}rm -rf {ldir} || true")
+                cleanup_script.append(f"rm -rf {ldir} || true")
+                
+            # Execute combined cleanup script
+            if cleanup_script:
+                logger.info("Running cleanup sequence on %s...", host_ip)
+                run_cmd(cleanup_script)
 
         except Exception as e:
-            logger.warning("Cleanup of legacy components failed: %s", e)
+            logger.warning("Cleanup of legacy components partially failed (often expected if components don't exist): %s", e)
 
         # --- Create directory with fallback ---
         try:
-            # Try specified base_dir first
-            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}mkdir -p {base_dir}")
-            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}chmod 755 {base_dir}")
-            # Test if writable
-            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}touch {base_dir}/.test_write && {sudo_cmd}rm {base_dir}/.test_write")
+            # Combine mkdir, chmod and write test into one call
+            setup_cmds = [
+                f"mkdir -p {base_dir}",
+                f"chmod 755 {base_dir}",
+                f"touch {base_dir}/.test_write",
+                f"rm {base_dir}/.test_write"
+            ]
+            run_cmd(setup_cmds)
         except Exception as e:
             # Fallback to home directory
             logger.info("Restricted %s (%s). Falling back to home directory...", base_dir, e)
-            _exec(client, sudo_pass=ssh_password, command="mkdir -p ~/gravitylan-agent")
-            base_dir = _exec(client, sudo_pass=ssh_password, command="cd ~/gravitylan-agent && pwd")
+            run_cmd(["mkdir -p ~/gravitylan-agent", "chmod 755 ~/gravitylan-agent"], use_sudo=False)
+            base_dir = _exec(client, command="cd ~/gravitylan-agent && pwd")
         
         remote_agent_path = f"{base_dir}/gravitylan-agent.py"
         remote_config_path = f"{base_dir}/agent.conf"
@@ -274,11 +304,10 @@ async def deploy_agent(
 
         agent_content = AGENT_SCRIPT_PATH.read_text()
 
-        # Use staging in /tmp first
+        # Use staging in /tmp first (BATCHED mv + chmod)
         tmp_agent = f"/tmp/gravitylan_agent_{device_id}.py"
-        _exec(client, sudo_pass=ssh_password, command=f"cat > {tmp_agent} << 'GRAVITYLAN_EOF'\n{agent_content}\nGRAVITYLAN_EOF")
-        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}mv {tmp_agent} {remote_agent_path}")
-        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}chmod +x {remote_agent_path}")
+        _exec(client, command=f"cat > {tmp_agent} << 'GRAVITYLAN_EOF'\n{agent_content}\nGRAVITYLAN_EOF")
+        run_cmd([f"mv {tmp_agent} {remote_agent_path}", f"chmod +x {remote_agent_path}"])
         logger.info("Agent script deployed to %s", remote_agent_path)
 
         # --- Write config ---
@@ -292,29 +321,28 @@ async def deploy_agent(
         }
         config_json = json.dumps(config, indent=2)
 
-        # Write via staging
+        # Write via staging (BATCHED cp + rm + chmod)
         tmp_config = f"/tmp/gravitylan_config_{device_id}.json"
-        _exec(client, sudo_pass=ssh_password, command=f"cat > {tmp_config} << 'GRAVITYLAN_EOF'\n{config_json}\nGRAVITYLAN_EOF")
-        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {remote_config_path} || true")
-        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}cp {tmp_config} {remote_config_path}")
-        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {tmp_config} || true")
-        _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}chmod 644 {remote_config_path} || true")
+        _exec(client, command=f"cat > {tmp_config} << 'GRAVITYLAN_EOF'\n{config_json}\nGRAVITYLAN_EOF")
+        run_cmd([f"cp {tmp_config} {remote_config_path}", f"rm -f {tmp_config}", f"chmod 644 {remote_config_path}"])
         logger.info("Agent config deployed to %s", remote_config_path)
 
         if has_systemd:
             tmp_service = f"/tmp/gravitylan_service_{device_id}.service"
             unit = _generate_service_unit(python_path, remote_agent_path, base_dir)
-            _exec(client, sudo_pass=ssh_password, command=f"cat > {tmp_service} << 'GRAVITYLAN_EOF'\n{unit}\nGRAVITYLAN_EOF")
+            _exec(client, command=f"cat > {tmp_service} << 'GRAVITYLAN_EOF'\n{unit}\nGRAVITYLAN_EOF")
             
             try:
-                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {REMOTE_SERVICE_PATH} || true")
-                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}cp {tmp_service} {REMOTE_SERVICE_PATH}")
-                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {tmp_service} || true")
-                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}chmod 644 {REMOTE_SERVICE_PATH} || true")
-
-                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}systemctl daemon-reload || true")
-                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}systemctl enable gravitylan-agent || true")
-                _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}systemctl restart gravitylan-agent || true")
+                service_cmds = [
+                    f"rm -f {REMOTE_SERVICE_PATH} || true",
+                    f"cp {tmp_service} {REMOTE_SERVICE_PATH}",
+                    f"rm -f {tmp_service} || true",
+                    f"chmod 644 {REMOTE_SERVICE_PATH} || true",
+                    "systemctl daemon-reload || true",
+                    "systemctl enable gravitylan-agent || true",
+                    "systemctl restart gravitylan-agent || true"
+                ]
+                run_cmd(service_cmds)
             except Exception as e:
                 logger.warning("Failed to install systemd service (%s). Will fallback to nohup.", e)
                 has_systemd = False
@@ -343,13 +371,15 @@ esac
 exit 0
 """
             tmp_rc = f"/tmp/gravitylan_rc_{device_id}.sh"
-            _exec(client, sudo_pass=ssh_password, command=f"cat > {tmp_rc} << 'GRAVITYLAN_EOF'\n{rc_content}\nGRAVITYLAN_EOF")
-            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {rc_script_path} || true")
-            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}cp {tmp_rc} {rc_script_path}")
-            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}rm -f {tmp_rc} || true")
-            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}chmod +x {rc_script_path} || true")
-            # Start it now
-            _exec(client, sudo_pass=ssh_password, command=f"{sudo_cmd}{rc_script_path} restart || true")
+            _exec(client, command=f"cat > {tmp_rc} << 'GRAVITYLAN_EOF'\n{rc_content}\nGRAVITYLAN_EOF")
+            rc_setup_cmds = [
+                f"rm -f {rc_script_path} || true",
+                f"cp {tmp_rc} {rc_script_path}",
+                f"rm -f {tmp_rc} || true",
+                f"chmod +x {rc_script_path} || true",
+                f"{rc_script_path} restart || true"
+            ]
+            run_cmd(rc_setup_cmds)
             logger.info("Synology rc.d script deployed to %s", rc_script_path)
         
         # --- Final Verification & Last Resort Fallback ---
@@ -425,11 +455,6 @@ async def remove_agent(
     3. Delete /etc/systemd/system/gravitylan-agent.service.
     4. Delete installation directory.
     """
-    try:
-        import paramiko
-    except ImportError:
-        return False, "paramiko is not installed."
-
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.WarningPolicy())
 
@@ -469,8 +494,7 @@ async def remove_agent(
         # Check for sudo
         _, stdout, _ = client.exec_command("which sudo", timeout=5)
         has_sudo = stdout.channel.recv_exit_status() == 0
-        sudo_cmd = "sudo " if has_sudo and ssh_user != "root" else ""
-
+        
         # 1. Scorched earth cleanup
         cleanup_commands = [
             "systemctl stop gravitylan-agent.service homelan-agent.service agent.service || true",
@@ -481,8 +505,13 @@ async def remove_agent(
             "systemctl daemon-reload || true"
         ]
         
-        for cmd in cleanup_commands:
-            client.exec_command(f"{sudo_cmd}{cmd}")
+        if has_sudo and ssh_user != "root":
+            # Combine into a single sudo call
+            full_cmd = f"sudo bash << 'GRAVITYLAN_SUDO_EOF'\nset -e\n{' && '.join(cleanup_commands)}\nGRAVITYLAN_SUDO_EOF"
+            _exec(client, command=full_cmd, sudo_pass=ssh_password)
+        else:
+            for cmd in cleanup_commands:
+                _exec(client, command=cmd)
         
         return True, "Agent has been completely removed and all processes stopped."
 
@@ -493,12 +522,14 @@ async def remove_agent(
         client.close()
 
 
-def _exec(client: "paramiko.SSHClient", command: str, timeout: int = 10, sudo_pass: str = None) -> str:
+def _exec(client: paramiko.SSHClient, command: str, timeout: int = 15, sudo_pass: str = None) -> str:
     """Execute a remote command and return stdout, optionally passing a sudo password to stdin.
-
+    
     Args:
         client: Active paramiko SSH client.
         command: Shell command to execute.
+        timeout: Command timeout in seconds.
+        sudo_pass: Optional password for sudo.
 
     Returns:
         Command stdout as string.
@@ -506,16 +537,33 @@ def _exec(client: "paramiko.SSHClient", command: str, timeout: int = 10, sudo_pa
     Raises:
         RuntimeError: If the command exits with non-zero status.
     """
+    # Increase timeout slightly to account for slow sudo responses
     stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+    
     if sudo_pass and "sudo -S" in command:
+        # Give sudo a moment to present the prompt if it's slow
         stdin.write(f"{sudo_pass}\n")
         stdin.flush()
         
+    # recv_exit_status() can block. We use a more robust check with timeout.
+    import time
+    start_time = time.time()
+    while not stdout.channel.exit_status_ready():
+        if time.time() - start_time > timeout:
+            # Cleanup channel on timeout
+            stdout.channel.close()
+            raise RuntimeError(f"Command timed out after {timeout}s: {command}")
+        time.sleep(0.1)
+        
     exit_code = stdout.channel.recv_exit_status()
-    out = stdout.read().decode().strip()
-    err = stderr.read().decode().strip()
+    out = stdout.read().decode(errors='ignore').strip()
+    err = stderr.read().decode(errors='ignore').strip()
 
     if exit_code != 0:
+        # Ignore common non-critical errors during cleanup
+        if exit_code == 1 and ("not found" in err or "no such" in err.lower()):
+            return out
+            
         logger.warning("Command '%s' failed (exit %d): %s", command, exit_code, err)
         raise RuntimeError(f"Command failed with exit code {exit_code}: {err or out}")
 
