@@ -508,27 +508,153 @@ async def get_agent_status(device_id: int, db: AsyncSession = Depends(get_db)) -
     )
 
 
+def downsample_metrics(metrics: list[DeviceMetrics], range_str: str) -> list[dict]:
+    """Aggregates and downsamples metrics into buckets to optimize transmission and chart performance."""
+    if not metrics:
+        return []
+
+    # Map range to bucket size in seconds
+    bucket_seconds = {
+        "6h": 300,       # 5 minutes
+        "24h": 900,      # 15 minutes
+        "7d": 7200,      # 2 hours
+        "30d": 21600     # 6 hours
+    }.get(range_str, 900)
+
+    buckets = {}
+    for m in metrics:
+        ts = ensure_utc(m.timestamp)
+        if not ts:
+            continue
+        ts_epoch = int(ts.timestamp())
+        bucket_epoch = (ts_epoch // bucket_seconds) * bucket_seconds
+
+        if bucket_epoch not in buckets:
+            buckets[bucket_epoch] = {
+                "cpu_percent": [],
+                "ram_percent": [],
+                "ram_used_mb": [],
+                "ram_total_mb": [],
+                "temperature": [],
+                "disk_json": None,
+                "net_json": None
+            }
+
+        b = buckets[bucket_epoch]
+        b["cpu_percent"].append(m.cpu_percent)
+        b["ram_percent"].append(m.ram_percent)
+        b["ram_used_mb"].append(m.ram_used_mb)
+        b["ram_total_mb"].append(m.ram_total_mb)
+        if m.temperature is not None:
+            b["temperature"].append(m.temperature)
+
+        if m.disk_json:
+            b["disk_json"] = m.disk_json
+        if m.net_json:
+            b["net_json"] = m.net_json
+
+    snapshots = []
+    import json
+    for epoch in sorted(buckets.keys()):
+        b = buckets[epoch]
+
+        avg_cpu = sum(b["cpu_percent"]) / len(b["cpu_percent"]) if b["cpu_percent"] else 0.0
+        avg_ram = sum(b["ram_percent"]) / len(b["ram_percent"]) if b["ram_percent"] else 0.0
+        avg_ram_used = int(sum(b["ram_used_mb"]) / len(b["ram_used_mb"])) if b["ram_used_mb"] else 0
+        avg_ram_total = int(sum(b["ram_total_mb"]) / len(b["ram_total_mb"])) if b["ram_total_mb"] else 0
+
+        avg_temp = None
+        if b["temperature"]:
+            avg_temp = sum(b["temperature"]) / len(b["temperature"])
+
+        disk = json.loads(b["disk_json"]) if b["disk_json"] else []
+        network = json.loads(b["net_json"]) if b["net_json"] else {}
+
+        snapshots.append({
+            "cpu_percent": avg_cpu,
+            "ram": {
+                "used_mb": avg_ram_used,
+                "total_mb": avg_ram_total,
+                "percent": avg_ram
+            },
+            "disk": disk,
+            "temperature": avg_temp,
+            "network": network,
+            "timestamp": datetime.fromtimestamp(epoch, tz=timezone.utc)
+        })
+
+    return snapshots
+
+
 @router.get("/metrics/{device_id}", response_model=MetricsHistoryResponse)
 async def get_metrics_history(
     device_id: int, 
     limit: int = 60, 
+    range: str | None = None,
     db: AsyncSession = Depends(get_db)
 ) -> MetricsHistoryResponse:
-    """Get the recent metrics history for a specific device."""
-    result = await db.execute(
-        select(DeviceMetrics)
-        .where(DeviceMetrics.device_id == device_id)
-        .order_by(desc(DeviceMetrics.timestamp))
-        .limit(limit)
-    )
-    metrics = result.scalars().all()
+    """Get the recent metrics history for a specific device, supporting dynamic ranges and downsampling."""
+    if range is not None:
+        valid_ranges = {"6h", "24h", "7d", "30d"}
+        if range not in valid_ranges:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid range '{range}'. Valid ranges are: 6h, 24h, 7d, 30d."
+            )
+        
+        now = datetime.now(timezone.utc)
+        if range == "6h":
+            cutoff = now - timedelta(hours=6)
+        elif range == "24h":
+            cutoff = now - timedelta(hours=24)
+        elif range == "7d":
+            cutoff = now - timedelta(days=7)
+        else: # 30d
+            cutoff = now - timedelta(days=30)
+            
+        result = await db.execute(
+            select(DeviceMetrics)
+            .where(
+                DeviceMetrics.device_id == device_id,
+                DeviceMetrics.timestamp >= cutoff.replace(tzinfo=None)
+            )
+            .order_by(DeviceMetrics.timestamp.asc())
+        )
+        metrics = result.scalars().all()
+        snapshots = downsample_metrics(list(metrics), range)
+    else:
+        # Legacy fallback logic: latest limit metrics in chronological order
+        result = await db.execute(
+            select(DeviceMetrics)
+            .where(DeviceMetrics.device_id == device_id)
+            .order_by(desc(DeviceMetrics.timestamp))
+            .limit(limit)
+        )
+        metrics = result.scalars().all()
+        snapshots = [m.to_dict() for m in reversed(list(metrics))]
+        
+    from app.models.setting import Setting
+    result_setting = await db.execute(select(Setting).where(Setting.key == "history_retention_days"))
+    setting_record = result_setting.scalar_one_or_none()
     
-    # We return them in chronological order for the frontend
-    snapshots = [m.to_dict() for m in reversed(list(metrics))]
+    try:
+        retention_days = int(setting_record.value) if setting_record and setting_record.value is not None else settings.history_retention_days
+    except (TypeError, ValueError):
+        retention_days = settings.history_retention_days
     
+    available_ranges = ["6h"]
+    if retention_days >= 1:
+        available_ranges.append("24h")
+    if retention_days >= 7:
+        available_ranges.append("7d")
+    if retention_days >= 30:
+        available_ranges.append("30d")
+        
     return MetricsHistoryResponse(
         device_id=device_id,
-        snapshots=snapshots
+        snapshots=snapshots,
+        retention_days=retention_days,
+        available_ranges=available_ranges
     )
 
 

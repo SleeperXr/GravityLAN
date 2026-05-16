@@ -3,7 +3,8 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -82,6 +83,11 @@ class DeviceMetrics(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     device: Mapped["Device"] = relationship()  # noqa: F821
+
+    __table_args__ = (
+        Index("idx_device_metrics_device_timestamp", "device_id", "timestamp"),
+    )
+
 
     def to_dict(self):
         """Convert metrics to a dictionary for API responses (WebSocket snapshot format)."""

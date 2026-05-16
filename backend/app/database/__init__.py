@@ -63,3 +63,9 @@ async def init_db() -> None:
     """Create all database tables if they don't exist."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Ensure the compound index is created on existing installations too
+        from sqlalchemy import text
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_device_metrics_device_timestamp "
+            "ON device_metrics (device_id, timestamp)"
+        ))

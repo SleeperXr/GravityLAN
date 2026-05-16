@@ -94,6 +94,8 @@ class MetricsHistoryResponse(BaseModel):
 
     device_id: int
     snapshots: list[MetricsSnapshot] = []
+    retention_days: int | None = None
+    available_ranges: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------

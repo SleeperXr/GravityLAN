@@ -1,6 +1,28 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [0.2.5] - 2026-05-17
+
+### Added
+- Added retention-aware historical time ranges for agent metrics (`6h`, `24h`, `7d`, `30d`).
+- Added server-side downsampling for longer agent metric history views to keep SQLite-backed installations responsive.
+- Added API metadata for metrics history retention and available time ranges.
+- Added documentation for metrics history downsampling, retention-aware ranges, and SQLite trade-offs.
+- Added regression coverage for metrics history range validation, sparse/offline data handling, retention-aware API behavior, and retention override handling.
+
+### Changed
+- Updated the agent metrics UI to show only time ranges supported by the effective retention configuration.
+- Added automatic frontend fallback to the largest available range when retention settings reduce available history depth.
+- Coupled metrics history range availability to the effective runtime retention value, including database setting overrides.
+- Hardened retention value parsing in both the metrics API and scheduler cleanup paths.
+
+### Performance
+- Added bucketed aggregation for long-range metric queries to reduce payload size and chart rendering cost.
+- Ensured the `DeviceMetrics` compound index (`device_id`, `timestamp`) is created for both new and existing installations during database initialization.
+
+### Fixed
+- Prevented the UI from offering historical ranges that exceed retained metrics data.
+- Removed fragile numeric parsing for retention overrides by replacing string-digit checks with robust integer parsing and fallback behavior.
 
 ## [0.2.4] - 2026-05-17
 
