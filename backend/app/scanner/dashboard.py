@@ -28,15 +28,6 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
     logger.info("Dashboard: Starting hybrid strongest scan (Ping/ARP + Port Health).")
     if progress_callback: await progress_callback("Dashboard: Starting discovery...")
 
-async def run_dashboard_scan(subnets: list[str], progress_callback=None):
-    """
-    Executes a deep scan for the Dashboard.
-    1. Checks health of all existing Dashboard devices.
-    2. Scans subnets for 'relevant' devices (with management ports).
-    """
-    logger.info("Dashboard: Starting hybrid strongest scan (Ping/ARP + Port Health).")
-    if progress_callback: await progress_callback("Dashboard: Starting discovery...")
-
     all_resolved_hosts = []
     from app.scanner.sync import sync_hosts_batch
 

@@ -127,9 +127,12 @@ async def deploy_agent(
 
     token = uuid.uuid4().hex
     client = paramiko.SSHClient()
-    # SECURITY NOTE: WarningPolicy is used to log unknown hosts. 
-    # TODO: Implement RejectPolicy + Manual UI Confirmation.
-    client.set_missing_host_key_policy(paramiko.WarningPolicy())
+    from app.config import settings
+    if settings.ssh_strict_mode:
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    else:
+        client.set_missing_host_key_policy(paramiko.WarningPolicy())
 
     try:
         # --- Connect ---
@@ -456,7 +459,12 @@ async def remove_agent(
     4. Delete installation directory.
     """
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.WarningPolicy())
+    from app.config import settings
+    if settings.ssh_strict_mode:
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    else:
+        client.set_missing_host_key_policy(paramiko.WarningPolicy())
 
     try:
         connect_kwargs: dict = {

@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     app_version: str = VERSION
     debug: bool = False
     secure_cookies: bool = False
+    ssh_strict_mode: bool = False
+    history_retention_days: int = 30
 
     # Paths
     data_dir: Path = Path("/app/data")
