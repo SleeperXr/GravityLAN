@@ -175,21 +175,27 @@ class ScanScheduler:
                 await asyncio.sleep(60)
 
     async def _clean_old_history(self):
-        """Delete history records older than the configured retention period."""
+        """Delete history and metrics records older than the configured retention period."""
         try:
+            from app.config import settings
+            from app.models.agent import DeviceMetrics
+            
             async with async_session() as db:
                 # Get retention period (in days)
                 result = await db.execute(select(Setting).where(Setting.key == "history_retention_days"))
                 setting = result.scalar_one_or_none()
-                days = int(setting.value) if setting and setting.value.isdigit() else 7 # Default 7 days
+                days = int(setting.value) if setting and setting.value.isdigit() else settings.history_retention_days
 
                 if days > 0:
                     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-                    await db.execute(delete(DeviceHistory).where(DeviceHistory.timestamp < cutoff.replace(tzinfo=None)))
+                    cutoff_naive = cutoff.replace(tzinfo=None)
+                    
+                    await db.execute(delete(DeviceHistory).where(DeviceHistory.timestamp < cutoff_naive))
+                    await db.execute(delete(DeviceMetrics).where(DeviceMetrics.timestamp < cutoff_naive))
                     await db.commit()
-                    logger.info(f"Cleaned up history older than {days} days")
+                    logger.info(f"Cleaned up history and metrics older than {days} days")
         except Exception as e:
-            logger.error(f"Failed to clean up old history: {e}")
+            logger.error(f"Failed to clean up old history/metrics: {e}", exc_info=True)
 
 # Global instance
 scheduler = ScanScheduler()

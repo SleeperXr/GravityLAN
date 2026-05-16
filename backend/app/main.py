@@ -399,10 +399,12 @@ if FRONTEND_DIR.exists():
 
 
 async def prune_metrics_loop():
-    """Background task to prune old metrics periodically."""
+    """Background task to prune old metrics periodically based on history retention configuration."""
     from app.models.agent import DeviceMetrics
+    from app.models.setting import Setting
+    from app.config import settings
     from app.database import async_session
-    from sqlalchemy import delete
+    from sqlalchemy import delete, select
     
     while True:
         try:
@@ -411,13 +413,20 @@ async def prune_metrics_loop():
             
             async with async_session() as db:
                 logger.info("Starting background metrics pruning...")
-                # Keep last 24h of metrics
-                cutoff = datetime.now() - timedelta(hours=24)
-                result = await db.execute(
-                    delete(DeviceMetrics).where(DeviceMetrics.timestamp < cutoff)
-                )
-                await db.commit()
-                logger.info("Pruned %d old metric entries.", result.rowcount)
+                # Get retention period (in days)
+                result = await db.execute(select(Setting).where(Setting.key == "history_retention_days"))
+                setting = result.scalar_one_or_none()
+                days = int(setting.value) if setting and setting.value.isdigit() else settings.history_retention_days
+                
+                if days > 0:
+                    cutoff = datetime.now() - timedelta(days=days)
+                    cutoff_naive = cutoff.replace(tzinfo=None)
+                    
+                    res = await db.execute(
+                        delete(DeviceMetrics).where(DeviceMetrics.timestamp < cutoff_naive)
+                    )
+                    await db.commit()
+                    logger.info("Pruned old metric entries older than %d days.", days)
         except asyncio.CancelledError:
             logger.info("Background metrics pruning task cancelled.")
             raise
