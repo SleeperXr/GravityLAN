@@ -22,9 +22,8 @@ WORKDIR /build
 # Create virtual environment to isolate dependencies cleanly
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-
 COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # Stage 3: Clean Python Runtime
 FROM python:3.12-slim AS runtime
