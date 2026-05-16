@@ -133,7 +133,7 @@ async def test_clean_old_history_and_metrics(db):
 
     scheduler_instance = ScanScheduler()
     with patch("app.scanner.scheduler.async_session", TestSessionContext):
-        await scheduler_instance._clean_old_history()
+        await scheduler_instance._clean_old_history(force=True)
 
     # 4. Assertions
     from sqlalchemy import select
@@ -146,3 +146,76 @@ async def test_clean_old_history_and_metrics(db):
     metrics = res_met.scalars().all()
     assert len(metrics) == 1
     assert metrics[0].cpu_percent == 12.0
+
+def test_config_settings_validation():
+    """Verify validation constraints for config settings."""
+    from app.config import Settings
+    from pydantic import ValidationError
+    
+    # Valid configurations
+    s = Settings(history_retention_days=10)
+    assert s.history_retention_days == 10
+    
+    # Invalid history retention (below 1)
+    with pytest.raises(ValidationError):
+        Settings(history_retention_days=0)
+        
+    # Invalid history retention (above 365)
+    with pytest.raises(ValidationError):
+        Settings(history_retention_days=366)
+
+@pytest.mark.asyncio
+async def test_ssh_strict_mode_policies():
+    """Verify that deploy_agent uses the correct SSH host key policy based on settings."""
+    from unittest.mock import patch, MagicMock
+    from app.services.agent_deployer import deploy_agent, remove_agent
+    from app.config import settings
+    import paramiko
+
+    # Mock SSHClient
+    mock_client = MagicMock()
+    with patch("paramiko.SSHClient", return_value=mock_client):
+        # 1. Test deploy_agent with Strict Mode = True
+        with patch.object(settings, "ssh_strict_mode", True):
+            # We mock the connect/exec to raise/return immediately so we don't block
+            mock_client.connect.side_effect = Exception("Stop execution")
+            await deploy_agent(
+                host_ip="192.168.1.100",
+                ssh_user="test",
+                ssh_password="password",
+                server_url="http://localhost:8000",
+                device_id=1,
+            )
+            args, _ = mock_client.set_missing_host_key_policy.call_args
+            assert isinstance(args[0], paramiko.RejectPolicy)
+            mock_client.load_system_host_keys.assert_called_once()
+            
+        mock_client.reset_mock()
+
+        # 2. Test deploy_agent with Strict Mode = False
+        with patch.object(settings, "ssh_strict_mode", False):
+            mock_client.connect.side_effect = Exception("Stop execution")
+            await deploy_agent(
+                host_ip="192.168.1.100",
+                ssh_user="test",
+                ssh_password="password",
+                server_url="http://localhost:8000",
+                device_id=1,
+            )
+            args, _ = mock_client.set_missing_host_key_policy.call_args
+            assert isinstance(args[0], paramiko.WarningPolicy)
+            assert not mock_client.load_system_host_keys.called
+
+        mock_client.reset_mock()
+
+        # 3. Test remove_agent with Strict Mode = True
+        with patch.object(settings, "ssh_strict_mode", True):
+            mock_client.connect.side_effect = Exception("Stop execution")
+            await remove_agent(
+                host_ip="192.168.1.100",
+                ssh_user="test",
+                ssh_password="password",
+            )
+            args, _ = mock_client.set_missing_host_key_policy.call_args
+            assert isinstance(args[0], paramiko.RejectPolicy)
+            mock_client.load_system_host_keys.assert_called_once()

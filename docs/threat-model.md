@@ -14,9 +14,9 @@ This document details the threat modeling, potential attack vectors, security co
 ### Threat B: SSH Man-in-the-Middle (MITM) during Deployment
 *   **Attack Vector**: An attacker performs ARP spoofing or DNS hijacking on the local subnet to intercept the admin's remote deployment connection, capturing the target host's credentials or deploying a malicious system daemon.
 *   **Mitigation**:
-    *   GravityLAN supports an opt-in SSH Strict Mode (`GRAVITYLAN_SSH_STRICT_MODE=True`). Under Strict Mode, the Paramiko client loads system-known hosts and enforces `RejectPolicy` for unknown host keys.
-    *   Deployments use local script delivery via secure SCP rather than heredoc shell piping, ensuring password delivery is completely segregated from the shell execution stdin.
-*   **Trade-off**: When Strict Mode is active, admins must pre-seed host keys in the server's local `known_hosts` file. In dynamic DHCP homelabs, this adds configuration overhead.
+    *   GravityLAN supports an opt-in SSH Strict Mode (`GRAVITYLAN_SSH_STRICT_MODE=True`). Under Strict Mode, the Paramiko client loads system known hosts from `/root/.ssh/known_hosts` (inside Docker container) and enforces `RejectPolicy` for unknown host keys.
+    *   Deployments use local script delivery via secure SCP rather than heredoc shell piping, isolating password delivery from script execution.
+*   **Trade-off**: When Strict Mode is active, admins must seed host keys in the server's `/root/.ssh/known_hosts` file (either via mount or container shell). In dynamic DHCP homelabs, this adds configuration overhead.
 
 ### Threat C: Local Database Exposure
 *   **Attack Vector**: An unauthorized user with direct shell access to the host server reads the SQLite database, extracting agent credentials, master API tokens, or system inventories.
@@ -29,6 +29,6 @@ This document details the threat modeling, potential attack vectors, security co
 
 | Feature | Homelab/Default Mode | Hardened / Strict Mode | Trade-off Impact |
 | :--- | :--- | :--- | :--- |
-| **SSH Key Policy** | `WarningPolicy` (Auto-accept new keys, log mismatch warning) | `RejectPolicy` (Strict matching against loaded `known_hosts`) | WarningPolicy is highly convenient but vulnerable to MITM. Strict mode is immune to MITM but requires manual pre-seeding of keys. |
+| **SSH Key Policy** | `WarningPolicy` (Auto-accept new keys, log mismatch warning) | `RejectPolicy` (Strict matching against loaded `known_hosts`) | WarningPolicy is highly convenient but vulnerable to MITM. Strict mode shields against MITM but requires manual pre-seeding of keys. |
 | **CORS Origins** | Strict Origin Isolation (Production) / Configurable List | Custom whitelist only | Limits public web dashboard access unless explicitly permitted by the administrator. |
 | **SQLite Retention** | Configurable Retention (Default 30 days) | Compact historical retention | Keeps databases small and highly performance-optimized, at the cost of losing historical time-series metric tracking for deep retroactive analysis. |
