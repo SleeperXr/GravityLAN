@@ -607,14 +607,29 @@ function MultiGraph({ series }: { series: { data: any[], color: string, label: s
 }
 
 function AgentDetailView({ deviceId }: { deviceId: number }) {
+  const [selectedRange, setSelectedRange] = useState<string>('24h');
+  const [availableRanges, setAvailableRanges] = useState<string[]>(['6h', '24h', '7d', '30d']);
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchHistory = async () => {
+      setLoading(true);
       try {
-        const res = await api.getAgentMetrics(deviceId, 60);
+        const res = await api.getAgentMetrics(deviceId, undefined, selectedRange);
         setHistory(res.snapshots);
+        if (res.available_ranges) {
+          setAvailableRanges(res.available_ranges);
+          // If the currently selected range is no longer supported by retention settings,
+          // automatically fallback to the maximum supported range.
+          if (!res.available_ranges.includes(selectedRange)) {
+            setSelectedRange(res.available_ranges[res.available_ranges.length - 1]);
+          }
+        }
+        if (res.retention_days !== undefined) {
+          setRetentionDays(res.retention_days);
+        }
       } catch (err) {
         console.error('Failed to fetch history:', err);
       } finally {
@@ -622,7 +637,7 @@ function AgentDetailView({ deviceId }: { deviceId: number }) {
       }
     };
     fetchHistory();
-  }, [deviceId]);
+  }, [deviceId, selectedRange]);
 
   if (loading) {
     return (
@@ -637,6 +652,32 @@ function AgentDetailView({ deviceId }: { deviceId: number }) {
 
   return (
     <div className="p-8 space-y-8">
+      {/* Dynamic Range Selector */}
+      <div className="flex justify-between items-center bg-white/[0.02] border border-white/5 p-4 rounded-xl">
+        <div>
+          <h4 className="font-bold text-white text-xs uppercase tracking-widest">Metrics Timeframe</h4>
+          <p className="text-[10px] text-slate-500 font-medium">
+            Select history depth for hardware telemetry graphs
+            {retentionDays !== null && ` (System retention: ${retentionDays}d)`}
+          </p>
+        </div>
+        <div className="flex bg-slate-900/60 p-1 border border-white/5 rounded-lg gap-1">
+          {availableRanges.map((r) => (
+            <button
+              key={r}
+              onClick={() => setSelectedRange(r)}
+              className={`px-3 py-1 rounded text-[10px] font-bold transition-all uppercase ${
+                selectedRange === r
+                  ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="glass-panel p-6 bg-white/[0.03] border-white/5">
           <div className="flex items-center gap-3 mb-6">
@@ -645,7 +686,7 @@ function AgentDetailView({ deviceId }: { deviceId: number }) {
             </div>
             <div>
               <h4 className="font-bold text-white uppercase text-xs tracking-widest">CPU History</h4>
-              <p className="text-[10px] text-slate-500">Utilization Trend (60 Snapshots)</p>
+              <p className="text-[10px] text-slate-500">Utilization Trend ({selectedRange})</p>
             </div>
           </div>
           <div className="h-48 w-full">
@@ -665,7 +706,7 @@ function AgentDetailView({ deviceId }: { deviceId: number }) {
             </div>
             <div>
               <h4 className="font-bold text-white uppercase text-xs tracking-widest">Memory History</h4>
-              <p className="text-[10px] text-slate-500">RAM Usage Pattern</p>
+              <p className="text-[10px] text-slate-500">RAM Usage Pattern ({selectedRange})</p>
             </div>
           </div>
           <div className="h-48 w-full">
@@ -685,7 +726,7 @@ function AgentDetailView({ deviceId }: { deviceId: number }) {
             </div>
             <div>
               <h4 className="font-bold text-white uppercase text-xs tracking-widest">Thermal Stats</h4>
-              <p className="text-[10px] text-slate-500">Core Temperature (°C)</p>
+              <p className="text-[10px] text-slate-500">Core Temperature ({selectedRange})</p>
             </div>
           </div>
           <div className="h-48 w-full">
@@ -804,11 +845,25 @@ function DetailGraph({ data, color, label, suffix, max = 100 }: {
   const PAD_B = 24; // space for X-axis labels
   const chartW = W - PAD_L - PAD_R;
   const chartH = H - PAD_T - PAD_B;
-
   const vals = data.map(d => d.value);
   const dataMin = Math.min(...vals);
   const dataMax = Math.max(...vals);
   const dataAvg = vals.reduce((a, b) => a + b, 0) / vals.length;
+
+  const firstTime = new Date(data[0].timestamp).getTime();
+  const lastTime = new Date(data[data.length - 1].timestamp).getTime();
+  const diffHours = (lastTime - firstTime) / (1000 * 60 * 60);
+
+  const formatLabel = (tsStr: string) => {
+    const d = new Date(tsStr);
+    if (diffHours <= 26) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    if (diffHours <= 180) {
+      return d.toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+    return d.toLocaleDateString([], { month: 'short', day: '2-digit' });
+  };
 
   // Map value → Y pixel (with 5% top/bottom padding so the line never hits the edge)
   const MARGIN = 0.05;
@@ -927,10 +982,10 @@ function DetailGraph({ data, color, label, suffix, max = 100 }: {
 
           {/* X-axis labels: first and last timestamp */}
           <text x={PAD_L} y={H - 6} fontSize={9} fill="rgba(100,116,139,0.7)" fontFamily="monospace">
-            {new Date(data[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {formatLabel(data[0].timestamp)}
           </text>
           <text x={PAD_L + chartW} y={H - 6} fontSize={9} fill="rgba(100,116,139,0.7)" fontFamily="monospace" textAnchor="end">
-            {new Date(data[data.length - 1].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {formatLabel(data[data.length - 1].timestamp)}
           </text>
 
           {/* Hover crosshair */}
@@ -962,7 +1017,9 @@ function DetailGraph({ data, color, label, suffix, max = 100 }: {
           >
             <div className="bg-slate-900/95 border border-white/20 backdrop-blur-sm px-3 py-2 rounded-lg shadow-2xl">
               <div className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">
-                {new Date(hov.timestamp).toLocaleTimeString()}
+                {diffHours <= 26 
+                  ? new Date(hov.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) 
+                  : new Date(hov.timestamp).toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
               </div>
               <div className="text-base font-black" style={{ color }}>
                 {hov.value.toFixed(1)}{suffix}

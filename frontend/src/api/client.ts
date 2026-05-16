@@ -114,8 +114,19 @@ export const api = {
     request<{ status: string; message: string }>(`/api/agent/uninstall/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
   getAgentStatus: (deviceId: number) =>
     request<{ device_id: number; is_installed: boolean; is_active: boolean; agent_version?: string; last_seen?: string }>(`/api/agent/status/${deviceId}`),
-  getAgentMetrics: (deviceId: number, limit?: number) =>
-    request<{ device_id: number; snapshots: import('../types').AgentSnapshot[] }>(`/api/agent/metrics/${deviceId}?limit=${limit || 60}`),
+  getAgentMetrics: (deviceId: number, limit?: number, range?: string) => {
+    const query = [];
+    if (limit !== undefined) query.push(`limit=${limit}`);
+    if (range !== undefined) query.push(`range=${range}`);
+    const qs = query.length > 0 ? `?${query.join('&')}` : '';
+    return request<{ 
+      device_id: number; 
+      snapshots: import('../types').AgentSnapshot[];
+      retention_days?: number;
+      available_ranges?: string[];
+    }>(`/api/agent/metrics/${deviceId}${qs}`);
+  },
+
   getAgentConfig: (deviceId: number) =>
     request<{ interval: number; disk_paths: string[]; enable_temp: boolean }>(`/api/agent/config/${deviceId}`),
   updateAgentConfig: (deviceId: number, data: { interval?: number; disk_paths?: string[]; enable_temp?: boolean }) =>

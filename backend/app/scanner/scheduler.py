@@ -192,7 +192,11 @@ class ScanScheduler:
                 # Get retention period (in days)
                 result = await db.execute(select(Setting).where(Setting.key == "history_retention_days"))
                 setting = result.scalar_one_or_none()
-                days = int(setting.value) if setting and setting.value.isdigit() else settings.history_retention_days
+                
+                try:
+                    days = int(setting.value) if setting and setting.value is not None else settings.history_retention_days
+                except (TypeError, ValueError):
+                    days = settings.history_retention_days
 
                 # Guardrail: only clean up if days is a positive value within 1-365
                 if 1 <= days <= 365:
