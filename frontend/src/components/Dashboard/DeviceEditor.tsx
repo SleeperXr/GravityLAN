@@ -228,6 +228,28 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
     }
 
     try {
+      // Find and save any modified services to prevent race conditions from onBlur / typing
+      const originalServices = device.services || [];
+      const currentServices = currentDevice.services || [];
+      const servicePromises = currentServices.map(async (svc) => {
+        const originalSvc = originalServices.find(s => s.id === svc.id);
+        if (originalSvc) {
+          if (
+            originalSvc.port !== svc.port || 
+            originalSvc.name !== svc.name || 
+            originalSvc.protocol !== svc.protocol
+          ) {
+            return api.updateService(svc.id, {
+              port: svc.port,
+              name: svc.name,
+              protocol: svc.protocol
+            });
+          }
+        }
+      });
+      
+      await Promise.all(servicePromises.filter(Boolean));
+
       await api.updateDevice(currentDevice.id, updateData);
       onSave();
       onClose();
