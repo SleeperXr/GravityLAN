@@ -75,12 +75,14 @@ def test_settings_validation_limits():
     assert Settings(host="my-homelab-server.local").host == "my-homelab-server.local"
 
 @pytest.mark.asyncio
-async def test_prune_metrics_loop_cancellation():
-    """Verify prune_metrics_loop propagates CancelledError without swallowing."""
-    from app.main import prune_metrics_loop
+async def test_scheduler_loop_cancellation():
+    """Verify scheduler background loops propagate CancelledError without swallowing."""
+    from app.scanner.scheduler import ScanScheduler
     import asyncio
     
-    task = asyncio.create_task(prune_metrics_loop())
+    scheduler = ScanScheduler()
+    scheduler._running = True
+    task = asyncio.create_task(scheduler._quick_loop())
     await asyncio.sleep(0.01)  # allow task to enter sleep
     task.cancel()
     

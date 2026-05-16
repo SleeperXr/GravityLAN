@@ -23,6 +23,7 @@ class ScanScheduler:
         self._arp_task = None
         self._docker_task = None
         self._running = False
+        self._last_cleanup_time = None
 
     async def start(self):
         if self._running:
@@ -174,9 +175,16 @@ class ScanScheduler:
                 logger.error(f"Error in docker sync loop: {e}")
                 await asyncio.sleep(60)
 
-    async def _clean_old_history(self):
+    async def _clean_old_history(self, force: bool = False):
         """Delete history and metrics records older than the configured retention period."""
         try:
+            # Enforce 12-hour rate limit on cleanup unless forced (e.g. in tests)
+            now = datetime.now(timezone.utc)
+            if not force and self._last_cleanup_time and (now - self._last_cleanup_time).total_seconds() < 43200:
+                return
+
+            self._last_cleanup_time = now
+
             from app.config import settings
             from app.models.agent import DeviceMetrics
             
@@ -186,7 +194,8 @@ class ScanScheduler:
                 setting = result.scalar_one_or_none()
                 days = int(setting.value) if setting and setting.value.isdigit() else settings.history_retention_days
 
-                if days > 0:
+                # Guardrail: only clean up if days is a positive value within 1-365
+                if 1 <= days <= 365:
                     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
                     cutoff_naive = cutoff.replace(tzinfo=None)
                     

@@ -145,9 +145,6 @@ async def lifespan(app: FastAPI):
 
     # Start Background Tasks (registered on app.state to allow clean shutdown)
     app.state.background_tasks = set()
-    prune_task = asyncio.create_task(prune_metrics_loop())
-    app.state.background_tasks.add(prune_task)
-    prune_task.add_done_callback(app.state.background_tasks.discard)
 
     # --- Schema Migration ---
     from app.database.migrations import run_migrations
@@ -397,39 +394,3 @@ if FRONTEND_DIR.exists():
 
     logger.info("Serving SPA frontend from: %s", FRONTEND_DIR)
 
-
-async def prune_metrics_loop():
-    """Background task to prune old metrics periodically based on history retention configuration."""
-    from app.models.agent import DeviceMetrics
-    from app.models.setting import Setting
-    from app.config import settings
-    from app.database import async_session
-    from sqlalchemy import delete, select
-    
-    while True:
-        try:
-            # Wait 1 hour between runs
-            await asyncio.sleep(3600)
-            
-            async with async_session() as db:
-                logger.info("Starting background metrics pruning...")
-                # Get retention period (in days)
-                result = await db.execute(select(Setting).where(Setting.key == "history_retention_days"))
-                setting = result.scalar_one_or_none()
-                days = int(setting.value) if setting and setting.value.isdigit() else settings.history_retention_days
-                
-                if days > 0:
-                    cutoff = datetime.now() - timedelta(days=days)
-                    cutoff_naive = cutoff.replace(tzinfo=None)
-                    
-                    res = await db.execute(
-                        delete(DeviceMetrics).where(DeviceMetrics.timestamp < cutoff_naive)
-                    )
-                    await db.commit()
-                    logger.info("Pruned old metric entries older than %d days.", days)
-        except asyncio.CancelledError:
-            logger.info("Background metrics pruning task cancelled.")
-            raise
-        except Exception as e:
-            logger.error("Background pruning failed: %s", e)
-            await asyncio.sleep(60) # Wait a bit before retry if failed

@@ -429,10 +429,21 @@ exit 0
             
         return False, error_msg, token
 
+    except paramiko.ssh_exception.BadHostKeyException as exc:
+        msg = f"SSH Host Key verification failed: The host key presented by {host_ip} does not match the stored key in known_hosts."
+        if settings.ssh_strict_mode:
+            msg += " (SSH Strict Mode is active. Update the known_hosts file inside the server container to match the host key.)"
+        return False, msg, ""
+    except paramiko.ssh_exception.SSHException as exc:
+        err_str = str(exc)
+        if "not found in known_hosts" in err_str:
+            msg = f"SSH connection rejected: Unknown host key for {host_ip}."
+            if settings.ssh_strict_mode:
+                msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
+            return False, msg, ""
+        return False, f"SSH connection error: {exc}", ""
     except paramiko.AuthenticationException:
         return False, "SSH authentication failed. Please check your credentials.", ""
-    except paramiko.SSHException as exc:
-        return False, f"SSH connection error: {exc}", ""
     except Exception as exc:
         logger.exception("Agent deployment failed")
         return False, f"Deployment failed: {exc}", ""
@@ -523,6 +534,21 @@ async def remove_agent(
         
         return True, "Agent has been completely removed and all processes stopped."
 
+    except paramiko.ssh_exception.BadHostKeyException as exc:
+        msg = f"SSH Host Key verification failed: The host key presented by {host_ip} does not match the stored key in known_hosts."
+        if settings.ssh_strict_mode:
+            msg += " (SSH Strict Mode is active. Update the known_hosts file inside the server container to match the host key.)"
+        return False, msg
+    except paramiko.ssh_exception.SSHException as exc:
+        err_str = str(exc)
+        if "not found in known_hosts" in err_str:
+            msg = f"SSH connection rejected: Unknown host key for {host_ip}."
+            if settings.ssh_strict_mode:
+                msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
+            return False, msg
+        return False, f"SSH connection error: {exc}"
+    except paramiko.AuthenticationException:
+        return False, "SSH authentication failed. Please check your credentials."
     except Exception as exc:
         logger.exception("Agent removal failed")
         return False, f"Deinstallation failed: {exc}"

@@ -69,6 +69,13 @@ class Settings(BaseSettings):
             raise ValueError("scan_interval_minutes must be greater than or equal to 0")
         return v
 
+    @field_validator("history_retention_days")
+    @classmethod
+    def validate_history_retention(cls, v: int) -> int:
+        if not (1 <= v <= 365):
+            raise ValueError("history_retention_days must be between 1 and 365")
+        return v
+
     @field_validator("port")
     @classmethod
     def validate_port(cls, v: int) -> int:
