@@ -45,6 +45,11 @@ This document details the concrete plan to harden and optimize GravityLAN across
     *   Load the retention period from `settings.history_retention_days` as the fallback if no database override exists.
     *   Delete old entries from BOTH `DeviceHistory` and `DeviceMetrics`.
     *   Ensure configuration, active settings, and device state records remain untouched.
+3.  **Trigger-Pfad & Ausführungssicherheit**:
+    *   Der Pruning-Prozess wird deterministisch als erster Schritt beim Eintritt in die Hauptschleife `ScanScheduler._loop()` getriggert.
+    *   *Sicherheit bei inaktiven Scans*: Auch wenn automatische Scans deaktiviert sind (`scan_interval = 0`), wacht die Schleife alle 60 Sekunden auf, führt den Pruning-Check durch und legt sich wieder schlafen.
+    *   *Effizienz (SQLite-Schutz)*: Ein 12-Stunden-Sicherheitsfilter (`self._last_cleanup_time`) verhindert unnötige minütliche Datenbankzugriffe. Beim Applikationsstart (z. B. nach Container-Neustarts) oder bei manueller Forcierung wird die Bereinigung sofort und ohne Verzögerung ausgeführt.
+    *   *Sicherheit der Daten*: Es werden ausschließlich historische Aufzeichnungen (`DeviceHistory` und `DeviceMetrics`) bereinigt. Aktuelle Gerätezustände (`Device`), Subnetz-Konfigurationen und Credentials sind zu keinem Zeitpunkt betroffen.
 
 ---
 
