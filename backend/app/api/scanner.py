@@ -315,35 +315,16 @@ async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
 @router.websocket("/ws")
 async def scan_websocket(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time scan progress updates with authentication."""
-    # Try query param first, then cookie
-    token = websocket.query_params.get("token") or websocket.cookies.get("gravitylan_token")
+    from app.api.auth import authenticate_websocket
     
-    async with async_session() as db:
-        # 0. Check if setup is complete (allow bypass during setup)
-        from app.models.setting import Setting
-        setup_res = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
-        setup_setting = setup_res.scalar_one_or_none()
-        is_setup_done = setup_setting is not None and setup_setting.value == "true"
+    auth_info = await authenticate_websocket(websocket, endpoint_type="scanner")
+    if not auth_info.get("authenticated"):
+        return
 
-        if not is_setup_done:
-            # Allow anonymous WebSocket connection during the setup phase
-            is_authorized = True
-        else:
-            if not token:
-                await websocket.close(code=4001, reason="Missing authentication token")
-                return
-
-            # 1. Check for Master Token
-            from app.services.auth_service import secure_compare
-            master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-            master_setting = master_res.scalar_one_or_none()
-            master_token = master_setting.value if master_setting else None
-            
-            is_authorized = (master_token is not None and secure_compare(token, master_token))
-        
-        if not is_authorized:
-            await websocket.close(code=4003, reason="Unauthorized")
-            return
+    # Scanner info is strictly restricted to browser-sessions, legacy master cookie, or setup bypass
+    if auth_info.get("auth_type") not in ("session", "master_legacy", "setup_bypass"):
+        await websocket.close(code=4003, reason="Unauthorized access level")
+        return
 
     await websocket.accept()
     await state.add_client(websocket)

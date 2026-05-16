@@ -3,9 +3,8 @@ services:
     image: sleeperxr/gravitylan:latest
     container_name: GravityLAN
     restart: unless-stopped
-    # ports:
-    #   - "8000:8000"
-    network_mode: host
+    ports:
+      - "8000:8000"
     cap_add:
       - NET_RAW
       - NET_ADMIN
@@ -14,4 +13,3 @@ services:
     environment:
       - TZ=UTC
       - GRAVITYLAN_DEBUG=false
-      - GRAVITYLAN_PORT=8000 # Since we are in host mode, we use this port directly

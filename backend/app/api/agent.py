@@ -808,40 +808,16 @@ async def uninstall_agent_endpoint(
 @router.websocket("/ws/{device_id}")
 async def agent_websocket(websocket: WebSocket, device_id: int):
     """WebSocket for real-time metric streaming to the dashboard with authentication."""
-    # Try query param first, then cookie
-    token = websocket.query_params.get("token") or websocket.cookies.get("gravitylan_token")
+    from app.api.auth import authenticate_websocket
     
-    if not token:
-        await websocket.close(code=4001, reason="Missing authentication token")
+    auth_info = await authenticate_websocket(websocket, endpoint_type="agent", device_id=device_id)
+    if not auth_info.get("authenticated"):
         return
 
-    async with async_session() as db:
-        # 1. Check for Master Token
-        from app.models.setting import Setting
-        master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-        master_setting = master_res.scalar_one_or_none()
-        master_token = master_setting.value if master_setting else None
-        
-        from app.services.auth_service import secure_compare
-        is_authorized = (master_token is not None and secure_compare(token, master_token))
-        
-        if not is_authorized:
-            # 2. Fallback to Agent-specific token
-            result = await db.execute(
-                select(AgentToken).where(
-                    AgentToken.device_id == device_id,
-                    AgentToken.is_active.is_(True)
-                )
-            )
-            agent_token_obj = result.scalar_one_or_none()
-            
-            if agent_token_obj and secure_compare(token, agent_token_obj.token):
-                is_authorized = True
-        
-        if not is_authorized:
-            logger.warning("WebSocket auth failed for device %d", device_id)
-            await websocket.close(code=4003, reason="Unauthorized")
-            return
+    # Agent websocket is restricted to browser-sessions, legacy master cookie, or agent-specific tokens
+    if auth_info.get("auth_type") not in ("session", "master_legacy", "agent"):
+        await websocket.close(code=4003, reason="Unauthorized access level")
+        return
 
     await websocket.accept()
     if device_id not in _ws_subscribers:

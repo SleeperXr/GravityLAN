@@ -1,8 +1,25 @@
 import asyncio
+import contextvars
 import logging
 from collections import deque
 from typing import Set
 from fastapi import WebSocket
+
+# Async-safe context variable for tracing requests
+correlation_id_ctx = contextvars.ContextVar("correlation_id", default="-")
+
+class CorrelationIdFilter(logging.Filter):
+    """Filter that injects correlation_id into log records to prevent KeyError in formatters."""
+    def filter(self, record):
+        record.correlation_id = correlation_id_ctx.get()
+        return True
+
+class SafeCorrelationIdFormatter(logging.Formatter):
+    """Formatter that safely defaults correlation_id to '-' if missing to prevent KeyError during propagation."""
+    def format(self, record):
+        if not hasattr(record, "correlation_id"):
+            record.correlation_id = "-"
+        return super().format(record)
 
 class LogStreamerHandler(logging.Handler):
     """
@@ -13,7 +30,7 @@ class LogStreamerHandler(logging.Handler):
         super().__init__()
         self.buffer = deque(maxlen=capacity)
         self.subscribers: Set[WebSocket] = set()
-        self.loop = asyncio.get_event_loop()
+        self._loop = None
 
     def emit(self, record: logging.LogRecord):
         try:
@@ -23,9 +40,16 @@ class LogStreamerHandler(logging.Handler):
             # Broadcast to active WebSocket subscribers
             # We use call_soon_threadsafe because emit might be called from a thread
             if self.subscribers:
-                self.loop.call_soon_threadsafe(
-                    lambda: asyncio.create_task(self._broadcast(msg))
-                )
+                if self._loop is None:
+                    try:
+                        self._loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        pass
+                
+                if self._loop:
+                    self._loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(self._broadcast(msg))
+                    )
         except Exception:
             self.handleError(record)
 
@@ -45,6 +69,11 @@ class LogStreamerHandler(logging.Handler):
 
     def subscribe(self, websocket: WebSocket):
         self.subscribers.add(websocket)
+        if self._loop is None:
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
 
     def unsubscribe(self, websocket: WebSocket):
         if websocket in self.subscribers:
@@ -55,7 +84,8 @@ class LogStreamerHandler(logging.Handler):
 
 # Global instance
 log_handler = LogStreamerHandler()
-log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+log_handler.addFilter(CorrelationIdFilter())
+log_handler.setFormatter(SafeCorrelationIdFormatter("%(asctime)s [%(levelname)s] [%(correlation_id)s] %(name)s: %(message)s"))
 
 def apply_log_level(lvl_str: str):
     """
