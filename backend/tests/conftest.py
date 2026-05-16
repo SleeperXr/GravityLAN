@@ -65,3 +65,19 @@ def event_loop():
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
+
+@pytest_asyncio.fixture
+async def admin_token(db):
+    """Create master token and set setup complete in DB for testing."""
+    from app.models.setting import Setting
+    token = "test-admin-token-12345"
+    db.add(Setting(key="setup.complete", value="true"))
+    db.add(Setting(key="api.master_token", value=token))
+    await db.commit()
+    return token
+
+@pytest_asyncio.fixture
+async def db_session(db):
+    """Alias for db fixture to support legacy tests."""
+    return db
+

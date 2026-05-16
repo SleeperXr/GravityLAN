@@ -36,6 +36,30 @@ from app.exceptions import GravityLANError
 
 logger = logging.getLogger(__name__)
 
+# Custom filter for Uvicorn access logs to ignore polling noise (only on success)
+class PollingFilter(logging.Filter):
+    def filter(self, record):
+        status_code = None
+        if hasattr(record, "args") and isinstance(record.args, tuple) and len(record.args) >= 5:
+            try:
+                status_code = int(record.args[4])
+            except (ValueError, TypeError):
+                pass
+
+        # Never filter out warnings or errors (status >= 400)
+        if status_code is not None and status_code >= 400:
+            return True
+
+        msg = record.getMessage()
+        # Fallback parse check from formatted message
+        if status_code is None:
+            if any(err_status in msg for err_status in [" 400", " 401", " 403", " 404", " 422", " 500", " 502", " 503", " 504"]):
+                return True
+
+        if any(x in msg for x in ["/api/agent/status/", "/api/devices", "/api/groups", "/api/scanner/status", "/api/health", "/api/scanner/ws"]):
+            return False
+        return True
+
 # Detection: Use /app/static in Docker, fallback to local dist for development
 FRONTEND_DIR = Path("/app/static") if Path("/app/static").exists() else Path(__file__).parent.parent / "frontend" / "dist"
 
@@ -44,10 +68,16 @@ FRONTEND_DIR = Path("/app/static") if Path("/app/static").exists() else Path(__f
 async def lifespan(app: FastAPI):
     """Application lifespan manager — runs on startup and shutdown."""
     # Startup
-    logging.basicConfig(
-        level=logging.DEBUG if settings.debug else logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    from app.services.log_streamer import CorrelationIdFilter, SafeCorrelationIdFormatter
+    logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO)
+    
+    # Configure safe formatter on all root handlers to prevent KeyError during child logger propagation
+    formatter = SafeCorrelationIdFormatter("%(asctime)s [%(levelname)s] [%(correlation_id)s] %(name)s: %(message)s")
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(formatter)
+        
+    logging.getLogger().addFilter(CorrelationIdFilter())
+
     # Aggressively suppress noisy logs
     logging.getLogger("aiosqlite").setLevel(logging.WARNING)
     logging.getLogger("paramiko").setLevel(logging.WARNING)
@@ -56,13 +86,7 @@ async def lifespan(app: FastAPI):
     if not settings.debug:
         logging.getLogger("paramiko.transport").setLevel(logging.WARNING)
 
-    # Custom filter for Uvicorn access logs to ignore polling noise
-    class PollingFilter(logging.Filter):
-        def filter(self, record):
-            msg = record.getMessage()
-            if any(x in msg for x in ["/api/agent/status/", "/api/devices", "/api/groups", "/api/scanner/status", "/api/health", "/api/scanner/ws"]):
-                return False
-            return True
+
 
     logging.getLogger("uvicorn.access").addFilter(PollingFilter())
     logging.getLogger("uvicorn.access").setLevel(logging.INFO)
@@ -94,16 +118,19 @@ async def lifespan(app: FastAPI):
         test_file = settings.data_dir / ".write_test"
         test_file.touch()
         test_file.unlink()
-    except PermissionError:
+    except PermissionError as e:
         logger.critical(
             "PERMISSION ERROR: Cannot write to data directory '%s'. "
             "If using Docker, ensure the volume has correct permissions (e.g., chown -R 1000:1000 ./data on the host).",
             settings.data_dir
         )
-        sys.exit(1)
+        raise RuntimeError(
+            f"PERMISSION ERROR: Cannot write to data directory '{settings.data_dir}'. "
+            "If using Docker, ensure the volume has correct permissions (e.g., chown -R 1000:1000 ./data on the host)."
+        ) from e
     except Exception as e:
         logger.critical("Failed to initialize data directory '%s': %s", settings.data_dir, e)
-        sys.exit(1)
+        raise RuntimeError(f"Failed to initialize data directory '{settings.data_dir}': {e}") from e
 
     # Ensure models are imported for metadata creation
     from app.models.device import Device, DeviceGroup, Service, DeviceHistory, DiscoveredHost
@@ -116,8 +143,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized: %s", settings.effective_database_url)
 
-    # Start Background Tasks
-    asyncio.create_task(prune_metrics_loop())
+    # Start Background Tasks (registered on app.state to allow clean shutdown)
+    app.state.background_tasks = set()
+    prune_task = asyncio.create_task(prune_metrics_loop())
+    app.state.background_tasks.add(prune_task)
+    prune_task.add_done_callback(app.state.background_tasks.discard)
 
     # --- Schema Migration ---
     from app.database.migrations import run_migrations
@@ -163,6 +193,15 @@ async def lifespan(app: FastAPI):
     # Shutdown
     from app.scanner.scheduler import scheduler
     await scheduler.stop()
+
+    # Cancel all registered background tasks
+    if hasattr(app.state, "background_tasks"):
+        tasks = list(app.state.background_tasks)
+        logger.info("Canceling %d background tasks...", len(tasks))
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
     logger.info("GravityLAN shutting down.")
 
 
@@ -174,31 +213,71 @@ app = FastAPI(
 
 # --- Exception Handlers ---
 
+from app.services.log_streamer import correlation_id_ctx
+import uuid
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    # Retrieve X-Correlation-ID from request headers, or generate a new UUID
+    cid = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())
+    token = correlation_id_ctx.set(cid)
+    try:
+        response = await call_next(request)
+        response.headers["X-Correlation-ID"] = cid
+        return response
+    finally:
+        correlation_id_ctx.reset(token)
+
 @app.exception_handler(GravityLANError)
 async def gravitylan_exception_handler(request: Request, exc: GravityLANError):
     """Handle custom application exceptions."""
+    cid = correlation_id_ctx.get()
     logger.error("App Error on %s: %s", request.url.path, exc.message)
     return JSONResponse(
         status_code=exc.status_code,
-        content={"status": "error", "message": exc.message, "type": exc.__class__.__name__},
+        headers={"X-Correlation-ID": cid},
+        content={
+            "status": "error",
+            "message": exc.message,
+            "type": exc.__class__.__name__,
+            "correlation_id": cid
+        },
     )
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle validation errors (422) with detailed logging."""
+    """
+    Handle validation errors (422) with detailed logging.
+    
+    NOTE: This uses a deliberate different response schema ("status": "validation_error" 
+    and "detail": list of errors) compared to standard application errors 
+    ("status": "error" and "message": string) to provide compatible structure for FastAPI clients.
+    """
+    cid = correlation_id_ctx.get()
     logger.error("Validation error on %s: %s", request.url.path, exc.errors())
     return JSONResponse(
         status_code=422,
-        content={"status": "validation_error", "detail": exc.errors()},
+        headers={"X-Correlation-ID": cid},
+        content={
+            "status": "validation_error",
+            "detail": exc.errors(),
+            "correlation_id": cid
+        },
     )
 
 @app.exception_handler(Exception)
 async def universal_exception_handler(request: Request, exc: Exception):
     """Catch-all for any unhandled exceptions to prevent leaking server details."""
+    cid = correlation_id_ctx.get()
     logger.critical("Unhandled exception on %s: %s", request.url.path, str(exc), exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"status": "error", "message": "An unexpected internal server error occurred."},
+        headers={"X-Correlation-ID": cid},
+        content={
+            "status": "error",
+            "message": "An unexpected internal server error occurred.",
+            "correlation_id": cid
+        },
     )
 
 # CORS for development (Vite dev server)
@@ -250,27 +329,15 @@ async def health_check() -> dict:
 @app.websocket("/api/logs/ws")
 async def logs_websocket(websocket: WebSocket):
     """WebSocket endpoint for real-time backend log streaming with authentication."""
-    # Try query param first, then cookie
-    token = websocket.query_params.get("token") or websocket.cookies.get("gravitylan_token")
-    
-    if not token:
-        await websocket.close(code=4001, reason="Missing authentication token")
+    from app.api.auth import authenticate_websocket
+    auth_info = await authenticate_websocket(websocket, endpoint_type="logs")
+    if not auth_info.get("authenticated"):
         return
 
-    from app.database import async_session
-    from app.models.setting import Setting
-    from sqlalchemy import select
-    
-    from app.services.auth_service import secure_compare
-    
-    async with async_session() as db:
-        res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-        master_setting = res_token.scalar_one_or_none()
-        master_token = master_setting.value if master_setting else None
-        
-        if not master_token or not secure_compare(token, master_token):
-            await websocket.close(code=4003, reason="Unauthorized")
-            return
+    # Logs are strictly restricted to browser-sessions, master tokens, or legacy master tokens
+    if auth_info.get("auth_type") not in ("session", "master", "master_legacy"):
+        await websocket.close(code=4003, reason="Unauthorized access level")
+        return
 
     from app.services.log_streamer import log_handler
     await websocket.accept()
@@ -351,6 +418,9 @@ async def prune_metrics_loop():
                 )
                 await db.commit()
                 logger.info("Pruned %d old metric entries.", result.rowcount)
+        except asyncio.CancelledError:
+            logger.info("Background metrics pruning task cancelled.")
+            raise
         except Exception as e:
             logger.error("Background pruning failed: %s", e)
             await asyncio.sleep(60) # Wait a bit before retry if failed

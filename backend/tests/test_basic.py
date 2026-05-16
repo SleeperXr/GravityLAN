@@ -18,8 +18,12 @@ async def test_setup_status_unauthorized(client):
     assert "is_setup_complete" in data
 
 @pytest.mark.asyncio
-async def test_unauthorized_access(client):
+async def test_unauthorized_access(client, db):
     """Verify that protected endpoints return 401 without auth."""
+    from app.models.setting import Setting
+    db.add(Setting(key="setup.complete", value="true"))
+    db.add(Setting(key="api.master_token", value="some-token"))
+    await db.commit()
     # Settings should be protected by get_current_admin
     response = await client.get("/api/settings")
     assert response.status_code == 401

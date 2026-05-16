@@ -8,10 +8,28 @@ RUN npm ci --no-audit
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: Python Runtime with FastAPI
+# Stage 2: Python Build Environment (Builder)
+FROM python:3.12-slim AS python-build
+
+# Install compiler tools for compiling raw extensions if wheels are missing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Create virtual environment to isolate dependencies cleanly
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Stage 3: Clean Python Runtime
 FROM python:3.12-slim AS runtime
 
-# Install system dependencies for network scanning
+# Install runtime-only system dependencies (absolutely no gcc/python3-dev)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap \
     libcap2-bin \
@@ -19,19 +37,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     avahi-utils \
     iproute2 \
     dnsutils \
-    gcc \
-    python3-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Grant nmap capabilities so we don't need to run as root
 RUN setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/nmap
 
-WORKDIR /app
+# Copy virtual environment from python-build stage
+COPY --from=python-build /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
-COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+WORKDIR /app
 
 # Copy version file, agent script and backend code
 COPY VERSION .
