@@ -313,6 +313,8 @@ export const DeviceCard = memo(({ device, isEditMode, onEdit, onRefresh, isSelec
     prev.device.is_online === next.device.is_online &&
     prev.device.display_name === next.device.display_name &&
     prev.device.ip === next.device.ip &&
+    prev.device.old_ip === next.device.old_ip &&
+    prev.device.has_pending_token === next.device.has_pending_token &&
     JSON.stringify(prev.device.services) === JSON.stringify(next.device.services) &&
     prev.device.agent_info?.agent_version === next.device.agent_info?.agent_version
   );

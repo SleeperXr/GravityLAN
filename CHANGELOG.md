@@ -1,6 +1,7 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
 ## [0.2.5] - 2026-05-17
 
 ### Added
@@ -16,6 +17,11 @@ All notable changes to this project will be documented in this file.
 - Coupled metrics history range availability to the effective runtime retention value, including database setting overrides.
 - Hardened retention value parsing in both the metrics API and scheduler cleanup paths.
 
+### Security Hardening
+- **Native Python Healthcheck**: Completely eliminated the `curl` runtime package dependency in the Docker image by replacing it with a secure, lightweight, and native Python-based `HEALTHCHECK` using the standard library `urllib.request`. This significantly reduces the container's attack surface and cuts down on curl/libcurl-related vulnerabilities.
+- **Vulnerability Minimization**: Retained only essential runtime binaries and system libraries in the final slim stage (`nmap`, `libcap`, `iputils-ping`, `avahi-utils`, `iproute2`, `dnsutils`) to maintain full local network resolution and scan performance while minimizing CVE count.
+- **Docker Hardening Docs**: Created detailed documentation (`docs/container-hardening.md`) detailing multi-stage builds, capability delegation (`setcap`), and trade-offs of runtime updates vs build reproducibility.
+
 ### Performance
 - Added bucketed aggregation for long-range metric queries to reduce payload size and chart rendering cost.
 - Ensured the `DeviceMetrics` compound index (`device_id`, `timestamp`) is created for both new and existing installations during database initialization.
@@ -23,6 +29,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Prevented the UI from offering historical ranges that exceed retained metrics data.
 - Removed fragile numeric parsing for retention overrides by replacing string-digit checks with robust integer parsing and fallback behavior.
+- **UI Device Card Memo Caching**: Resolved a custom `React.memo` comparator bug in `DeviceCard.tsx` that prevented the card from re-rendering when the `old_ip` or `has_pending_token` props updated, fixing the issue where the IP change badge `✕` and agent adoption alerts stayed frozen on click.
 
 ## [0.2.4] - 2026-05-17
 
