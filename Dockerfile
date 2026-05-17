@@ -29,6 +29,7 @@ RUN /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 FROM python:3.12-slim AS runtime
 
 # Install runtime-only system dependencies (absolutely no gcc/python3-dev)
+# Note: curl package is removed to reduce attack surface and is replaced by a native Python healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap \
     libcap2-bin \
@@ -36,7 +37,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     avahi-utils \
     iproute2 \
     dnsutils \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Grant nmap capabilities so we don't need to run as root
@@ -74,9 +74,9 @@ EXPOSE 8000
 # Run as non-root user
 USER gravitylan
 
-# Healthcheck
+# Healthcheck (utilizes Python natively to completely avoid curl dependency and CVEs)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD curl -f http://127.0.0.1:${GRAVITYLAN_PORT:-8000}/api/health || exit 1
+  CMD python3 -c "import urllib.request, os, sys; port = os.environ.get('GRAVITYLAN_PORT', '8000'); urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=5)"
 
 # Start server
 # Using 1 worker for stability and predictability in homelab environments.

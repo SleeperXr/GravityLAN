@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 
 from app.scanner.utils import ensure_utc
+from app.version import normalize_version
 
 from fastapi import (
     APIRouter,
@@ -72,6 +73,7 @@ async def receive_report(
     payload: AgentReportPayload,
     request: Request,
     authorization: str = Header(...),
+    db: AsyncSession = Depends(get_db),
 ) -> AgentReportResponse:
     """
     Receive a metrics report from a deployed agent.
@@ -83,6 +85,7 @@ async def receive_report(
         payload: The metrics data from the agent.
         request: FastAPI request object (used for client IP).
         authorization: Bearer token for authentication.
+        db: Injected database session.
         
     Returns:
         AgentReportResponse with status and optional command config.
@@ -93,35 +96,62 @@ async def receive_report(
     token = authorization.replace("Bearer ", "").strip()
     client_ip = request.client.host if request.client else None
 
-    async with async_session() as db:
-        # 1. Validate token (Read-only phase)
-        result = await db.execute(
-            select(AgentToken).where(
-                AgentToken.token == token, 
-                AgentToken.is_active.is_(True)
-            )
+    # 1. Validate token (Read-only phase)
+    result = await db.execute(
+        select(AgentToken).where(
+            AgentToken.token == token, 
+            AgentToken.is_active.is_(True)
         )
-        agent_token = result.scalar_one_or_none()
+    )
+    agent_token = result.scalar_one_or_none()
 
-        # 2. Settings Cache (Global)
-        global _setting_cache, _setting_cache_time
-        now = datetime.now(timezone.utc)
-        if "allow_auto_adopt" not in _setting_cache or (now - _setting_cache_time).total_seconds() > 300:
-            from app.models.setting import Setting
-            adopt_res = await db.execute(select(Setting).where(Setting.key == "agent.allow_auto_adoption"))
-            allow_adopt_setting = adopt_res.scalar_one_or_none()
-            _setting_cache["allow_auto_adopt"] = allow_adopt_setting.value.lower() == "true" if allow_adopt_setting else False
-            _setting_cache_time = now
-        allow_auto_adopt = _setting_cache["allow_auto_adopt"]
+    # 2. Settings Cache (Global)
+    global _setting_cache, _setting_cache_time
+    now = datetime.now(timezone.utc)
+    if "allow_auto_adopt" not in _setting_cache or (now - _setting_cache_time).total_seconds() > 300:
+        from app.models.setting import Setting
+        adopt_res = await db.execute(select(Setting).where(Setting.key == "agent.allow_auto_adoption"))
+        allow_adopt_setting = adopt_res.scalar_one_or_none()
+        _setting_cache["allow_auto_adopt"] = allow_adopt_setting.value.lower() == "true" if allow_adopt_setting else False
+        _setting_cache_time = now
+    allow_auto_adopt = _setting_cache["allow_auto_adopt"]
 
-        # 3. Handle Token Mismatch / Pending Adoption
-        if not agent_token and client_ip:
-            dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
-            device = dev_result.scalar_one_or_none()
-            if device and device.id == payload.device_id:
-                logger.warning(f"Token mismatch for device {device.id} ({client_ip}). Storing pending_token.")
-                token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
-                token_obj = token_res.scalar_one_or_none()
+    # 3. Handle Token Mismatch / Pending Adoption
+    if not agent_token and client_ip:
+        dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
+        device = dev_result.scalar_one_or_none()
+        if device and device.id == payload.device_id:
+            logger.warning(f"Token mismatch for device {device.id} ({client_ip}). Storing pending_token.")
+            token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
+            token_obj = token_res.scalar_one_or_none()
+            
+            # Check if device is offline or heartbeat is stale (older than 5 minutes)
+            is_device_offline_or_stale = False
+            if not token_obj:
+                is_device_offline_or_stale = True
+            else:
+                if not device.is_online:
+                    is_device_offline_or_stale = True
+                elif not token_obj.last_seen:
+                    is_device_offline_or_stale = True
+                else:
+                    last_seen_aware = ensure_utc(token_obj.last_seen)
+                    if (now - last_seen_aware).total_seconds() > 300:
+                        is_device_offline_or_stale = True
+            
+            if allow_auto_adopt and is_device_offline_or_stale:
+                logger.info(f"Auto-adopting token for device {device.id} ({client_ip}) because device is offline or stale.")
+                if token_obj:
+                    token_obj.token = token
+                    token_obj.pending_token = None
+                    token_obj.pending_at = None
+                    token_obj.is_active = True
+                else:
+                    token_obj = AgentToken(device_id=device.id, token=token, is_active=True)
+                    db.add(token_obj)
+                await db.commit()
+                agent_token = token_obj  # Proceed with normal metric persist!
+            else:
                 if token_obj:
                     token_obj.pending_token = token
                     token_obj.pending_at = datetime.now(timezone.utc)
@@ -129,114 +159,121 @@ async def receive_report(
                     new_token = AgentToken(device_id=device.id, token="TEMP_INVALID_" + token[:8], pending_token=token, pending_at=datetime.now(timezone.utc))
                     db.add(new_token)
                 await db.commit()
-            raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
-        elif not agent_token:
+                raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
+        else:
             raise HTTPException(status_code=401, detail="Invalid token.")
+    elif not agent_token:
+        raise HTTPException(status_code=401, detail="Invalid token.")
 
-        # 4. Main Persistence Transaction (with Retry)
-        effective_device_id = agent_token.device_id
-        config_to_send = None
+    # 4. Main Persistence Transaction (with Retry)
+    effective_device_id = agent_token.device_id
+    config_to_send = None
 
-        for attempt in range(5):
+    for attempt in range(5):
+        try:
+            # Refresh objects in this transaction
+            db_token = await db.get(AgentToken, agent_token.id)
+            device = await db.get(Device, effective_device_id)
+
+            if not device:
+                # Fallback mapping if device was deleted/recreated
+                dev_res = await db.execute(select(Device).where(Device.ip == client_ip))
+                device = dev_res.scalar_one_or_none()
+                if device:
+                    db_token.device_id = device.id
+                    effective_device_id = device.id
+                else:
+                    raise HTTPException(status_code=404, detail="Device mapping lost")
+
+            # Update metadata (throttled)
+            now = datetime.now(timezone.utc)
+            last_seen = ensure_utc(db_token.last_seen)
+            if not last_seen or (now - last_seen).total_seconds() > 60:
+                db_token.last_seen = now
+                device.is_online = True
+                device.last_seen = now
+            
+            if db_token.agent_version != payload.agent_version:
+                db_token.agent_version = payload.agent_version
+            device.has_agent = True
+            
+            # Clear stale pending token flags since we have a successful report with active token
+            if db_token.pending_token is not None:
+                db_token.pending_token = None
+                db_token.pending_at = None
+
+            # Add Metrics
+            metrics = DeviceMetrics(
+                device_id=effective_device_id,
+                cpu_percent=payload.cpu_percent,
+                ram_used_mb=payload.ram.used_mb,
+                ram_total_mb=payload.ram.total_mb,
+                ram_percent=payload.ram.percent,
+                disk_json=json.dumps([d.model_dump() for d in payload.disk]) if payload.disk else None,
+                temperature=payload.temperature,
+                net_json=json.dumps(payload.network) if payload.network else None,
+            )
+            db.add(metrics)
+
+            # Fetch Config
+            config_res = await db.execute(select(AgentConfig).where(AgentConfig.device_id == effective_device_id))
+            agent_config = config_res.scalar_one_or_none()
+            if not agent_config:
+                agent_config = AgentConfig(device_id=effective_device_id)
+                db.add(agent_config)
+                await db.flush()
+
+            config_to_send = {
+                "version": agent_config.version,
+                "interval": agent_config.interval,
+                "disk_paths": agent_config.disk_paths,
+                "enable_temp": agent_config.enable_temp
+            }
+
+            await db.commit()
+            break
+
+        except (StaleDataError, OperationalError) as e:
+            await db.rollback()
+            if attempt < 4:
+                wait = (attempt + 1) * 0.3
+                await asyncio.sleep(wait)
+                continue
+            logger.error(f"Agent report persistence failed after 5 attempts: {e}")
+            raise
+
+    # 8. Broadcast to WebSocket subscribers
+    snapshot = {
+        "device_id": effective_device_id,
+        "cpu_percent": payload.cpu_percent,
+        "ram": payload.ram.model_dump(),
+        "disk": [d.model_dump() for d in payload.disk],
+        "temperature": payload.temperature,
+        "network": payload.network,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    _latest_metrics[effective_device_id] = snapshot
+    
+    if effective_device_id in _ws_subscribers:
+        dead_links = set()
+        for ws in _ws_subscribers[effective_device_id]:
             try:
-                # Refresh objects in this transaction
-                db_token = await db.get(AgentToken, agent_token.id)
-                device = await db.get(Device, effective_device_id)
+                await ws.send_json({"type": "metrics", "data": snapshot})
+            except Exception as e:
+                logger.debug(f"Metrics WebSocket error for device {effective_device_id}: {e}")
+                dead_links.add(ws)
+        _ws_subscribers[effective_device_id] -= dead_links
 
-                if not device:
-                    # Fallback mapping if device was deleted/recreated
-                    dev_res = await db.execute(select(Device).where(Device.ip == client_ip))
-                    device = dev_res.scalar_one_or_none()
-                    if device:
-                        db_token.device_id = device.id
-                        effective_device_id = device.id
-                    else:
-                        raise HTTPException(status_code=404, detail="Device mapping lost")
-
-                # Update metadata (throttled)
-                now = datetime.now(timezone.utc)
-                last_seen = ensure_utc(db_token.last_seen)
-                if not last_seen or (now - last_seen).total_seconds() > 60:
-                    db_token.last_seen = now
-                    device.is_online = True
-                    device.last_seen = now
-                
-                if db_token.agent_version != payload.agent_version:
-                    db_token.agent_version = payload.agent_version
-                device.has_agent = True
-
-                # Add Metrics
-                metrics = DeviceMetrics(
-                    device_id=effective_device_id,
-                    cpu_percent=payload.cpu_percent,
-                    ram_used_mb=payload.ram.used_mb,
-                    ram_total_mb=payload.ram.total_mb,
-                    ram_percent=payload.ram.percent,
-                    disk_json=json.dumps([d.model_dump() for d in payload.disk]) if payload.disk else None,
-                    temperature=payload.temperature,
-                    net_json=json.dumps(payload.network) if payload.network else None,
-                )
-                db.add(metrics)
-
-                # Fetch Config
-                config_res = await db.execute(select(AgentConfig).where(AgentConfig.device_id == effective_device_id))
-                agent_config = config_res.scalar_one_or_none()
-                if not agent_config:
-                    agent_config = AgentConfig(device_id=effective_device_id)
-                    db.add(agent_config)
-                    await db.flush()
-
-                config_to_send = {
-                    "version": agent_config.version,
-                    "interval": agent_config.interval,
-                    "disk_paths": agent_config.disk_paths,
-                    "enable_temp": agent_config.enable_temp
-                }
-
-                await db.commit()
-                break
-
-            except (StaleDataError, OperationalError) as e:
-                await db.rollback()
-                if attempt < 4:
-                    wait = (attempt + 1) * 0.3
-                    await asyncio.sleep(wait)
-                    continue
-                logger.error(f"Agent report persistence failed after 5 attempts: {e}")
-                raise
-
-        # 8. Broadcast to WebSocket subscribers
-        snapshot = {
-            "device_id": effective_device_id,
-            "cpu_percent": payload.cpu_percent,
-            "ram": payload.ram.model_dump(),
-            "disk": [d.model_dump() for d in payload.disk],
-            "temperature": payload.temperature,
-            "network": payload.network,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        _latest_metrics[effective_device_id] = snapshot
-        
-        if effective_device_id in _ws_subscribers:
-            dead_links = set()
-            for ws in _ws_subscribers[effective_device_id]:
-                try:
-                    await ws.send_json({"type": "metrics", "data": snapshot})
-                except Exception as e:
-                    logger.debug(f"Metrics WebSocket error for device {effective_device_id}: {e}")
-                    dead_links.add(ws)
-            _ws_subscribers[effective_device_id] -= dead_links
-
-        return AgentReportResponse(
-            status="success",
-            config_version=config_to_send["version"],
-            config={
-                "interval": config_to_send["interval"],
-                "disk_paths": config_to_send["disk_paths"],
-                "enable_temp": config_to_send["enable_temp"]
-            },
-            commands=[]
-        )
+    return AgentReportResponse(
+        status="success",
+        config_version=config_to_send["version"],
+        config={
+            "interval": config_to_send["interval"],
+            "disk_paths": config_to_send["disk_paths"],
+            "enable_temp": config_to_send["enable_temp"]
+        },
+        commands=[]
+    )
 
 
 @router.get("/config/{device_id}", response_model=AgentConfigResponse)
@@ -502,8 +539,8 @@ async def get_agent_status(device_id: int, db: AsyncSession = Depends(get_db)) -
         is_active=token.is_active and is_healthy,
         is_healthy=is_healthy,
         last_seen=token.last_seen,
-        agent_version=token.agent_version,
-        latest_version=LATEST_AGENT_VERSION,
+        agent_version=normalize_version(token.agent_version),
+        latest_version=normalize_version(LATEST_AGENT_VERSION),
         latest_metrics=last_metrics.to_dict() if last_metrics else None
     )
 
@@ -940,8 +977,8 @@ async def agent_websocket(websocket: WebSocket, device_id: int):
     if not auth_info.get("authenticated"):
         return
 
-    # Agent websocket is restricted to browser-sessions, legacy master cookie, or agent-specific tokens
-    if auth_info.get("auth_type") not in ("session", "master_legacy", "agent"):
+    # Agent websocket is restricted to browser-sessions, legacy master cookie, master token query params, or agent-specific tokens
+    if auth_info.get("auth_type") not in ("session", "master_legacy", "agent", "master"):
         await websocket.close(code=4003, reason="Unauthorized access level")
         return
 

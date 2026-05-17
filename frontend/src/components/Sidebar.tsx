@@ -1,7 +1,6 @@
 import { LayoutDashboard, Settings, Network, X, Grid, Server } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import logo from '../assets/logo.svg';
 
 export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: boolean, onClose?: () => void }) {
   const { t } = useTranslation();
@@ -9,11 +8,8 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
   return (
     <aside className={`app-sidebar ${isOpen ? 'mobile-open' : ''}`}>
       <div className="logo">
-        <div className="logo__icon">
-          <img src={logo} alt="Logo" style={{ width: '28px', height: '28px' }} />
-        </div>
         <span className="logo__text">{t('app.title')}</span>
-        <p className="text-xs text-slate-500 font-mono mt-1">v0.2.3.1</p>
+        <p className="text-xs text-slate-500 font-mono mt-1">v0.2.5</p>
         
         {/* Mobile Close Button */}
         <button 
@@ -81,7 +77,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
       </nav>
 
       <div style={{ marginTop: 'auto', padding: 'var(--space-md)', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-        {t('app.title')} v{(window as any).APP_VERSION || '0.2.3.1'}
+        {t('app.title')} v{(window as any).APP_VERSION || '0.2.5'}
       </div>
     </aside>
   );

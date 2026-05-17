@@ -55,6 +55,7 @@ async def list_devices(
     # Pre-populate has_agent and agent_info flags based on AgentToken existence
     # Also map parent names
     from app.api.agent import LATEST_AGENT_VERSION, _latest_metrics
+    from app.version import normalize_version
     device_map = {d.id: (d.display_name or d.ip) for d in devices}
     
     for device in devices:
@@ -65,8 +66,8 @@ async def list_devices(
             device.has_agent = True
             device.has_pending_token = token.pending_token is not None
             device.agent_info = {
-                "agent_version": token.agent_version,
-                "latest_version": LATEST_AGENT_VERSION,
+                "agent_version": normalize_version(token.agent_version),
+                "latest_version": normalize_version(LATEST_AGENT_VERSION),
                 "latest_metrics": _latest_metrics.get(device.id)
             }
         else:

@@ -201,12 +201,12 @@ async def test_websocket_authentication_scenarios(db):
     assert auth_query_master_logs["auth_type"] == "master"
     assert auth_query_master_logs["identity"] == master_token
 
-    # Scanner route rejects query master token
+    # Scanner route allows query master token
     ws_query_master_scanner = MockWebSocket(query_params={"token": master_token})
     auth_query_master_scanner = await authenticate_websocket(ws_query_master_scanner, endpoint_type="scanner", db=db)
-    assert auth_query_master_scanner["authenticated"] is False
-    assert ws_query_master_scanner.close_called is True
-    assert ws_query_master_scanner.close_code == 4003
+    assert auth_query_master_scanner["authenticated"] is True
+    assert auth_query_master_scanner["auth_type"] == "master"
+    assert auth_query_master_scanner["identity"] == master_token
 
     # Scenario F: Agent Token (Allowed ONLY on 'agent' route with device_id matching)
     agent_token = "agent-token-xyz"
@@ -243,3 +243,10 @@ async def test_websocket_authentication_scenarios(db):
     assert auth_missing["authenticated"] is False
     assert ws_missing.close_called is True
     assert ws_missing.close_code == 4001
+
+    # Scenario I: Master Token via Query Parameter on Agent Route (Allowed - Universal Admin Fallback)
+    ws_query_master_agent = MockWebSocket(query_params={"token": master_token})
+    auth_query_master_agent = await authenticate_websocket(ws_query_master_agent, endpoint_type="agent", device_id=42, db=db)
+    assert auth_query_master_agent["authenticated"] is True
+    assert auth_query_master_agent["auth_type"] == "master"
+    assert auth_query_master_agent["identity"] == master_token

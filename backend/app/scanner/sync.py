@@ -116,13 +116,24 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
         disc = res_ip.scalar_one_or_none()
 
     # 3. Apply Updates
+    is_valid_mac = bool(
+        mac and mac.strip() 
+        and mac.lower() not in ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff") 
+        and not mac.lower().startswith(("01:00:5e", "33:33"))
+    )
+
     if disc:
         if disc.ip != ip:
-            last_seen = ensure_utc(disc.last_seen)
-            is_stale = not last_seen or (datetime.now(timezone.utc) - last_seen) > IP_FLAP_THRESHOLD
-            
-            if is_stale:
-                # Clear the new IP from stale records
+            should_update_ip = False
+            if is_valid_mac and disc.mac == mac:
+                should_update_ip = True
+            else:
+                last_seen = ensure_utc(disc.last_seen)
+                if not last_seen or (datetime.now(timezone.utc) - last_seen) > IP_FLAP_THRESHOLD:
+                    should_update_ip = True
+
+            if should_update_ip:
+                # Clear the new IP from stale records to prevent UNIQUE constraint violation
                 await db.execute(delete(DiscoveredHost).where(DiscoveredHost.ip == ip).where(DiscoveredHost.id != disc.id))
                 disc.ip = ip
                 if hasattr(disc, 'ip_changed_at'):
@@ -163,9 +174,34 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
         if disc and disc.custom_name: dev.display_name = disc.custom_name
         
         if dev.ip != ip:
-            last_seen = ensure_utc(dev.last_seen)
-            is_stale = not last_seen or (datetime.now(timezone.utc) - last_seen) > IP_FLAP_THRESHOLD
-            if is_stale:
+            should_update_ip = False
+            if is_valid_mac and dev.mac == mac:
+                should_update_ip = True
+            else:
+                last_seen = ensure_utc(dev.last_seen)
+                if not last_seen or (datetime.now(timezone.utc) - last_seen) > IP_FLAP_THRESHOLD:
+                    should_update_ip = True
+
+            if should_update_ip:
+                # To prevent UNIQUE constraint error on devices.ip:
+                # check if another device already has the new IP.
+                res_conflict = await db.execute(select(Device).where(Device.ip == ip).where(Device.id != dev.id))
+                conflict_dev = res_conflict.scalar_one_or_none()
+                if conflict_dev:
+                    conflict_dev.ip = f"offline-{conflict_dev.mac or conflict_dev.id}"
+                    conflict_dev.is_online = False
+                    await db.flush()
+                    logger.warning(f"Sync: Resolved IP conflict. Moved conflicting device {conflict_dev.id} to placeholder IP {conflict_dev.ip}")
+
+                # Log IP change in DeviceHistory
+                from app.models.device import DeviceHistory
+                db.add(DeviceHistory(
+                    device_id=dev.id,
+                    status="info",
+                    message=f"IP changed from {dev.ip} to {ip}"
+                ))
+
+                dev.old_ip = dev.ip
                 dev.ip = ip
                 dev.ip_changed_at = datetime.now(timezone.utc)
     

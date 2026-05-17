@@ -17,6 +17,15 @@ def get_version() -> str:
         except Exception:
             continue
             
-    return "0.2.3.1"
+    return "0.2.5"
 
 VERSION = get_version()
+
+def normalize_version(version: str | None) -> str | None:
+    """Normalize version string by removing 'v' prefix and stripping whitespace."""
+    if not version:
+        return None
+    version_str = str(version).strip().lower()
+    if version_str.startswith('v'):
+        version_str = version_str[1:]
+    return version_str

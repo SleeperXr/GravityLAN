@@ -82,8 +82,8 @@ async def test_metrics_aggregation_6h_range(client, db):
     db.add(device)
 
     # 3. Add metrics spanning different 5-minute buckets
-    now = datetime.now(timezone.utc)
-    base_time = now.replace(second=0, microsecond=0)
+    # Use a fixed base time aligned to 5-minute interval to prevent clock-based flakiness
+    base_time = datetime(2026, 5, 17, 12, 0, 0, tzinfo=timezone.utc)
     
     # Bucket 1: between 10m and 5m ago
     t1 = base_time - timedelta(minutes=8)

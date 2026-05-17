@@ -210,8 +210,20 @@ async def _authenticate_websocket_impl(
             await websocket.close(code=4003, reason="Unauthorized")
             return {"authenticated": False}
 
-        # B. Agent ("agent") allows ONLY Agent-Token in query params for physical/remote agents
+        # B. Agent ("agent") allows Agent-Token or global Master-Token in query params
         elif endpoint_type == "agent":
+            # First check if the token matches the global Master-Token (UI client/admin subscriber)
+            master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
+            master_setting = master_res.scalar_one_or_none()
+            master_token = master_setting.value if master_setting else None
+            
+            if master_token and secure_compare(query_token, master_token):
+                return {
+                    "authenticated": True,
+                    "auth_type": "master",
+                    "identity": query_token
+                }
+
             if device_id is not None:
                 agent_res = await db.execute(
                     select(AgentToken).where(
@@ -226,14 +238,24 @@ async def _authenticate_websocket_impl(
                         "auth_type": "agent",
                         "identity": query_token
                     }
-            logger.warning("WebSocket connection rejected: Invalid agent token or device mismatch in query params.")
+            logger.warning("WebSocket connection rejected: Invalid agent/master token or device mismatch in query params.")
             await websocket.close(code=4003, reason="Unauthorized")
             return {"authenticated": False}
 
-        # C. Scanner ("scanner") does not accept any query params (UI only)
-        else:
-            logger.warning("WebSocket connection rejected: Query parameters are forbidden on scanner route.")
-            await websocket.close(code=4003, reason="Query parameters forbidden")
+        # C. Scanner ("scanner") allows global Master-Token in query params
+        elif endpoint_type == "scanner":
+            master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
+            master_setting = master_res.scalar_one_or_none()
+            master_token = master_setting.value if master_setting else None
+            
+            if master_token and secure_compare(query_token, master_token):
+                return {
+                    "authenticated": True,
+                    "auth_type": "master",
+                    "identity": query_token
+                }
+            logger.warning("WebSocket connection rejected: Invalid master token in query params for scanner route.")
+            await websocket.close(code=4003, reason="Unauthorized")
             return {"authenticated": False}
 
     # 4. Deprecated Legacy Cookie Fallback (Master-Token in Cookie)
