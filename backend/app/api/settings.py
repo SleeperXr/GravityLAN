@@ -26,6 +26,21 @@ SettingsUpdate = RootModel[dict[str, str]]
 async def update_settings(settings: SettingsUpdate, db: AsyncSession = Depends(get_db)):
     """Update or create system settings."""
     for key, value in settings.root.items():
+        # Validate server.url if provided
+        if key == "server.url" and value:
+            from urllib.parse import urlparse
+            try:
+                parsed = urlparse(value)
+                if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                    raise ValueError()
+                if " " in value:
+                    raise ValueError()
+            except Exception:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid server URL: '{value}'. Must be a valid HTTP or HTTPS URL (e.g. http://192.168.1.100:8000)."
+                )
+
         # Validate scan_subnets if provided
         if key == "scan_subnets" and value:
             import ipaddress
@@ -41,7 +56,7 @@ async def update_settings(settings: SettingsUpdate, db: AsyncSession = Depends(g
             if invalid_subnets:
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Ungültige Subnetze: {', '.join(invalid_subnets)}. Bitte im Format 192.168.1.0/24 angeben."
+                    detail=f"Invalid subnets: {', '.join(invalid_subnets)}. Please use a format like 192.168.1.0/24."
                 )
 
         result = await db.execute(select(Setting).where(Setting.key == key))

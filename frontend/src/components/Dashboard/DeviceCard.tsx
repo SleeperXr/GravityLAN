@@ -213,7 +213,7 @@ export const DeviceCard = memo(({ device, isEditMode, onEdit, onRefresh, isSelec
                   className="ml-1 bg-rose-500 hover:bg-rose-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black transition-colors"
                   onClick={async (e) => {
                     e.stopPropagation();
-                    if (window.confirm("Diesen neuen Agent-Key dauerhaft akzeptieren?")) {
+                    if (window.confirm(t('agent.adopt_confirm', 'Permanently accept this new agent key?'))) {
                       try {
                         await api.adoptAgent(device.id);
                         if (onRefresh) onRefresh();
@@ -276,7 +276,7 @@ export const DeviceCard = memo(({ device, isEditMode, onEdit, onRefresh, isSelec
                   cursor: 'pointer',
                   marginTop: '4px'
                 }}
-                title={t('dashboard.ip_changed_hint') || "IP hat sich geändert. Klicken zum Ausblenden."}
+                title={t('dashboard.ip_changed_hint', 'IP has changed. Click to hide.')}
               >
                 <RefreshCw size={10} />
                 {device.old_ip} ➔ {device.ip}

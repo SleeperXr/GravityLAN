@@ -9,7 +9,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
     <aside className={`app-sidebar ${isOpen ? 'mobile-open' : ''}`}>
       <div className="logo">
         <span className="logo__text">{t('app.title')}</span>
-        <p className="text-xs text-slate-500 font-mono mt-1">v0.2.5</p>
+        <p className="text-xs text-slate-500 font-mono mt-1">v{(window as any).APP_VERSION || '0.2.5'}</p>
         
         {/* Mobile Close Button */}
         <button 
@@ -24,7 +24,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
         <div className="nav-group">
           <div className="nav-group__label" style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-tertiary)', padding: '0 var(--space-md)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Main
+            {t('sidebar.main')}
           </div>
           <Link 
             to="/" 
@@ -37,7 +37,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
 
         <div className="nav-group">
           <div className="nav-group__label" style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-tertiary)', padding: '0 var(--space-md)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Network
+            {t('sidebar.network')}
           </div>
           <Link 
             to="/network" 
@@ -57,14 +57,14 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
 
         <div className="nav-group">
           <div className="nav-group__label" style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-tertiary)', padding: '0 var(--space-md)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            System
+            {t('sidebar.system')}
           </div>
           <Link 
             to="/agents" 
             className={`nav-item ${active === 'agents' ? 'active' : ''}`}
             onClick={onClose}
           >
-            <Server size={18} /> Agents
+            <Server size={18} /> {t('sidebar.agents')}
           </Link>
           <Link 
             to="/settings" 

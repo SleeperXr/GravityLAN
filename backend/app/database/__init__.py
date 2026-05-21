@@ -30,7 +30,7 @@ engine = create_async_engine(
 # Enable WAL mode for SQLite to prevent "database is locked" errors
 @event.listens_for(engine.sync_engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
-    if "sqlite" in settings.effective_database_url:
+    if engine.dialect.name == "sqlite":
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")

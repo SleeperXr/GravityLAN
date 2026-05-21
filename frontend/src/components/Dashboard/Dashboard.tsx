@@ -266,7 +266,7 @@ export function Dashboard() {
 
   const handleRefreshAll = async () => {
     setIsRefreshingAll(true);
-    showToast('info', t('dashboard.refreshing'), t('notifications.refresh_started') || 'Suche nach Hostnamen und Mac-Adressen...');
+    showToast('info', t('dashboard.refreshing'), t('notifications.refresh_started_details'));
     try {
       await api.refreshAllDevices();
       // Delay a bit to allow background task to start
@@ -274,7 +274,7 @@ export function Dashboard() {
       showToast('success', t('dashboard.refresh_all'), t('notifications.info_updated') || 'Refresh gestartet.');
     } catch (err) {
       console.error('Refresh failed:', err);
-      showToast('error', t('common.error'), 'Refresh fehlgeschlagen.');
+      showToast('error', t('common.error'), t('notifications.refresh_failed', { error: '', defaultValue: 'Refresh failed.' }));
     } finally {
       setIsRefreshingAll(false);
     }
@@ -307,8 +307,8 @@ export function Dashboard() {
             await loadData();
             showToast(
               'success',
-              t('dashboard.scan_complete', 'Scan abgeschlossen'),
-              t('dashboard.scan_complete_msg', `${progress.devices_found ?? '?'} Geräte gefunden`)
+              t('notifications.scan_completed', 'Scan completed'),
+              t('setup.devices_found', { count: progress.devices_found ?? '?' })
             );
           }
         } catch (e) {

@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { Lock, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
 import { api } from '../../api/client';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 
 interface LoginModalProps {
   onSuccess: () => void;
 }
 
 export function LoginModal({ onSuccess }: LoginModalProps) {
+  const { t } = useTranslation();
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +23,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
       await api.login(password);
       onSuccess();
     } catch (err: any) {
-      setError(err.message || 'Invalid password');
+      setError(err.message || t('auth.invalid_password'));
     } finally {
       setLoading(false);
     }
@@ -44,10 +46,10 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
           </div>
           
           <h1 className="text-2xl font-black text-white mb-2 tracking-tight uppercase">
-            Authentication Required
+            {t('auth.required')}
           </h1>
           <p className="text-slate-400 text-sm mb-8">
-            Access to the <span className="text-sky-400 font-bold">GravityLAN</span> command center is protected. Please enter your administrator password.
+            {t('auth.description')}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -89,7 +91,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
                 <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>Sign In</span>
+                  <span>{t('auth.sign_in')}</span>
                   <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                 </>
               )}
@@ -98,7 +100,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
 
           <div className="mt-8 pt-8 border-t border-white/5">
             <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-              GravityLAN Security Node v{window.location.hostname === 'localhost' ? 'DEV' : ((window as any).APP_VERSION || '0.2.1')}
+              {t('auth.security_node')} v{window.location.hostname === 'localhost' ? 'DEV' : ((window as any).APP_VERSION || '0.2.1')}
             </div>
           </div>
         </div>

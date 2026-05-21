@@ -443,7 +443,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                       value={formData.rack_id || ''}
                       onChange={(e) => setFormData({ ...formData, rack_id: e.target.value ? parseInt(e.target.value) : null })}
                     >
-                      <option value="">Kein Rack</option>
+                      <option value="">{t('editor.no_rack')}</option>
                       {Array.isArray(racks) && racks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
                     <input
@@ -458,7 +458,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                 </div>
 
                 <div className="form-group">
-                  <label><HardDrive size={14} /> {t('editor.rack_height', 'Höhe (HE)')}</label>
+                  <label><HardDrive size={14} /> {t('editor.rack_height', 'Rack Height (U)')}</label>
                   <input
                     type="number"
                     className="input"
@@ -560,8 +560,8 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     <Wifi size={16} color={formData.is_wlan ? 'white' : '#64748b'} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_wlan ? '#f8fafc' : '#94a3b8' }}>WLAN Client</span>
-                    <span style={{ fontSize: '0.6rem', color: '#64748b' }}>Signalbalken</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_wlan ? '#f8fafc' : '#94a3b8' }}>{t('editor.wlan_client')}</span>
+                    <span style={{ fontSize: '0.6rem', color: '#64748b' }}>{t('editor.wlan_client_desc')}</span>
                   </div>
                 </div>
 
@@ -591,8 +591,8 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     <Radio size={16} color={formData.is_ap ? 'white' : '#64748b'} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_ap ? '#f8fafc' : '#94a3b8' }}>Access Point</span>
-                    <span style={{ fontSize: '0.6rem', color: '#64748b' }}>WLAN Quelle</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_ap ? '#f8fafc' : '#94a3b8' }}>{t('editor.access_point')}</span>
+                    <span style={{ fontSize: '0.6rem', color: '#64748b' }}>{t('editor.access_point_desc')}</span>
                   </div>
                 </div>
 
@@ -622,8 +622,8 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     <Server size={16} color={formData.is_host ? 'white' : '#64748b'} />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_host ? '#f8fafc' : '#94a3b8' }}>Physischer Host</span>
-                    <span style={{ fontSize: '0.6rem', color: '#64748b' }}>Beinhaltet VMs/Docker</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: formData.is_host ? '#f8fafc' : '#94a3b8' }}>{t('editor.physical_host')}</span>
+                    <span style={{ fontSize: '0.6rem', color: '#64748b' }}>{t('editor.physical_host_desc')}</span>
                   </div>
                 </div>
               </div>
@@ -647,7 +647,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                       color: '#f1f5f9'
                     }}
                   >
-                    <option value="">Kein Host (Eigenständiges System)</option>
+                    <option value="">{t('editor.no_parent_host')}</option>
                     {devices.filter(d => d.is_host && d.id !== currentDevice.id).map(d => (
                       <option key={d.id} value={d.id}>{d.display_name || d.hostname || d.ip}</option>
                     ))}
@@ -663,7 +663,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                   style={{ minHeight: 80, resize: 'vertical' }}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Gerätenotizen hier eingeben..."
+                  placeholder={t('editor.notes_placeholder')}
                 />
               </div>
 
@@ -677,16 +677,16 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                 gap: '16px'
               }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>System Info</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>{t('editor.system_info')}</div>
                   <div style={{ fontSize: '0.85rem', display: 'grid', gridTemplateColumns: '80px 1fr', gap: '4px' }}>
                     <span style={{ color: 'var(--text-tertiary)' }}>IP:</span> <span>{currentDevice.ip}</span>
                     <span style={{ color: 'var(--text-tertiary)' }}>MAC:</span> <span style={{ fontFamily: 'monospace' }}>{currentDevice.mac || 'N/A'}</span>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                   <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>Network Info</div>
+                   <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700 }}>{t('editor.network_info')}</div>
                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                     {currentDevice.hostname || 'Kein DNS Name'}
+                     {currentDevice.hostname || t('editor.no_dns_name')}
                      {currentDevice.hostname && currentDevice.hostname.includes('.') && (
                        <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', marginTop: 2 }}>
                          FQDN: {currentDevice.hostname}
@@ -776,7 +776,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                             }}
                           />
                           {!svc.is_auto_detected && (
-                            <span style={{ fontSize: '0.6rem', background: 'var(--accent-primary)', color: 'black', padding: '1px 4px', borderRadius: '3px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>MANUELL</span>
+                            <span style={{ fontSize: '0.6rem', background: 'var(--accent-primary)', color: 'black', padding: '1px 4px', borderRadius: '3px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{t('editor.manual')}</span>
                           )}
                         </div>
                         <div style={{ display: 'flex', gap: 12, fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
@@ -792,9 +792,9 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                                   const updated = await api.getDevice(currentDevice.id);
                                   setCurrentDevice(updated);
                                   onSave();
-                                  showToast('success', 'Protokoll aktualisiert', `${svc.name} ist nun als ${newProto.toUpperCase()} konfiguriert.`);
+                                  showToast('success', t('notifications.info_updated', 'Info updated'), `${svc.name} is now configured as ${newProto.toUpperCase()}.`);
                                 } catch (err: any) {
-                                  showToast('error', 'Fehler', `Konnte Protokoll nicht speichern: ${err.message || 'Unbekannter Fehler'}`);
+                                  showToast('error', t('common.error', 'Error'), `Could not save protocol: ${err.message || 'Unknown error'}`);
                                 }
                               }}
                             >
@@ -835,7 +835,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                         className="btn-icon" 
                         style={{ color: 'var(--text-tertiary)' }}
                         onClick={async () => {
-                          if (confirm('Dienst entfernen?')) {
+                          if (confirm(t('editor.delete_service_confirm'))) {
                             await api.deleteService(svc.id);
                             const updated = await api.getDevice(currentDevice.id);
                             setCurrentDevice(updated);
@@ -1032,7 +1032,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                     }}
                   >
                     {showManual ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    {t('agent.manual_install_options', 'Manuelle Installation/Deinstallation anzeigen')}
+                    {t('agent.manual_install_options', 'Show manual installation/uninstallation options')}
                   </button>
 
                   {showManual && (

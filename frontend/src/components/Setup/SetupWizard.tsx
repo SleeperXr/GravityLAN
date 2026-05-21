@@ -79,7 +79,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
     setIsFinishing(true);
     setFinishProgress(10);
-    setFinishStatus('Saving configuration...');
+    setFinishStatus(t('setup.saving_configuration'));
 
     try {
       await api.completeSetup({
@@ -88,11 +88,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       });
 
       setFinishProgress(40);
-      setFinishStatus('Stabilizing backend...');
+      setFinishStatus(t('setup.stabilizing_backend'));
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       setFinishProgress(65);
-      setFinishStatus('Scanning your network...');
+      setFinishStatus(t('setup.scanning_network'));
       try {
         await api.refreshAllDevices();
       } catch (e) {
@@ -100,11 +100,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       }
 
       setFinishProgress(90);
-      setFinishStatus('Almost done...');
+      setFinishStatus(t('setup.almost_done'));
       await new Promise(resolve => setTimeout(resolve, 600));
 
       setFinishProgress(100);
-      setFinishStatus('Welcome to GravityLAN!');
+      setFinishStatus(t('setup.welcome_done'));
       await new Promise(resolve => setTimeout(resolve, 500));
 
       onComplete();
@@ -128,9 +128,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         }}>
           🏠
         </div>
-        <h1 className="setup-wizard__title">Willkommen bei HomeLan</h1>
+        <h1 className="setup-wizard__title">{t('setup.welcome_title')}</h1>
         <p className="setup-wizard__subtitle">
-          Deine Zentrale für das Heimnetzwerk. Lass uns dein Netzwerk erkunden.
+          {t('setup.welcome_description')}
         </p>
       </div>
 
@@ -138,9 +138,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
           <Search size={24} color="var(--accent-primary)" />
           <div>
-            <strong>Automatische Erkennung</strong>
+            <strong>{t('setup.auto_detection')}</strong>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: 4 }}>
-              Server, Firewalls, NAS und Web-Interfaces werden automatisch erkannt.
+              {t('setup.auto_detection_desc')}
             </p>
           </div>
         </div>
@@ -150,9 +150,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
           <Wifi size={24} color="var(--accent-secondary)" />
           <div>
-            <strong>Direkter Zugriff</strong>
+            <strong>{t('setup.direct_access')}</strong>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: 4 }}>
-              Ein Klick auf RDP, SSH, Web-UI oder SMB — direkt aus dem Dashboard.
+              {t('setup.direct_access_desc')}
             </p>
           </div>
         </div>
@@ -165,9 +165,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
     // Step 1: Subnet Selection
     <div key="subnets" className="setup-wizard__step">
-      <h2 className="setup-wizard__title">Netzwerke auswählen</h2>
+      <h2 className="setup-wizard__title">{t('setup.select_networks_title')}</h2>
       <p className="setup-wizard__subtitle">
-        Wähle die Subnetze, die gescannt werden sollen.
+        {t('setup.select_networks_desc')}
       </p>
 
       {error && (
@@ -207,10 +207,10 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       <div className="card" style={{ marginBottom: 'var(--space-xl)', border: '1px solid var(--border-subtle)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
           <Search size={20} color="var(--accent-primary)" />
-          <div style={{ fontWeight: 600 }}>Namensauflösung (DNS)</div>
+          <div style={{ fontWeight: 600 }}>{t('setup.dns_title')}</div>
         </div>
         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
-          Optional: Gib einen DNS-Server für bessere interne Namensauflösung an (z.B. Pi-hole oder lokaler DNS).
+          {t('setup.dns_desc')}
         </p>
         <input 
           type="text" 
@@ -228,7 +228,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         onClick={startScan}
         disabled={selectedSubnets.length === 0}
       >
-        Scan starten <ChevronRight size={18} />
+        {t('dashboard.start_scan')} <ChevronRight size={18} />
       </button>
     </div>,
 
@@ -285,9 +285,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
     // Step 3: Security Setup
     <div key="security" className="setup-wizard__step">
-      <h2 className="setup-wizard__title">Sicherheit konfigurieren</h2>
+      <h2 className="setup-wizard__title">{t('setup.security_title')}</h2>
       <p className="setup-wizard__subtitle">
-        Lege ein Administrator-Passwort fest, um dein Dashboard zu schützen.
+        {t('setup.security_desc')}
       </p>
 
       {error && (
@@ -303,12 +303,12 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       <div className="card" style={{ marginBottom: 'var(--space-xl)', border: '1px solid var(--border-subtle)' }}>
         <div style={{ marginBottom: 'var(--space-md)' }}>
           <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontSize: '0.875rem', fontWeight: 600 }}>
-            Administrator Passwort
+            {t('setup.admin_password')}
           </label>
           <input 
             type="password" 
             className={`input ${adminPassword && confirmPassword && adminPassword !== confirmPassword ? 'input--error' : ''}`}
-            placeholder="Passwort wählen..." 
+            placeholder={t('setup.password_placeholder')} 
             value={adminPassword} 
             onChange={(e) => setAdminPassword(e.target.value)}
             style={{ 
@@ -319,12 +319,12 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         </div>
         <div>
           <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontSize: '0.875rem', fontWeight: 600 }}>
-            Passwort bestätigen
+            {t('setup.confirm_password')}
           </label>
           <input 
             type="password" 
             className={`input ${adminPassword && confirmPassword && adminPassword !== confirmPassword ? 'input--error' : ''}`}
-            placeholder="Passwort wiederholen..." 
+            placeholder={t('setup.password_confirm_placeholder')} 
             value={confirmPassword} 
             onChange={(e) => setConfirmPassword(e.target.value)}
             style={{ 
@@ -334,7 +334,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           />
           {adminPassword && confirmPassword && adminPassword !== confirmPassword && (
             <p style={{ color: 'var(--accent-danger)', fontSize: '0.75rem', marginTop: 'var(--space-xs)' }}>
-              ⚠️ Passwörter stimmen nicht überein
+              ⚠️ {t('setup.passwords_dont_match')}
             </p>
           )}
         </div>
@@ -351,7 +351,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         gap: 'var(--space-sm)'
       }}>
         <Zap size={16} style={{ flexShrink: 0 }} />
-        <p>Bewahre dein Passwort gut auf. Es wird benötigt, um auf das Dashboard zuzugreifen.</p>
+        <p>{t('setup.password_hint')}</p>
       </div>
 
       <button 
@@ -378,7 +378,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           }}>
             🚀
           </div>
-          <h2 className="setup-wizard__title">Setting up GravityLAN</h2>
+          <h2 className="setup-wizard__title">{t('setup.welcome_title')}</h2>
           <p className="setup-wizard__subtitle" style={{ minHeight: '1.5rem' }}>
             {finishStatus}
           </p>

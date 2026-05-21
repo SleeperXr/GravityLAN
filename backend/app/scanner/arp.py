@@ -37,10 +37,10 @@ def get_local_arp_table() -> Dict[str, str]:
         import shutil
         if shutil.which("arp"):
             try:
-                stdout = subprocess.check_output(["arp", "-a"], stderr=subprocess.STDOUT)
+                stdout = subprocess.check_output(["arp", "-a"], stderr=subprocess.STDOUT, timeout=10.0)
             except subprocess.SubprocessError:
                 try:
-                    stdout = subprocess.check_output(["arp", "-g"], stderr=subprocess.STDOUT)
+                    stdout = subprocess.check_output(["arp", "-g"], stderr=subprocess.STDOUT, timeout=10.0)
                 except subprocess.SubprocessError:
                     return {}
         else:
@@ -83,7 +83,7 @@ def get_linux_neighbors() -> Dict[str, str]:
     """Get MAC addresses via 'ip neighbor' (Linux native)."""
     if sys.platform == 'win32': return {}
     try:
-        output = subprocess.check_output(["ip", "neighbor", "show"], stderr=subprocess.STDOUT).decode(errors='ignore')
+        output = subprocess.check_output(["ip", "neighbor", "show"], stderr=subprocess.STDOUT, timeout=10.0).decode(errors='ignore')
         mapping = {}
         for line in output.splitlines():
             parts = line.split()
@@ -108,7 +108,7 @@ def get_powershell_neighbors() -> Dict[str, str]:
     if sys.platform != 'win32': return {}
     try:
         ps_cmd = "Get-NetNeighbor | Select-Object IPAddress, LinkLayerAddress | ConvertTo-Json"
-        output = subprocess.check_output(["powershell", "-Command", ps_cmd]).decode('cp850')
+        output = subprocess.check_output(["powershell", "-Command", ps_cmd], timeout=10.0).decode('cp850')
         data = json.loads(output)
         if isinstance(data, dict): data = [data]
         

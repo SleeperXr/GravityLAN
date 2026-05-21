@@ -191,7 +191,7 @@ export function createScanSocket(onMessage: (data: import('../types').ScanProgre
   let token = localStorage.getItem('gravitylan_token');
   if (token === 'undefined') token = null;
   token = token || '';
-  const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
+  const wsBase = `${protocol}//${window.location.host}`;
   const ws = new WebSocket(`${wsBase}/api/scanner/ws?token=${token}`);
 
   ws.onmessage = (event) => {
@@ -215,7 +215,7 @@ export function createMetricsSocket(deviceId: number, onMessage: (data: any) => 
   let token = localStorage.getItem('gravitylan_token');
   if (token === 'undefined') token = null;
   token = token || '';
-  const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
+  const wsBase = `${protocol}//${window.location.host}`;
   const ws = new WebSocket(`${wsBase}/api/agent/ws/${deviceId}?token=${token}`);
 
   ws.onmessage = (event) => {

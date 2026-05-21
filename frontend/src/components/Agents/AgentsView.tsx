@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Sidebar } from '../Sidebar';
 import { MobileHeader } from '../MobileHeader';
 import { api } from '../../api/client';
+import { useTranslation } from 'react-i18next';
 import { 
   Server, 
   Database, 
@@ -53,6 +54,7 @@ interface OverviewData {
 }
 
 export function AgentsView() {
+  const { t } = useTranslation();
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -219,9 +221,9 @@ export function AgentsView() {
                                       className="text-[10px] bg-sky-500 hover:bg-sky-400 text-white px-2 py-0.5 rounded font-black transition-colors"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        if (confirm("Diesen neuen Agent-Key dauerhaft akzeptieren?")) {
+                                        if (confirm(t('agent.adopt_confirm', 'Permanently accept this new agent key?'))) {
                                           api.adoptAgent(agent.device_id).then(() => {
-                                             alert("Agent erfolgreich adoptiert!");
+                                             alert(t('agent.adopt_success'));
                                              window.location.reload();
                                           });
                                         }

@@ -18,6 +18,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { Share2, Trash2, Server, Activity, Cpu, RefreshCw, Settings, X, Save, Layers, Wifi, Radio, Smartphone, Box, Monitor, Sliders, Wind, Zap, Maximize, Minimize, ChevronUp, ChevronDown } from 'lucide-react';
 import { api } from '../../api/client';
+import { useTranslation } from 'react-i18next';
 
 // --- Context for Flow Settings ---
 const FlowSettingsContext = React.createContext({
@@ -321,6 +322,7 @@ const edgeTypes = {
 };
 
 const TopologyMap: React.FC = () => {
+  const { t } = useTranslation();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -435,7 +437,7 @@ const TopologyMap: React.FC = () => {
             x: x,
             y: y,
             onDelete: async (id: string) => {
-              if (window.confirm('Gerät entfernen?')) {
+              if (window.confirm(t('editor.delete_service_confirm', 'Really remove?'))) {
                 await api.deleteDevice(parseInt(id));
                 setNodes(nds => nds.filter(n => n.id !== id));
               }
@@ -525,7 +527,7 @@ const TopologyMap: React.FC = () => {
     if (sourceNode && sourceNode.data.max_ports > 0) {
       const currentLinks = edges.filter(e => e.source === params.source || e.target === params.source).length;
       if (currentLinks >= sourceNode.data.max_ports) {
-        alert(`Port-Limit erreicht! ${sourceNode.data.label} hat bereits ${currentLinks} von ${sourceNode.data.max_ports} Ports belegt.`);
+        alert(t('topology.port_limit_reached', { name: sourceNode.data.label, current: currentLinks, max: sourceNode.data.max_ports, defaultValue: `Port limit reached! ${sourceNode.data.label} already has ${currentLinks} of ${sourceNode.data.max_ports} ports occupied.` }));
         return;
       }
     }
@@ -533,7 +535,7 @@ const TopologyMap: React.FC = () => {
     if (targetNode && targetNode.data.max_ports > 0) {
       const currentLinks = edges.filter(e => e.source === params.target || e.target === params.target).length;
       if (currentLinks >= targetNode.data.max_ports) {
-        alert(`Port-Limit erreicht! ${targetNode.data.label} hat bereits ${currentLinks} von ${targetNode.data.max_ports} Ports belegt.`);
+        alert(t('topology.port_limit_reached', { name: targetNode.data.label, current: currentLinks, max: targetNode.data.max_ports, defaultValue: `Port limit reached! ${targetNode.data.label} already has ${currentLinks} of ${targetNode.data.max_ports} ports occupied.` }));
         return;
       }
     }
@@ -547,7 +549,7 @@ const TopologyMap: React.FC = () => {
     }).then(() => {
       fetchData();
     }).catch(() => {
-      alert("Fehler beim Erstellen der Verbindung. Möglicherweise existiert sie bereits?");
+      alert(t('topology.connection_error', 'Error creating connection. Does it already exist?'));
     });
   }, [fetchData, nodes, edges]);
 
@@ -823,7 +825,7 @@ const TopologyMap: React.FC = () => {
           <div className="sidebar-header">
             <div className="header-title">
               <Settings size={18} />
-              {selectedNode ? 'Geräte-Konfiguration' : 'Verbindungs-Info'}
+              {selectedNode ? t('topology.device_config', 'Device Configuration') : t('topology.connection_info', 'Connection Info')}
             </div>
             <button className="close-btn" onClick={() => { setSelectedNode(null); setSelectedEdge(null); }}>
               <X size={18} />
@@ -857,7 +859,7 @@ const TopologyMap: React.FC = () => {
                 </div>
 
                 <div className="settings-section">
-                  <label className="section-label">Geräte-Modus</label>
+                  <label className="section-label">{t('topology.device_mode', 'Device Mode')}</label>
                   <div className="toggle-group">
                     <label className="toggle-item">
                       <input 
@@ -867,7 +869,7 @@ const TopologyMap: React.FC = () => {
                       />
                       <div className="toggle-content">
                         <Smartphone size={14} />
-                        <span>WLAN Gerät</span>
+                        <span>{t('editor.wlan_client')}</span>
                       </div>
                     </label>
                     <label className="toggle-item">
@@ -878,14 +880,14 @@ const TopologyMap: React.FC = () => {
                       />
                       <div className="toggle-content">
                         <Radio size={14} />
-                        <span>Access Point</span>
+                        <span>{t('editor.access_point')}</span>
                       </div>
                     </label>
                   </div>
                 </div>
 
                 <div className="input-field">
-                  <label>Maximale Ports</label>
+                  <label>{t('topology.max_ports', 'Max Ports')}</label>
                   <input 
                     type="number" 
                     value={configMaxPorts} 
@@ -894,29 +896,29 @@ const TopologyMap: React.FC = () => {
                 </div>
 
                 <div className="input-field">
-                  <label>Oberer Anschluss (Top)</label>
+                  <label>{t('topology.top_handle', 'Top Handle')}</label>
                   <select value={configTopHandle} onChange={(e) => setConfigTopHandle(e.target.value)}>
-                    <option value="target">Input (Target)</option>
-                    <option value="source">Output (Source)</option>
-                    <option value="both">Beides (Bi-Directional)</option>
+                    <option value="target">{t('topology.handle_input', 'Input (Target)')}</option>
+                    <option value="source">{t('topology.handle_output', 'Output (Source)')}</option>
+                    <option value="both">{t('topology.handle_both', 'Both (Bi-Directional)')}</option>
                   </select>
                 </div>
 
                 <div className="input-field">
-                  <label>Unterer Anschluss (Bottom)</label>
+                  <label>{t('topology.bottom_handle', 'Bottom Handle')}</label>
                   <select value={configBottomHandle} onChange={(e) => setConfigBottomHandle(e.target.value)}>
-                    <option value="source">Output (Source)</option>
-                    <option value="target">Input (Target)</option>
-                    <option value="both">Beides (Bi-Directional)</option>
+                    <option value="source">{t('topology.handle_output', 'Output (Source)')}</option>
+                    <option value="target">{t('topology.handle_input', 'Input (Target)')}</option>
+                    <option value="both">{t('topology.handle_both', 'Both (Bi-Directional)')}</option>
                   </select>
                 </div>
 
                 <div className="sidebar-actions">
                   <button className="save-btn" onClick={saveNodeSettings}>
-                    <Save size={16} /> Speichern
+                    <Save size={16} /> {t('common.save')}
                   </button>
                   <button className="delete-btn" onClick={() => selectedNode.data.onDelete(selectedNode.id)}>
-                    <Trash2 size={16} /> Gerät entfernen
+                    <Trash2 size={16} /> {t('topology.remove_device', 'Remove Device')}
                   </button>
                 </div>
               </div>
@@ -933,7 +935,7 @@ const TopologyMap: React.FC = () => {
                  </div>
 
                  <div className="input-field">
-                   <label>Geschwindigkeit</label>
+                   <label>{t('topology.speed', 'Speed')}</label>
                    <select 
                      value={selectedEdge.data.link_type} 
                      onChange={(e) => onRotateSpeed(selectedEdge.id, selectedEdge.data.link_type, e.target.value)}
@@ -946,7 +948,7 @@ const TopologyMap: React.FC = () => {
                  </div>
                  
                  <button className="delete-btn full" onClick={() => onDeleteLink(selectedEdge.id)}>
-                    <Trash2 size={16} /> Verbindung trennen
+                    <Trash2 size={16} /> {t('topology.disconnect', 'Disconnect')}
                  </button>
                </div>
             )}

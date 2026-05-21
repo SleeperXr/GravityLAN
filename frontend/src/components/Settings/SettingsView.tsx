@@ -106,7 +106,7 @@ export function SettingsView() {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Export failed:', err);
-      alert('Export fehlgeschlagen: ' + err);
+      alert(t('settings.export_failed') + err);
     } finally {
       setIsExporting(false);
     }
@@ -116,7 +116,7 @@ export function SettingsView() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!confirm('Bist du sicher? Alle bestehenden Daten werden überschrieben!')) {
+    if (!confirm(t('settings.import_confirm_warning'))) {
       e.target.value = '';
       return;
     }
@@ -124,11 +124,11 @@ export function SettingsView() {
     setIsImporting(true);
     try {
       await api.importBackup(file);
-      alert('Backup erfolgreich importiert! Die Seite wird neu geladen.');
+      alert(t('settings.import_success'));
       window.location.reload();
     } catch (err) {
       console.error('Import failed:', err);
-      alert('Import fehlgeschlagen: ' + err);
+      alert(t('settings.import_failed') + err);
     } finally {
       setIsImporting(false);
       e.target.value = '';
@@ -148,11 +148,11 @@ export function SettingsView() {
     try {
       console.log('Sending reset request to backend...');
       await api.resetDatabase();
-      alert('Datenbank erfolgreich zurückgesetzt');
+      alert(t('settings.reset_success'));
       window.location.reload();
     } catch (err) {
       console.error('Reset failed:', err);
-      alert('Reset fehlgeschlagen: ' + err);
+      alert(t('settings.reset_failed') + ': ' + err);
     }
   };
 
@@ -291,7 +291,7 @@ export function SettingsView() {
 
           <div className="form-group" style={{ marginTop: 'var(--space-lg)' }}>
             <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontWeight: 600 }}>
-              Custom DNS Server
+              {t('settings.dns_custom_title', 'Custom DNS Server')}
             </label>
             <input
               type="text"
@@ -301,13 +301,13 @@ export function SettingsView() {
               placeholder="e.g. 192.168.100.1"
             />
             <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-xs)' }}>
-              If set, the scanner will use this server to resolve hostnames instead of the system default.
+              {t('settings.dns_custom_desc')}
             </p>
           </div>
 
           <div className="form-group" style={{ marginTop: 'var(--space-lg)' }}>
             <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontWeight: 600 }}>
-              Scanner Timeout (Sekunden)
+              {t('settings.scan_timeout')}
             </label>
             <input
               type="number"
@@ -315,10 +315,10 @@ export function SettingsView() {
               className="input"
               value={scanTimeout}
               onChange={(e) => setScanTimeout(e.target.value)}
-              placeholder="z.B. 1.5"
+              placeholder={t('settings.scan_timeout_placeholder', 'e.g. 1.5')}
             />
             <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-xs)' }}>
-              Erhöhe diesen Wert (z.B. auf 2.0), falls Geräte im Deep-Sleep nicht erkannt werden.
+              {t('settings.scan_timeout_desc')}
             </p>
           </div>
         </section>
@@ -328,7 +328,7 @@ export function SettingsView() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
               <Activity size={24} className="text-accent" />
-              <h2 style={{ margin: 0 }}>System-Logging</h2>
+              <h2 style={{ margin: 0 }}>{t('settings.system_logging')}</h2>
             </div>
             <button className="btn btn-primary" onClick={handleSaveSettings}>
               <Save size={16} /> {t('common.save')}
@@ -337,7 +337,7 @@ export function SettingsView() {
           
           <div className="form-group">
             <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontWeight: 600 }}>
-              Log-Level
+              {t('settings.log_level')}
             </label>
             <select 
               className="input" 
@@ -345,13 +345,13 @@ export function SettingsView() {
               onChange={(e) => setLogLevel(e.target.value)}
               style={{ maxWidth: '300px' }}
             >
-              <option value="info">INFO (Standard)</option>
-              <option value="warning">WARNING (Nur Fehler/Warnungen)</option>
-              <option value="debug">DEBUG (Ausführlich)</option>
-              <option value="debug_sql">DEBUG + SQL (Vollständige Datenbank-Logs)</option>
+              <option value="info">{t('settings.log_level_info')}</option>
+              <option value="warning">{t('settings.log_level_warning')}</option>
+              <option value="debug">{t('settings.log_level_debug')}</option>
+              <option value="debug_sql">{t('settings.log_level_sql')}</option>
             </select>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-xs)' }}>
-              Hinweis: SQL-Logs verlangsamen das System und machen die Logs sehr unübersichtlich.
+              {t('settings.log_level_desc')}
             </p>
           </div>
         </section>
@@ -362,9 +362,9 @@ export function SettingsView() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
               <Activity size={24} className="text-secondary" />
               <div>
-                <h2 style={{ margin: 0 }}>System Live-Logs</h2>
+                <h2 style={{ margin: 0 }}>{t('settings.system_livelogs')}</h2>
                 <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-tertiary)' }}>
-                  Echtzeit-Ansicht der Backend-Vorgänge (Fehlersuche & Monitoring)
+                  {t('settings.system_livelogs_desc')}
                 </p>
               </div>
             </div>
@@ -372,7 +372,7 @@ export function SettingsView() {
               className="btn btn-secondary" 
               onClick={() => window.open('/logs', 'GravityLogs', 'width=1000,height=700')}
             >
-              <Plus size={16} /> Logs öffnen
+              <Plus size={16} /> {t('settings.system_livelogs_open')}
             </button>
           </div>
         </section>
@@ -401,7 +401,7 @@ export function SettingsView() {
         <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' }}>
             <Database size={24} className="text-accent" />
-            <h2 style={{ margin: 0 }}>Backup & Restore</h2>
+            <h2 style={{ margin: 0 }}>{t('settings.backup_restore')}</h2>
           </div>
 
           <div style={{ 
@@ -411,30 +411,29 @@ export function SettingsView() {
           }}>
             <AlertTriangle size={20} style={{ color: '#eab308', flexShrink: 0 }} />
             <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
-              <strong style={{ color: '#eab308' }}>Sicherheitshinweis:</strong> Backups enthalten sensitive Daten wie 
-              Master-Token und Agenten-Schlüssel. Bewahre Export-Dateien sicher auf und teile sie nicht mit Unbefugten.
+              <strong style={{ color: '#eab308' }}>{t('settings.security_notice_title')}:</strong> {t('settings.security_notice_desc')}
             </p>
           </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-lg)' }}>
             <div className="form-group">
-              <h4 style={{ marginBottom: 'var(--space-xs)' }}>Export</h4>
+              <h4 style={{ marginBottom: 'var(--space-xs)' }}>{t('settings.backup_export')}</h4>
               <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
-                Sichere alle Geräte, Gruppen und Einstellungen in einer JSON-Datei.
+                {t('settings.backup_export_desc')}
               </p>
               <button className="btn btn-secondary" onClick={handleExport} disabled={isExporting}>
-                <Download size={16} /> {isExporting ? 'Exportiere...' : 'Backup herunterladen'}
+                <Download size={16} /> {isExporting ? t('settings.backup_exporting') : t('settings.backup_download')}
               </button>
             </div>
             
             <div className="form-group">
-              <h4 style={{ marginBottom: 'var(--space-xs)' }}>Import</h4>
+              <h4 style={{ marginBottom: 'var(--space-xs)' }}>{t('settings.backup_import')}</h4>
               <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
-                Stelle Daten aus einer Backup-Datei wieder her. Bestehende Daten werden überschrieben!
+                {t('settings.backup_import_desc')}
               </p>
               <label className="btn btn-outline" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                 <Upload size={16} /> 
-                {isImporting ? 'Importiere...' : 'Datei auswählen & Importieren'}
+                {isImporting ? t('settings.backup_importing') : t('settings.backup_select_file')}
                 <input 
                   type="file" 
                   accept=".json" 
@@ -467,7 +466,7 @@ export function SettingsView() {
               style={resetConfirm ? { background: '#ef4444', color: 'white' } : {}}
             >
               <Database size={16} /> 
-              {resetConfirm ? 'JETZT WIRKLICH LÖSCHEN?' : t('settings.confirm_reset')}
+              {resetConfirm ? t('settings.reset_really') : t('settings.confirm_reset')}
             </button>
           </div>
         </section>

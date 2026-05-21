@@ -141,7 +141,7 @@ def get_local_subnets() -> list[SubnetInfo]:
             import subprocess
             import json
             ps_cmd = "Get-NetIPAddress -AddressFamily IPv4 | Select-Object InterfaceAlias, IPAddress, PrefixLength | ConvertTo-Json"
-            output = subprocess.check_output(["powershell", "-Command", ps_cmd]).decode('cp850')
+            output = subprocess.check_output(["powershell", "-Command", ps_cmd], timeout=10.0).decode('cp850')
             data = json.loads(output)
             if isinstance(data, dict): data = [data]
             for item in data:

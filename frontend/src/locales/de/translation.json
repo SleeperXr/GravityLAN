@@ -3,10 +3,25 @@
     "title": "GravityLAN"
   },
   "sidebar": {
+    "main": "Hauptbereich",
+    "network": "Netzwerk",
+    "system": "System",
+    "agents": "Agenten",
     "dashboard": "Dashboard",
-    "network_planner": "Netzwerk-Planer",
+    "network_planner": "Netzwerkplaner",
     "topology": "Topologie",
     "settings": "Einstellungen"
+  },
+  "auth": {
+    "required": "Anmeldung erforderlich",
+    "description": "Der Zugriff auf das GravityLAN-Kontrollzentrum ist geschützt. Bitte gib dein Administrator-Passwort ein.",
+    "sign_in": "Anmelden",
+    "invalid_password": "Ungültiges Passwort",
+    "security_node": "GravityLAN Sicherheitsknoten"
+  },
+  "app_status": {
+    "initializing": "Initialisierung...",
+    "checking_setup": "Setup-Status auf {{origin}} wird geprüft..."
   },
   "common": {
     "save": "Speichern",
@@ -27,7 +42,9 @@
     "close": "Schließen",
     "unknown": "Unbekannt",
     "device_added": "Gerät {{ip}} zum Dashboard hinzugefügt.",
-    "update_available": "Update verfügbar: v{{version}}"
+    "update_available": "Update verfügbar: v{{version}}",
+    "scan_started": "Scan gestartet",
+    "refresh_started": "Aktualisierung gestartet"
   },
   "notifications": {
     "scan_completed": "Scan abgeschlossen",
@@ -59,7 +76,8 @@
     "click_to_copy": "Klicken zum Kopieren",
     "rdp_started": "RDP gestartet",
     "rdp_generated": ".rdp Datei für {{ip}} wurde generiert.",
-    "rdp_download": "RDP-Datei für {{ip}} herunterladen"
+    "rdp_download": "RDP-Datei für {{ip}} herunterladen",
+    "refresh_started_details": "Hostnamen und MAC-Adressen werden aktualisiert..."
   },
   "dashboard": {
     "loading": "Lade Dashboard...",
@@ -123,7 +141,9 @@
     "ports_found": "Gefundene Ports: {{ports}}",
     "no_ports_found": "Keine Ports gefunden",
     "alarm": "Alarm",
-    "recent_findings": "Aktuelle Funde"
+    "recent_findings": "Aktuelle Funde",
+    "subnet_settings": "Subnetz-Settings",
+    "subnet_config": "Subnetz-Konfiguration"
   },
   "editor": {
     "title_edit": "Gerät bearbeiten",
@@ -147,8 +167,22 @@
     "refresh_hint": "Aktualisiere Hostname, MAC & Hersteller",
     "refresh_info": "Info-Refresh",
     "manual_tag": "MANUELL",
-    "service_note": "Manuell geänderte Dienste werden beim Netzwerk-Scan nicht überschrieben. Der Scan prüft nur, ob der Port noch offen ist.",
-    "custom_name_placeholder": "Eigener Name (z.B. Drucker)"
+    "custom_name_placeholder": "Eigener Name (z.B. Drucker)",
+    "no_rack": "Kein Rack",
+    "wlan_client": "WLAN Client",
+    "wlan_client_desc": "Signalbalken",
+    "access_point": "Access Point",
+    "access_point_desc": "WLAN Quelle",
+    "physical_host": "Physischer Host",
+    "physical_host_desc": "Beinhaltet VMs/Docker",
+    "no_parent_host": "Kein Host (Eigenständiges System)",
+    "notes_placeholder": "Gerätenotizen hier eingeben...",
+    "parent_host": "Physisches Host-System",
+    "parent_device": "Physischer Host",
+    "no_parent": "Kein Host (Physisch)",
+    "no_dns_name": "Kein DNS Name",
+    "delete_service_confirm": "Dienst entfernen?",
+    "manual": "MANUELL"
   },
   "agent": {
     "status_active": "Agent aktiv",
@@ -188,8 +222,18 @@
     "uninstall_failed_title": "Deinstallation fehlgeschlagen",
     "deployment_logs": "Deployment-Protokolle",
     "manual_uninstall": "Manuelle Deinstallation",
-    "manual_uninstall_hint": "Führe diesen Befehl aus, um den Agenten manuell zu entfernen:",
-    "ssh_key_hint": "Oder kopiere deinen SSH OpenSSH Key hier hinein..."
+    "ssh_key_hint": "Oder kopiere deinen SSH OpenSSH Key hier hinein...",
+    "update_center_title": "Agent Update Center",
+    "global_credentials": "Globale Zugangsdaten (für alle übernehmen)",
+    "ssh_user_placeholder": "z.B. root",
+    "all_up_to_date": "Alle Agenten sind auf dem neuesten Stand!",
+    "installing": "Installiere...",
+    "updates_available": "Updates verfügbar",
+    "update_remaining": "Alle verbleibenden aktualisieren",
+    "credentials_missing": "Zugangsdaten fehlen",
+    "connection_error": "Verbindungsfehler",
+    "manual_install_options": "Manuelle Installation/Deinstallation anzeigen",
+    "adopt_success": "Agent erfolgreich adoptiert!"
   },
   "settings": {
     "title": "GravityLAN Einstellungen",
@@ -222,17 +266,69 @@
     "reset_confirm_title": "!!! ACHTUNG !!!\n\nMöchtest du wirklich ALLE Geräte und Dienste unwiderruflich löschen?\nDies kann nicht rückgängig gemacht werden!",
     "reset_confirm_final": "Bist du dir wirklich, wirklich sicher?",
     "server_url_override": "Agent-Server URL (Manuell)",
-    "server_url_override_hint": "Setze manuell die URL für Agenten (z.B. http://192.168.100.37:8000). Leer lassen für automatische Erkennung."
+    "server_url_override_hint": "Setze manuell die URL für Agenten (z.B. http://192.168.100.37:8000). Leer lassen für automatische Erkennung.",
+    "scan_timeout": "Scanner Timeout (Sekunden)",
+    "scan_timeout_placeholder": "z.B. 1.5",
+    "scan_timeout_desc": "Erhöhe diesen Wert (z.B. auf 2.0), falls Geräte im Deep-Sleep nicht erkannt werden.",
+    "system_logging": "System-Logging",
+    "log_level": "Log-Level",
+    "log_level_info": "INFO (Standard)",
+    "log_level_warning": "WARNING (Nur Fehler/Warnungen)",
+    "log_level_debug": "DEBUG (Ausführlich)",
+    "log_level_sql": "DEBUG + SQL (Vollständige Datenbank-Logs)",
+    "log_level_desc": "Hinweis: SQL-Logs verlangsamen das System und machen die Logs sehr unübersichtlich.",
+    "system_livelogs": "System Live-Logs",
+    "system_livelogs_desc": "Echtzeit-Ansicht der Backend-Vorgänge (Fehlersuche & Monitoring)",
+    "system_livelogs_open": "Logs öffnen",
+    "backup_restore": "Backup & Restore",
+    "security_notice_title": "Sicherheitshinweis",
+    "security_notice_desc": "Backups enthalten sensitive Daten wie Master-Token und Agenten-Schlüssel. Bewahre Export-Dateien sicher auf und teile sie nicht mit Unbefugten.",
+    "backup_export": "Export",
+    "backup_export_desc": "Sichere alle Geräte, Gruppen und Einstellungen in einer JSON-Datei.",
+    "backup_exporting": "Exportiere...",
+    "backup_download": "Backup herunterladen",
+    "backup_import": "Import",
+    "backup_import_desc": "Stelle Daten aus einer Backup-Datei wieder her. Bestehende Daten werden überschrieben!",
+    "backup_importing": "Importiere...",
+    "backup_select_file": "Datei auswählen & Importieren",
+    "reset_really": "JETZT WIRKLICH LÖSCHEN?",
+    "export_failed": "Export fehlgeschlagen: ",
+    "import_confirm_warning": "Bist du sicher? Alle bestehenden Daten werden überschrieben!",
+    "import_success": "Backup erfolgreich importiert! Die Seite wird neu geladen.",
+    "import_failed": "Import fehlgeschlagen: ",
+    "dns_custom_title": "Custom DNS Server",
+    "dns_custom_desc": "Wenn gesetzt, verwendet der Scanner diesen DNS-Server zur Namensauflösung statt des System-Standards."
   },
   "setup": {
     "welcome": "Willkommen bei GravityLAN",
     "description": "Deine Zentrale für das Heimnetzwerk. Lass uns dein Netzwerk erkunden.",
+    "welcome_title": "Willkommen bei GravityLAN",
+    "welcome_description": "Deine Zentrale für das Heimnetzwerk. Lass uns dein Netzwerk erkunden.",
+    "auto_detection": "Automatische Erkennung",
+    "auto_detection_desc": "Server, Firewalls, NAS und Web-Oberflächen werden automatisch erkannt.",
+    "direct_access": "Direkter Zugriff",
+    "direct_access_desc": "Ein Klick auf RDP, SSH, Web-UI oder SMB – direkt aus dem Dashboard.",
     "select_subnets": "Netzwerke auswählen",
     "select_subnets_desc": "Wähle die Subnetze, die gescannt werden sollen.",
+    "select_networks_title": "Netzwerke auswählen",
+    "select_networks_desc": "Wähle die Subnetze aus, die gescannt werden sollen.",
+    "dns_title": "Namensauflösung (DNS)",
+    "dns_desc": "Optional: Gib einen DNS-Server für eine bessere interne Namensauflösung an, z. B. Pi-hole oder lokalen DNS.",
     "scan_in_progress": "Scanne Netzwerk...",
     "scan_completed": "Scan abgeschlossen!",
     "devices_found": "{{count}} Geräte gefunden",
     "initializing_scan": "Initialisiere Scan...",
-    "abort_scan": "Scan abbrechen"
+    "abort_scan": "Scan abbrechen",
+    "security_title": "Sicherheit konfigurieren",
+    "security_desc": "Lege ein Administrator-Passwort fest, um dein Dashboard zu schützen.",
+    "admin_password": "Administrator-Passwort",
+    "confirm_password": "Passwort bestätigen",
+    "passwords_dont_match": "Passwörter stimmen nicht überein.",
+    "password_hint": "Bewahre dein Passwort gut auf. Es wird benötigt, um auf das Dashboard zuzugreifen.",
+    "saving_configuration": "Konfiguration wird gespeichert...",
+    "stabilizing_backend": "Backend wird stabilisiert...",
+    "scanning_network": "Netzwerk wird gescannt...",
+    "almost_done": "Fast fertig...",
+    "welcome_done": "Willkommen bei GravityLAN!"
   }
 }

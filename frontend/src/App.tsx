@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { api } from './api/client';
+import { useTranslation } from 'react-i18next';
 import { SetupWizard } from './components/Setup/SetupWizard';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { SubnetView } from './components/Network/SubnetView';
@@ -15,6 +16,7 @@ import ErrorBoundary from './components/Common/ErrorBoundary';
 import { AuthGuard } from './components/Auth/AuthGuard';
 
 function App() {
+  const { t } = useTranslation();
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
   const renderCount = useRef(0);
   renderCount.current++;
@@ -56,9 +58,9 @@ function App() {
       }}>
         <div style={{ marginBottom: '20px', fontSize: '1.2rem', fontWeight: 'bold' }}>GravityLAN</div>
         <div className="spinning" style={{ marginBottom: '10px' }}>⏳</div>
-        <div>Initialisierung...</div>
+        <div>{t('app_status.initializing')}</div>
         <div style={{ marginTop: '20px', fontSize: '0.7rem', color: '#475569' }}>
-          Prüfe Setup-Status auf {window.location.origin}...
+          {t('app_status.checking_setup', { origin: window.location.origin })}
         </div>
       </div>
     );

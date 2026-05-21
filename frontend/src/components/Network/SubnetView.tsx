@@ -201,10 +201,10 @@ export function SubnetView() {
   const deleteDiscoveredHost = useCallback(async (id: number, ip: string) => {
     try {
       await api.deleteDiscoveredHost(id);
-      showToast('success', t('common.success'), `Host ${ip} entfernt`);
+      showToast('success', t('common.success'), t('notifications.host_removed', { ip, defaultValue: `Host ${ip} removed` }));
       setDiscoveredHosts((prev: DiscoveredHost[]) => prev.filter(h => h.id !== id));
     } catch (err: any) {
-      showToast('error', t('common.error'), 'Fehler beim Löschen');
+      showToast('error', t('common.error'), t('notifications.delete_failed', 'Delete failed'));
     }
   }, [t, showToast, setDiscoveredHosts]);
 
@@ -324,9 +324,9 @@ export function SubnetView() {
                   </div>
                 )}
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)}><Grid size={16} /> {!isMobile && t('network.manage_areas')}</button>
-                <button className="btn btn-secondary btn-sm" onClick={() => setShowSubnetSettings(true)}><Settings size={16} /> {!isMobile && 'Subnetz-Settings'}</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowSubnetSettings(true)}><Settings size={16} /> {!isMobile && t('network.subnet_settings')}</button>
                 <button className={`btn btn-sm ${isDiscovering ? 'btn-secondary' : 'btn-primary'}`} onClick={() => runDiscovery(subnetPrefix)} disabled={isDiscovering}>
-                  {isDiscovering ? <RefreshCw size={16} className="spinning" /> : <><Search size={16} /> {!isMobile && 'Scan'}</>}
+                  {isDiscovering ? <RefreshCw size={16} className="spinning" /> : <><Search size={16} /> {!isMobile && t('dashboard.scan')}</>}
                 </button>
               </div>
             </div>
@@ -378,7 +378,7 @@ export function SubnetView() {
         {showSubnetSettings && (
           <div className="modal-overlay" onClick={() => setShowSubnetSettings(false)}>
             <div className="modal-content" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
-              <div className="modal-header"><h3>Subnetz-Konfiguration</h3></div>
+              <div className="modal-header"><h3>{t('network.subnet_config')}</h3></div>
               <div className="modal-body">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {subnets.map(sub => (
@@ -399,18 +399,18 @@ export function SubnetView() {
                             }
                           } 
                         }}>
-                          <Trash2 size={14} /> <span>Löschen</span>
+                          <Trash2 size={14} /> <span>{t('common.delete')}</span>
                         </button>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <input className="input" defaultValue={sub.name} onBlur={e => api.updateSubnet(sub.id, { name: e.target.value }).then(loadData)} />
-                        <input className="input" defaultValue={sub.dns_server || ''} placeholder="DNS Gateway" onBlur={e => api.updateSubnet(sub.id, { dns_server: e.target.value || null }).then(loadData)} />
+                        <input className="input" defaultValue={sub.dns_server || ''} placeholder={t('network.dns_gateway', 'DNS Gateway')} onBlur={e => api.updateSubnet(sub.id, { dns_server: e.target.value || null }).then(loadData)} />
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="modal-footer"><button className="btn btn-primary" onClick={() => setShowSubnetSettings(false)}>Fertig</button></div>
+              <div className="modal-footer"><button className="btn btn-primary" onClick={() => setShowSubnetSettings(false)}>{t('common.finish')}</button></div>
             </div>
           </div>
         )}
@@ -421,9 +421,9 @@ export function SubnetView() {
               <div className="modal-header"><h3>{t('network.manage_areas')}</h3></div>
               <div className="modal-body">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 60px 48px', gap: '12px', marginBottom: '24px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <input className="input" placeholder="Area Name" value={newGroup.name} onChange={e => setNewGroup({...newGroup, name: e.target.value})} />
-                  <input className="input" type="number" placeholder="Start" value={newGroup.start} onChange={e => setNewGroup({...newGroup, start: parseInt(e.target.value)})} />
-                  <input className="input" type="number" placeholder="End" value={newGroup.end} onChange={e => setNewGroup({...newGroup, end: parseInt(e.target.value)})} />
+                  <input className="input" placeholder={t('network.area_name', 'Area Name')} value={newGroup.name} onChange={e => setNewGroup({...newGroup, name: e.target.value})} />
+                  <input className="input" type="number" placeholder={t('network.start')} value={newGroup.start} onChange={e => setNewGroup({...newGroup, start: parseInt(e.target.value)})} />
+                  <input className="input" type="number" placeholder={t('network.end')} value={newGroup.end} onChange={e => setNewGroup({...newGroup, end: parseInt(e.target.value)})} />
                   <div style={{ position: 'relative', height: '40px' }}>
                     <input 
                       style={{ width: '100%', height: '100%', padding: '2px', background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', borderRadius: '6px', cursor: 'pointer' }} 
@@ -472,7 +472,7 @@ export function SubnetView() {
                         className="btn btn-icon"
                         style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', width: '40px', height: '40px' }} 
                         onClick={() => saveGroups(groups[subnetPrefix].filter((_, i) => i !== idx))}
-                        title="Löschen"
+                        title={t('common.delete')}
                       >
                         <Trash2 size={16} />
                       </button>

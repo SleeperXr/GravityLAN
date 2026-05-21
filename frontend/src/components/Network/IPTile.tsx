@@ -119,7 +119,7 @@ export const IPTile = memo(({
               <button 
                 style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: device.is_reserved ? 'var(--accent-primary)' : 'var(--text-tertiary)', cursor: 'pointer' }}
                 onClick={(e) => { e.stopPropagation(); onUpdateDeviceField(device.id, { is_reserved: !device.is_reserved }); }}
-                title={device.is_reserved ? "Reservierung aufheben" : "IP als Reserviert (Fest) markieren"}
+                title={device.is_reserved ? t('network.unreserve', 'Remove reservation') : t('network.reserve', 'Mark IP as reserved (fixed)')}
               >
                 {device.is_reserved ? <Lock size={16} /> : <Lock size={16} style={{ opacity: 0.3 }} />}
               </button>
@@ -128,7 +128,7 @@ export const IPTile = memo(({
                 <button 
                   style={{ background: 'transparent', border: 'none', color: discovered.is_reserved ? 'var(--accent-primary)' : 'var(--text-tertiary)', cursor: 'pointer' }}
                   onClick={(e) => { e.stopPropagation(); onUpdateDiscoveredHost(discovered.id, { is_reserved: !discovered.is_reserved }); }}
-                  title={discovered.is_reserved ? "Reservierung aufheben" : "IP als Reserviert (Fest) markieren"}
+                  title={discovered.is_reserved ? t('network.unreserve', 'Remove reservation') : t('network.reserve', 'Mark IP as reserved (fixed)')}
                 >
                   {discovered.is_reserved ? <Lock size={16} /> : <Lock size={16} style={{ opacity: 0.3 }} />}
                 </button>
@@ -142,7 +142,7 @@ export const IPTile = memo(({
                 <button 
                   style={{ background: 'transparent', border: 'none', color: 'var(--accent-danger)', cursor: 'pointer', padding: '0 4px', opacity: 0.8 }}
                   onClick={(e) => { e.stopPropagation(); onDeleteDiscoveredHost(discovered.id, ip); }}
-                  title="Aus Liste entfernen"
+                  title={t('network.remove_from_list', 'Remove from list')}
                 >
                   <Trash2 size={16} />
                 </button>

@@ -21,8 +21,7 @@ export function LiveLogs() {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    const wsBase = import.meta.env.DEV ? `${protocol}//${host}:8000` : `${protocol}//${window.location.host}`;
+    const wsBase = `${protocol}//${window.location.host}`;
     let token = localStorage.getItem('gravitylan_token');
     if (token === 'undefined') token = null;
     token = token || '';

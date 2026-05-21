@@ -125,15 +125,130 @@ class MetricProvider:
     def collect(self, config: AgentConfig) -> Any:
         raise NotImplementedError("Subclasses must implement collect()")
 
+def is_lxc_container(root_path: str = "") -> bool:
+    """Detect if running inside an LXC container."""
+    # Method 1: Check /run/systemd/container
+    try:
+        container_path = Path(root_path) / "run/systemd/container"
+        if container_path.exists():
+            return container_path.read_text(encoding="utf-8").strip() == "lxc"
+    except Exception:
+        pass
+
+    # Method 2: Check /proc/self/cgroup
+    try:
+        cgroup_path = Path(root_path) / "proc/self/cgroup"
+        if cgroup_path.exists():
+            with open(cgroup_path, encoding="utf-8") as fh:
+                content = fh.read()
+                if "lxc" in content or "/lxc/" in content:
+                    return True
+    except Exception:
+        pass
+
+    # Method 3: Check /proc/1/environ (if readable)
+    try:
+        environ_path = Path(root_path) / "proc/1/environ"
+        if environ_path.exists():
+            with open(environ_path, "rb") as fh:
+                env = fh.read().split(b"\x00")
+                for item in env:
+                    if item.startswith(b"container=lxc"):
+                        return True
+    except Exception:
+        pass
+
+    return False
+
+
+def get_lxc_cpu_count(root_path: str = "") -> float:
+    """Get the CPU limit count for the LXC container from cgroups or host count."""
+    # 1. Try cgroup v2 cpu.max
+    cpu_max_v2 = Path(root_path) / "sys/fs/cgroup/cpu.max"
+    if cpu_max_v2.exists():
+        try:
+            parts = cpu_max_v2.read_text(encoding="utf-8").strip().split()
+            if len(parts) == 2 and parts[0] != "max":
+                limit = int(parts[0])
+                period = int(parts[1])
+                if period > 0:
+                    return limit / period
+        except Exception:
+            pass
+
+    # 2. Try cgroup v1 cfs_quota/period
+    quota_v1 = Path(root_path) / "sys/fs/cgroup/cpu/cpu.cfs_quota_us"
+    period_v1 = Path(root_path) / "sys/fs/cgroup/cpu/cpu.cfs_period_us"
+    if quota_v1.exists() and period_v1.exists():
+        try:
+            quota = int(quota_v1.read_text(encoding="utf-8").strip())
+            period = int(period_v1.read_text(encoding="utf-8").strip())
+            if quota > 0 and period > 0:
+                return quota / period
+        except Exception:
+            pass
+
+    # Fallback to host CPU count
+    return os.cpu_count() or 1.0
+
+
+def get_lxc_cpu_usage_ns(root_path: str = "") -> int | None:
+    """Get LXC CPU total usage time in nanoseconds."""
+    # Try cgroup v2
+    cpu_stat_v2 = Path(root_path) / "sys/fs/cgroup/cpu.stat"
+    if cpu_stat_v2.exists():
+        try:
+            for line in cpu_stat_v2.read_text(encoding="utf-8").splitlines():
+                if line.startswith("usage_usec"):
+                    return int(line.split()[1]) * 1000
+        except Exception:
+            pass
+
+    # Try cgroup v1
+    cpu_usage_v1 = Path(root_path) / "sys/fs/cgroup/cpuacct/cpuacct.usage"
+    if cpu_usage_v1.exists():
+        try:
+            return int(cpu_usage_v1.read_text(encoding="utf-8").strip())
+        except Exception:
+            pass
+
+    return None
+
+
 class CPUMetrics(MetricProvider):
-    """Calculates CPU usage percentage using /proc/stat delta."""
-    def __init__(self):
+    """Calculates CPU usage percentage using /proc/stat delta or cgroups inside LXC."""
+    def __init__(self, root_path: str = ""):
+        self.root_path = root_path
         self.prev_idle = 0
         self.prev_total = 0
+        self.prev_lxc_time = 0.0
+        self.prev_lxc_ns = 0
 
     def collect(self, config: AgentConfig) -> float:
+        if is_lxc_container(self.root_path):
+            cpu_ns = get_lxc_cpu_usage_ns(self.root_path)
+            if cpu_ns is not None:
+                now_time = time.time()
+                if self.prev_lxc_time == 0.0:
+                    self.prev_lxc_time, self.prev_lxc_ns = now_time, cpu_ns
+                    return 0.0
+                
+                delta_ns = cpu_ns - self.prev_lxc_ns
+                delta_time = now_time - self.prev_lxc_time
+                self.prev_lxc_time, self.prev_lxc_ns = now_time, cpu_ns
+
+                if delta_time <= 0 or delta_ns < 0:
+                    return 0.0
+
+                cpus = get_lxc_cpu_count(self.root_path)
+                delta_time_ns = delta_time * 1e9
+                pct = (delta_ns / delta_time_ns) * 100.0 / cpus
+                return min(100.0, max(0.0, round(pct, 1)))
+
+        # Fallback to standard host /proc/stat
         try:
-            with open("/proc/stat", encoding="utf-8") as fh:
+            stat_path = Path(self.root_path) / "proc/stat"
+            with open(stat_path, encoding="utf-8") as fh:
                 parts = fh.readline().split()
             
             # user, nice, system, idle, iowait, irq, softirq, steal
@@ -157,11 +272,21 @@ class CPUMetrics(MetricProvider):
             return 0.0
 
 class RAMMetrics(MetricProvider):
-    """Reads memory utilization from /proc/meminfo."""
+    """Reads memory utilization from /proc/meminfo or cgroups inside LXC."""
+    def __init__(self, root_path: str = ""):
+        self.root_path = root_path
+
     def collect(self, config: AgentConfig) -> Dict[str, Any]:
+        if is_lxc_container(self.root_path):
+            ram_data = self._collect_lxc()
+            if ram_data is not None:
+                return ram_data
+
+        # Fallback to standard /proc/meminfo
         try:
             meminfo: Dict[str, int] = {}
-            with open("/proc/meminfo", encoding="utf-8") as fh:
+            meminfo_path = Path(self.root_path) / "proc/meminfo"
+            with open(meminfo_path, encoding="utf-8") as fh:
                 for line in fh:
                     parts = line.split()
                     if len(parts) >= 2:
@@ -178,6 +303,66 @@ class RAMMetrics(MetricProvider):
             }
         except (OSError, ValueError):
             return {"total_mb": 0, "used_mb": 0, "percent": 0.0}
+
+    def _collect_lxc(self) -> Dict[str, Any] | None:
+        """Collect memory metrics using cgroups inside LXC."""
+        used_bytes = None
+        total_bytes = None
+
+        # Check cgroups v2
+        mem_current_v2 = Path(self.root_path) / "sys/fs/cgroup/memory.current"
+        mem_max_v2 = Path(self.root_path) / "sys/fs/cgroup/memory.max"
+        if mem_current_v2.exists():
+            try:
+                used_bytes = int(mem_current_v2.read_text(encoding="utf-8").strip())
+                if mem_max_v2.exists():
+                    max_str = mem_max_v2.read_text(encoding="utf-8").strip()
+                    if max_str != "max":
+                        total_bytes = int(max_str)
+            except Exception:
+                pass
+
+        # Check cgroups v1
+        if used_bytes is None:
+            mem_current_v1 = Path(self.root_path) / "sys/fs/cgroup/memory/memory.usage_in_bytes"
+            mem_max_v1 = Path(self.root_path) / "sys/fs/cgroup/memory/memory.limit_in_bytes"
+            if mem_current_v1.exists():
+                try:
+                    used_bytes = int(mem_current_v1.read_text(encoding="utf-8").strip())
+                    if mem_max_v1.exists():
+                        limit_val = int(mem_max_v1.read_text(encoding="utf-8").strip())
+                        if limit_val < 2**60:
+                            total_bytes = limit_val
+                except Exception:
+                    pass
+
+        if used_bytes is None:
+            return None
+
+        # Fallback to /proc/meminfo MemTotal if total limit is not set
+        if total_bytes is None:
+            try:
+                meminfo_path = Path(self.root_path) / "proc/meminfo"
+                with open(meminfo_path, encoding="utf-8") as fh:
+                    for line in fh:
+                        if line.startswith("MemTotal:"):
+                            total_bytes = int(line.split()[1]) * 1024
+                            break
+            except Exception:
+                pass
+
+        if total_bytes is None or total_bytes == 0:
+            return None
+
+        total_mb = total_bytes // (1024 * 1024)
+        used_mb = used_bytes // (1024 * 1024)
+        percent = round(used_bytes / total_bytes * 100, 1)
+
+        return {
+            "total_mb": total_mb,
+            "used_mb": used_mb,
+            "percent": percent
+        }
 
 class DiskMetrics(MetricProvider):
     """Reads disk usage for configured paths and automatically discovers physical/ZFS mounts."""

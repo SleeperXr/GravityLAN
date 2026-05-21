@@ -3,10 +3,25 @@
     "title": "GravityLAN"
   },
   "sidebar": {
+    "main": "Main",
+    "network": "Network",
+    "system": "System",
+    "agents": "Agents",
     "dashboard": "Dashboard",
     "network_planner": "Network Planner",
     "topology": "Topology",
     "settings": "Settings"
+  },
+  "auth": {
+    "required": "Authentication required",
+    "description": "Access to the GravityLAN control center is protected. Please enter your administrator password.",
+    "sign_in": "Sign in",
+    "invalid_password": "Invalid password",
+    "security_node": "GravityLAN Security Node"
+  },
+  "app_status": {
+    "initializing": "Initializing...",
+    "checking_setup": "Checking setup status on {{origin}}..."
   },
   "common": {
     "save": "Save",
@@ -27,7 +42,9 @@
     "close": "Close",
     "unknown": "Unknown",
     "device_added": "Device {{ip}} added to dashboard.",
-    "update_available": "Update available: v{{version}}"
+    "update_available": "Update available: v{{version}}",
+    "scan_started": "Scan started",
+    "refresh_started": "Refresh started"
   },
   "notifications": {
     "scan_completed": "Scan completed",
@@ -59,7 +76,8 @@
     "click_to_copy": "Click to copy",
     "rdp_started": "RDP started",
     "rdp_generated": ".rdp file for {{ip}} has been generated.",
-    "rdp_download": "Download RDP file for {{ip}}"
+    "rdp_download": "Download RDP file for {{ip}}",
+    "refresh_started_details": "Refreshing hostnames and MAC addresses..."
   },
   "dashboard": {
     "loading": "Loading Dashboard...",
@@ -123,7 +141,9 @@
     "ports_found": "Ports found: {{ports}}",
     "no_ports_found": "No ports found",
     "alarm": "Alarm",
-    "recent_findings": "Recent Findings"
+    "recent_findings": "Recent Findings",
+    "subnet_settings": "Subnet Settings",
+    "subnet_config": "Subnet Configuration"
   },
   "editor": {
     "title_edit": "Edit Device",
@@ -150,8 +170,22 @@
     "prompt_port": "Port?",
     "default_service_name": "Web Interface",
     "manual_tag": "MANUAL",
-    "service_note": "Manually changed services are not overwritten during network scans. The scan only checks if the port is still open.",
-    "custom_name_placeholder": "Custom Name (e.g. Printer)"
+    "custom_name_placeholder": "Custom Name (e.g. Printer)",
+    "no_rack": "No Rack",
+    "wlan_client": "WLAN Client",
+    "wlan_client_desc": "Signal bars",
+    "access_point": "Access Point",
+    "access_point_desc": "Wi-Fi source",
+    "physical_host": "Physical Host",
+    "physical_host_desc": "Contains VMs/Docker",
+    "no_parent_host": "No Host (Standalone System)",
+    "notes_placeholder": "Enter device notes here...",
+    "parent_host": "Physical Host System",
+    "parent_device": "Physical Host",
+    "no_parent": "No Host (Physical)",
+    "no_dns_name": "No DNS Name",
+    "delete_service_confirm": "Remove service?",
+    "manual": "MANUAL"
   },
   "agent": {
     "status_active": "Agent active",
@@ -191,8 +225,18 @@
     "uninstall_failed_title": "Uninstall failed",
     "deployment_logs": "Deployment Logs",
     "manual_uninstall": "Manual Uninstall",
-    "manual_uninstall_hint": "Run this command to remove the agent manually:",
-    "ssh_key_hint": "Or paste your SSH OpenSSH Key here..."
+    "ssh_key_hint": "Or paste your SSH OpenSSH Key here...",
+    "update_center_title": "Agent Update Center",
+    "global_credentials": "Global Credentials (apply to all)",
+    "ssh_user_placeholder": "e.g. root",
+    "all_up_to_date": "All agents are up to date!",
+    "installing": "Installing...",
+    "updates_available": "updates available",
+    "update_remaining": "Update all remaining",
+    "credentials_missing": "Credentials missing",
+    "connection_error": "Connection error",
+    "manual_install_options": "Show manual installation/uninstallation options",
+    "adopt_success": "Agent successfully adopted!"
   },
   "settings": {
     "title": "GravityLAN Settings",
@@ -225,17 +269,69 @@
     "reset_confirm_title": "!!! WARNING !!!\n\nDo you really want to permanently delete ALL devices and services?\nThis cannot be undone!",
     "reset_confirm_final": "Are you really, really sure?",
     "server_url_override": "Agent Server URL Override",
-    "server_url_override_hint": "Manually set the server URL for agents (e.g. http://192.168.100.37:8000). Leave empty for auto-detection."
+    "server_url_override_hint": "Manually set the server URL for agents (e.g. http://192.168.100.37:8000). Leave empty for auto-detection.",
+    "scan_timeout": "Scanner Timeout (Seconds)",
+    "scan_timeout_placeholder": "e.g. 1.5",
+    "scan_timeout_desc": "Increase this value (e.g., to 2.0) if devices in deep sleep are not detected.",
+    "system_logging": "System Logging",
+    "log_level": "Log Level",
+    "log_level_info": "INFO (Default)",
+    "log_level_warning": "WARNING (Errors/warnings only)",
+    "log_level_debug": "DEBUG (Verbose)",
+    "log_level_sql": "DEBUG + SQL (Full database logs)",
+    "log_level_desc": "Note: SQL logs slow down the system and make the logs very cluttered.",
+    "system_livelogs": "System Live Logs",
+    "system_livelogs_desc": "Real-time view of backend processes (troubleshooting & monitoring)",
+    "system_livelogs_open": "Open Logs",
+    "backup_restore": "Backup & Restore",
+    "security_notice_title": "Security Notice",
+    "security_notice_desc": "Backups contain sensitive data such as master tokens and agent keys. Keep export files secure and do not share them with unauthorized parties.",
+    "backup_export": "Export",
+    "backup_export_desc": "Backups all devices, groups, and settings in a JSON file.",
+    "backup_exporting": "Exporting...",
+    "backup_download": "Download Backup",
+    "backup_import": "Import",
+    "backup_import_desc": "Restore data from a backup file. Existing data will be overwritten!",
+    "backup_importing": "Importing...",
+    "backup_select_file": "Select File & Import",
+    "reset_really": "REALLY DELETE NOW?",
+    "export_failed": "Export failed: ",
+    "import_confirm_warning": "Are you sure? All existing data will be overwritten!",
+    "import_success": "Backup successfully imported! The page will be reloaded.",
+    "import_failed": "Import failed: ",
+    "dns_custom_title": "Custom DNS Server",
+    "dns_custom_desc": "If set, the scanner will use this server to resolve hostnames instead of the system default."
   },
   "setup": {
     "welcome": "Welcome to GravityLAN",
     "description": "Your central hub for your home network. Let's explore your network.",
+    "welcome_title": "Welcome to GravityLAN",
+    "welcome_description": "Your central hub for your home network. Let's explore your network.",
+    "auto_detection": "Automatic detection",
+    "auto_detection_desc": "Servers, firewalls, NAS systems, and web interfaces are detected automatically.",
+    "direct_access": "Direct access",
+    "direct_access_desc": "One click to RDP, SSH, web UI, or SMB — directly from the dashboard.",
     "select_subnets": "Select Networks",
     "select_subnets_desc": "Choose the subnets that should be scanned.",
+    "select_networks_title": "Select networks",
+    "select_networks_desc": "Choose the subnets that should be scanned.",
+    "dns_title": "Name resolution (DNS)",
+    "dns_desc": "Optional: Enter a DNS server for better internal name resolution, e.g. Pi-hole or a local DNS server.",
     "scan_in_progress": "Scanning Network...",
     "scan_completed": "Scan completed!",
     "devices_found": "{{count}} devices found",
     "initializing_scan": "Initializing scan...",
-    "abort_scan": "Abort Scan"
+    "abort_scan": "Abort Scan",
+    "security_title": "Configure security",
+    "security_desc": "Set an administrator password to protect your dashboard.",
+    "admin_password": "Administrator password",
+    "confirm_password": "Confirm password",
+    "passwords_dont_match": "Passwords do not match.",
+    "password_hint": "Keep your password safe. It is required to access the dashboard.",
+    "saving_configuration": "Saving configuration...",
+    "stabilizing_backend": "Stabilizing backend...",
+    "scanning_network": "Scanning your network...",
+    "almost_done": "Almost done...",
+    "welcome_done": "Welcome to GravityLAN!"
   }
 }

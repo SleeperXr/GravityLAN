@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import type { Device } from '../../types';
 import { RefreshCw, Shield, ChevronRight, CheckCircle2, AlertCircle, X, Terminal } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface AgentUpdateCenterProps {
   devices: Device[];
@@ -16,6 +17,7 @@ interface UpdateStatus {
 }
 
 export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateCenterProps) {
+  const { t } = useTranslation();
   // Filter only devices that need update
   const devicesToUpdate = devices.filter(d => 
     d.has_agent && 
@@ -39,7 +41,7 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
     if (!user || !pass) {
       setStatuses(prev => ({
         ...prev,
-        [device.id]: { deviceId: device.id, status: 'failed', message: 'Zugangsdaten fehlen' }
+        [device.id]: { deviceId: device.id, status: 'failed', message: t('agent.credentials_missing', 'Zugangsdaten fehlen') }
       }));
       return;
     }
@@ -70,7 +72,7 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
     } catch (err: any) {
       setStatuses(prev => ({
         ...prev,
-        [device.id]: { deviceId: device.id, status: 'failed', message: err.message || 'Verbindungsfehler' }
+        [device.id]: { deviceId: device.id, status: 'failed', message: err.message || t('agent.connection_error', 'Verbindungsfehler') }
       }));
     }
   };
@@ -93,7 +95,7 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
             <RefreshCw size={20} className={isGlobalLoading ? 'spinning' : ''} />
-            <h2>Agent Update Center</h2>
+            <h2>{t('agent.update_center_title', 'Agent Update Center')}</h2>
           </div>
           <button className="btn-close" onClick={onClose}><X size={18} /></button>
         </div>
@@ -108,27 +110,27 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
             marginBottom: 'var(--space-lg)'
           }}>
             <h3 style={{ fontSize: '0.9rem', marginBottom: 'var(--space-sm)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Shield size={14} /> Globale Zugangsdaten (für alle übernehmen)
+              <Shield size={14} /> {t('agent.global_credentials')}
             </h3>
             <div style={{ display: 'flex', gap: 'var(--space-md)' }}>
               <div style={{ flex: 1 }}>
-                <label className="label">SSH Benutzer</label>
+                <label className="label">{t('agent.ssh_user')}</label>
                 <input 
                   type="text" 
                   className="input" 
                   value={sshUser} 
                   onChange={e => setSshUser(e.target.value)}
-                  placeholder="z.B. root"
+                  placeholder={t('agent.ssh_user_placeholder', 'z.B. root')}
                 />
               </div>
               <div style={{ flex: 1 }}>
-                <label className="label">SSH Passwort</label>
+                <label className="label">{t('agent.ssh_password')}</label>
                 <input 
                   type="password" 
                   className="input" 
                   value={sshPassword} 
                   onChange={e => setSshPassword(e.target.value)}
-                  placeholder="Passwort eingeben"
+                  placeholder={t('agent.password_placeholder')}
                 />
               </div>
             </div>
@@ -138,7 +140,7 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
             {devicesToUpdate.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 'var(--space-xl)', color: 'var(--text-secondary)' }}>
-                Alle Agenten sind auf dem neuesten Stand! 🎉
+                {t('agent.all_up_to_date')} 🎉
               </div>
             ) : (
               devicesToUpdate.map(device => {
@@ -164,22 +166,22 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
                     <div style={{ width: '150px' }}>
                       {status.status === 'idle' && (
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <ChevronRight size={12} /> Bereit
+                          <ChevronRight size={12} /> {t('common.ready', 'Ready')}
                         </div>
                       )}
                       {status.status === 'running' && (
                         <div style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <RefreshCw size={12} className="spinning" /> Installiere...
+                          <RefreshCw size={12} className="spinning" /> {t('agent.installing')}
                         </div>
                       )}
                       {status.status === 'success' && (
                         <div style={{ fontSize: '0.75rem', color: 'var(--accent-success)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={12} /> Fertig
+                          <CheckCircle2 size={12} /> {t('common.done', 'Done')}
                         </div>
                       )}
                       {status.status === 'failed' && (
                         <div style={{ fontSize: '0.75rem', color: 'var(--accent-danger)', display: 'flex', alignItems: 'center', gap: '4px' }} title={status.message}>
-                          <AlertCircle size={12} /> Fehler
+                          <AlertCircle size={12} /> {t('common.error')}
                         </div>
                       )}
                     </div>
@@ -190,7 +192,7 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
                       onClick={() => handleUpdate(device)}
                       disabled={status.status === 'running' || status.status === 'success'}
                     >
-                      {status.status === 'failed' ? 'Wiederholen' : 'Update'}
+                      {status.status === 'failed' ? t('common.retry', 'Retry') : t('common.update', 'Update')}
                     </button>
                   </div>
                 );
@@ -201,17 +203,17 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
 
         <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
-            {devicesToUpdate.length} Updates verfügbar
+            {devicesToUpdate.length} {t('agent.updates_available')}
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-md)' }}>
-            <button className="btn btn-secondary" onClick={onClose}>Schließen</button>
+            <button className="btn btn-secondary" onClick={onClose}>{t('common.close')}</button>
             <button 
               className="btn btn-primary" 
               onClick={handleUpdateAll}
               disabled={isGlobalLoading || devicesToUpdate.length === 0 || !sshPassword}
             >
               <RefreshCw size={16} className={isGlobalLoading ? 'spinning' : ''} />
-              Alle verbleibenden aktualisieren
+              {t('agent.update_remaining')}
             </button>
           </div>
         </div>

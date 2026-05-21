@@ -38,9 +38,18 @@ logger.setLevel(logging.INFO)
 
 # File logging for debugging remote deployments
 log_file = "/tmp/gravitylan-agent.log"
-file_handler = logging.FileHandler(log_file)
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(file_handler)
+try:
+    file_handler = logging.FileHandler(log_file)
+except OSError:
+    try:
+        log_file = CONFIG_DIR / "gravitylan-agent.log"
+        file_handler = logging.FileHandler(log_file)
+    except OSError:
+        file_handler = None
+
+if file_handler:
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
 
 # Console logging
 console_handler = logging.StreamHandler()
@@ -81,15 +90,105 @@ def load_config() -> dict[str, Any]:
     return config
 
 
-# ---------------------------------------------------------------------------
 # Metric Collectors — read directly from /proc and /sys (zero-dependency)
 # ---------------------------------------------------------------------------
 
 _prev_cpu: tuple[int, int] | None = None
+_prev_lxc_cpu: tuple[float, int] | None = None
 
 
-def collect_cpu() -> float:
-    """Read CPU utilization percentage from /proc/stat.
+def is_lxc_container(root_path: str = "") -> bool:
+    """Detect if running inside an LXC container."""
+    # Method 1: Check /run/systemd/container
+    try:
+        container_path = Path(root_path) / "run/systemd/container"
+        if container_path.exists():
+            return container_path.read_text(encoding="utf-8").strip() == "lxc"
+    except Exception:
+        pass
+
+    # Method 2: Check /proc/self/cgroup
+    try:
+        cgroup_path = Path(root_path) / "proc/self/cgroup"
+        if cgroup_path.exists():
+            with open(cgroup_path, encoding="utf-8") as fh:
+                content = fh.read()
+                if "lxc" in content or "/lxc/" in content:
+                    return True
+    except Exception:
+        pass
+
+    # Method 3: Check /proc/1/environ (if readable)
+    try:
+        environ_path = Path(root_path) / "proc/1/environ"
+        if environ_path.exists():
+            with open(environ_path, "rb") as fh:
+                env = fh.read().split(b"\x00")
+                for item in env:
+                    if item.startswith(b"container=lxc"):
+                        return True
+    except Exception:
+        pass
+
+    return False
+
+
+def get_lxc_cpu_count(root_path: str = "") -> float:
+    """Get the CPU limit count for the LXC container from cgroups or host count."""
+    # 1. Try cgroup v2 cpu.max
+    cpu_max_v2 = Path(root_path) / "sys/fs/cgroup/cpu.max"
+    if cpu_max_v2.exists():
+        try:
+            parts = cpu_max_v2.read_text(encoding="utf-8").strip().split()
+            if len(parts) == 2 and parts[0] != "max":
+                limit = int(parts[0])
+                period = int(parts[1])
+                if period > 0:
+                    return limit / period
+        except Exception:
+            pass
+
+    # 2. Try cgroup v1 cfs_quota/period
+    quota_v1 = Path(root_path) / "sys/fs/cgroup/cpu/cpu.cfs_quota_us"
+    period_v1 = Path(root_path) / "sys/fs/cgroup/cpu/cpu.cfs_period_us"
+    if quota_v1.exists() and period_v1.exists():
+        try:
+            quota = int(quota_v1.read_text(encoding="utf-8").strip())
+            period = int(period_v1.read_text(encoding="utf-8").strip())
+            if quota > 0 and period > 0:
+                return quota / period
+        except Exception:
+            pass
+
+    # Fallback to host CPU count
+    return os.cpu_count() or 1.0
+
+
+def get_lxc_cpu_usage_ns(root_path: str = "") -> int | None:
+    """Get LXC CPU total usage time in nanoseconds."""
+    # Try cgroup v2
+    cpu_stat_v2 = Path(root_path) / "sys/fs/cgroup/cpu.stat"
+    if cpu_stat_v2.exists():
+        try:
+            for line in cpu_stat_v2.read_text(encoding="utf-8").splitlines():
+                if line.startswith("usage_usec"):
+                    return int(line.split()[1]) * 1000
+        except Exception:
+            pass
+
+    # Try cgroup v1
+    cpu_usage_v1 = Path(root_path) / "sys/fs/cgroup/cpuacct/cpuacct.usage"
+    if cpu_usage_v1.exists():
+        try:
+            return int(cpu_usage_v1.read_text(encoding="utf-8").strip())
+        except Exception:
+            pass
+
+    return None
+
+
+def collect_cpu(root_path: str = "") -> float:
+    """Read CPU utilization percentage from /proc/stat or cgroups inside LXC.
 
     Uses delta between two readings to calculate accurate usage.
     First call returns 0.0 since there is no previous sample.
@@ -97,55 +196,150 @@ def collect_cpu() -> float:
     Returns:
         CPU usage percentage (0.0 – 100.0).
     """
-    global _prev_cpu
+    global _prev_cpu, _prev_lxc_cpu
 
-    with open("/proc/stat", encoding="utf-8") as fh:
-        parts = fh.readline().split()
+    if is_lxc_container(root_path):
+        cpu_ns = get_lxc_cpu_usage_ns(root_path)
+        if cpu_ns is not None:
+            now_time = time.time()
+            if _prev_lxc_cpu is None:
+                _prev_lxc_cpu = (now_time, cpu_ns)
+                return 0.0
 
-    # user, nice, system, idle, iowait, irq, softirq, steal
-    values = [int(v) for v in parts[1:9]]
-    idle = values[3] + values[4]
-    total = sum(values)
+            prev_time, prev_ns = _prev_lxc_cpu
+            _prev_lxc_cpu = (now_time, cpu_ns)
 
-    if _prev_cpu is None:
+            delta_ns = cpu_ns - prev_ns
+            delta_time = now_time - prev_time
+
+            if delta_time <= 0 or delta_ns < 0:
+                return 0.0
+
+            cpus = get_lxc_cpu_count(root_path)
+            delta_time_ns = delta_time * 1e9
+            pct = (delta_ns / delta_time_ns) * 100.0 / cpus
+            return min(100.0, max(0.0, round(pct, 1)))
+
+    try:
+        stat_file = Path(root_path) / "proc/stat"
+        with open(stat_file, encoding="utf-8") as fh:
+            parts = fh.readline().split()
+
+        # user, nice, system, idle, iowait, irq, softirq, steal
+        values = [int(v) for v in parts[1:9]]
+        idle = values[3] + values[4]
+        total = sum(values)
+
+        if _prev_cpu is None:
+            _prev_cpu = (idle, total)
+            return 0.0
+
+        prev_idle, prev_total = _prev_cpu
         _prev_cpu = (idle, total)
+
+        delta_idle = idle - prev_idle
+        delta_total = total - prev_total
+
+        if delta_total == 0:
+            return 0.0
+
+        return round((1.0 - delta_idle / delta_total) * 100, 1)
+    except (OSError, ValueError, ZeroDivisionError):
         return 0.0
 
-    prev_idle, prev_total = _prev_cpu
-    _prev_cpu = (idle, total)
 
-    delta_idle = idle - prev_idle
-    delta_total = total - prev_total
-
-    if delta_total == 0:
-        return 0.0
-
-    return round((1.0 - delta_idle / delta_total) * 100, 1)
-
-
-def collect_ram() -> dict[str, int]:
-    """Read RAM usage from /proc/meminfo.
+def collect_ram(root_path: str = "") -> dict[str, int]:
+    """Read RAM usage from /proc/meminfo or cgroups inside LXC.
 
     Returns:
         Dictionary with 'total_mb', 'used_mb', and 'percent' keys.
     """
-    meminfo: dict[str, int] = {}
+    if is_lxc_container(root_path):
+        ram_data = _collect_ram_lxc(root_path)
+        if ram_data is not None:
+            return ram_data
 
-    with open("/proc/meminfo", encoding="utf-8") as fh:
-        for line in fh:
-            parts = line.split()
-            key = parts[0].rstrip(":")
-            meminfo[key] = int(parts[1])
+    try:
+        meminfo: dict[str, int] = {}
+        mem_file = Path(root_path) / "proc/meminfo"
+        with open(mem_file, encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.split()
+                key = parts[0].rstrip(":")
+                meminfo[key] = int(parts[1])
 
-    total_kb = meminfo.get("MemTotal", 0)
-    available_kb = meminfo.get("MemAvailable", 0)
-    used_kb = total_kb - available_kb
+        total_kb = meminfo.get("MemTotal", 0)
+        available_kb = meminfo.get("MemAvailable", 0)
+        used_kb = total_kb - available_kb
 
-    total_mb = total_kb // 1024
-    used_mb = used_kb // 1024
-    percent = round(used_kb / total_kb * 100, 1) if total_kb > 0 else 0.0
+        total_mb = total_kb // 1024
+        used_mb = used_kb // 1024
+        percent = round(used_kb / total_kb * 100, 1) if total_kb > 0 else 0.0
 
-    return {"total_mb": total_mb, "used_mb": used_mb, "percent": percent}
+        return {"total_mb": total_mb, "used_mb": used_mb, "percent": percent}
+    except (OSError, ValueError):
+        return {"total_mb": 0, "used_mb": 0, "percent": 0.0}
+
+
+def _collect_ram_lxc(root_path: str = "") -> dict[str, int] | None:
+    """Collect memory metrics using cgroups inside LXC."""
+    used_bytes = None
+    total_bytes = None
+
+    # Check cgroups v2
+    mem_current_v2 = Path(root_path) / "sys/fs/cgroup/memory.current"
+    mem_max_v2 = Path(root_path) / "sys/fs/cgroup/memory.max"
+    if mem_current_v2.exists():
+        try:
+            used_bytes = int(mem_current_v2.read_text(encoding="utf-8").strip())
+            if mem_max_v2.exists():
+                max_str = mem_max_v2.read_text(encoding="utf-8").strip()
+                if max_str != "max":
+                    total_bytes = int(max_str)
+        except Exception:
+            pass
+
+    # Check cgroups v1
+    if used_bytes is None:
+        mem_current_v1 = Path(root_path) / "sys/fs/cgroup/memory/memory.usage_in_bytes"
+        mem_max_v1 = Path(root_path) / "sys/fs/cgroup/memory/memory.limit_in_bytes"
+        if mem_current_v1.exists():
+            try:
+                used_bytes = int(mem_current_v1.read_text(encoding="utf-8").strip())
+                if mem_max_v1.exists():
+                    limit_val = int(mem_max_v1.read_text(encoding="utf-8").strip())
+                    if limit_val < 2**60:
+                        total_bytes = limit_val
+            except Exception:
+                pass
+
+    if used_bytes is None:
+        return None
+
+    # Fallback to /proc/meminfo MemTotal if total limit is not set
+    if total_bytes is None:
+        try:
+            meminfo_path = Path(root_path) / "proc/meminfo"
+            with open(meminfo_path, encoding="utf-8") as fh:
+                for line in fh:
+                    if line.startswith("MemTotal:"):
+                        total_bytes = int(line.split()[1]) * 1024
+                        break
+        except Exception:
+            pass
+
+    if total_bytes is None or total_bytes == 0:
+        return None
+
+    total_mb = total_bytes // (1024 * 1024)
+    used_mb = used_bytes // (1024 * 1024)
+    percent = round(used_bytes / total_bytes * 100, 1)
+
+    return {
+        "total_mb": total_mb,
+        "used_mb": used_mb,
+        "percent": percent
+    }
 
 
 def collect_disk(paths: list[str]) -> list[dict[str, Any]]:
@@ -231,7 +425,7 @@ def collect_disk(paths: list[str]) -> list[dict[str, Any]]:
     return results
 
 
-def collect_temperature() -> float | None:
+def collect_temperature(root_path: str = "") -> float | None:
     """Read CPU temperature from /sys/class/thermal.
 
     Scans thermal zones for CPU-related entries. Returns None if
@@ -240,7 +434,7 @@ def collect_temperature() -> float | None:
     Returns:
         Temperature in Celsius or None if unavailable.
     """
-    thermal_base = Path("/sys/class/thermal")
+    thermal_base = Path(root_path) / "sys/class/thermal"
 
     if not thermal_base.exists():
         return None
@@ -273,7 +467,7 @@ def collect_temperature() -> float | None:
 _prev_net: dict[str, tuple[int, int]] | None = None
 
 
-def collect_network() -> dict[str, dict[str, int]]:
+def collect_network(root_path: str = "") -> dict[str, dict[str, int]]:
     """Read network I/O counters from /proc/net/dev.
 
     Calculates bytes/sec delta between calls for each interface.
@@ -286,7 +480,8 @@ def collect_network() -> dict[str, dict[str, int]]:
 
     current: dict[str, tuple[int, int]] = {}
 
-    with open("/proc/net/dev", encoding="utf-8") as fh:
+    net_dev_path = Path(root_path) / "proc/net/dev"
+    with open(net_dev_path, encoding="utf-8") as fh:
         for line in fh:
             if ":" not in line:
                 continue

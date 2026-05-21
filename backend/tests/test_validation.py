@@ -24,7 +24,7 @@ async def test_subnet_validation_invalid(client, admin_token):
     
     response = await client.post("/api/settings", json=payload, headers=headers)
     assert response.status_code == 400
-    assert "Ungültige Subnetze" in response.json()["detail"]
+    assert "Invalid subnets" in response.json()["detail"]
 
 @pytest.mark.asyncio
 async def test_subnet_validation_mixed(client, admin_token):
@@ -141,5 +141,35 @@ async def test_lifespan_permission_error():
             async with lifespan(app):
                 pass
         assert "PERMISSION ERROR" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_server_url_validation_valid(client, admin_token):
+    """Test that valid server URLs are accepted."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    payload = {"server.url": "http://192.168.1.100:8000"}
+    
+    response = await client.post("/api/settings", json=payload, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_server_url_validation_invalid(client, admin_token):
+    """Test that invalid server URLs return 400."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    
+    invalid_urls = [
+        "ftp://192.168.1.100",
+        "http://",
+        "http:// 192.168.1.100",
+        "invalid-url",
+        "http://192.168.1.100:80 00"
+    ]
+    for url in invalid_urls:
+        payload = {"server.url": url}
+        response = await client.post("/api/settings", json=payload, headers=headers)
+        assert response.status_code == 400
+        assert "Invalid server URL" in response.json()["detail"]
 
 
