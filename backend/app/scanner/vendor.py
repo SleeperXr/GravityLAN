@@ -177,9 +177,9 @@ def _api_lookup(mac: str) -> str:
             _last_429_time = time.time()
             logger.warning(f"API rate limit hit (HTTP {e.code}). Entering {(_COOLDOWN_SECONDS // 60)}m cooldown.")
         elif e.code != 404:  # 404 is "Not Found", which is expected for unknown OUIs
-            logger.debug(f"API vendor lookup HTTP error {e.code} for {mac}")
+            logger.debug(f"API vendor lookup HTTP error {e.code} for OUI {mac[:8]}")
     except Exception as e:
         # Network issues are common with this API
-        logger.debug(f"API vendor lookup network failure for {mac}: {e}")
+        logger.debug(f"API vendor lookup network failure for OUI {mac[:8]}: {e}")
 
     return ""

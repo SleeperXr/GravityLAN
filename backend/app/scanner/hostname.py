@@ -26,6 +26,15 @@ def is_ip_like(name: Optional[str]) -> bool:
         return True
     return bool(IP_PATTERN.match(name)) or name.lower() in ["unbekannt", "unknown"]
 
+def mask_ip(ip: Optional[str]) -> str:
+    """Masks the host portion of an IP address (e.g. 192.168.1.1 -> 192.168.x.x) for secure logging."""
+    if not ip:
+        return ""
+    parts = ip.split(".")
+    if len(parts) == 4:
+        return f"{parts[0]}.{parts[1]}.x.x"
+    return "x.x.x.x"
+
 # Simple in-memory cache for DNS resolutions
 # Format: {ip: (hostname, timestamp)}
 _dns_cache: dict[str, tuple[Optional[str], datetime]] = {}
@@ -151,10 +160,10 @@ async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None
                 answers = resolver.resolve(rev_name, "PTR")
                 if answers:
                     resolved_name = str(answers[0]).rstrip('.')
-                    logger.info(f"Custom DNS resolved {ip} to: {resolved_name}")
+                    logger.info(f"Custom DNS resolved {mask_ip(ip)} to: {resolved_name}")
                     return resolved_name
             except Exception as e:
-                logger.debug(f"Direct DNS PTR query for {ip} failed: {e}")
+                logger.debug(f"Direct DNS PTR query for {mask_ip(ip)} failed: {e}")
 
         # 3. Fallback to OS resolver (socket)
         try:
@@ -176,11 +185,11 @@ async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None
         _dns_cache[ip] = (resolved_name, datetime.now(timezone.utc))
         return resolved_name
     except asyncio.TimeoutError:
-        logger.debug(f"DNS resolution timeout for {ip}")
+        logger.debug(f"DNS resolution timeout for {mask_ip(ip)}")
         _dns_cache[ip] = (None, datetime.now(timezone.utc)) # Cache failure too
         return None
     except Exception as e:
-        logger.debug(f"DNS resolution error for {ip}: {e}")
+        logger.debug(f"DNS resolution error for {mask_ip(ip)}: {e}")
         _dns_cache[ip] = (None, datetime.now(timezone.utc))
         return None
 
@@ -205,7 +214,7 @@ async def resolve_hostnames(
             # Only update if we actually found something
             if hostname:
                 host["hostname"] = hostname
-                logger.info(f"Resolved {host['ip']} to {hostname}")
+                logger.info(f"Resolved {mask_ip(host['ip'])} to {hostname}")
         return host
 
     tasks = [_resolve_single(h) for h in hosts]

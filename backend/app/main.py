@@ -384,13 +384,18 @@ if FRONTEND_DIR.exists():
             raise HTTPException(status_code=404, detail="API endpoint not found")
         
         # Exclude existing files (assets/etc)
-        file_path = FRONTEND_DIR / full_path
-        if file_path.is_file():
-            return FileResponse(file_path)
+        try:
+            resolved_path = (FRONTEND_DIR / full_path).resolve()
+            if not resolved_path.is_relative_to(FRONTEND_DIR.resolve()):
+                raise HTTPException(status_code=400, detail="Invalid path")
+            if resolved_path.is_file():
+                return FileResponse(str(resolved_path))
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid path")
             
         # Fallback to index.html for SPA routing
         index_file = FRONTEND_DIR / "index.html"
-        return FileResponse(index_file)
+        return FileResponse(str(index_file))
 
     logger.info("Serving SPA frontend from: %s", FRONTEND_DIR)
 

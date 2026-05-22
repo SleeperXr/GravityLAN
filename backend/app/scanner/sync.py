@@ -48,7 +48,7 @@ async def sync_hosts_batch(hosts: list[dict], is_planner_scan: bool = True, shou
                 res = await _sync_host_internal(db, is_planner_scan=is_planner_scan, **host)
                 results.append(res)
             except Exception as e:
-                logger.error(f"Sync: Failed to process host {host.get('ip')}: {e}")
+                logger.error(f"Sync: Failed to process host: {e}")
 
         # Commit with robust SQLite retry logic
         for attempt in range(5):
