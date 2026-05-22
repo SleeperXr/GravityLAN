@@ -51,9 +51,9 @@ const DeviceNode = React.memo(({ data, selected }: NodeProps) => {
           {data.is_ap ? (
             <Radio size={18} className="node-icon text-amber-400" />
           ) : data.virtual_type === 'docker' ? (
-            <Box size={18} className="node-icon text-purple-400" />
+            <Box size={18} className="node-icon text-cyan-400" />
           ) : data.virtual_type === 'vm' ? (
-            <Monitor size={18} className="node-icon text-fuchsia-400" />
+            <Monitor size={18} className="node-icon text-emerald-400" />
           ) : data.is_wlan ? (
             <Smartphone size={18} className="node-icon text-sky-400" />
           ) : (
@@ -841,7 +841,7 @@ const TopologyMap: React.FC = () => {
                   ) : selectedNode.data.virtual_type === 'docker' ? (
                     <Box size={32} className="text-cyan-400" />
                   ) : selectedNode.data.virtual_type === 'vm' ? (
-                    <Monitor size={32} className="text-purple-400" />
+                    <Monitor size={32} className="text-emerald-400" />
                   ) : selectedNode.data.is_wlan ? (
                     <Smartphone size={32} className="text-sky-400" />
                   ) : (
@@ -1096,7 +1096,7 @@ const TopologyMap: React.FC = () => {
         .metric-bar-bg { flex: 1; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
         .metric-bar-fill { height: 100%; transition: width 0.3s ease; }
         .metric-bar-fill.cpu { background: #38bdf8; }
-        .metric-bar-fill.ram { background: #a855f7; }
+        .metric-bar-fill.ram { background: #22d3ee; }
         
         .port-count { font-size: 8px; color: #64748b; margin-top: 10px; display: flex; align-items: center; gap: 4px; font-weight: 700; }
 

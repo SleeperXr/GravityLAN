@@ -788,7 +788,7 @@ input[type="number"] {
 
 .progress-bar__fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary, #a855f7));
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary, #22d3ee));
   transition: width 0.3s ease;
 }
 /* --- Responsive Styles --- */
