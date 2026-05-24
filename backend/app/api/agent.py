@@ -975,8 +975,8 @@ async def agent_websocket(websocket: WebSocket, device_id: int):
     if not auth_info.get("authenticated"):
         return
 
-    # Agent websocket is restricted to browser-sessions, legacy master cookie, master token query params, or agent-specific tokens
-    if auth_info.get("auth_type") not in ("session", "master_legacy", "agent", "master"):
+    # Agent websocket is restricted to browser-sessions, legacy master cookie, master token query params, agent-specific tokens, or API tokens
+    if auth_info.get("auth_type") not in ("session", "master_legacy", "agent", "master", "api_token"):
         await websocket.close(code=4003, reason="Unauthorized access level")
         return
 

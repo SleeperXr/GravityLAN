@@ -167,6 +167,11 @@ export const api = {
   updateTopologyLink: (id: number, data: Partial<import('../types').TopologyLink>) => request<import('../types').TopologyLink>(`/api/topology/links/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteTopologyLink: (id: number) => request<void>(`/api/topology/links/${id}`, { method: 'DELETE' }),
 
+  // API Tokens
+  getApiTokens: () => request<import('../types').ApiTokenResponse[]>('/api/auth/tokens'),
+  createApiToken: (name: string) => request<import('../types').ApiTokenCreated>('/api/auth/tokens', { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteApiToken: (id: number) => request<{ status: string; message: string }>(`/api/auth/tokens/${id}`, { method: 'DELETE' }),
+
   // Auth
   login: (password: string) => 
     request<{ status: string; token?: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) })
@@ -187,7 +192,6 @@ export const api = {
 /** Create a WebSocket connection for scan progress updates. */
 export function createScanSocket(onMessage: (data: import('../types').ScanProgress) => void): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.hostname;
   let token = localStorage.getItem('gravitylan_token');
   if (token === 'undefined') token = null;
   token = token || '';
@@ -211,7 +215,6 @@ export function createScanSocket(onMessage: (data: import('../types').ScanProgre
 /** Create a WebSocket connection for live agent metrics. */
 export function createMetricsSocket(deviceId: number, onMessage: (data: any) => void): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.hostname;
   let token = localStorage.getItem('gravitylan_token');
   if (token === 'undefined') token = null;
   token = token || '';

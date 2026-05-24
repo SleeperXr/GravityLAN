@@ -300,7 +300,17 @@
     "import_success": "Backup successfully imported! The page will be reloaded.",
     "import_failed": "Import failed: ",
     "dns_custom_title": "Custom DNS Server",
-    "dns_custom_desc": "If set, the scanner will use this server to resolve hostnames instead of the system default."
+    "dns_custom_desc": "If set, the scanner will use this server to resolve hostnames instead of the system default.",
+    "api_tokens": "API Tokens (Read-Only)",
+    "api_tokens_desc": "Generate Read-Only API tokens for external agents, scripts or Home Assistant. These tokens only allow GET requests.",
+    "new_token_placeholder": "Token Name (e.g. Home Assistant)",
+    "token_create": "Generate",
+    "token_created_title": "Token successfully generated! Copy it now, as you won't be able to see it again.",
+    "token_copy": "Copy",
+    "no_tokens": "No API tokens configured.",
+    "token_created": "Created",
+    "token_used": "Used",
+    "delete_token_confirm": "Really revoke this API token? External scripts using this token will lose access."
   },
   "setup": {
     "welcome": "Welcome to GravityLAN",

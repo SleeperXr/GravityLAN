@@ -5,9 +5,10 @@ from app.models.setting import Setting
 from app.models.agent import AgentToken, DeviceMetrics, AgentConfig
 from app.models.network import Subnet
 from app.models.topology import Rack, TopologyLink
+from app.models.api_token import ApiToken
 
 __all__ = [
     "Device", "DeviceGroup", "Service", "DiscoveredHost", "DeviceHistory",
     "Setting", "AgentToken", "DeviceMetrics", "AgentConfig", "Subnet",
-    "Rack", "TopologyLink"
+    "Rack", "TopologyLink", "ApiToken"
 ]

@@ -296,8 +296,17 @@
     "import_confirm_warning": "Bist du sicher? Alle bestehenden Daten werden überschrieben!",
     "import_success": "Backup erfolgreich importiert! Die Seite wird neu geladen.",
     "import_failed": "Import fehlgeschlagen: ",
-    "dns_custom_title": "Custom DNS Server",
-    "dns_custom_desc": "Wenn gesetzt, verwendet der Scanner diesen DNS-Server zur Namensauflösung statt des System-Standards."
+    "dns_custom_desc": "Wenn gesetzt, verwendet der Scanner diesen DNS-Server zur Namensauflösung statt des System-Standards.",
+    "api_tokens": "API-Token (Read-Only)",
+    "api_tokens_desc": "Generiere schreibgeschützte API-Token für externe Agenten, Skripte oder Home Assistant. Diese Token erlauben nur GET-Anfragen.",
+    "new_token_placeholder": "Token-Name (z.B. Home Assistant)",
+    "token_create": "Generieren",
+    "token_created_title": "Token erfolgreich generiert! Kopiere ihn jetzt, da du ihn später nicht mehr einsehen kannst.",
+    "token_copy": "Kopieren",
+    "no_tokens": "Keine API-Token konfiguriert.",
+    "token_created": "Erstellt",
+    "token_used": "Genutzt",
+    "delete_token_confirm": "Diesen API-Token wirklich widerrufen? Externe Skripte, die diesen Token nutzen, verlieren den Zugriff."
   },
   "setup": {
     "welcome": "Willkommen bei GravityLAN",

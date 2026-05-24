@@ -138,6 +138,7 @@ async def lifespan(app: FastAPI):
     from app.models.network import Subnet
     from app.models.setting import Setting
     from app.models.agent import AgentToken, DeviceMetrics, AgentConfig
+    from app.models.api_token import ApiToken
 
     # Initialize database tables
     await init_db()
@@ -331,8 +332,8 @@ async def logs_websocket(websocket: WebSocket):
     if not auth_info.get("authenticated"):
         return
 
-    # Logs are strictly restricted to browser-sessions, master tokens, or legacy master tokens
-    if auth_info.get("auth_type") not in ("session", "master", "master_legacy"):
+    # Logs are strictly restricted to browser-sessions, master tokens, legacy master tokens, or API tokens
+    if auth_info.get("auth_type") not in ("session", "master", "master_legacy", "api_token"):
         await websocket.close(code=4003, reason="Unauthorized access level")
         return
 

@@ -321,8 +321,8 @@ async def scan_websocket(websocket: WebSocket) -> None:
     if not auth_info.get("authenticated"):
         return
 
-    # Scanner info is strictly restricted to browser-sessions, legacy master cookie, master token query params, or setup bypass
-    if auth_info.get("auth_type") not in ("session", "master_legacy", "setup_bypass", "master"):
+    # Scanner info is strictly restricted to browser-sessions, legacy master cookie, master token query params, setup bypass, or API tokens
+    if auth_info.get("auth_type") not in ("session", "master_legacy", "setup_bypass", "master", "api_token"):
         await websocket.close(code=4003, reason="Unauthorized access level")
         return
 

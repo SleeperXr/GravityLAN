@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-05-24
+
+### Added
+- **Schreibgeschützte API-Token (Read-Only)**: Einführung von Personal Access Tokens (API Keys) für externe Automatisierungen (z.B. Home Assistant) und LLM-Agenten. Diese erlauben ausschließlich sichere GET-Leseanfragen und blockieren alle verändernden Operationen (POST, PUT, DELETE, PATCH).
+- **SHA-256 Token-Hashing**: API-Token werden kryptografisch gehasht in der neuen `api_tokens`-Tabelle gespeichert. Der Klartext-Token wird dem Administrator nur einmal bei der Generierung angezeigt.
+- **WebSocket-Support**: Unterstützung der API-Token bei Echtzeit-Verbindungen für System-Logs, Agenten-Metriken und den Scanner-Status.
+- **UI-Token-Verwaltung**: Hinzufügen einer Verwaltungssektion für API-Token in den Einstellungen mit der Möglichkeit, Token zu generieren, zu benennen und zu widerrufen (revokieren).
+
 ## [0.2.5.1] - 2026-05-22
 
 ### Security Hardening (CodeQL Fixes)

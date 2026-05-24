@@ -1,4 +1,7 @@
 import hmac
+import hashlib
+import secrets
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Body, Response, Request, Header, WebSocket, Query
 from fastapi.requests import HTTPConnection
 from pydantic import BaseModel
@@ -69,10 +72,54 @@ async def get_current_admin(
                 detail="Invalid authentication method. Session IDs are only accepted via cookies."
             )
         
+        # A. Check Master-Token
         res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
         master_setting = res_token.scalar_one_or_none()
         if master_setting and secure_compare(token_val, master_setting.value):
             return token_val
+
+        # B. Check Read-Only API Tokens
+        h = hashlib.sha256(token_val.encode()).hexdigest()
+        from app.models.api_token import ApiToken
+        token_res = await db.execute(select(ApiToken).where(ApiToken.token_hash == h, ApiToken.is_active == True))
+        db_token = token_res.scalar_one_or_none()
+        
+        if db_token:
+            # Enforce read-only logic on HTTP requests
+            is_http = conn.scope.get("type") == "http"
+            if is_http:
+                method = conn.method
+                path = conn.url.path
+                if method not in ("GET", "HEAD"):
+                    if path == "/api/auth/check":
+                        pass
+                    else:
+                        raise HTTPException(
+                            status_code=403,
+                            detail="Read-only token cannot perform state-modifying actions."
+                        )
+                # Block read-only token from accessing sensitive admin/export or token-management endpoints
+                if path in ("/api/backup/export", "/api/settings/reset-db") or path.startswith("/api/auth/tokens"):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Read-only token is not authorized for this administrative action."
+                    )
+            
+            # Update last_used_at timestamp with throttling
+            try:
+                now = datetime.now(timezone.utc)
+                last_used = db_token.last_used_at
+                if last_used and last_used.tzinfo is None:
+                    last_used = last_used.replace(tzinfo=timezone.utc)
+                if not last_used or (now - last_used).total_seconds() > 60:
+                    db_token.last_used_at = now
+                    await db.commit()
+            except Exception as e:
+                logger.error(f"Failed to update API token last_used_at: {e}")
+                await db.rollback()
+                
+            return f"api_token:{db_token.name}"
+            
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # 3. Special Fallback Channel: Query Parameter (WebSockets ONLY)
@@ -194,6 +241,30 @@ async def _authenticate_websocket_impl(
 
     # 3. Dedicated Query Parameter Auth per channel policy
     if query_token:
+        # Check if query_token is a valid read-only API Token
+        h = hashlib.sha256(query_token.encode()).hexdigest()
+        from app.models.api_token import ApiToken
+        token_res = await db.execute(select(ApiToken).where(ApiToken.token_hash == h, ApiToken.is_active == True))
+        db_token = token_res.scalar_one_or_none()
+        
+        if db_token:
+            try:
+                now = datetime.now(timezone.utc)
+                last_used = db_token.last_used_at
+                if last_used and last_used.tzinfo is None:
+                    last_used = last_used.replace(tzinfo=timezone.utc)
+                if not last_used or (now - last_used).total_seconds() > 60:
+                    db_token.last_used_at = now
+                    await db.commit()
+            except Exception as e:
+                logger.error(f"Failed to update WebSocket API token last_used_at: {e}")
+                await db.rollback()
+                
+            return {
+                "authenticated": True,
+                "auth_type": "api_token",
+                "identity": f"api_token:{db_token.name}"
+            }
         # A. Logs ("logs") allows ONLY Master-Token in query params for external Admin CLIs/Tools
         if endpoint_type == "logs":
             master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
@@ -357,3 +428,76 @@ async def logout(request: Request, response: Response):
 async def check_auth(token: str = Depends(get_current_admin)):
     """Check if currently authenticated (via dependency)."""
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# API Token Management Endpoints
+# ---------------------------------------------------------------------------
+
+from app.models.api_token import ApiToken
+from app.schemas.api_token import ApiTokenCreate, ApiTokenResponse, ApiTokenCreated
+
+@router.get("/tokens", response_model=list[ApiTokenResponse])
+async def list_api_tokens(
+    token: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all configured read-only API tokens (Admin only)."""
+    if token.startswith("api_token:"):
+        raise HTTPException(status_code=403, detail="Read-only tokens cannot view or manage other tokens.")
+    
+    res = await db.execute(select(ApiToken).order_by(ApiToken.created_at.desc()))
+    return res.scalars().all()
+
+@router.post("/tokens", response_model=ApiTokenCreated)
+async def create_api_token(
+    payload: ApiTokenCreate,
+    token: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new read-only API token (Admin only)."""
+    if token.startswith("api_token:"):
+        raise HTTPException(status_code=403, detail="Read-only tokens cannot view or manage other tokens.")
+    
+    raw_token = "gl_pat_" + secrets.token_hex(24)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    prefix = raw_token[:11] + "..."
+
+    new_token = ApiToken(
+        name=payload.name,
+        token_hash=token_hash,
+        prefix=prefix,
+        is_active=True
+    )
+    db.add(new_token)
+    await db.commit()
+    await db.refresh(new_token)
+
+    return ApiTokenCreated(
+        id=new_token.id,
+        name=new_token.name,
+        prefix=new_token.prefix,
+        is_active=new_token.is_active,
+        created_at=new_token.created_at,
+        last_used_at=new_token.last_used_at,
+        token=raw_token
+    )
+
+@router.delete("/tokens/{token_id}")
+async def delete_api_token(
+    token_id: int,
+    token: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete (revoke) an API token (Admin only)."""
+    if token.startswith("api_token:"):
+        raise HTTPException(status_code=403, detail="Read-only tokens cannot view or manage other tokens.")
+    
+    res = await db.execute(select(ApiToken).where(ApiToken.id == token_id))
+    db_token = res.scalar_one_or_none()
+    if not db_token:
+        raise HTTPException(status_code=404, detail="API Token not found")
+    
+    await db.delete(db_token)
+    await db.commit()
+    return {"status": "ok", "message": "Token revoked successfully"}

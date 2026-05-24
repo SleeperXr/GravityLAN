@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import type { DeviceGroup } from '../../types';
 import { 
-  Palette, Grid, Trash2, Plus, Save, AlertTriangle, Database, Activity, Globe, Check, Download, Upload
+  Palette, Grid, Trash2, Plus, Save, AlertTriangle, Database, Activity, Globe, Check, Download, Upload, Key
 } from 'lucide-react';
 
 import { Sidebar } from '../Sidebar';
@@ -14,11 +14,53 @@ export function SettingsView() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
+  const [tokens, setTokens] = useState<any[]>([]);
+  const [newTokenName, setNewTokenName] = useState('');
+  const [createdToken, setCreatedToken] = useState('');
+  const [isCreatingToken, setIsCreatingToken] = useState(false);
 
   useEffect(() => {
     loadGroups();
     loadSettings();
+    loadTokens();
   }, []);
+
+  const loadTokens = async () => {
+    try {
+      const data = await api.getApiTokens();
+      setTokens(data);
+    } catch (err) {
+      console.error('Failed to load API tokens:', err);
+    }
+  };
+
+  const handleCreateToken = async () => {
+    if (!newTokenName.trim()) return;
+    setIsCreatingToken(true);
+    setCreatedToken('');
+    try {
+      const res = await api.createApiToken(newTokenName);
+      setCreatedToken(res.token);
+      setNewTokenName('');
+      loadTokens();
+    } catch (err) {
+      console.error('Failed to create token:', err);
+      alert('Failed to generate token: ' + err);
+    } finally {
+      setIsCreatingToken(false);
+    }
+  };
+
+  const handleDeleteToken = async (id: number) => {
+    if (!confirm(t('settings.delete_token_confirm'))) return;
+    try {
+      await api.deleteApiToken(id);
+      loadTokens();
+    } catch (err) {
+      console.error('Failed to delete token:', err);
+      alert('Failed to revoke token: ' + err);
+    }
+  };
 
   const [scanInterval, setScanInterval] = useState('0');
   const [quickScanInterval, setQuickScanInterval] = useState('300');
@@ -443,6 +485,94 @@ export function SettingsView() {
                 />
               </label>
             </div>
+          </div>
+        </section>
+
+        {/* API Tokens */}
+        <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' }}>
+            <Key size={24} className="text-accent" />
+            <h2 style={{ margin: 0 }}>{t('settings.api_tokens')}</h2>
+          </div>
+          
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
+            {t('settings.api_tokens_desc')}
+          </p>
+
+          <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-lg)' }}>
+            <input
+              className="input"
+              value={newTokenName}
+              onChange={(e) => setNewTokenName(e.target.value)}
+              placeholder={t('settings.new_token_placeholder')}
+              disabled={isCreatingToken}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateToken();
+              }}
+            />
+            <button className="btn btn-primary" onClick={handleCreateToken} disabled={isCreatingToken || !newTokenName.trim()}>
+              <Plus size={16} /> {t('settings.token_create')}
+            </button>
+          </div>
+
+          {createdToken && (
+            <div style={{
+              padding: 'var(--space-md)',
+              background: 'rgba(34, 197, 94, 0.1)',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              borderRadius: 'var(--radius-md)',
+              marginBottom: 'var(--space-lg)'
+            }}>
+              <p style={{ margin: '0 0 var(--space-xs) 0', fontSize: '0.875rem', color: '#4ade80', fontWeight: 600 }}>
+                {t('settings.token_created_title')}
+              </p>
+              <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+                <input
+                  type="text"
+                  readOnly
+                  className="input"
+                  value={createdToken}
+                  style={{ fontFamily: 'monospace', flexGrow: 1 }}
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    navigator.clipboard.writeText(createdToken);
+                    alert(t('notifications.copied'));
+                  }}
+                >
+                  {t('settings.token_copy')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+            {tokens.length === 0 ? (
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-tertiary)', margin: 0 }}>
+                {t('settings.no_tokens')}
+              </p>
+            ) : (
+              tokens.map(token => (
+                <div key={token.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: 'var(--space-sm) var(--space-md)', background: 'var(--bg-input)',
+                  borderRadius: 'var(--radius-md)'
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontWeight: 600 }}>{token.name}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
+                      {token.prefix} • {t('settings.token_created')}: {new Date(token.created_at).toLocaleDateString()}
+                      {token.last_used_at && ` • ${t('settings.token_used')}: ${new Date(token.last_used_at).toLocaleString()}`}
+                    </span>
+                  </div>
+                  <button className="btn-icon" onClick={() => handleDeleteToken(token.id)}>
+                    <Trash2 size={16} color="var(--accent-danger)" />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </section>
 

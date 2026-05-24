@@ -188,3 +188,16 @@ export interface TopologyLink {
   target_handle: string | null;
   link_type: string;
 }
+
+export interface ApiTokenResponse {
+  id: number;
+  name: string;
+  prefix: string;
+  is_active: boolean;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface ApiTokenCreated extends ApiTokenResponse {
+  token: string;
+}
