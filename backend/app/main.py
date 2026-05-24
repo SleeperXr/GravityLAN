@@ -389,9 +389,13 @@ if FRONTEND_DIR.exists():
         
         # Exclude existing files (assets/etc)
         try:
-            resolved_path = (FRONTEND_DIR / full_path).resolve()
-            if not resolved_path.is_relative_to(FRONTEND_DIR.resolve()):
+            base_dir = FRONTEND_DIR.resolve()
+            resolved_path = (base_dir / full_path).resolve()
+            
+            # CodeQL-recognized path traversal sanitizer using commonpath
+            if os.path.commonpath([str(base_dir), str(resolved_path)]) != str(base_dir):
                 raise HTTPException(status_code=400, detail="Invalid path")
+                
             if resolved_path.is_file():
                 return FileResponse(str(resolved_path))
         except Exception:

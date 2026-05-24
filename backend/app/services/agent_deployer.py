@@ -512,7 +512,8 @@ async def remove_agent(
             try:
                 connect_kwargs["pkey"] = _load_ssh_key(ssh_key)
             except ValueError as e:
-                return False, str(e)
+                logger.error("SSH private key loading failed during removal: %s", e)
+                return False, "Invalid SSH key format or encrypted key."
         elif ssh_password:
             connect_kwargs["password"] = ssh_password
         else:
