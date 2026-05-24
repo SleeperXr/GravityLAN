@@ -379,6 +379,10 @@ if FRONTEND_DIR.exists():
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
+        # Prevent directory traversal / path injection attacks
+        if ".." in full_path or "\\" in full_path or full_path.startswith("/"):
+            raise HTTPException(status_code=400, detail="Invalid path")
+            
         # Exclude API calls from the catch-all
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="API endpoint not found")

@@ -53,6 +53,22 @@ logger.info(f"Agent script path resolved to: {AGENT_SCRIPT_PATH} (Exists: {AGENT
 
 SERVICE_UNIT_PATH = AGENT_SCRIPT_PATH.parent / "gravitylan-agent.service"
 
+def get_latest_agent_version() -> str:
+    """Reads the agent version from the local gravitylan-agent.py file."""
+    if AGENT_SCRIPT_PATH.exists():
+        try:
+            with open(AGENT_SCRIPT_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip().startswith("VERSION ="):
+                        parts = line.split("=", 1)
+                        if len(parts) == 2:
+                            return parts[1].strip().strip('"').strip("'")
+        except Exception as e:
+            logger.error(f"Failed to parse agent version from file: {e}")
+    return "0.2.5"  # Fallback
+
+LATEST_AGENT_VERSION = get_latest_agent_version()
+
 # Standardized path matching manual install script
 REMOTE_BASE_DIR = "/opt/gravitylan-agent"
 REMOTE_AGENT_PATH = f"{REMOTE_BASE_DIR}/gravitylan-agent.py"
@@ -151,7 +167,8 @@ async def deploy_agent(
             try:
                 connect_kwargs["pkey"] = _load_ssh_key(ssh_key)
             except ValueError as e:
-                return False, str(e), ""
+                logger.error("SSH private key loading failed: %s", e)
+                return False, "Invalid SSH key format or encrypted key.", ""
         elif ssh_password:
             connect_kwargs["password"] = ssh_password
         else:
@@ -429,7 +446,8 @@ exit 0
         
         error_msg = "Agent could not be started (service start and nohup fallback both failed)."
         if log_content:
-            error_msg += f"\nLast log entries:\n{log_content}"
+            logger.error(f"Agent startup log for {host_ip}:\n{log_content}")
+            error_msg += " Check the server log or the agent's local log file for details."
             
         return False, error_msg, token
 
@@ -445,7 +463,8 @@ exit 0
             if settings.ssh_strict_mode:
                 msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
             return False, msg, ""
-        return False, f"SSH connection error: {exc}", ""
+        logger.error("SSH connection error for %s: %s", host_ip, exc)
+        return False, "SSH connection failed. Please check host availability and port.", ""
     except paramiko.AuthenticationException:
         return False, "SSH authentication failed. Please check your credentials.", ""
     except Exception as exc:
@@ -550,7 +569,8 @@ async def remove_agent(
             if settings.ssh_strict_mode:
                 msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
             return False, msg
-        return False, f"SSH connection error: {exc}"
+        logger.error("SSH connection error during agent removal on %s: %s", host_ip, exc)
+        return False, "SSH connection failed."
     except paramiko.AuthenticationException:
         return False, "SSH authentication failed. Please check your credentials."
     except Exception as exc:

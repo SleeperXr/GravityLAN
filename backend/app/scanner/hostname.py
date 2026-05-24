@@ -160,10 +160,10 @@ async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None
                 answers = resolver.resolve(rev_name, "PTR")
                 if answers:
                     resolved_name = str(answers[0]).rstrip('.')
-                    logger.info(f"Custom DNS resolved {mask_ip(ip)} to: {resolved_name}")
+                    logger.info("Custom DNS resolved host to: %s", resolved_name)
                     return resolved_name
             except Exception as e:
-                logger.debug(f"Direct DNS PTR query for {mask_ip(ip)} failed: {e}")
+                logger.debug("Direct DNS PTR query failed: %s", e)
 
         # 3. Fallback to OS resolver (socket)
         try:
@@ -185,11 +185,11 @@ async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None
         _dns_cache[ip] = (resolved_name, datetime.now(timezone.utc))
         return resolved_name
     except asyncio.TimeoutError:
-        logger.debug(f"DNS resolution timeout for {mask_ip(ip)}")
+        logger.debug("DNS resolution timeout")
         _dns_cache[ip] = (None, datetime.now(timezone.utc)) # Cache failure too
         return None
     except Exception as e:
-        logger.debug(f"DNS resolution error for {mask_ip(ip)}: {e}")
+        logger.debug("DNS resolution error: %s", e)
         _dns_cache[ip] = (None, datetime.now(timezone.utc))
         return None
 
@@ -214,7 +214,7 @@ async def resolve_hostnames(
             # Only update if we actually found something
             if hostname:
                 host["hostname"] = hostname
-                logger.info(f"Resolved {mask_ip(host['ip'])} to {hostname}")
+                logger.info("Resolved device to %s", hostname)
         return host
 
     tasks = [_resolve_single(h) for h in hosts]

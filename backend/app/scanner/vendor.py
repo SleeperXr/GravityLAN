@@ -12,6 +12,8 @@ import urllib.request
 import urllib.error
 from typing import Dict, Optional
 
+from app.config import settings
+
 # Standard Logger setup
 logger = logging.getLogger(__name__)
 
@@ -20,9 +22,7 @@ _last_429_time = 0.0
 _COOLDOWN_SECONDS = 300  # 5 minutes
 
 # -- Configuration -----------------------------------------------------------
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_DATA_DIR = os.path.join(_BASE_DIR, "data", "cache")
-os.makedirs(_DATA_DIR, exist_ok=True)
+_DATA_DIR = os.path.join(settings.data_dir, "cache")
 CACHE_FILE = os.path.join(_DATA_DIR, "mac_cache.json")
 
 # -- Static Fallback Database (Common HomeLab Vendors) -----------------------
@@ -88,6 +88,7 @@ def _save_cache() -> None:
     This is intended to be run in a separate thread.
     """
     try:
+        os.makedirs(_DATA_DIR, exist_ok=True)
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(_vendor_cache, f, ensure_ascii=False, indent=2)
     except IOError as e:
@@ -177,9 +178,9 @@ def _api_lookup(mac: str) -> str:
             _last_429_time = time.time()
             logger.warning(f"API rate limit hit (HTTP {e.code}). Entering {(_COOLDOWN_SECONDS // 60)}m cooldown.")
         elif e.code != 404:  # 404 is "Not Found", which is expected for unknown OUIs
-            logger.debug(f"API vendor lookup HTTP error {e.code} for OUI {mac[:8]}")
+            logger.debug("API vendor lookup HTTP error: %d", e.code)
     except Exception as e:
         # Network issues are common with this API
-        logger.debug(f"API vendor lookup network failure for OUI {mac[:8]}: {e}")
+        logger.debug("API vendor lookup network failure: %s", e)
 
     return ""
