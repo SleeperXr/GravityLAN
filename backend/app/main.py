@@ -389,21 +389,21 @@ if FRONTEND_DIR.exists():
         
         # Exclude existing files (assets/etc)
         try:
-            base_dir = FRONTEND_DIR.resolve()
-            resolved_path = (base_dir / full_path).resolve()
+            base_dir = os.path.realpath(str(FRONTEND_DIR))
+            resolved_path = os.path.realpath(os.path.join(base_dir, full_path))
             
-            # CodeQL-recognized path traversal sanitizer using commonpath
-            if os.path.commonpath([str(base_dir), str(resolved_path)]) != str(base_dir):
+            # CodeQL-recognized path traversal validation pattern (realpath + startswith)
+            if not resolved_path.startswith(base_dir):
                 raise HTTPException(status_code=400, detail="Invalid path")
                 
-            if resolved_path.is_file():
-                return FileResponse(str(resolved_path))
+            if os.path.isfile(resolved_path):
+                return FileResponse(resolved_path)
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid path")
             
         # Fallback to index.html for SPA routing
-        index_file = FRONTEND_DIR / "index.html"
-        return FileResponse(str(index_file))
+        index_file = os.path.realpath(os.path.join(base_dir, "index.html"))
+        return FileResponse(index_file)
 
     logger.info("Serving SPA frontend from: %s", FRONTEND_DIR)
 
