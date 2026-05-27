@@ -180,6 +180,15 @@ Runs **Uvicorn** on `http://0.0.0.0:8000` and **Vite** on `http://127.0.0.1:5173
 
 > **Single-process SPA:** Run `cd frontend && npm run build` so FastAPI serves `frontend/dist` or `/app/static` — same pattern as the release image.
 
+### Running Tests
+
+To run the backend test suite locally, navigate to the `backend` folder and run `pytest`:
+```bash
+cd backend
+python -m pytest
+```
+For more information, see the [tests/](tests) directory.
+
 ### Environment variables (selected)
 
 | Variable | Meaning | Default |
@@ -202,7 +211,9 @@ Keys like **`api.master_token`** / **`api.admin_password`** live in the DB via s
 ```
 agent/                 # gravitylan-agent.py (+ systemd unit template)
 backend/app/           # FastAPI: api/, models/, scanner/, services/, …
+backend/tests/         # Automated Pytest suite
 frontend/              # React (Vite, TypeScript)
+tests/                 # Test directory overview & local running guides
 docs/screenshots/      # README images
 SECURITY.md            # Security policy & trust model
 SOUL.md                # Project philosophy
@@ -379,6 +390,15 @@ Startet **Uvicorn** auf `http://0.0.0.0:8000` und **Vite** auf `http://127.0.0.1
 
 > **SPA aus einem Prozess:** `cd frontend && npm run build` — FastAPI liefert `frontend/dist` bzw. `/app/static`, wie im Release-Image.
 
+### Tests ausführen
+
+Um die Backend-Testsuite lokal auszuführen, wechsle in den Ordner `backend` und starte `pytest`:
+```bash
+cd backend
+python -m pytest
+```
+Weitere Informationen findest du im [tests/](tests)-Verzeichnis.
+
 ### Umgebungsvariablen (Auswahl)
 
 | Variable | Bedeutung | Default |
@@ -397,7 +417,9 @@ Weitere Schlüssel wie **`api.master_token`**, **`api.admin_password`** → Setu
 ```
 agent/                 # gravitylan-agent.py (+ systemd-Vorlage)
 backend/app/           # FastAPI: api/, models/, scanner/, …
+backend/tests/         # Automatisierte Pytest-Suite
 frontend/              # React (Vite, TypeScript)
+tests/                 # Test-Verzeichnis-Übersicht & Anleitungen zum Ausführen
 docs/screenshots/      # README-Bilder
 SECURITY.md            # Sicherheitsrichtlinien
 SOUL.md                # Projekt-Philosophie

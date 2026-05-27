@@ -24,7 +24,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install flake8 pytest
+        pip install flake8 pytest pytest-asyncio
         if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
         
     - name: Lint with flake8
@@ -36,11 +36,8 @@ jobs:
         
     - name: Run tests
       run: |
-        # For now, just a placeholder. Will fail if pytest finds nothing, so we create a dummy test or ignore failure.
-        echo "import pytest" > test_dummy.py
-        echo "def test_basic():" >> test_dummy.py
-        echo "    assert True" >> test_dummy.py
-        pytest test_dummy.py
+        cd backend
+        python -m pytest
 
   build-docker:
     runs-on: ubuntu-latest
