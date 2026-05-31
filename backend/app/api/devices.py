@@ -239,14 +239,50 @@ async def update_device(
     return device
 
 
+async def _delete_device_dependencies(db: AsyncSession, device_ids: list[int]) -> None:
+    """Safely delete all database rows referencing the given device IDs to prevent foreign key errors."""
+    from sqlalchemy import delete, update
+    from app.models.topology import TopologyLink
+    from app.models.agent import DeviceMetrics, AgentToken, AgentConfig
+    from app.models.device import Device, Service, DeviceHistory
+
+    if not device_ids:
+        return
+
+    # 1. Topology links
+    await db.execute(
+        delete(TopologyLink).where(
+            TopologyLink.source_id.in_(device_ids) | TopologyLink.target_id.in_(device_ids)
+        )
+    )
+
+    # 2. Agent data
+    await db.execute(delete(DeviceMetrics).where(DeviceMetrics.device_id.in_(device_ids)))
+    await db.execute(delete(AgentToken).where(AgentToken.device_id.in_(device_ids)))
+    await db.execute(delete(AgentConfig).where(AgentConfig.device_id.in_(device_ids)))
+
+    # 3. Services and History
+    await db.execute(delete(Service).where(Service.device_id.in_(device_ids)))
+    await db.execute(delete(DeviceHistory).where(DeviceHistory.device_id.in_(device_ids)))
+
+    # 4. Clear parent/child relationship
+    await db.execute(
+        update(Device)
+        .where(Device.parent_id.in_(device_ids))
+        .values(parent_id=None)
+    )
+
+
 @router.delete("/{device_id}", status_code=204)
 async def delete_device(device_id: int, db: AsyncSession = Depends(get_db)) -> None:
     """Delete a device and its services."""
+    from sqlalchemy import delete
     device = await db.get(Device, device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    await db.delete(device)
+    await _delete_device_dependencies(db, [device_id])
+    await db.execute(delete(Device).where(Device.id == device_id))
     await db.commit()
     topology_cache.invalidate()
 
@@ -258,6 +294,7 @@ async def bulk_delete_devices(device_ids: list[int], db: AsyncSession = Depends(
     if not device_ids:
         return
 
+    await _delete_device_dependencies(db, device_ids)
     await db.execute(delete(Device).where(Device.id.in_(device_ids)))
     await db.commit()
     topology_cache.invalidate()
