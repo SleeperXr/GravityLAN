@@ -77,7 +77,8 @@
     "rdp_started": "RDP gestartet",
     "rdp_generated": ".rdp Datei für {{ip}} wurde generiert.",
     "rdp_download": "RDP-Datei für {{ip}} herunterladen",
-    "refresh_started_details": "Hostnamen und MAC-Adressen werden aktualisiert..."
+    "refresh_started_details": "Hostnamen und MAC-Adressen werden automatisch aktualisiert...",
+    "deleted": "Erfolgreich gelöscht"
   },
   "dashboard": {
     "loading": "Lade Dashboard...",
@@ -182,6 +183,7 @@
     "no_parent": "Kein Host (Physisch)",
     "no_dns_name": "Kein DNS Name",
     "delete_service_confirm": "Dienst entfernen?",
+    "delete_device_confirm": "Möchten Sie dieses Gerät wirklich dauerhaft löschen?",
     "manual": "MANUELL"
   },
   "agent": {

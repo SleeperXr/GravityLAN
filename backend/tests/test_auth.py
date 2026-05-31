@@ -209,6 +209,8 @@ async def test_websocket_authentication_scenarios(db):
     assert auth_query_master_scanner["identity"] == master_token
 
     # Scenario F: Agent Token (Allowed ONLY on 'agent' route with device_id matching)
+    from app.models.device import Device
+    db.add(Device(id=42, ip="192.168.1.42", display_name="Test Device 42"))
     agent_token = "agent-token-xyz"
     db.add(AgentToken(device_id=42, token=agent_token, is_active=True))
     await db.commit()

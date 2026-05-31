@@ -1235,8 +1235,17 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
             fontWeight: 600,
             cursor: 'pointer'
           }} onClick={() => {
-            if (confirm(t('settings.delete_group_confirm'))) {
-              api.deleteDevice(currentDevice.id).then(() => { onSave(); onClose(); });
+            if (confirm(t('editor.delete_device_confirm', 'Do you really want to permanently delete this device?'))) {
+              api.deleteDevice(currentDevice.id)
+                .then(() => {
+                  showToast('success', t('common.success'), t('notifications.deleted'));
+                  onSave();
+                  onClose();
+                })
+                .catch((err: any) => {
+                  console.error('Failed to delete device:', err);
+                  showToast('error', t('common.error'), t('notifications.delete_failed', 'Delete failed'));
+                });
             }
           }}>
             <Trash2 size={16} /> {t('common.delete')}

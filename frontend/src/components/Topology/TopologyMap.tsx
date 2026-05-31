@@ -437,9 +437,14 @@ const TopologyMap: React.FC = () => {
             x: x,
             y: y,
             onDelete: async (id: string) => {
-              if (window.confirm(t('editor.delete_service_confirm', 'Really remove?'))) {
-                await api.deleteDevice(parseInt(id));
-                setNodes(nds => nds.filter(n => n.id !== id));
+              if (window.confirm(t('editor.delete_device_confirm', 'Do you really want to permanently delete this device?'))) {
+                try {
+                  await api.deleteDevice(parseInt(id));
+                  setNodes(nds => nds.filter(n => n.id !== id));
+                } catch (err) {
+                  console.error('Failed to delete device:', err);
+                  alert(t('notifications.delete_failed', 'Delete failed'));
+                }
               }
             },
             link_count: links.filter((l: any) => l.source_id === dev.id || l.target_id === dev.id).length

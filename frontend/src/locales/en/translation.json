@@ -77,7 +77,8 @@
     "rdp_started": "RDP started",
     "rdp_generated": ".rdp file for {{ip}} has been generated.",
     "rdp_download": "Download RDP file for {{ip}}",
-    "refresh_started_details": "Refreshing hostnames and MAC addresses..."
+    "refresh_started_details": "Refreshing hostnames and MAC addresses...",
+    "deleted": "Successfully deleted"
   },
   "dashboard": {
     "loading": "Loading Dashboard...",
@@ -185,6 +186,7 @@
     "no_parent": "No Host (Physical)",
     "no_dns_name": "No DNS Name",
     "delete_service_confirm": "Remove service?",
+    "delete_device_confirm": "Do you really want to permanently delete this device?",
     "manual": "MANUAL"
   },
   "agent": {
