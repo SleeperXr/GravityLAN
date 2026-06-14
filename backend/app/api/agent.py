@@ -275,7 +275,11 @@ async def receive_report(
 
 
 @router.get("/config/{device_id}", response_model=AgentConfigResponse)
-async def get_agent_config(device_id: int, db: AsyncSession = Depends(get_db)):
+async def get_agent_config(
+    device_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin)
+):
     """Get the persistent configuration for a specific agent."""
     config_res = await db.execute(select(AgentConfig).where(AgentConfig.device_id == device_id))
     config = config_res.scalar_one_or_none()
@@ -299,7 +303,8 @@ async def get_agent_config(device_id: int, db: AsyncSession = Depends(get_db)):
 async def update_agent_config(
     device_id: int, 
     update: AgentConfigUpdate, 
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin)
 ):
     """Update agent configuration and increment version to trigger a push."""
     config_res = await db.execute(select(AgentConfig).where(AgentConfig.device_id == device_id))
@@ -331,7 +336,10 @@ async def update_agent_config(
 
 
 @router.get("/overview", response_model=AgentsOverviewResponse)
-async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverviewResponse:
+async def get_agents_overview(
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin)
+) -> AgentsOverviewResponse:
     """Get a summary of all agents for the Agents Tab.
 
     Optimized to use 2 bulk queries instead of N×27 sequential queries.
@@ -458,7 +466,10 @@ async def get_agents_overview(db: AsyncSession = Depends(get_db)) -> AgentsOverv
 
 
 @router.get("/global-metrics", response_model=GlobalMetricsResponse)
-async def get_global_metrics(db: AsyncSession = Depends(get_db)) -> GlobalMetricsResponse:
+async def get_global_metrics(
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin)
+) -> GlobalMetricsResponse:
     """Get aggregated network-wide performance history for the last 24 hours."""
     now = datetime.now(timezone.utc)
     cutoff_24h = now - timedelta(hours=24)
@@ -503,7 +514,11 @@ async def get_global_metrics(db: AsyncSession = Depends(get_db)) -> GlobalMetric
 # ---------------------------------------------------------------------------
 
 @router.get("/status/{device_id}", response_model=AgentStatusResponse)
-async def get_agent_status(device_id: int, db: AsyncSession = Depends(get_db)) -> AgentStatusResponse:
+async def get_agent_status(
+    device_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin)
+) -> AgentStatusResponse:
     """Get the current status and latest metrics for a specific agent."""
     # Check Token
     token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device_id))
@@ -626,7 +641,8 @@ async def get_metrics_history(
     device_id: int, 
     limit: int = 60, 
     range: str | None = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin)
 ) -> MetricsHistoryResponse:
     """Get the recent metrics history for a specific device, supporting dynamic ranges and downsampling."""
     if range is not None:
@@ -850,7 +866,8 @@ systemctl status gravitylan-agent --no-pager
 async def deploy_agent_endpoint(
     device_id: int,
     request: AgentDeployRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin)
 ) -> AgentDeployResponse:
     """
     Deploy the GravityLAN Agent to a remote device via SSH.
@@ -938,7 +955,8 @@ async def deploy_agent_endpoint(
 async def uninstall_agent_endpoint(
     device_id: int,
     request: AgentDeployRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin)
 ) -> dict:
     """
     Uninstall the GravityLAN Agent from a remote device.

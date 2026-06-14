@@ -15,7 +15,7 @@ async def test_invalid_range_validation(client, db):
     await db.commit()
 
     # Call metrics endpoint with an invalid range
-    headers = {"Cookie": f"session={token}"}
+    headers = {"Authorization": f"Bearer {token}"}
     response = await client.get("/api/agent/metrics/1?range=invalid", headers=headers)
     assert response.status_code == 400
     assert "Invalid range" in response.json()["detail"]
@@ -51,7 +51,7 @@ async def test_metrics_legacy_compatibility(client, db):
     await db.commit()
 
     # 3. Request legacy metrics with limit=5
-    headers = {"Cookie": f"session={token}"}
+    headers = {"Authorization": f"Bearer {token}"}
     response = await client.get("/api/agent/metrics/10?limit=5", headers=headers)
     assert response.status_code == 200
     data = response.json()
@@ -108,7 +108,7 @@ async def test_metrics_aggregation_6h_range(client, db):
     await db.commit()
 
     # 4. Request 6h aggregation
-    headers = {"Cookie": f"session={token}"}
+    headers = {"Authorization": f"Bearer {token}"}
     response = await client.get("/api/agent/metrics/20?range=6h", headers=headers)
     assert response.status_code == 200
     data = response.json()
@@ -153,7 +153,7 @@ async def test_metrics_aggregation_empty_buckets_skipped(client, db):
     await db.commit()
 
     # 4. Request 24h range (15-minute buckets)
-    headers = {"Cookie": f"session={token}"}
+    headers = {"Authorization": f"Bearer {token}"}
     response = await client.get("/api/agent/metrics/30?range=24h", headers=headers)
     assert response.status_code == 200
     snapshots = response.json()["snapshots"]
@@ -181,7 +181,7 @@ async def test_metrics_db_retention_override(client, db):
     await db.commit()
     
     # 3. Call metrics history endpoint
-    headers = {"Cookie": f"session={token}"}
+    headers = {"Authorization": f"Bearer {token}"}
     response = await client.get("/api/agent/metrics/40", headers=headers)
     assert response.status_code == 200
     data = response.json()
