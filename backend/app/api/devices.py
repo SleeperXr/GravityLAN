@@ -177,6 +177,8 @@ async def add_device_from_ip(ip: str, db: AsyncSession = Depends(get_db)) -> Dev
     db.add(device)
     await db.commit()
     await db.refresh(device)
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
     
     # Trigger info refresh (Hostname, MAC, Vendor)
     # We reuse the existing logic but manually call it or just trigger it
@@ -201,6 +203,8 @@ async def add_device_from_ip(ip: str, db: AsyncSession = Depends(get_db)) -> Dev
             
         await db.commit()
         await db.refresh(device)
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()
     except Exception as e:
         logger.error(f"Failed to auto-refresh details for new device {ip}: {e}")
 
@@ -233,6 +237,7 @@ async def update_device(
         setattr(device, field, value)
 
     await db.commit()
+    dashboard_cache.invalidate_all()
     topology_cache.invalidate()
     await db.refresh(device)
     logger.info("Device %s updated: %s", device_id, update_data)
@@ -284,6 +289,7 @@ async def delete_device(device_id: int, db: AsyncSession = Depends(get_db)) -> N
     await _delete_device_dependencies(db, [device_id])
     await db.execute(delete(Device).where(Device.id == device_id))
     await db.commit()
+    dashboard_cache.invalidate_all()
     topology_cache.invalidate()
 
 
@@ -297,6 +303,7 @@ async def bulk_delete_devices(device_ids: list[int], db: AsyncSession = Depends(
     await _delete_device_dependencies(db, device_ids)
     await db.execute(delete(Device).where(Device.id.in_(device_ids)))
     await db.commit()
+    dashboard_cache.invalidate_all()
     topology_cache.invalidate()
     logger.info(f"Bulk deleted {len(device_ids)} devices")
 
@@ -346,6 +353,8 @@ async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db)
     if commit:
         await db.commit()
         await db.refresh(device)
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()
     return device
 
 @router.post("/{device_id}/refresh-services", response_model=DeviceResponse)
@@ -443,6 +452,8 @@ async def refresh_device_services(device_id: int, db: AsyncSession = Depends(get
     if commit:
         await db.commit()
         await db.refresh(device)
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()
     return device
 
 @router.get("/{device_id}/history", response_model=list[DeviceHistoryResponse])
