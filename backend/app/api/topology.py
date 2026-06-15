@@ -97,3 +97,15 @@ async def delete_link(link_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
     topology_cache.invalidate()
     return {"message": "Link deleted"}
+
+@router.get("/nodes")
+async def get_topology_nodes(db: AsyncSession = Depends(get_db)):
+    """Fetch all nodes (devices) from the topology map."""
+    map_data = await get_topology_map(db)
+    return map_data["devices"]
+
+@router.get("/edges")
+async def get_topology_edges(db: AsyncSession = Depends(get_db)):
+    """Fetch all edges (links) from the topology map."""
+    map_data = await get_topology_map(db)
+    return map_data["links"]

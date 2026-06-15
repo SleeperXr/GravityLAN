@@ -22,6 +22,7 @@ from app.schemas.device import (
     GroupCreate,
     GroupResponse,
     GroupUpdate,
+    GroupWithDevicesResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -621,3 +622,52 @@ async def delete_group(group_id: int, db: AsyncSession = Depends(get_db)) -> Non
     # otherwise we do it manually. SQLAlchemy back_populates handles this.
     await db.delete(group)
     await db.commit()
+
+@groups_router.get("/{group_id}", response_model=GroupWithDevicesResponse)
+async def get_group_details(
+    group_id: int,
+    db: AsyncSession = Depends(get_db)
+) -> GroupWithDevicesResponse:
+    """Get details of a single device group including its devices."""
+    from sqlalchemy.orm import selectinload
+    stmt = (
+        select(DeviceGroup)
+        .where(DeviceGroup.id == group_id)
+        .options(selectinload(DeviceGroup.devices).selectinload(Device.services))
+    )
+    result = await db.execute(stmt)
+    group = result.scalar_one_or_none()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+        
+    # Populate agent details
+    from app.api.agent import LATEST_AGENT_VERSION, _latest_metrics
+    from app.version import normalize_version
+    
+    devices_list = []
+    for d in group.devices:
+        token_q = await db.execute(select(AgentToken).where(AgentToken.device_id == d.id))
+        token = token_q.scalar_one_or_none()
+        if token:
+            d.has_agent = True
+            d.has_pending_token = token.pending_token is not None
+            d.agent_info = {
+                "agent_version": normalize_version(token.agent_version),
+                "latest_version": normalize_version(LATEST_AGENT_VERSION),
+                "latest_metrics": _latest_metrics.get(d.id)
+            }
+        else:
+            d.has_agent = False
+            d.has_pending_token = False
+        devices_list.append(DeviceResponse.model_validate(d))
+        
+    return GroupWithDevicesResponse(
+        id=group.id,
+        name=group.name,
+        icon=group.icon,
+        color=group.color,
+        sort_order=group.sort_order,
+        is_default=group.is_default,
+        device_count=len(group.devices),
+        devices=devices_list
+    )

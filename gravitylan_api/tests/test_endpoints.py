@@ -4,13 +4,17 @@ from gravitylan_api import GravityLANClient
 
 @patch("gravitylan_api.client.GravityLANClient._request")
 def test_agents_overview(mock_request):
-    """Test agents.overview() resource method."""
+    """Test agents.overview() and agents.list() resource methods."""
     mock_request.return_value = {"agents": []}
     client = GravityLANClient(token="test")
     
     res = client.agents.overview()
     assert res == {"agents": []}
-    mock_request.assert_called_once_with("GET", "/api/agent/overview")
+    mock_request.assert_called_with("GET", "/api/agent/overview")
+
+    res = client.agents.list()
+    assert res == {"agents": []}
+    mock_request.assert_called_with("GET", "/api/agents")
 
 
 @patch("gravitylan_api.client.GravityLANClient._request")
@@ -40,16 +44,37 @@ def test_devices_endpoints(mock_request):
     assert res == {"status": "success"}
     mock_request.assert_called_with("POST", "/api/devices/5/refresh-info")
 
+    # devices.get_group()
+    mock_request.return_value = {"id": 1, "devices": []}
+    res = client.devices.get_group(1)
+    assert res == {"id": 1, "devices": []}
+    mock_request.assert_called_with("GET", "/api/groups/1")
+
+    # devices.list_issues()
+    mock_request.return_value = []
+    res = client.devices.list_issues()
+    assert res == []
+    mock_request.assert_called_with("GET", "/api/issues")
+
 
 @patch("gravitylan_api.client.GravityLANClient._request")
 def test_topology_endpoints(mock_request):
-    """Test topology.map() resource method."""
+    """Test topology.map(), topology.nodes(), and topology.edges() resource methods."""
     mock_request.return_value = {"devices": []}
     client = GravityLANClient(token="test")
 
     res = client.topology.map()
     assert res == {"devices": []}
-    mock_request.assert_called_once_with("GET", "/api/topology/map")
+    mock_request.assert_called_with("GET", "/api/topology/map")
+
+    mock_request.return_value = []
+    res = client.topology.nodes()
+    assert res == []
+    mock_request.assert_called_with("GET", "/api/topology/nodes")
+
+    res = client.topology.edges()
+    assert res == []
+    mock_request.assert_called_with("GET", "/api/topology/edges")
 
 
 @patch("gravitylan_api.client.GravityLANClient._request")
@@ -108,3 +133,15 @@ def test_auth_endpoints(mock_request):
     # auth.check()
     client.auth.check()
     mock_request.assert_called_with("POST", "/api/auth/check")
+
+    # auth.me()
+    mock_request.return_value = {"scopes": ["*"]}
+    res = client.auth.me()
+    assert res == {"scopes": ["*"]}
+    mock_request.assert_called_with("GET", "/api/auth/me")
+
+    # auth.logs()
+    mock_request.return_value = []
+    res = client.auth.logs(limit=10, level="ERROR")
+    assert res == []
+    mock_request.assert_called_with("GET", "/api/logs", params={"limit": 10, "level": "ERROR"})

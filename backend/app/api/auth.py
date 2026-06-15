@@ -100,8 +100,8 @@ async def get_current_admin(
                 method = conn.method
                 path = conn.url.path
                 
-                # Exclude path /api/auth/check from strict scoping
-                if path != "/api/auth/check":
+                # Exclude path /api/auth/check and /api/auth/me from strict scoping
+                if path not in ("/api/auth/check", "/api/auth/me"):
                     # Determine required scope
                     required_scope = None
                     if path.startswith("/api/devices") or path.startswith("/api/groups") or path.startswith("/api/services"):
@@ -122,8 +122,14 @@ async def get_current_admin(
                         required_scope = "settings:read" if method in ("GET", "HEAD") else "settings:write"
                     elif path.startswith("/api/summary"):
                         required_scope = "devices:read"  # summary requires general read permission
+                    elif path.startswith("/api/issues"):
+                        required_scope = "devices:read"  # issues requires general read permission
                     elif path.startswith("/api/auth/tokens"):
                         required_scope = "settings:read" if method in ("GET", "HEAD") else "settings:write"
+                    elif path.startswith("/api/logs"):
+                        required_scope = "settings:read" if method in ("GET", "HEAD") else "settings:write"
+                    elif path.startswith("/api/agents"):
+                        required_scope = "agent:read" if method in ("GET", "HEAD") else "agent:write"
                     
                     # Block read-only token from accessing sensitive admin/export or token-management endpoints
                     if path in ("/api/backup/export", "/api/settings/reset-db") or path.startswith("/api/auth/tokens"):
@@ -543,3 +549,26 @@ async def delete_api_token(
     await db.delete(db_token)
     await db.commit()
     return {"status": "ok", "message": "Token revoked successfully"}
+
+@router.get("/me")
+async def auth_me(
+    token: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Token introspection endpoint returning authorized scopes."""
+    if token.startswith("api_token:"):
+        name = token.removeprefix("api_token:")
+        from app.models.api_token import ApiToken
+        res = await db.execute(select(ApiToken).where(ApiToken.name == name))
+        db_token = res.scalar_one_or_none()
+        if db_token:
+            if db_token.scopes:
+                scopes = [s.strip() for s in db_token.scopes.split(",") if s.strip()]
+            else:
+                scopes = [
+                    "devices:read", "topology:read", "network:read", "agent:read",
+                    "settings:read", "backup:read", "scanner:read"
+                ]
+            return {"scopes": scopes}
+    # Master token or admin browser session has full scopes
+    return {"scopes": ["*"]}

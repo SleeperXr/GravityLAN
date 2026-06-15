@@ -11,3 +11,11 @@ class AgentsEndpoint(BaseEndpoint):
             dict: The agent overview payload.
         """
         return self.client._request("GET", "/api/agent/overview")
+
+    def list(self) -> dict:
+        """Get a list of all active agents with detailed system metrics.
+
+        Returns:
+            dict: The agent overview list payload.
+        """
+        return self.client._request("GET", "/api/agents")

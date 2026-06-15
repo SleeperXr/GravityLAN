@@ -171,6 +171,11 @@ class GroupResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GroupWithDevicesResponse(GroupResponse):
+    """API response schema for a device group including its devices."""
+    devices: list[DeviceResponse] = []
+
+
 class GroupCreate(BaseModel):
     """Schema for creating a new device group."""
 

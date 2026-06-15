@@ -10,7 +10,7 @@ from app.database import get_db
 from app.api.auth import get_current_admin
 from app.models.device import Device, Service
 from app.models.agent import AgentToken, DeviceMetrics
-from app.schemas.summary import SummaryResponse
+from app.schemas.summary import SummaryResponse, ActiveIssue
 from app.scanner.utils import ensure_utc
 from app.api.scanner import state
 from app.schemas.scan import ScanStatus
@@ -145,3 +145,14 @@ async def get_summary(
         },
         active_issues=active_issues
     )
+
+issues_router = APIRouter(prefix="/api/issues", tags=["issues"])
+
+@issues_router.get("", response_model=list[ActiveIssue])
+async def get_active_issues(
+    token: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+) -> list[ActiveIssue]:
+    """Exposes active issues as a standalone list."""
+    summary = await get_summary(token, db)
+    return summary.active_issues

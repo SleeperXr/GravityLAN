@@ -1,7 +1,7 @@
 """Webhooks routing endpoints for GravityLAN."""
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -57,3 +57,14 @@ async def delete_webhook(
     await db.delete(db_sub)
     await db.commit()
     return {"status": "ok", "message": "Webhook subscription deleted successfully"}
+
+@router.post("/test")
+async def test_webhook_dispatch(
+    event: str = Body("test.event", embed=True),
+    data: dict = Body({"status": "testing"}, embed=True),
+    token: str = Depends(get_current_admin)
+):
+    """Trigger a mock/test webhook event to verify integrations."""
+    from app.services.webhook_service import trigger_webhooks
+    await trigger_webhooks(event_type=event, data=data)
+    return {"status": "ok", "message": f"Webhook test event '{event}' scheduled for dispatch."}

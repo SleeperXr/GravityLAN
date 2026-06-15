@@ -1,3 +1,4 @@
+from typing import Optional
 from .base import BaseEndpoint
 
 
@@ -31,3 +32,26 @@ class AuthEndpoint(BaseEndpoint):
             dict: The check response status.
         """
         return self.client._request("POST", "/api/auth/check")
+
+    def me(self) -> dict:
+        """Perform token introspection to retrieve current scopes.
+
+        Returns:
+            dict: The active scopes configuration.
+        """
+        return self.client._request("GET", "/api/auth/me")
+
+    def logs(self, limit: int = 50, level: Optional[str] = None) -> list:
+        """Fetch system logs from the server log buffer.
+
+        Args:
+            limit: The maximum number of log lines to retrieve (default 50).
+            level: The log level filter (e.g. INFO, ERROR).
+
+        Returns:
+            list: The list of parsed logs.
+        """
+        params = {"limit": limit}
+        if level is not None:
+            params["level"] = level
+        return self.client._request("GET", "/api/logs", params=params)

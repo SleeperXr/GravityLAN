@@ -44,3 +44,22 @@ class DevicesEndpoint(BaseEndpoint):
             dict: The updated device details.
         """
         return self.client._request("POST", f"/api/devices/{device_id}/refresh-info")
+
+    def get_group(self, group_id: int) -> dict:
+        """Get details for a single device group including its devices.
+
+        Args:
+            group_id: The ID of the group.
+
+        Returns:
+            dict: The group details and devices list.
+        """
+        return self.client._request("GET", f"/api/groups/{group_id}")
+
+    def list_issues(self) -> list:
+        """Get the active list of issues (offline agents, down services) from summary.
+
+        Returns:
+            list: The list of active issues.
+        """
+        return self.client._request("GET", "/api/issues")
