@@ -139,6 +139,7 @@ async def lifespan(app: FastAPI):
     from app.models.setting import Setting
     from app.models.agent import AgentToken, DeviceMetrics, AgentConfig
     from app.models.api_token import ApiToken
+    from app.models.webhook import WebhookSubscription
 
     # Initialize database tables
     await init_db()
@@ -297,6 +298,8 @@ from app.api.agent import router as agent_router  # noqa: E402
 from app.api.backup import router as backup_router  # noqa: E402
 from app.api.network import router as network_router  # noqa: E402
 from app.api.topology import router as topology_router  # noqa: E402
+from app.api.webhooks import router as webhooks_router  # noqa: E402
+from app.api.summary import router as summary_router  # noqa: E402
 
 from app.api.auth import get_current_admin
 
@@ -309,6 +312,8 @@ app.include_router(groups_router, dependencies=[Depends(get_current_admin)])
 app.include_router(router_services, dependencies=[Depends(get_current_admin)])
 app.include_router(scanner_router, dependencies=[Depends(get_current_admin)])
 app.include_router(settings_router, dependencies=[Depends(get_current_admin)])
+app.include_router(webhooks_router, dependencies=[Depends(get_current_admin)])
+app.include_router(summary_router, dependencies=[Depends(get_current_admin)])
 app.include_router(setup_router) # Setup manages its own logic
 app.include_router(agent_router) # Contains both public report and protected metrics (internally handled)
 logger.info("Registered Agent API routes under /api/agent")

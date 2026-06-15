@@ -103,12 +103,36 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
                 
                 is_online = is_ping_alive or is_port_alive or is_docker_host
                 
+                was_online = dev.is_online
                 dev.is_online = is_online
                 if is_online:
                     dev.last_seen = datetime.now(timezone.utc)
                     if is_ping_alive and not dev.mac:
                         dev.mac = alive_map[dev.ip].get("mac")
                         if dev.mac: dev.vendor = alive_map[dev.ip].get("vendor")
+                else:
+                    if was_online:
+                        dev.status_changed_at = datetime.now(timezone.utc)
+                        # Log to history
+                        from app.models.device import DeviceHistory
+                        db.add(DeviceHistory(
+                            device_id=dev.id,
+                            status="offline",
+                            message=f"Device {dev.display_name or dev.hostname or dev.ip} went offline"
+                        ))
+                        # Trigger webhook in background
+                        from app.services.webhook_service import trigger_webhooks
+                        await trigger_webhooks(
+                            event_type="device.offline",
+                            data={
+                                "device_id": dev.id,
+                                "ip": dev.ip,
+                                "mac": dev.mac,
+                                "display_name": dev.display_name,
+                                "hostname": dev.hostname,
+                                "last_seen": dev.last_seen.isoformat() if dev.last_seen else None
+                            }
+                        )
                 
                 for svc in dev.services:
                     svc.is_up = svc.port in open_ports
@@ -149,6 +173,18 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
         await sync_hosts_batch(new_found_hosts, is_planner_scan=False)
 
     logger.info(f"Dashboard scan finished. Discovered {len(new_found_hosts)} new interesting devices.")
+    
+    # Trigger scan.complete webhook
+    from app.services.webhook_service import trigger_webhooks
+    await trigger_webhooks(
+        event_type="scan.complete",
+        data={
+            "scan_type": "dashboard",
+            "new_devices_found": len(new_found_hosts),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    )
+    
     # Final invalidation
     discovery_cache.invalidate()
     dashboard_cache.invalidate_all()

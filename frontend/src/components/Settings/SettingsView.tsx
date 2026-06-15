@@ -9,6 +9,44 @@ import { Sidebar } from '../Sidebar';
 import { useTranslation } from 'react-i18next';
 import { MobileHeader } from '../MobileHeader';
 
+const copyToClipboard = (text: string, onSuccess: () => void) => {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text)
+      .then(onSuccess)
+      .catch((err) => {
+        console.error('Failed to copy text: ', err);
+        fallbackCopyToClipboard(text, onSuccess);
+      });
+  } else {
+    fallbackCopyToClipboard(text, onSuccess);
+  }
+};
+
+const fallbackCopyToClipboard = (text: string, onSuccess: () => void) => {
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.style.top = "0";
+  textArea.style.left = "0";
+  textArea.style.position = "fixed";
+  textArea.style.opacity = "0";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  try {
+    const successful = document.execCommand('copy');
+    if (successful) {
+      onSuccess();
+    } else {
+      console.error('Fallback copy failed');
+      alert('Failed to copy to clipboard');
+    }
+  } catch (err) {
+    console.error('Fallback: Oops, unable to copy', err);
+    alert('Failed to copy to clipboard');
+  }
+  document.body.removeChild(textArea);
+};
+
 export function SettingsView() {
   const { t, i18n } = useTranslation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -538,8 +576,7 @@ export function SettingsView() {
                 <button
                   className="btn btn-secondary"
                   onClick={() => {
-                    navigator.clipboard.writeText(createdToken);
-                    alert(t('notifications.copied'));
+                    copyToClipboard(createdToken, () => alert(t('notifications.copied')));
                   }}
                 >
                   {t('settings.token_copy')}

@@ -85,25 +85,64 @@ async def get_current_admin(
         db_token = token_res.scalar_one_or_none()
         
         if db_token:
-            # Enforce read-only logic on HTTP requests
+            # Parse scopes from db_token. If scopes is None, default to read-only scopes.
+            if db_token.scopes:
+                token_scopes = {s.strip() for s in db_token.scopes.split(",") if s.strip()}
+            else:
+                # Backward compatibility fallback: read-only scopes
+                token_scopes = {
+                    "devices:read", "topology:read", "network:read", "agent:read",
+                    "settings:read", "backup:read", "scanner:read"
+                }
+
             is_http = conn.scope.get("type") == "http"
             if is_http:
                 method = conn.method
                 path = conn.url.path
-                if method not in ("GET", "HEAD"):
-                    if path == "/api/auth/check":
-                        pass
-                    else:
+                
+                # Exclude path /api/auth/check from strict scoping
+                if path != "/api/auth/check":
+                    # Determine required scope
+                    required_scope = None
+                    if path.startswith("/api/devices") or path.startswith("/api/groups") or path.startswith("/api/services"):
+                        required_scope = "devices:read" if method in ("GET", "HEAD") else "devices:write"
+                    elif path.startswith("/api/topology"):
+                        required_scope = "topology:read" if method in ("GET", "HEAD") else "topology:write"
+                    elif path.startswith("/api/network"):
+                        required_scope = "network:read" if method in ("GET", "HEAD") else "network:write"
+                    elif path.startswith("/api/agent"):
+                        required_scope = "agent:read" if method in ("GET", "HEAD") else "agent:write"
+                    elif path.startswith("/api/settings"):
+                        required_scope = "settings:read" if method in ("GET", "HEAD") else "settings:write"
+                    elif path.startswith("/api/backup"):
+                        required_scope = "backup:read" if method in ("GET", "HEAD") else "backup:write"
+                    elif path.startswith("/api/scanner"):
+                        required_scope = "scanner:read" if method in ("GET", "HEAD") else "scanner:start"
+                    elif path.startswith("/api/webhooks"):
+                        required_scope = "settings:read" if method in ("GET", "HEAD") else "settings:write"
+                    elif path.startswith("/api/summary"):
+                        required_scope = "devices:read"  # summary requires general read permission
+                    elif path.startswith("/api/auth/tokens"):
+                        required_scope = "settings:read" if method in ("GET", "HEAD") else "settings:write"
+                    
+                    # Block read-only token from accessing sensitive admin/export or token-management endpoints
+                    if path in ("/api/backup/export", "/api/settings/reset-db") or path.startswith("/api/auth/tokens"):
                         raise HTTPException(
                             status_code=403,
-                            detail="Read-only token cannot perform state-modifying actions."
+                            detail="Read-only token is not authorized for this administrative action. Token is not authorized for sensitive administrative actions."
                         )
-                # Block read-only token from accessing sensitive admin/export or token-management endpoints
-                if path in ("/api/backup/export", "/api/settings/reset-db") or path.startswith("/api/auth/tokens"):
-                    raise HTTPException(
-                        status_code=403,
-                        detail="Read-only token is not authorized for this administrative action."
-                    )
+                    
+                    if required_scope and required_scope not in token_scopes:
+                        if method not in ("GET", "HEAD"):
+                            raise HTTPException(
+                                status_code=403,
+                                detail=f"Read-only token cannot perform state-modifying actions. Token is missing the required scope '{required_scope}'."
+                            )
+                        else:
+                            raise HTTPException(
+                                status_code=403,
+                                detail=f"Token is missing the required scope '{required_scope}'."
+                            )
             
             # Update last_used_at timestamp with throttling
             try:
@@ -462,12 +501,14 @@ async def create_api_token(
     raw_token = "gl_pat_" + secrets.token_hex(24)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     prefix = raw_token[:11] + "..."
+    scopes_str = ",".join(payload.scopes) if payload.scopes else None
 
     new_token = ApiToken(
         name=payload.name,
         token_hash=token_hash,
         prefix=prefix,
-        is_active=True
+        is_active=True,
+        scopes=scopes_str
     )
     db.add(new_token)
     await db.commit()
@@ -480,7 +521,8 @@ async def create_api_token(
         is_active=new_token.is_active,
         created_at=new_token.created_at,
         last_used_at=new_token.last_used_at,
-        token=raw_token
+        token=raw_token,
+        scopes=payload.scopes
     )
 
 @router.delete("/tokens/{token_id}")

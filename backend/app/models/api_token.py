@@ -19,3 +19,5 @@ class ApiToken(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    scopes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+

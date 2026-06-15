@@ -164,6 +164,28 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
              if in_any_scanned and dev.ip not in all_alive_ips:
                     dev.is_online = False
                     dev.status_changed_at = datetime.now(timezone.utc)
+                    
+                    # Log to history
+                    from app.models.device import DeviceHistory
+                    db.add(DeviceHistory(
+                        device_id=dev.id,
+                        status="offline",
+                        message=f"Device {dev.display_name or dev.hostname or dev.ip} went offline"
+                    ))
+                    
+                    # Trigger webhook in background
+                    from app.services.webhook_service import trigger_webhooks
+                    await trigger_webhooks(
+                        event_type="device.offline",
+                        data={
+                            "device_id": dev.id,
+                            "ip": dev.ip,
+                            "mac": dev.mac,
+                            "display_name": dev.display_name,
+                            "hostname": dev.hostname,
+                            "last_seen": dev.last_seen.isoformat() if dev.last_seen else None
+                        }
+                    )
         
         await db.commit()
         # Consolidated cache invalidation
@@ -172,4 +194,16 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
         topology_cache.invalidate()
 
     logger.info(f"Planner: Scan complete. Found {total_found} hosts.")
+    
+    # Trigger scan.complete webhook
+    from app.services.webhook_service import trigger_webhooks
+    await trigger_webhooks(
+        event_type="scan.complete",
+        data={
+            "scan_type": "planner",
+            "hosts_found": total_found,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    )
+    
     return total_found

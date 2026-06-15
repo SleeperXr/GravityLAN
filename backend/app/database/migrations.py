@@ -25,6 +25,7 @@ MIGRATIONS = [
     ("discovered_hosts", "ports", "TEXT"),
     ("agent_tokens", "pending_token", "VARCHAR(64)"),
     ("agent_tokens", "pending_at", "DATETIME"),
+    ("api_tokens", "scopes", "TEXT"),
 ]
 
 async def run_migrations(db: AsyncSession):
