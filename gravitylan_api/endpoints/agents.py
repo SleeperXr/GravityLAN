@@ -19,3 +19,15 @@ class AgentsEndpoint(BaseEndpoint):
             dict: The agent overview list payload.
         """
         return self.client._request("GET", "/api/agents")
+
+    def get(self, device_id: int) -> dict:
+        """Get the current status and latest metrics for a specific agent.
+
+        Args:
+            device_id (int): The ID of the monitored device.
+
+        Returns:
+            dict: The agent status and metrics payload.
+        """
+        return self.client._request("GET", f"/api/agents/{device_id}")
+

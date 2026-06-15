@@ -302,6 +302,8 @@ from app.api.webhooks import router as webhooks_router  # noqa: E402
 from app.api.summary import router as summary_router, issues_router  # noqa: E402
 from app.api.logs import router as logs_router  # noqa: E402
 from app.api.agents import router as agents_router  # noqa: E402
+from app.api.scan_profiles import router as scan_profiles_router  # noqa: E402
+from app.api.notifications import router as notifications_router  # noqa: E402
 
 from app.api.auth import get_current_admin
 
@@ -319,6 +321,8 @@ app.include_router(summary_router, dependencies=[Depends(get_current_admin)])
 app.include_router(issues_router, dependencies=[Depends(get_current_admin)])
 app.include_router(logs_router, dependencies=[Depends(get_current_admin)])
 app.include_router(agents_router, dependencies=[Depends(get_current_admin)])
+app.include_router(scan_profiles_router, dependencies=[Depends(get_current_admin)])
+app.include_router(notifications_router, dependencies=[Depends(get_current_admin)])
 app.include_router(setup_router) # Setup manages its own logic
 app.include_router(agent_router) # Contains both public report and protected metrics (internally handled)
 logger.info("Registered Agent API routes under /api/agent")

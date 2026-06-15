@@ -4,7 +4,7 @@ from gravitylan_api import GravityLANClient
 
 @patch("gravitylan_api.client.GravityLANClient._request")
 def test_agents_overview(mock_request):
-    """Test agents.overview() and agents.list() resource methods."""
+    """Test agents.overview(), agents.list(), and agents.get() resource methods."""
     mock_request.return_value = {"agents": []}
     client = GravityLANClient(token="test")
     
@@ -15,6 +15,11 @@ def test_agents_overview(mock_request):
     res = client.agents.list()
     assert res == {"agents": []}
     mock_request.assert_called_with("GET", "/api/agents")
+
+    mock_request.return_value = {"device_id": 10, "is_active": True}
+    res = client.agents.get(10)
+    assert res == {"device_id": 10, "is_active": True}
+    mock_request.assert_called_with("GET", "/api/agents/10")
 
 
 @patch("gravitylan_api.client.GravityLANClient._request")
@@ -55,6 +60,12 @@ def test_devices_endpoints(mock_request):
     res = client.devices.list_issues()
     assert res == []
     mock_request.assert_called_with("GET", "/api/issues")
+
+    # devices.list_notifications()
+    mock_request.return_value = []
+    res = client.devices.list_notifications()
+    assert res == []
+    mock_request.assert_called_with("GET", "/api/notifications")
 
 
 @patch("gravitylan_api.client.GravityLANClient._request")
@@ -145,3 +156,14 @@ def test_auth_endpoints(mock_request):
     res = client.auth.logs(limit=10, level="ERROR")
     assert res == []
     mock_request.assert_called_with("GET", "/api/logs", params={"limit": 10, "level": "ERROR"})
+
+
+@patch("gravitylan_api.client.GravityLANClient._request")
+def test_scan_profiles_endpoints(mock_request):
+    """Test scan_profiles.list() resource method."""
+    mock_request.return_value = []
+    client = GravityLANClient(token="test")
+
+    res = client.scan_profiles.list()
+    assert res == []
+    mock_request.assert_called_with("GET", "/api/scan-profiles")

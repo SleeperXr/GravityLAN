@@ -68,3 +68,25 @@ async def test_webhook_dispatch(
     from app.services.webhook_service import trigger_webhooks
     await trigger_webhooks(event_type=event, data=data)
     return {"status": "ok", "message": f"Webhook test event '{event}' scheduled for dispatch."}
+
+@router.get("/test")
+async def test_webhook_dispatch_get(
+    event: str = "test.event",
+    token: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Trigger a mock/test webhook event via GET query parameter. Raises 404 if no webhooks exist."""
+    result = await db.execute(select(WebhookSubscription).where(WebhookSubscription.is_active == True))
+    active_subs = result.scalars().all()
+    if not active_subs:
+        raise HTTPException(status_code=404, detail="No active webhooks configured")
+
+    from app.services.webhook_service import trigger_webhooks
+    from datetime import datetime, timezone
+    mock_data = {
+        "status": "testing",
+        "triggered_by": "GET /api/webhooks/test",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    await trigger_webhooks(event_type=event, data=mock_data)
+    return {"status": "ok", "message": f"Webhook test event '{event}' scheduled for dispatch via GET."}

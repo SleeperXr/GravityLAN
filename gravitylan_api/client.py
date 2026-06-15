@@ -16,6 +16,7 @@ from .endpoints.topology import TopologyEndpoint
 from .endpoints.network import NetworkEndpoint
 from .endpoints.backup import BackupEndpoint
 from .endpoints.auth import AuthEndpoint
+from .endpoints.scan_profiles import ScanProfilesEndpoint
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,8 @@ class GravityLANClient:
         self.network = NetworkEndpoint(self)
         self.backup = BackupEndpoint(self)
         self.auth = AuthEndpoint(self)
+        self.scan_profiles = ScanProfilesEndpoint(self)
+
 
     def _ensure_login(self):
         """Log in via password authentication to establish a session cookie if needed."""

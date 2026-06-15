@@ -63,3 +63,12 @@ class DevicesEndpoint(BaseEndpoint):
             list: The list of active issues.
         """
         return self.client._request("GET", "/api/issues")
+
+    def list_notifications(self) -> list:
+        """Get the dynamic feed of recent system notifications.
+
+        Returns:
+            list: The list of notifications.
+        """
+        return self.client._request("GET", "/api/notifications")
+

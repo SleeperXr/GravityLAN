@@ -145,3 +145,67 @@ async def test_chatbot_api_endpoints(client, db, admin_token):
     assert group_data["name"] == "Testing Group"
     assert len(group_data["devices"]) == 1
     assert group_data["devices"][0]["ip"] == "192.168.100.99"
+
+    # 9. Test GET /api/agents/{device_id}
+    response = await client.get(
+        f"/api/agents/{device.id}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert response.status_code == 200
+    assert response.json()["device_id"] == device.id
+    assert response.json()["is_installed"] is False
+
+    # 10. Test GET /api/webhooks/test (with configured webhooks)
+    # Re-register a webhook since we need one for GET test
+    db_webhook_get = WebhookSubscription(url="http://127.0.0.1:9500/mock-get", events="test.event", is_active=True)
+    db.add(db_webhook_get)
+    await db.commit()
+
+    session_ctx = SessionContext(db)
+    with patch("app.services.webhook_service.async_session", return_value=session_ctx):
+        with patch("app.services.webhook_service._send_webhook_post", new_callable=AsyncMock) as mock_send:
+            response = await client.get(
+                "/api/webhooks/test",
+                headers={"Authorization": f"Bearer {admin_token}"}
+            )
+            assert response.status_code == 200
+            assert "scheduled for dispatch via GET" in response.json()["message"]
+
+    # Delete the webhooks to verify the 404 error
+    await db.delete(db_webhook)
+    await db.delete(db_webhook_get)
+    await db.commit()
+    response = await client.get(
+        "/api/webhooks/test",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert response.status_code == 404
+
+    # 11. Test GET /api/scan-profiles
+    response = await client.get(
+        "/api/scan-profiles",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert response.status_code == 200
+    profiles = response.json()
+    assert isinstance(profiles, list)
+    assert len(profiles) == 3
+    assert profiles[0]["name"] == "Standard Discovery"
+
+    # 12. Test GET /api/notifications
+    from app.models.device import DeviceHistory
+    # Add a device offline history entry
+    hist = DeviceHistory(device_id=device.id, status="offline", message="Device went offline")
+    db.add(hist)
+    await db.commit()
+
+    response = await client.get(
+        "/api/notifications",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert response.status_code == 200
+    notifications = response.json()
+    assert len(notifications) >= 1
+    assert notifications[0]["title"] == "🔴 Gerät offline"
+    assert notifications[0]["type"] == "warning"
+
