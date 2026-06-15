@@ -46,6 +46,31 @@ async def test_login_no_token_leak(client, db):
     assert "gravitylan_token" in response.cookies
 
 @pytest.mark.asyncio
+async def test_settings_no_secrets_leak(client, db):
+    """Verify that GET /api/settings does NOT leak api.master_token or api.admin_password."""
+    from app.models.setting import Setting
+    from app.services.auth_service import hash_password
+    
+    # 1. Prepare DB
+    db.add(Setting(key="setup.complete", value="true", category="system"))
+    db.add(Setting(key="api.master_token", value="master_secret_token_12345", category="system"))
+    db.add(Setting(key="api.admin_password", value=hash_password("admin_pass_123"), category="system"))
+    db.add(Setting(key="history_retention_days", value="30", category="system"))
+    await db.commit()
+    
+    # 2. Get settings with master token
+    headers = {"Authorization": "Bearer master_secret_token_12345"}
+    response = await client.get("/api/settings", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    
+    # 3. Verify secrets are redacted/excluded
+    assert "api.master_token" not in data
+    assert "api.admin_password" not in data
+    # Normal settings should still be returned
+    assert data.get("history_retention_days") == "30"
+
+@pytest.mark.asyncio
 async def test_setup_idempotency(client, db):
     """Verify that mark_setup_complete fails if setup is already done."""
     from app.models.setting import Setting

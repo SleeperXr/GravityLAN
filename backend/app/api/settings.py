@@ -15,10 +15,12 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 @router.get("", dependencies=[Depends(get_current_admin)])
 async def get_all_settings(db: AsyncSession = Depends(get_db)):
-    """Fetch all system settings as a key-value dictionary."""
+    """Fetch all system settings as a key-value dictionary, excluding secrets."""
     result = await db.execute(select(Setting))
     settings = result.scalars().all()
-    return {s.key: s.value for s in settings}
+    # Filter out sensitive keys to prevent credentials leakage (P0 security fix)
+    sensitive_keys = {"api.master_token", "api.admin_password"}
+    return {s.key: s.value for s in settings if s.key not in sensitive_keys}
 
 SettingsUpdate = RootModel[dict[str, str]]
 
