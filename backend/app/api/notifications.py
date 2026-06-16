@@ -1,6 +1,7 @@
 """Notifications aggregate API router for GravityLAN."""
 
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -17,44 +18,66 @@ router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 @router.get("", response_model=list[NotificationResponse])
 async def list_notifications(
+    since: datetime | None = None,
+    unread: bool | None = None,
+    device_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     current_admin: str = Depends(get_current_admin)
 ) -> list[NotificationResponse]:
-    """Retrieve dynamic notifications aggregated from system history logs."""
-    # Query last 50 history entries, eager loading relations
-    result = await db.execute(
-        select(DeviceHistory)
-        .options(selectinload(DeviceHistory.device), selectinload(DeviceHistory.service))
-        .order_by(DeviceHistory.timestamp.desc())
-        .limit(50)
+    """Retrieve dynamic notifications aggregated from system history logs with filtering support."""
+    # Since all notifications are currently unread (read=False), if unread filter is explicitly False, return empty.
+    if unread is False:
+        return []
+
+    query = select(DeviceHistory).options(
+        selectinload(DeviceHistory.device),
+        selectinload(DeviceHistory.service)
     )
+    
+    if device_id is not None:
+        query = query.where(DeviceHistory.device_id == device_id)
+        
+    if since is not None:
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=timezone.utc)
+        query = query.where(DeviceHistory.timestamp >= since)
+        
+    query = query.order_by(DeviceHistory.timestamp.desc()).limit(50)
+    
+    result = await db.execute(query)
     history_entries = result.scalars().all()
     
     notifications = []
     for h in history_entries:
-        # Determine notification properties based on event type and status
+        # Determine event properties
         if h.service_id:
             # Service event
             if h.status in ("up", "online"):
                 title = "🟢 Service online"
-                ntype = "success"
+                severity = "success"
+                event_type = "service_up"
             else:
                 title = "⚠️ Service ausgefallen"
-                ntype = "error"
+                severity = "error"
+                event_type = "service_down"
         else:
             # Device event
             if h.status in ("online", "up"):
                 title = "🟢 Gerät online"
-                ntype = "success"
+                severity = "success"
+                event_type = "device_online"
             elif h.status in ("offline", "down"):
                 title = "🔴 Gerät offline"
-                ntype = "warning"
+                severity = "warning"
+                event_type = "device_offline"
             elif h.status == "ip_changed":
                 title = "📡 IP-Adresse geändert"
-                ntype = "info"
+                severity = "info"
+                event_type = "ip_changed"
             else:
                 title = "System-Ereignis"
-                ntype = "info"
+                severity = "info"
+                event_type = "unknown"
         
         dev_name = h.device.display_name or h.device.ip if h.device else f"Device #{h.device_id}"
         msg = h.message or f"{dev_name} is now {h.status}"
@@ -64,10 +87,13 @@ async def list_notifications(
                 id=h.id,
                 title=title,
                 message=msg,
-                type=ntype,
+                read=False,
                 timestamp=h.timestamp,
-                read=False
+                type=event_type,
+                severity=severity,
+                device_id=h.device_id
             )
         )
         
     return notifications
+

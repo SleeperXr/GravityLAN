@@ -59,13 +59,23 @@ def test_devices_endpoints(mock_request):
     mock_request.return_value = []
     res = client.devices.list_issues()
     assert res == []
-    mock_request.assert_called_with("GET", "/api/issues")
+    mock_request.assert_called_with("GET", "/api/issues", params={})
+
+    client.devices.list_issues(device_id=14, type="service_down")
+    mock_request.assert_called_with("GET", "/api/issues", params={"device_id": "14", "type": "service_down"})
 
     # devices.list_notifications()
     mock_request.return_value = []
     res = client.devices.list_notifications()
     assert res == []
-    mock_request.assert_called_with("GET", "/api/notifications")
+    mock_request.assert_called_with("GET", "/api/notifications", params={})
+
+    client.devices.list_notifications(since="2026-06-16T10:00:00Z", unread=True, device_id=12)
+    mock_request.assert_called_with(
+        "GET",
+        "/api/notifications",
+        params={"since": "2026-06-16T10:00:00Z", "unread": "true", "device_id": "12"}
+    )
 
 
 @patch("gravitylan_api.client.GravityLANClient._request")
@@ -167,3 +177,14 @@ def test_scan_profiles_endpoints(mock_request):
     res = client.scan_profiles.list()
     assert res == []
     mock_request.assert_called_with("GET", "/api/scan-profiles")
+
+
+@patch("gravitylan_api.client.GravityLANClient._request")
+def test_health_endpoints(mock_request):
+    """Test health.summary() resource method."""
+    mock_request.return_value = {"api_version": "0.3.0"}
+    client = GravityLANClient(token="test")
+
+    res = client.health.summary()
+    assert res == {"api_version": "0.3.0"}
+    mock_request.assert_called_with("GET", "/api/health/summary")

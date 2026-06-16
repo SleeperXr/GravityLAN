@@ -56,19 +56,46 @@ class DevicesEndpoint(BaseEndpoint):
         """
         return self.client._request("GET", f"/api/groups/{group_id}")
 
-    def list_issues(self) -> list:
+    def list_issues(
+        self, device_id: Optional[int] = None, type: Optional[str] = None
+    ) -> list:
         """Get the active list of issues (offline agents, down services) from summary.
+
+        Args:
+            device_id: Optional filter for a specific device by ID.
+            type: Optional filter for issue type (e.g. "agent_offline").
 
         Returns:
             list: The list of active issues.
         """
-        return self.client._request("GET", "/api/issues")
+        params = {}
+        if device_id is not None:
+            params["device_id"] = str(device_id)
+        if type is not None:
+            params["type"] = type
 
-    def list_notifications(self) -> list:
+        return self.client._request("GET", "/api/issues", params=params)
+
+    def list_notifications(
+        self, since: Optional[str] = None, unread: Optional[bool] = None, device_id: Optional[int] = None
+    ) -> list:
         """Get the dynamic feed of recent system notifications.
+
+        Args:
+            since: Optional ISO-8601 timestamp string filter.
+            unread: Optional read status filter.
+            device_id: Optional device ID filter.
 
         Returns:
             list: The list of notifications.
         """
-        return self.client._request("GET", "/api/notifications")
+        params = {}
+        if since is not None:
+            params["since"] = since
+        if unread is not None:
+            params["unread"] = str(unread).lower()
+        if device_id is not None:
+            params["device_id"] = str(device_id)
+
+        return self.client._request("GET", "/api/notifications", params=params)
 

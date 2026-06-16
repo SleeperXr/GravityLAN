@@ -17,6 +17,7 @@ from .endpoints.network import NetworkEndpoint
 from .endpoints.backup import BackupEndpoint
 from .endpoints.auth import AuthEndpoint
 from .endpoints.scan_profiles import ScanProfilesEndpoint
+from .endpoints.health import HealthEndpoint
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ class GravityLANClient:
         self.backup = BackupEndpoint(self)
         self.auth = AuthEndpoint(self)
         self.scan_profiles = ScanProfilesEndpoint(self)
+        self.health = HealthEndpoint(self)
 
 
     def _ensure_login(self):

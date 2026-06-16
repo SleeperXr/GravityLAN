@@ -134,6 +134,8 @@ async def get_current_admin(
                         required_scope = "scanner:read" if method in ("GET", "HEAD") else "scanner:start"
                     elif path.startswith("/api/notifications"):
                         required_scope = "devices:read" if method in ("GET", "HEAD") else "devices:write"
+                    elif path.startswith("/api/health"):
+                        required_scope = "devices:read" if method in ("GET", "HEAD") else "devices:write"
                     
                     # Block read-only token from accessing sensitive admin/export or token-management endpoints
                     if path in ("/api/backup/export", "/api/settings/reset-db") or path.startswith("/api/auth/tokens"):

@@ -20,6 +20,7 @@ class ScannerSummary(BaseModel):
 
 class ActiveIssue(BaseModel):
     type: str  # "agent_offline" | "service_down"
+    severity: str  # "error" | "warning" | "info"
     device_id: int
     device_name: str
     details: str

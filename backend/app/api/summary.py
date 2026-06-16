@@ -108,6 +108,7 @@ async def get_summary(
                 last_seen_str = ensure_utc(agent_token.last_seen).isoformat()
             active_issues.append({
                 "type": "agent_offline",
+                "severity": "error",
                 "device_id": dev.id,
                 "device_name": dev.display_name or dev.hostname or dev.ip,
                 "details": f"Agent has not reported since {last_seen_str}"
@@ -122,6 +123,7 @@ async def get_summary(
     for svc, dev in res_down_services.all():
         active_issues.append({
             "type": "service_down",
+            "severity": "error",
             "device_id": dev.id,
             "device_name": dev.display_name or dev.hostname or dev.ip,
             "details": f"Service {svc.name} on port {svc.port} is down"
@@ -146,13 +148,24 @@ async def get_summary(
         active_issues=active_issues
     )
 
+
 issues_router = APIRouter(prefix="/api/issues", tags=["issues"])
 
 @issues_router.get("", response_model=list[ActiveIssue])
 async def get_active_issues(
+    device_id: int | None = None,
+    type: str | None = None,
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ) -> list[ActiveIssue]:
-    """Exposes active issues as a standalone list."""
+    """Exposes active issues as a standalone list with optional filters."""
     summary = await get_summary(token, db)
-    return summary.active_issues
+    issues = summary.active_issues
+    
+    if device_id is not None:
+        issues = [i for i in issues if i.device_id == device_id]
+        
+    if type is not None:
+        issues = [i for i in issues if i.type == type]
+        
+    return issues

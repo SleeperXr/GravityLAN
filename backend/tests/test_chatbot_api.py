@@ -192,12 +192,13 @@ async def test_chatbot_api_endpoints(client, db, admin_token):
     assert len(profiles) == 3
     assert profiles[0]["name"] == "Standard Discovery"
 
-    # 12. Test GET /api/notifications
+    # 12. Test GET /api/notifications and filtering
     from app.models.device import DeviceHistory
     # Add a device offline history entry
     hist = DeviceHistory(device_id=device.id, status="offline", message="Device went offline")
     db.add(hist)
     await db.commit()
+    await db.refresh(hist)
 
     response = await client.get(
         "/api/notifications",
@@ -207,5 +208,91 @@ async def test_chatbot_api_endpoints(client, db, admin_token):
     notifications = response.json()
     assert len(notifications) >= 1
     assert notifications[0]["title"] == "🔴 Gerät offline"
-    assert notifications[0]["type"] == "warning"
+    assert notifications[0]["type"] == "device_offline"
+    assert notifications[0]["severity"] == "warning"
+    assert notifications[0]["device_id"] == device.id
+
+    # Filter: unread=true (returns all since they default to unread)
+    res_unread = await client.get(
+        "/api/notifications?unread=true",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert len(res_unread.json()) >= 1
+
+    # Filter: unread=false (returns empty because all are unread)
+    res_read = await client.get(
+        "/api/notifications?unread=false",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert len(res_read.json()) == 0
+
+    # Filter: device_id
+    res_dev = await client.get(
+        f"/api/notifications?device_id={device.id}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert len(res_dev.json()) >= 1
+
+    res_dev_none = await client.get(
+        "/api/notifications?device_id=99999",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert len(res_dev_none.json()) == 0
+
+    # Filter: since (future date should return empty)
+    res_since_future = await client.get(
+        "/api/notifications?since=2030-01-01T00:00:00Z",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert len(res_since_future.json()) == 0
+
+    # 13. Test GET /api/issues filtering and severity
+    # Set has_agent = True and add an agent to verify issues list has items
+    from app.models.agent import AgentToken
+    device.has_agent = True
+    db.add(device)
+    agent_tk = AgentToken(device_id=device.id, token="test-pat-scope-tk-99", is_active=True, last_seen=None)
+    db.add(agent_tk)
+    await db.commit()
+
+    response = await client.get(
+        "/api/issues",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert response.status_code == 200
+    issues = response.json()
+    assert len(issues) >= 1
+    assert issues[0]["severity"] == "error"
+    assert issues[0]["type"] == "agent_offline"
+
+    # Filter: type
+    res_issues_filter = await client.get(
+        "/api/issues?type=agent_offline",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert len(res_issues_filter.json()) >= 1
+
+    res_issues_none = await client.get(
+        "/api/issues?type=non_existent_type",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert len(res_issues_none.json()) == 0
+
+    # 14. Test GET /api/health/summary
+    response = await client.get(
+        "/api/health/summary",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert response.status_code == 200
+    health = response.json()
+    assert "api_version" in health
+    assert "devices" in health
+    assert health["devices"]["total"] >= 1
+    assert "agents" in health
+    assert "issues" in health
+    assert health["issues"]["active"] >= 1
+    assert "notifications" in health
+    assert health["notifications"]["unread"] >= 1
+    assert "scanner" in health
+
 
