@@ -88,7 +88,7 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
                 if not target_ports:
                     target_ports = MANAGEMENT_PORTS[:3]
                 
-                timeout = 0.5 if is_ping_alive else 0.3
+                timeout = 0.5 if is_ping_alive else 1.0
                 health_tasks.append(scan_ports(dev.ip, ports=target_ports, timeout=timeout))
             
             batch_results = await asyncio.gather(*health_tasks)

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-07-16
+
+### Fixed
+- **Scanner: TCP Timeout Hardening**: Increased TCP connect timeout for non-ping-responsive devices from 0.3s to 1.0s in the Dashboard scanner. Devices under CPU load (e.g. UniFi switches) need *more* time for TCP handshakes, not less — the previous value caused false "service down" alerts.
+- **Scanner: Bounded Thread Pool**: Replaced the default `ThreadPoolExecutor` in `port_scanner.py` with a dedicated, bounded pool (max 40 workers). Prevents thread exhaustion when scanning many hosts concurrently across batches.
+- **Schema: ServiceUpdate Port Validation**: Added `ge=1, le=65535` constraint to `ServiceUpdate.port` field. `ServiceCreate` already had this, but `ServiceUpdate` allowed arbitrary integers which could cause socket errors in the port scanner.
+
+### Added
+- **Scanner Integration Tests**: New `test_scanner_logic.py` with integration tests covering the Planner service guard (PR #7), Dashboard hybrid health-check transitions, and service port validation.
+
 ## [0.3.0] - 2026-05-24
 
 ### Added

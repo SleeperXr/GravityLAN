@@ -39,7 +39,7 @@ class ServiceUpdate(BaseModel):
 
     name: str | None = None
     protocol: str | None = None
-    port: int | None = None
+    port: int | None = Field(None, ge=1, le=65535)
     url_template: str | None = None
     color: str | None = None
     sort_order: int | None = None

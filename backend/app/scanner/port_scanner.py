@@ -15,6 +15,10 @@ from typing import Callable, Any
 
 logger = logging.getLogger(__name__)
 
+# Dedicated thread pool for port scanning — bounded to prevent thread exhaustion
+# when scanning many hosts concurrently across batches.
+_port_scan_executor = ThreadPoolExecutor(max_workers=40, thread_name_prefix="port-scan")
+
 # Default ports to scan, ordered by detection value
 DEFAULT_SCAN_PORTS: list[int] = [
     # Remote Access
@@ -111,13 +115,9 @@ async def scan_ports(
             pass
         return None
 
-    async def _check_port_sem(port: int):
-        async with asyncio.Semaphore(20): # Max 20 concurrent ports per host
-            return await loop.run_in_executor(None, _check_port, port)
-
-    tasks = [_check_port_sem(p) for p in scan_ports_list]
+    tasks = [loop.run_in_executor(_port_scan_executor, _check_port, p) for p in scan_ports_list]
     results = await asyncio.gather(*tasks)
-    
+
     for result in results:
         if result is not None:
             open_ports.append(result)
