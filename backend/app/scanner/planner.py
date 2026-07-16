@@ -162,6 +162,12 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
                      continue
                      
              if in_any_scanned and dev.ip not in all_alive_ips:
+                    # Skipping: Devices with configured services are handled by the
+                    # Dashboard scanner (TCP port + ICMP hybrid check). Marking them
+                    # offline here based on a single missed ping causes false positives
+                    # on devices with a busy management CPU (e.g. UniFi switches).
+                    if dev.services:
+                        continue
                     dev.is_online = False
                     dev.status_changed_at = datetime.now(timezone.utc)
                     
