@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [0.3.2] - 2026-07-17
 
 ### Added
+
 - **Linux Package Patching**: Integrated a package patching manager directly into the Agents tab.
   - The Python agent reports update counts passively (without root/sudo privileges) for Debian/Ubuntu (apt) and Fedora/CentOS/RHEL (dnf/yum) hosts.
   - The server queries update details and runs upgrades on-demand over a secure, credential-less temporary SSH channel.
@@ -12,12 +13,15 @@ All notable changes to this project will be documented in this file.
   - Support for reboot requirements detection and major OS release notifications.
 
 ### Changed
+
 - **Apt Upgrade Command**: Swapped `apt-get upgrade` with `apt-get dist-upgrade` to ensure proper dependency resolution and support Proxmox VE hosts.
 
 ### Fixed
+
 - **Safari CSS Compatibility**: Added `-webkit-backdrop-filter` alongside `backdrop-filter: blur(...)` rules in `index.css` to fix glassmorphism rendering on Safari/iOS.
 - **Agent: CPU/RAM 0% Metrics**: Set default `root_path` to `/` for `CPUMetrics` and `RAMMetrics` to ensure system metrics are parsed correctly regardless of agent execution working directory (fixing 0% load reporting inside Docker containers).
 - **UI: Terminal Auto-scroll bouncing**: Replaced `scrollIntoView()` on inner terminal elements with direct container `scrollTop` assignment, preventing the entire page viewport from jumping during update progress.
+
 
 ## [0.3.1] - 2026-07-16
 
