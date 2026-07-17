@@ -28,6 +28,16 @@ class AgentDiskReport(BaseModel):
     percent: float
 
 
+class AgentPatchesReport(BaseModel):
+    """Package patches info as reported by the agent."""
+
+    patch_available: int
+    patch_security: int
+    patch_manager: str | None = None
+    reboot_required: bool
+    major_upgrade_available: str | None = None
+
+
 class AgentReportPayload(BaseModel):
     """Full metrics payload received from an agent.
 
@@ -43,6 +53,7 @@ class AgentReportPayload(BaseModel):
     temperature: float | None = None
     network: dict[str, dict[str, int]] = {}
     system: dict[str, str] = {}
+    patches: AgentPatchesReport | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +110,7 @@ class MetricsHistoryResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# SSH Deployment
+# SSH Deployment & Patching
 # ---------------------------------------------------------------------------
 
 class AgentDeployRequest(BaseModel):
@@ -123,6 +134,31 @@ class AgentDeployResponse(BaseModel):
     agent_version: str | None = None
 
 
+class PackageUpdateInfo(BaseModel):
+    """Detailed info for an upgradeable package."""
+    package: str
+    current_version: str
+    new_version: str
+    repo: str | None = None
+
+
+class DevicePatchesResponse(BaseModel):
+    """Detailed list of available patches on a device."""
+    device_id: int
+    patch_manager: str | None
+    packages: list[PackageUpdateInfo] = []
+    major_upgrade_available: str | None = None
+
+
+class PatchActionRequest(BaseModel):
+    """Credentials and parameters for applying patches."""
+    ssh_user: str = Field(..., min_length=1, max_length=50)
+    ssh_password: str | None = Field(None, min_length=1)
+    ssh_key: str | None = None
+    ssh_port: int = Field(22, ge=1, le=65535)
+    mode: str = Field("upgrade")  # "upgrade" or "security-only"
+
+
 # ---------------------------------------------------------------------------
 # Agent Configuration (editable from UI)
 # ---------------------------------------------------------------------------
@@ -133,6 +169,7 @@ class AgentConfigUpdate(BaseModel):
     interval: int | None = Field(None, ge=5, le=300)
     disk_paths: list[str] | None = None
     enable_temp: bool | None = None
+    enable_patch_check: bool | None = None
 
 
 class AgentConfigResponse(BaseModel):
@@ -142,6 +179,7 @@ class AgentConfigResponse(BaseModel):
     interval: int = 30
     disk_paths: list[str] = ["/"]
     enable_temp: bool = True
+    enable_patch_check: bool = True
 
 # ---------------------------------------------------------------------------
 # Agents Overview (for Agents Tab)
@@ -163,6 +201,11 @@ class AgentSummary(BaseModel):
     metrics_count: int = 0
     has_pending_token: bool = False
     pending_at: datetime | None = None
+    patch_available: int = 0
+    patch_security: int = 0
+    patch_manager: str | None = None
+    reboot_required: bool = False
+    major_upgrade_available: str | None = None
 
 class AgentsOverviewResponse(BaseModel):
     """Aggregation of all agents and global stats."""

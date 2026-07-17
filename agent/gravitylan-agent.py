@@ -33,7 +33,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 # Constants & Logging
 # ---------------------------------------------------------------------------
 
-VERSION = "0.2.5"
+VERSION = "0.3.2"
 AGENT_NAME = "gravitylan-agent"
 DEFAULT_CONFIG_FILENAME = "agent.conf"
 DEFAULT_LOG_FILENAME = "gravitylan-agent.log"
@@ -66,6 +66,7 @@ class AgentConfig:
     interval: int = 30
     disk_paths: List[str] = field(default_factory=lambda: ["/"])
     enable_temp: bool = True
+    enable_patch_check: bool = True
     config_path: Optional[Path] = None
 
     @classmethod
@@ -99,6 +100,7 @@ class AgentConfig:
             interval=data.get("interval", 30),
             disk_paths=data.get("disk_paths", ["/"]),
             enable_temp=data.get("enable_temp", True),
+            enable_patch_check=data.get("enable_patch_check", True),
             config_path=config_path
         )
 
@@ -217,7 +219,7 @@ def get_lxc_cpu_usage_ns(root_path: str = "") -> int | None:
 
 class CPUMetrics(MetricProvider):
     """Calculates CPU usage percentage using /proc/stat delta or cgroups inside LXC."""
-    def __init__(self, root_path: str = ""):
+    def __init__(self, root_path: str = "/"):
         self.root_path = root_path
         self.prev_idle = 0
         self.prev_total = 0
@@ -273,7 +275,7 @@ class CPUMetrics(MetricProvider):
 
 class RAMMetrics(MetricProvider):
     """Reads memory utilization from /proc/meminfo or cgroups inside LXC."""
-    def __init__(self, root_path: str = ""):
+    def __init__(self, root_path: str = "/"):
         self.root_path = root_path
 
     def collect(self, config: AgentConfig) -> Dict[str, Any]:
@@ -494,6 +496,114 @@ class ThermalMetrics(MetricProvider):
                 continue
         return None
 
+class PatchMetrics(MetricProvider):
+    """Calculates package updates, security updates, and reboot requirement."""
+    def collect(self, config: AgentConfig) -> Optional[Dict[str, Any]]:
+        if not getattr(config, "enable_patch_check", True):
+            return None
+
+        import shutil
+
+        result = {
+            "patch_available": 0,
+            "patch_security": 0,
+            "patch_manager": None,
+            "reboot_required": False,
+            "major_upgrade_available": None
+        }
+
+        # 1. Debian/Ubuntu (apt)
+        if shutil.which("apt-get"):
+            result["patch_manager"] = "apt"
+            try:
+                # Run simulate upgrade without locks
+                cmd = ["apt-get", "-s", "-o", "Debug::NoLocking=true", "upgrade"]
+                out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8")
+                
+                available = 0
+                security = 0
+                for line in out.splitlines():
+                    if line.startswith("Inst "):
+                        available += 1
+                        if "-security" in line.lower() or "security" in line.lower():
+                            security += 1
+                result["patch_available"] = available
+                result["patch_security"] = security
+            except Exception:
+                pass
+
+            # Check if reboot is required
+            result["reboot_required"] = os.path.exists("/var/run/reboot-required")
+
+            # Check for major release upgrade (e.g. Ubuntu 22.04 -> 24.04)
+            if shutil.which("do-release-upgrade"):
+                try:
+                    cmd = ["do-release-upgrade", "-c"]
+                    out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8")
+                    for line in out.splitlines():
+                        if "New release" in line and "available" in line:
+                            parts = line.split("'")
+                            if len(parts) >= 3:
+                                result["major_upgrade_available"] = parts[1]
+                except Exception:
+                    pass
+
+        # 2. Fedora/CentOS/RHEL (dnf/yum)
+        elif shutil.which("dnf"):
+            result["patch_manager"] = "dnf"
+            try:
+                cmd = ["dnf", "check-update", "--quiet"]
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+                out = proc.stdout.decode("utf-8")
+                
+                lines = [l.strip() for l in out.splitlines() if l.strip()]
+                pkg_count = 0
+                for line in lines:
+                    parts = line.split()
+                    if len(parts) >= 3 and not line.startswith("Last metadata"):
+                        pkg_count += 1
+                result["patch_available"] = pkg_count
+
+                # Security count
+                cmd_sec = ["dnf", "updateinfo", "list", "security", "--quiet"]
+                proc_sec = subprocess.run(cmd_sec, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+                out_sec = proc_sec.stdout.decode("utf-8")
+                sec_count = 0
+                for line in out_sec.splitlines():
+                    if line.strip() and not line.startswith("Last metadata"):
+                        sec_count += 1
+                result["patch_security"] = sec_count
+            except Exception:
+                pass
+                
+            if shutil.which("needs-restarting"):
+                try:
+                    res = subprocess.run(["needs-restarting", "-r"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if res.returncode == 1:
+                        result["reboot_required"] = True
+                except Exception:
+                    pass
+
+        elif shutil.which("yum"):
+            result["patch_manager"] = "yum"
+            try:
+                cmd = ["yum", "check-update", "--quiet"]
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+                out = proc.stdout.decode("utf-8")
+                lines = [l.strip() for l in out.splitlines() if l.strip()]
+                pkg_count = 0
+                for line in lines:
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        pkg_count += 1
+                result["patch_available"] = pkg_count
+            except Exception:
+                pass
+
+        if result["patch_manager"]:
+            return result
+        return None
+
 # ---------------------------------------------------------------------------
 # Reporting & Communication
 # ---------------------------------------------------------------------------
@@ -550,7 +660,8 @@ class AgentOrchestrator:
             "disk": DiskMetrics(),
             "network": NetworkMetrics(),
             "system": SystemInfoProvider(),
-            "temperature": ThermalMetrics()
+            "temperature": ThermalMetrics(),
+            "patches": PatchMetrics()
         }
 
         # Setup Signal Handlers
@@ -598,6 +709,9 @@ class AgentOrchestrator:
                 changed = True
             if "enable_temp" in remote_conf and self.config.enable_temp != remote_conf["enable_temp"]:
                 self.config.enable_temp = remote_conf["enable_temp"]
+                changed = True
+            if "enable_patch_check" in remote_conf and self.config.enable_patch_check != remote_conf["enable_patch_check"]:
+                self.config.enable_patch_check = remote_conf["enable_patch_check"]
                 changed = True
 
         if changed:

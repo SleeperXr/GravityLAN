@@ -26,6 +26,12 @@ MIGRATIONS = [
     ("agent_tokens", "pending_token", "VARCHAR(64)"),
     ("agent_tokens", "pending_at", "DATETIME"),
     ("api_tokens", "scopes", "TEXT"),
+    ("device_metrics", "patch_available", "INTEGER DEFAULT 0"),
+    ("device_metrics", "patch_security", "INTEGER DEFAULT 0"),
+    ("device_metrics", "patch_manager", "VARCHAR(20)"),
+    ("device_metrics", "reboot_required", "BOOLEAN DEFAULT FALSE"),
+    ("device_metrics", "major_upgrade_available", "VARCHAR(100)"),
+    ("agent_configs", "enable_patch_check", "BOOLEAN DEFAULT TRUE"),
 ]
 
 async def run_migrations(db: AsyncSession):

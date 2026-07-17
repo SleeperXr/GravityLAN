@@ -24,7 +24,10 @@ import {
   HardDrive,
   X,
   LineChart,
-  History
+  History,
+  Lock,
+  Terminal,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -210,6 +213,25 @@ export function AgentsView() {
                                 <span>{agent.ip}</span>
                                 <span className="w-1 h-1 rounded-full bg-slate-700"></span>
                                 <span className="bg-white/5 px-1.5 py-0.5 rounded">v{agent.agent_version || '0.0.0'}</span>
+                                {agent.patch_available > 0 && (
+                                  <span className={`px-1.5 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 ${
+                                    agent.patch_security > 0 
+                                      ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' 
+                                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                  }`} title={agent.patch_security > 0 ? `${agent.patch_security} security updates` : 'Package updates available'}>
+                                    {agent.patch_security > 0 ? '🛡️' : '📦'} {agent.patch_available}
+                                  </span>
+                                )}
+                                {agent.reboot_required && (
+                                  <span className="bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 animate-pulse" title="System reboot required to apply updates">
+                                    🔄 reboot
+                                  </span>
+                                )}
+                                {agent.major_upgrade_available && (
+                                  <span className="bg-sky-500/20 text-sky-400 border border-sky-500/30 px-1.5 py-0.5 rounded font-bold text-[10px] flex items-center gap-1" title={`Major OS Upgrade Available: ${agent.major_upgrade_available}`}>
+                                    🚀 {agent.major_upgrade_available}
+                                  </span>
+                                )}
                                 {agent.has_pending_token && (
                                   <div className="flex items-center gap-2">
                                     <span className="w-1 h-1 rounded-full bg-rose-500"></span>
@@ -316,7 +338,7 @@ export function AgentsView() {
                                 exit={{ height: 0, opacity: 0 }}
                                 className="overflow-hidden"
                               >
-                                <AgentDetailView deviceId={agent.device_id} />
+                                <AgentDetailView deviceId={agent.device_id} agent={agent} onRefresh={loadData} />
                               </motion.div>
                             </td>
                           </tr>
@@ -608,23 +630,46 @@ function MultiGraph({ series }: { series: { data: any[], color: string, label: s
   );
 }
 
-function AgentDetailView({ deviceId }: { deviceId: number }) {
+function AgentDetailView({ deviceId, agent, onRefresh }: { deviceId: number; agent: AgentSummary; onRefresh: () => void }) {
+  const { t } = useTranslation();
+  const [activeTab, setActiveTab] = useState<'telemetry' | 'patching'>('telemetry');
+  
+  // SSH Credentials
+  const [sshUser, setSshUser] = useState('root');
+  const [sshPassword, setSshPassword] = useState('');
+  const [sshKey, setSshKey] = useState('');
+  const [sshPort, setSshPort] = useState(22);
+  const [authType, setAuthType] = useState<'password' | 'key'>('password');
+  const [saveCreds, setSaveCreds] = useState(true);
+  const [showCredForm, setShowCredForm] = useState(true);
+
+  // States for Patch operations
+  const [querying, setQuerying] = useState(false);
+  const [patching, setPatching] = useState(false);
+  const [packages, setPackages] = useState<{ package: string; current_version: string; new_version: string; repo?: string }[]>([]);
+  const [majorUpgrade, setMajorUpgrade] = useState<string | null>(null);
+  const [patchManager, setPatchManager] = useState<string | null>(null);
+  const [terminalOutput, setTerminalOutput] = useState<string[]>([]);
+
+  // Telemetry metric states
   const [selectedRange, setSelectedRange] = useState<string>('24h');
   const [availableRanges, setAvailableRanges] = useState<string[]>(['6h', '24h', '7d', '30d']);
   const [retentionDays, setRetentionDays] = useState<number | null>(null);
   const [history, setHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(true);
 
+  const terminalContainerRef = useRef<HTMLDivElement>(null);
+
+  // Load telemetry
   useEffect(() => {
+    if (activeTab !== 'telemetry') return;
     const fetchHistory = async () => {
-      setLoading(true);
+      setLoadingHistory(true);
       try {
         const res = await api.getAgentMetrics(deviceId, undefined, selectedRange);
         setHistory(res.snapshots);
         if (res.available_ranges) {
           setAvailableRanges(res.available_ranges);
-          // If the currently selected range is no longer supported by retention settings,
-          // automatically fallback to the maximum supported range.
           if (!res.available_ranges.includes(selectedRange)) {
             setSelectedRange(res.available_ranges[res.available_ranges.length - 1]);
           }
@@ -635,187 +680,592 @@ function AgentDetailView({ deviceId }: { deviceId: number }) {
       } catch (err) {
         console.error('Failed to fetch history:', err);
       } finally {
-        setLoading(false);
+        setLoadingHistory(false);
       }
     };
     fetchHistory();
-  }, [deviceId, selectedRange]);
+  }, [deviceId, selectedRange, activeTab]);
 
-  if (loading) {
-    return (
-      <div className="p-12 flex flex-col items-center justify-center gap-4">
-        <RefreshCw size={32} className="text-sky-500 spinning" />
-        <span className="text-slate-400 font-medium">Analyzing historical telemetry...</span>
-      </div>
-    );
-  }
+  // Load SSH credentials from session storage
+  useEffect(() => {
+    const cached = sessionStorage.getItem(`agent_ssh_creds_${deviceId}`);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        setSshUser(parsed.ssh_user || 'root');
+        setSshPassword(parsed.ssh_password || '');
+        setSshKey(parsed.ssh_key || '');
+        setSshPort(parsed.ssh_port || 22);
+        setAuthType(parsed.ssh_key ? 'key' : 'password');
+        setSaveCreds(true);
+        setShowCredForm(false);
+      } catch (e) {}
+    }
+  }, [deviceId]);
+
+  // Auto-scroll terminal
+  useEffect(() => {
+    if (terminalContainerRef.current) {
+      terminalContainerRef.current.scrollTop = terminalContainerRef.current.scrollHeight;
+    }
+  }, [terminalOutput]);
+
+  const getSshPayload = () => {
+    return {
+      ssh_user: sshUser,
+      ssh_password: authType === 'password' ? sshPassword : undefined,
+      ssh_key: authType === 'key' ? sshKey : undefined,
+      ssh_port: sshPort
+    };
+  };
+
+  const handleSaveCreds = (payload: any) => {
+    if (saveCreds) {
+      sessionStorage.setItem(`agent_ssh_creds_${deviceId}`, JSON.stringify({
+        ...payload,
+        ssh_password: authType === 'password' ? sshPassword : '',
+        ssh_key: authType === 'key' ? sshKey : ''
+      }));
+    } else {
+      sessionStorage.removeItem(`agent_ssh_creds_${deviceId}`);
+    }
+  };
+
+  const queryUpdates = async () => {
+    setQuerying(true);
+    setPackages([]);
+    setMajorUpgrade(null);
+    setPatchManager(null);
+
+    const payload = getSshPayload();
+    handleSaveCreds(payload);
+
+    try {
+      const res = await api.queryAgentPatches(deviceId, payload);
+      setPackages(res.packages);
+      setMajorUpgrade(res.major_upgrade_available);
+      setPatchManager(res.patch_manager);
+      setShowCredForm(false);
+    } catch (err: any) {
+      alert(`Failed to load updates: ${err.message || err}`);
+    } finally {
+      setQuerying(false);
+    }
+  };
+
+  const startPatching = async (mode: 'upgrade' | 'security-only') => {
+    const actionLabel = mode === 'security-only' ? 'security updates' : 'all updates';
+    if (!confirm(`Are you sure you want to run ${actionLabel} on this device?`)) {
+      return;
+    }
+
+    setPatching(true);
+    setTerminalOutput(["[Local] Requesting update token...\r\n"]);
+
+    const payload = getSshPayload();
+    handleSaveCreds(payload);
+
+    try {
+      const res = await api.prepareAgentPatch(deviceId, { ...payload, mode });
+      const patchToken = res.patch_token;
+      
+      setTerminalOutput(prev => [...prev, "[Local] Token received. Connecting to WebSocket...\r\n"]);
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      let wsToken = localStorage.getItem('gravitylan_token') || '';
+      if (wsToken === 'undefined') wsToken = '';
+      
+      const wsBase = `${protocol}//${window.location.host}`;
+      const ws = new WebSocket(`${wsBase}/api/agent/patches/${deviceId}/run-ws?patch_token=${patchToken}&token=${wsToken}`);
+      
+      ws.onopen = () => {
+        setTerminalOutput(prev => [...prev, "[Local] WebSocket connection established. Launching updates...\r\n"]);
+      };
+      
+      ws.onmessage = (event) => {
+        setTerminalOutput(prev => [...prev, event.data]);
+      };
+      
+      ws.onclose = (event) => {
+        setTerminalOutput(prev => [...prev, `\r\n[Local] Update process terminated (code: ${event.code}).\r\n`]);
+        setPatching(false);
+        onRefresh();
+      };
+      
+      ws.onerror = (err) => {
+        setTerminalOutput(prev => [...prev, `\r\n[Local] Connection error.\r\n`]);
+        setPatching(false);
+      };
+
+    } catch (err: any) {
+      setTerminalOutput(prev => [...prev, `\r\n[Local] Error: ${err.message || err}\r\n`]);
+      setPatching(false);
+    }
+  };
 
   const latest = history[history.length - 1];
 
   return (
-    <div className="p-8 space-y-8">
-      {/* Dynamic Range Selector */}
-      <div className="flex justify-between items-center bg-white/[0.02] border border-white/5 p-4 rounded-xl">
-        <div>
-          <h4 className="font-bold text-white text-xs uppercase tracking-widest">Metrics Timeframe</h4>
-          <p className="text-[10px] text-slate-500 font-medium">
-            Select history depth for hardware telemetry graphs
-            {retentionDays !== null && ` (System retention: ${retentionDays}d)`}
-          </p>
-        </div>
-        <div className="flex bg-slate-900/60 p-1 border border-white/5 rounded-lg gap-1">
-          {availableRanges.map((r) => (
-            <button
-              key={r}
-              onClick={() => setSelectedRange(r)}
-              className={`px-3 py-1 rounded text-[10px] font-bold transition-all uppercase ${
-                selectedRange === r
-                  ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
+    <div className="p-8 space-y-6">
+      {/* Tabs Header */}
+      <div className="flex border-b border-white/5 mb-6">
+        <button
+          onClick={() => setActiveTab('telemetry')}
+          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${
+            activeTab === 'telemetry'
+              ? 'border-sky-500 text-sky-400'
+              : 'border-transparent text-slate-400 hover:text-white'
+          }`}
+        >
+          Hardware Telemetry
+        </button>
+        <button
+          onClick={() => setActiveTab('patching')}
+          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${
+            activeTab === 'patching'
+              ? 'border-sky-500 text-sky-400'
+              : 'border-transparent text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>Package Patching</span>
+          {agent.patch_available > 0 && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+              agent.patch_security > 0 ? 'bg-rose-500/20 text-rose-400' : 'bg-amber-500/20 text-amber-400'
+            }`}>
+              {agent.patch_available}
+            </span>
+          )}
+          {agent.reboot_required && (
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+          )}
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="glass-panel p-6 bg-white/[0.03] border-white/5">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-amber-500/20 text-amber-400 rounded-lg">
-              <Cpu size={20} />
+      {activeTab === 'telemetry' ? (
+        <>
+          {loadingHistory ? (
+            <div className="p-12 flex flex-col items-center justify-center gap-4">
+              <RefreshCw size={32} className="text-sky-500 spinning" />
+              <span className="text-slate-400 font-medium">Analyzing historical telemetry...</span>
             </div>
-            <div>
-              <h4 className="font-bold text-white uppercase text-xs tracking-widest">CPU History</h4>
-              <p className="text-[10px] text-slate-500">Utilization Trend ({selectedRange})</p>
-            </div>
-          </div>
-          <div className="h-48 w-full">
-            <DetailGraph 
-              data={history.map(h => ({ value: h.cpu_percent, timestamp: h.timestamp }))} 
-              color="#f59e0b" 
-              label="CPU" 
-              suffix="%"
-            />
-          </div>
-        </div>
-
-        <div className="glass-panel p-6 bg-white/[0.03] border-white/5">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg">
-              <Memory size={20} />
-            </div>
-            <div>
-              <h4 className="font-bold text-white uppercase text-xs tracking-widest">Memory History</h4>
-              <p className="text-[10px] text-slate-500">RAM Usage Pattern ({selectedRange})</p>
-            </div>
-          </div>
-          <div className="h-48 w-full">
-            <DetailGraph 
-              data={history.map(h => ({ value: h.ram.percent, timestamp: h.timestamp }))} 
-              color="#10b981" 
-              label="RAM" 
-              suffix="%"
-            />
-          </div>
-        </div>
-
-        <div className="glass-panel p-6 bg-white/[0.03] border-white/5">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">
-              <Thermometer size={20} />
-            </div>
-            <div>
-              <h4 className="font-bold text-white uppercase text-xs tracking-widest">Thermal Stats</h4>
-              <p className="text-[10px] text-slate-500">Core Temperature ({selectedRange})</p>
-            </div>
-          </div>
-          <div className="h-48 w-full">
-            <DetailGraph 
-              data={history.map(h => ({ value: h.temperature || 0, timestamp: h.timestamp }))} 
-              color="#818cf8" 
-              label="TEMP" 
-              suffix="°C"
-              max={100} 
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="glass-panel p-6 bg-white/[0.01] border-white/5">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-sky-500/20 text-sky-400 rounded-lg">
-            <HardDrive size={20} />
-          </div>
-          <h4 className="font-bold text-white uppercase text-xs tracking-widest">Monitored Storage</h4>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {latest?.disk?.map((disk: any) => (
-            <div key={disk.path} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/[0.08] transition-colors group">
-              <div className="flex justify-between items-start mb-3">
-                <div className="flex flex-col cursor-pointer group/path" 
-                  title="Click to copy full path"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigator.clipboard.writeText(disk.path);
-                    const target = e.currentTarget;
-                    const originalText = target.innerText;
-                    target.innerHTML = '<span class="text-sky-400 text-[10px] uppercase font-bold">Copied!</span>';
-                    setTimeout(() => { target.innerText = originalText; }, 1000);
-                  }}
-                >
-                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Mount Point</span>
-                  <span className="text-white font-bold truncate" title={disk.path}>{disk.path}</span>
+          ) : (
+            <div className="space-y-8">
+              {/* Dynamic Range Selector */}
+              <div className="flex justify-between items-center bg-white/[0.02] border border-white/5 p-4 rounded-xl">
+                <div>
+                  <h4 className="font-bold text-white text-xs uppercase tracking-widest">Metrics Timeframe</h4>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    Select history depth for hardware telemetry graphs
+                    {retentionDays !== null && ` (System retention: ${retentionDays}d)`}
+                  </p>
                 </div>
-                <div className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                  disk.percent > 90 ? 'bg-rose-500/20 text-rose-400' : 
-                  disk.percent > 75 ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'
-                }`}>
-                  {disk.percent.toFixed(0)}%
+                <div className="flex bg-slate-900/60 p-1 border border-white/5 rounded-lg gap-1">
+                  {availableRanges.map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setSelectedRange(r)}
+                      className={`px-3 py-1 rounded text-[10px] font-bold transition-all uppercase ${
+                        selectedRange === r
+                          ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20'
+                          : 'text-slate-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden mb-3">
-                <div className="h-full bg-sky-500 rounded-full" style={{ width: `${disk.percent}%` }}></div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="glass-panel p-6 bg-white/[0.03] border-white/5">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-amber-500/20 text-amber-400 rounded-lg">
+                      <Cpu size={20} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white uppercase text-xs tracking-widest">CPU History</h4>
+                      <p className="text-[10px] text-slate-500">Utilization Trend ({selectedRange})</p>
+                    </div>
+                  </div>
+                  <div className="h-48 w-full">
+                    <DetailGraph 
+                      data={history.map(h => ({ value: h.cpu_percent, timestamp: h.timestamp }))} 
+                      color="#f59e0b" 
+                      label="CPU" 
+                      suffix="%"
+                    />
+                  </div>
+                </div>
+
+                <div className="glass-panel p-6 bg-white/[0.03] border-white/5">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg">
+                      <Memory size={20} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white uppercase text-xs tracking-widest">Memory History</h4>
+                      <p className="text-[10px] text-slate-500">RAM Usage Pattern ({selectedRange})</p>
+                    </div>
+                  </div>
+                  <div className="h-48 w-full">
+                    <DetailGraph 
+                      data={history.map(h => ({ value: h.ram.percent, timestamp: h.timestamp }))} 
+                      color="#10b981" 
+                      label="RAM" 
+                      suffix="%"
+                    />
+                  </div>
+                </div>
+
+                <div className="glass-panel p-6 bg-white/[0.03] border-white/5">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">
+                      <Thermometer size={20} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white uppercase text-xs tracking-widest">Thermal Stats</h4>
+                      <p className="text-[10px] text-slate-500">Core Temperature ({selectedRange})</p>
+                    </div>
+                  </div>
+                  <div className="h-48 w-full">
+                    <DetailGraph 
+                      data={history.map(h => ({ value: h.temperature || 0, timestamp: h.timestamp }))} 
+                      color="#818cf8" 
+                      label="TEMP" 
+                      suffix="°C"
+                      max={100} 
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between text-[10px] text-slate-500 font-bold">
-                <span>{disk.used_gb.toFixed(1)} GB USED</span>
-                <span>{disk.total_gb.toFixed(1)} GB TOTAL</span>
+
+              <div className="glass-panel p-6 bg-white/[0.01] border-white/5">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-sky-500/20 text-sky-400 rounded-lg">
+                    <HardDrive size={20} />
+                  </div>
+                  <h4 className="font-bold text-white uppercase text-xs tracking-widest">Monitored Storage</h4>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {latest?.disk?.map((disk: any) => (
+                    <div key={disk.path} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/[0.08] transition-colors group">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex flex-col cursor-pointer group/path" 
+                          title="Click to copy full path"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(disk.path);
+                            const target = e.currentTarget;
+                            const originalText = target.innerText;
+                            target.innerHTML = '<span class="text-sky-400 text-[10px] uppercase font-bold">Copied!</span>';
+                            setTimeout(() => { target.innerText = originalText; }, 1000);
+                          }}
+                        >
+                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Mount Point</span>
+                          <span className="text-white font-bold truncate" title={disk.path}>{disk.path}</span>
+                        </div>
+                        <div className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          disk.percent > 90 ? 'bg-rose-500/20 text-rose-400' : 
+                          disk.percent > 75 ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'
+                        }`}>
+                          {disk.percent.toFixed(0)}%
+                        </div>
+                      </div>
+                      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden mb-3">
+                        <div className="h-full bg-sky-500 rounded-full" style={{ width: `${disk.percent}%` }}></div>
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-500 font-bold">
+                        <span>{disk.used_gb.toFixed(1)} GB USED</span>
+                        <span>{disk.total_gb.toFixed(1)} GB TOTAL</span>
+                      </div>
+                    </div>
+                  ))}
+                  {!latest?.disk?.length && (
+                     <div className="col-span-full py-8 text-center text-slate-600 text-sm">No disk usage reported by agent.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-4 mt-2">
+                 <div className="flex-1 min-w-[200px] bg-white/[0.02] border border-white/5 p-4 rounded-xl flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                     <Clock className="text-slate-500" size={18} />
+                     <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Interval</span>
+                   </div>
+                   <span className="text-lg font-bold text-white">30s</span>
+                 </div>
+                 <div className="flex-1 min-w-[200px] bg-white/[0.02] border border-white/5 p-4 rounded-xl flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                     <Zap className="text-amber-500" size={18} />
+                     <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Status</span>
+                   </div>
+                   <span className="text-lg font-bold text-emerald-400">OPTIMAL</span>
+                 </div>
+                 <div className="flex-1 min-w-[200px] bg-white/[0.02] border border-white/5 p-4 rounded-xl flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                     <Info className="text-sky-500" size={18} />
+                     <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">First Seen</span>
+                   </div>
+                   <span className="text-sm font-medium text-slate-300">
+                     {history.length > 0 ? new Date(history[0].timestamp).toLocaleString() : 'N/A'}
+                   </span>
+                 </div>
               </div>
             </div>
-          ))}
-          {!latest?.disk?.length && (
-             <div className="col-span-full py-8 text-center text-slate-600 text-sm">No disk usage reported by agent.</div>
+          )}
+        </>
+      ) : (
+        /* Patching Tab Content */
+        <div className="space-y-6">
+          {/* General platform check */}
+          {!agent.patch_manager ? (
+            <div className="bg-slate-900/50 border border-white/5 p-8 rounded-xl text-center">
+              <Shield className="text-slate-500 mx-auto mb-3" size={32} />
+              <h4 className="font-bold text-white text-sm mb-1">Patching Not Supported</h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                This agent reported no compatible package manager. Patching is currently restricted to Debian/Ubuntu (apt) and Fedora/CentOS/RHEL (dnf/yum) hosts.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Warnings and Status Banners */}
+              {agent.reboot_required && (
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl flex items-center gap-3 text-xs font-semibold animate-pulse">
+                  <span>🔄</span>
+                  <span>System reboot required to apply previous updates. Please run a manual reboot when convenient.</span>
+                </div>
+              )}
+              {agent.major_upgrade_available && (
+                <div className="bg-sky-500/10 border border-sky-500/20 text-sky-400 p-4 rounded-xl flex items-center gap-3 text-xs font-semibold">
+                  <span>🚀</span>
+                  <span>Major release upgrade available: {agent.major_upgrade_available}. Note: release upgrades cannot be run from GravityLAN and must be done manually via SSH.</span>
+                </div>
+              )}
+
+              {/* Action and credentials form panel */}
+              {showCredForm && !patching && (
+                <div className="bg-white/[0.02] border border-white/5 p-6 rounded-xl space-y-4">
+                  <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                    <h4 className="text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                      <Lock size={14} className="text-sky-400" />
+                      SSH Credentials Required
+                    </h4>
+                    {sessionStorage.getItem(`agent_ssh_creds_${deviceId}`) && (
+                      <button 
+                        onClick={() => setShowCredForm(false)} 
+                        className="text-[10px] text-slate-400 hover:text-white uppercase font-bold"
+                      >
+                        Hide
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Username</label>
+                      <input 
+                        type="text" 
+                        className="input h-10 w-full bg-slate-900 border-white/5" 
+                        value={sshUser} 
+                        onChange={e => setSshUser(e.target.value)} 
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Auth Method</label>
+                      <select 
+                        className="input h-10 w-full bg-slate-900 border-white/5 select" 
+                        value={authType} 
+                        onChange={e => setAuthType(e.target.value as any)}
+                      >
+                        <option value="password">Password</option>
+                        <option value="key">Private Key</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      {authType === 'password' ? (
+                        <>
+                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Password</label>
+                          <input 
+                            type="password" 
+                            className="input h-10 w-full bg-slate-900 border-white/5" 
+                            placeholder="SSH Password"
+                            value={sshPassword} 
+                            onChange={e => setSshPassword(e.target.value)} 
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Private Key</label>
+                          <textarea 
+                            className="input w-full bg-slate-900 border-white/5 text-xs font-mono" 
+                            style={{ height: '40px', minHeight: '40px', padding: '8px' }}
+                            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
+                            value={sshKey} 
+                            onChange={e => setSshKey(e.target.value)} 
+                          />
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2">
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="checkbox" 
+                        id="save-creds" 
+                        checked={saveCreds} 
+                        onChange={e => setSaveCreds(e.target.checked)} 
+                        className="rounded bg-slate-950 border-white/10 text-sky-500 focus:ring-sky-500/20"
+                      />
+                      <label htmlFor="save-creds" className="text-[10px] text-slate-400 font-bold uppercase tracking-wider cursor-pointer">
+                        Remember credentials for this tab session
+                      </label>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={queryUpdates}
+                        disabled={querying}
+                        className="btn btn-secondary h-10 px-5 text-xs font-bold"
+                      >
+                        {querying ? (
+                          <>
+                            <RefreshCw size={14} className="spinning" /> Loading updates list...
+                          </>
+                        ) : 'Query Updates List'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SSH Credentials Toggle when form hidden */}
+              {!showCredForm && !patching && (
+                <div className="flex justify-between items-center bg-white/[0.01] border border-white/5 px-4 py-3 rounded-xl">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    SSH Connection Configured ({sshUser} on port {sshPort})
+                  </span>
+                  <button 
+                    onClick={() => setShowCredForm(true)}
+                    className="text-[10px] text-sky-400 hover:text-sky-300 font-bold uppercase tracking-wider"
+                  >
+                    Change Credentials
+                  </button>
+                </div>
+              )}
+
+              {/* Updates List Table & Fast Actions */}
+              {!patching && (
+                <div className="space-y-4">
+                  {/* Action Buttons Row */}
+                  <div className="flex items-center gap-4 bg-white/[0.02] border border-white/5 p-4 rounded-xl justify-between">
+                    <div>
+                      <h4 className="font-bold text-white text-xs uppercase tracking-widest">Available Upgrades</h4>
+                      <p className="text-[10px] text-slate-500">
+                        Updates count: {agent.patch_available} ({agent.patch_security} security updates)
+                      </p>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      {packages.length === 0 && (
+                        <button 
+                          onClick={queryUpdates}
+                          disabled={querying}
+                          className="btn btn-secondary text-xs"
+                        >
+                          {querying ? <RefreshCw size={14} className="spinning" /> : 'Query Updates Details'}
+                        </button>
+                      )}
+                      
+                      <button 
+                        onClick={() => startPatching('upgrade')}
+                        disabled={patching || querying || agent.patch_available === 0}
+                        className="btn btn-primary text-xs px-5"
+                      >
+                        Upgrade All
+                      </button>
+                      
+                      {agent.patch_security > 0 && (
+                        <button 
+                          onClick={() => startPatching('security-only')}
+                          disabled={patching || querying}
+                          className="btn text-xs px-5 border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                        >
+                          Security Only
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* List of upgradeable packages */}
+                  {packages.length > 0 ? (
+                    <div className="bg-slate-950/40 border border-white/5 rounded-xl overflow-hidden">
+                      <div className="max-h-[300px] overflow-y-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-white/[0.03] text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-white/5">
+                              <th className="px-4 py-3">Package Name</th>
+                              <th className="px-4 py-3">Installed Version</th>
+                              <th className="px-4 py-3">Candidate Version</th>
+                              <th className="px-4 py-3">Repository</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5 font-mono text-slate-300">
+                            {packages.map((pkg, i) => (
+                              <tr key={i} className="hover:bg-white/[0.02]">
+                                <td className="px-4 py-2.5 font-bold text-white">{pkg.package}</td>
+                                <td className="px-4 py-2.5 text-slate-500">{pkg.current_version}</td>
+                                <td className="px-4 py-2.5 text-emerald-400 font-bold">{pkg.new_version}</td>
+                                <td className="px-4 py-2.5 text-slate-500">{pkg.repo || 'unknown'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    agent.patch_available > 0 && !querying && (
+                      <div className="text-center py-6 text-slate-500 text-xs">
+                        Details not loaded. Click "Query Updates Details" to list packages before upgrading.
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+
+              {/* Live WebSocket Terminal output */}
+              {(terminalOutput.length > 0 || patching) && (
+                <div className="space-y-2">
+                  <h4 className="text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                    <Terminal size={14} />
+                    Live Upgrade Output
+                  </h4>
+                  <div 
+                    ref={terminalContainerRef}
+                    className="p-4 rounded-xl border border-white/10 font-mono text-xs overflow-y-auto max-h-[350px] bg-black text-[#10b981]"
+                    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
+                  >
+                    {terminalOutput.map((chunk, idx) => (
+                      <span key={idx}>{chunk}</span>
+                    ))}
+                  </div>
+                  {!patching && terminalOutput.length > 0 && (
+                    <div className="flex justify-end">
+                      <button 
+                        onClick={() => setTerminalOutput([])}
+                        className="btn btn-ghost btn-sm text-[10px] uppercase font-bold"
+                      >
+                        Clear terminal logs
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
-      </div>
-
-      <div className="flex flex-wrap gap-4 mt-2">
-         <div className="flex-1 min-w-[200px] bg-white/[0.02] border border-white/5 p-4 rounded-xl flex items-center justify-between">
-           <div className="flex items-center gap-3">
-             <Clock className="text-slate-500" size={18} />
-             <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Interval</span>
-           </div>
-           <span className="text-lg font-bold text-white">30s</span>
-         </div>
-         <div className="flex-1 min-w-[200px] bg-white/[0.02] border border-white/5 p-4 rounded-xl flex items-center justify-between">
-           <div className="flex items-center gap-3">
-             <Zap className="text-amber-500" size={18} />
-             <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Status</span>
-           </div>
-           <span className="text-lg font-bold text-emerald-400">OPTIMAL</span>
-         </div>
-         <div className="flex-1 min-w-[200px] bg-white/[0.02] border border-white/5 p-4 rounded-xl flex items-center justify-between">
-           <div className="flex items-center gap-3">
-             <Info className="text-sky-500" size={18} />
-             <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">First Seen</span>
-           </div>
-           <span className="text-sm font-medium text-slate-300">
-             {history.length > 0 ? new Date(history[0].timestamp).toLocaleString() : 'N/A'}
-           </span>
-         </div>
-      </div>
+      )}
     </div>
   );
 }

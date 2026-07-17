@@ -163,6 +163,11 @@ export interface AgentSummary {
   uptime_pct: number;
   uptime_history: number[];
   metrics_count: number;
+  patch_available: number;
+  patch_security: number;
+  patch_manager: string | null;
+  reboot_required: boolean;
+  major_upgrade_available: string | null;
 }
 
 export interface GlobalMetricPoint {

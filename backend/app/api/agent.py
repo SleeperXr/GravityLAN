@@ -210,6 +210,11 @@ async def receive_report(
                 disk_json=json.dumps([d.model_dump() for d in payload.disk]) if payload.disk else None,
                 temperature=payload.temperature,
                 net_json=json.dumps(payload.network) if payload.network else None,
+                patch_available=payload.patches.patch_available if payload.patches else 0,
+                patch_security=payload.patches.patch_security if payload.patches else 0,
+                patch_manager=payload.patches.patch_manager if payload.patches else None,
+                reboot_required=payload.patches.reboot_required if payload.patches else False,
+                major_upgrade_available=payload.patches.major_upgrade_available if payload.patches else None,
             )
             db.add(metrics)
 
@@ -225,7 +230,8 @@ async def receive_report(
                 "version": agent_config.version,
                 "interval": agent_config.interval,
                 "disk_paths": agent_config.disk_paths,
-                "enable_temp": agent_config.enable_temp
+                "enable_temp": agent_config.enable_temp,
+                "enable_patch_check": agent_config.enable_patch_check
             }
 
             await db.commit()
@@ -248,7 +254,12 @@ async def receive_report(
         "disk": [d.model_dump() for d in payload.disk],
         "temperature": payload.temperature,
         "network": payload.network,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "patch_available": payload.patches.patch_available if payload.patches else 0,
+        "patch_security": payload.patches.patch_security if payload.patches else 0,
+        "patch_manager": payload.patches.patch_manager if payload.patches else None,
+        "reboot_required": payload.patches.reboot_required if payload.patches else False,
+        "major_upgrade_available": payload.patches.major_upgrade_available if payload.patches else None,
     }
     _latest_metrics[effective_device_id] = snapshot
     
@@ -268,7 +279,8 @@ async def receive_report(
         config={
             "interval": config_to_send["interval"],
             "disk_paths": config_to_send["disk_paths"],
-            "enable_temp": config_to_send["enable_temp"]
+            "enable_temp": config_to_send["enable_temp"],
+            "enable_patch_check": config_to_send["enable_patch_check"]
         },
         commands=[]
     )
@@ -295,7 +307,8 @@ async def get_agent_config(
         device_id=device_id,
         interval=config.interval,
         disk_paths=config.disk_paths,
-        enable_temp=config.enable_temp
+        enable_temp=config.enable_temp,
+        enable_patch_check=config.enable_patch_check
     )
 
 
@@ -320,6 +333,8 @@ async def update_agent_config(
         config.disk_paths = update.disk_paths
     if update.enable_temp is not None:
         config.enable_temp = update.enable_temp
+    if update.enable_patch_check is not None:
+        config.enable_patch_check = update.enable_patch_check
         
     # Increment version so the agent knows to update its local config.json
     config.version += 1
@@ -331,7 +346,8 @@ async def update_agent_config(
         device_id=device_id,
         interval=config.interval,
         disk_paths=config.disk_paths,
-        enable_temp=config.enable_temp
+        enable_temp=config.enable_temp,
+        enable_patch_check=config.enable_patch_check
     )
 
 
@@ -451,7 +467,12 @@ async def get_agents_overview(
             uptime_history=uptime_history,
             metrics_count=m_count,
             has_pending_token=bool(token.pending_token),
-            pending_at=token.pending_at
+            pending_at=token.pending_at,
+            patch_available=last_m.patch_available if last_m else 0,
+            patch_security=last_m.patch_security if last_m else 0,
+            patch_manager=last_m.patch_manager if last_m else None,
+            reboot_required=last_m.reboot_required if last_m else False,
+            major_upgrade_available=last_m.major_upgrade_available if last_m else None
         ))
 
     n = len(agents_list)
@@ -1068,3 +1089,224 @@ async def adopt_agent_token(device_id: int, db: AsyncSession = Depends(get_db), 
                 device_id, old_token[:8], token_obj.token[:8])
     
     return {"status": "ok", "message": "Token adopted successfully"}
+
+
+# ---------------------------------------------------------------------------
+# Linux Package Patching Endpoints
+# ---------------------------------------------------------------------------
+
+from app.schemas.agent import DevicePatchesResponse, PatchActionRequest, PackageUpdateInfo
+from app.services.patch_service import list_device_updates, run_ssh_command_stream
+import time
+import uuid
+
+# Cache for temporary patch session credentials
+_temp_patch_tokens: Dict[str, Dict[str, Any]] = {}
+
+@router.post("/patches/{device_id}/query", response_model=DevicePatchesResponse)
+async def query_device_patches(
+    device_id: int,
+    request: AgentDeployRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin)
+) -> DevicePatchesResponse:
+    """Query available package updates from the remote host using SSH credentials."""
+    device = await db.get(Device, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    result = await list_device_updates(
+        host_ip=device.ip,
+        ssh_user=request.ssh_user,
+        ssh_password=request.ssh_password,
+        ssh_key=request.ssh_key,
+        ssh_port=request.ssh_port
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+
+    packages = [
+        PackageUpdateInfo(
+            package=p["package"],
+            current_version=p["current_version"],
+            new_version=p["new_version"],
+            repo=p.get("repo")
+        ) for p in result["packages"]
+    ]
+
+    return DevicePatchesResponse(
+        device_id=device_id,
+        patch_manager=result["patch_manager"],
+        packages=packages,
+        major_upgrade_available=result.get("major_upgrade_available")
+    )
+
+
+@router.post("/patches/{device_id}/prepare")
+async def prepare_patch_action(
+    device_id: int,
+    request: PatchActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin)
+):
+    """Generate a temporary token to run updates over WebSocket."""
+    device = await db.get(Device, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Generate a unique token
+    token = f"patch_tok_{uuid.uuid4().hex}"
+    
+    # Store credentials and parameters temporarily (expires in 60s)
+    _temp_patch_tokens[token] = {
+        "device_id": device_id,
+        "host_ip": device.ip,
+        "ssh_user": request.ssh_user,
+        "ssh_password": request.ssh_password,
+        "ssh_key": request.ssh_key,
+        "ssh_port": request.ssh_port,
+        "mode": request.mode,
+        "created_at": time.time()
+    }
+
+    # Clean up expired tokens
+    now = time.time()
+    expired = [k for k, v in _temp_patch_tokens.items() if now - v["created_at"] > 60]
+    for k in expired:
+        _temp_patch_tokens.pop(k, None)
+
+    return {"patch_token": token}
+
+
+@router.websocket("/patches/{device_id}/run-ws")
+async def run_patches_websocket(websocket: WebSocket, device_id: int):
+    """WebSocket endpoint to run updates and stream output live to the frontend."""
+    # Authenticate websocket first (standard browser-session/API-token check)
+    from app.api.auth import authenticate_websocket
+    auth_info = await authenticate_websocket(websocket, endpoint_type="agent", device_id=device_id)
+    if not auth_info.get("authenticated"):
+        return
+
+    # Check for correct auth level
+    if auth_info.get("auth_type") not in ("session", "master", "master_legacy", "api_token"):
+        await websocket.close(code=4003, reason="Unauthorized access level")
+        return
+
+    # Accept the connection
+    await websocket.accept()
+
+    # Get the patch token from query params
+    params = websocket.query_params
+    patch_token = params.get("patch_token")
+    if not patch_token or patch_token not in _temp_patch_tokens:
+        await websocket.send_text("\r\n[Error] Invalid or expired patch session token. Please try again.\r\n")
+        await websocket.close(code=4001, reason="Invalid session token")
+        return
+
+    # Retrieve and consume the session data
+    session_data = _temp_patch_tokens.pop(patch_token)
+    if session_data["device_id"] != device_id:
+        await websocket.send_text("\r\n[Error] Session token device ID mismatch.\r\n")
+        await websocket.close(code=4002, reason="Device ID mismatch")
+        return
+
+    mode = session_data["mode"]
+    host_ip = session_data["host_ip"]
+    ssh_user = session_data["ssh_user"]
+    ssh_password = session_data["ssh_password"]
+    ssh_key = session_data["ssh_key"]
+    ssh_port = session_data["ssh_port"]
+
+    # Detect package manager or construct update commands
+    await websocket.send_text("[Info] Starting update session...\r\n")
+    await websocket.send_text("[Info] Detecting target system configuration...\r\n")
+    
+    probe = await list_device_updates(
+        host_ip=host_ip,
+        ssh_user=ssh_user,
+        ssh_password=ssh_password,
+        ssh_key=ssh_key,
+        ssh_port=ssh_port
+    )
+    
+    pkg_manager = probe.get("patch_manager")
+    if not pkg_manager:
+        await websocket.send_text("[Error] Unsupported package manager or system type.\r\n")
+        await websocket.close()
+        return
+
+    await websocket.send_text(f"[Info] Detected package manager: {pkg_manager}\r\n")
+
+    if pkg_manager == "apt":
+        if mode == "security-only":
+            await websocket.send_text("[Info] Running security updates only...\r\n")
+            cmd = "DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" $(apt-get -s upgrade | awk '/^Inst/ { if ($0 ~ /security/ || $0 ~ /Security/) print $2 }')"
+        else:
+            await websocket.send_text("[Info] Running full system upgrade...\r\n")
+            cmd = "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\""
+    elif pkg_manager == "dnf":
+        if mode == "security-only":
+            await websocket.send_text("[Info] Running security updates only...\r\n")
+            cmd = "dnf upgrade --security -y"
+        else:
+            await websocket.send_text("[Info] Running full system upgrade...\r\n")
+            cmd = "dnf upgrade -y"
+    elif pkg_manager == "yum":
+        if mode == "security-only":
+            await websocket.send_text("[Info] Running security updates only...\r\n")
+            cmd = "yum update --security -y"
+        else:
+            await websocket.send_text("[Info] Running full system upgrade...\r\n")
+            cmd = "yum update -y"
+    else:
+        await websocket.send_text(f"[Error] Package manager {pkg_manager} is not supported.\r\n")
+        await websocket.close()
+        return
+
+    # Define a helper callback to stream output directly to WebSocket
+    def stream_callback(data: str):
+        cleaned = data.replace("\r\n", "\n").replace("\n", "\r\n")
+        asyncio.create_task(websocket.send_text(cleaned))
+
+    # Execute and stream
+    success, msg = await run_ssh_command_stream(
+        host_ip=host_ip,
+        ssh_user=ssh_user,
+        ssh_password=ssh_password,
+        ssh_key=ssh_key,
+        ssh_port=ssh_port,
+        command=cmd,
+        output_callback=stream_callback
+    )
+
+    if success:
+        await websocket.send_text("\r\n[Success] Updates completed successfully!\r\n")
+        try:
+            async with async_session() as db:
+                metrics_res = await db.execute(
+                    select(DeviceMetrics)
+                    .where(DeviceMetrics.device_id == device_id)
+                    .order_by(DeviceMetrics.timestamp.desc())
+                )
+                last_metric = metrics_res.scalars().first()
+                if last_metric:
+                    last_metric.patch_available = 0
+                    last_metric.patch_security = 0
+                    await db.commit()
+                    
+                    if device_id in _latest_metrics:
+                        _latest_metrics[device_id]["patch_available"] = 0
+                        _latest_metrics[device_id]["patch_security"] = 0
+                        if device_id in _ws_subscribers:
+                            for ws in _ws_subscribers[device_id]:
+                                try:
+                                    await ws.send_json({"type": "metrics", "data": _latest_metrics[device_id]})
+                                except Exception:
+                                    pass
+        except Exception as e:
+            logger.error("Failed to update database metrics after patch execution: %s", e)
+    else:
+        await websocket.send_text(f"\r\n[Error] Update failed: {msg}\r\n")
+
+    await websocket.close()

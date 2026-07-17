@@ -65,6 +65,11 @@ class DeviceMetrics(Base):
         temperature: CPU temperature in Celsius (None if unavailable).
         net_json: JSON string with per-interface network I/O.
         timestamp: When the metrics were collected.
+        patch_available: Count of package updates available.
+        patch_security: Count of security package updates available.
+        patch_manager: Package manager name (e.g. apt, dnf, yum)
+        reboot_required: True if system reboot is required.
+        major_upgrade_available: Name/version of a major OS release upgrade if available (e.g., 'Ubuntu 24.04 LTS').
     """
 
     __tablename__ = "device_metrics"
@@ -81,6 +86,12 @@ class DeviceMetrics(Base):
     temperature: Mapped[float | None] = mapped_column(Float, nullable=True)
     net_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+    patch_available: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    patch_security: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    patch_manager: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    reboot_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    major_upgrade_available: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     device: Mapped["Device"] = relationship()  # noqa: F821
 
@@ -103,7 +114,12 @@ class DeviceMetrics(Base):
             "disk": json.loads(self.disk_json) if self.disk_json else [],
             "temperature": self.temperature,
             "network": json.loads(self.net_json) if self.net_json else {},
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "patch_available": self.patch_available,
+            "patch_security": self.patch_security,
+            "patch_manager": self.patch_manager,
+            "reboot_required": self.reboot_required,
+            "major_upgrade_available": self.major_upgrade_available
         }
 
 
@@ -120,6 +136,7 @@ class AgentConfig(Base):
         interval: Reporting interval in seconds.
         disk_paths_json: JSON list of mount paths to monitor.
         enable_temp: Whether to collect temperature metrics.
+        enable_patch_check: Whether to check and report available updates.
     """
 
     __tablename__ = "agent_configs"
@@ -132,6 +149,7 @@ class AgentConfig(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     disk_paths_json: Mapped[str] = mapped_column(Text, default='["/"]')
     enable_temp: Mapped[bool] = mapped_column(Boolean, default=True)
+    enable_patch_check: Mapped[bool] = mapped_column(Boolean, default=True)
 
     @property
     def disk_paths(self) -> list[str]:
