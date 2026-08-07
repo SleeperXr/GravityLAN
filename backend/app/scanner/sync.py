@@ -124,9 +124,9 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
         mac_matches = res_mac.scalars().all()
         if len(mac_matches) == 1:
             cand = mac_matches[0]
-            # GUARD: Do not hijack Unraid host IP via MAC-only match when a container scans on a new IP
+            # GUARD: Do not hijack Unraid host (ID 29 or named unraid) IP via MAC-only match when a container scans on a new IP
             cand_name = (cand.display_name or cand.hostname or "").lower()
-            if cand.ip != ip and "unraid" in cand_name:
+            if cand.ip != ip and ("unraid" in cand_name or cand.id == 29):
                 logger.debug(f"Sync: Skipping MAC match for host {cand.display_name} ({cand.ip}) on new IP {ip} to prevent host IP hijacking.")
                 dev = None
             else:

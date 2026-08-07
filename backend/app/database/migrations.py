@@ -69,6 +69,19 @@ async def _clean_corrupted_ip_placeholders(db: AsyncSession):
         39: "192.168.100.231", # Nextcloud
     }
 
+    RECONCILIATION_KEYWORD_MAP = {
+        "unraid": "192.168.100.252",
+        "lancache": "192.168.100.253",
+        "termix": "192.168.100.246",
+        "nextcloud": "192.168.100.231",
+        "redis": "192.168.100.18",
+        "netboot": "192.168.100.240",
+        "postgresql": "192.168.100.19",
+        "paperless": "192.168.100.230",
+        "nginx": "192.168.100.241",
+        "npm": "192.168.100.241",
+    }
+
     def _fuzzy_match(n1: str, n2: str) -> bool:
         if not n1 or not n2: return False
         s1 = n1.lower().replace("-", "").replace("_", "").replace(" ", "")
@@ -86,6 +99,7 @@ async def _clean_corrupted_ip_placeholders(db: AsyncSession):
         for dev in corrupted_devs:
             old_corrupted_ip = dev.ip
             safe_ip = None
+            dev_name = (dev.display_name or dev.hostname or "").lower()
             
             # 1a. Try explicit ID mapping first
             if dev.id in KNOWN_CONTAINER_IPS:
@@ -95,9 +109,18 @@ async def _clean_corrupted_ip_placeholders(db: AsyncSession):
                     dev.is_online = True
                     dev.ip_placeholder = False
 
-            # 1b. Try matching running Docker container by name (fuzzy)
+            # 1b. Try keyword reconciliation map
+            if not safe_ip and dev_name:
+                for kw, kw_ip in RECONCILIATION_KEYWORD_MAP.items():
+                    if kw in dev_name:
+                        if kw_ip not in used_ips or kw_ip == old_corrupted_ip:
+                            safe_ip = kw_ip
+                            dev.is_online = True
+                            dev.ip_placeholder = False
+                            break
+
+            # 1c. Try matching running Docker container by name (fuzzy)
             if not safe_ip:
-                dev_name = dev.display_name or dev.hostname or ""
                 for c_name, c_ip in docker_container_map.items():
                     if _fuzzy_match(dev_name, c_name):
                         if c_ip not in used_ips or c_ip == old_corrupted_ip:
