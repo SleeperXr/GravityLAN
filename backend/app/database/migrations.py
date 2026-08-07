@@ -59,6 +59,22 @@ async def _clean_corrupted_ip_placeholders(db: AsyncSession):
         except Exception as e:
             logger.warning(f"Migration: Could not fetch local docker containers: {e}")
 
+    KNOWN_CONTAINER_IPS = {
+        27: "192.168.100.241", # NPM / NGINX Proxy Manager
+        30: "192.168.100.253", # Lancache
+        35: "192.168.100.240", # netboot
+        36: "192.168.100.230", # paperless-ngx
+        37: "192.168.100.18",  # Redis
+        38: "192.168.100.19",  # postgresql17
+        39: "192.168.100.231", # Nextcloud
+    }
+
+    def _fuzzy_match(n1: str, n2: str) -> bool:
+        if not n1 or not n2: return False
+        s1 = n1.lower().replace("-", "").replace("_", "").replace(" ", "")
+        s2 = n2.lower().replace("-", "").replace("_", "").replace(" ", "")
+        return s1 in s2 or s2 in s1
+
     # 1. Clean Devices
     res_devs = await db.execute(select(Device).where(or_(Device.ip.like("offline-%"), Device.ip_placeholder == True)))
     corrupted_devs = res_devs.scalars().all()
@@ -71,23 +87,33 @@ async def _clean_corrupted_ip_placeholders(db: AsyncSession):
             old_corrupted_ip = dev.ip
             safe_ip = None
             
-            # 1a. Try matching running Docker container by name
-            dev_name = (dev.display_name or dev.hostname or "").lower()
-            if dev_name and dev_name in docker_container_map:
-                docker_ip = docker_container_map[dev_name]
-                if docker_ip not in used_ips or docker_ip == old_corrupted_ip:
-                    safe_ip = docker_ip
+            # 1a. Try explicit ID mapping first
+            if dev.id in KNOWN_CONTAINER_IPS:
+                target_ip = KNOWN_CONTAINER_IPS[dev.id]
+                if target_ip not in used_ips or target_ip == old_corrupted_ip:
+                    safe_ip = target_ip
                     dev.is_online = True
                     dev.ip_placeholder = False
 
-            # 1b. Try restoring old_ip if valid and free
+            # 1b. Try matching running Docker container by name (fuzzy)
+            if not safe_ip:
+                dev_name = dev.display_name or dev.hostname or ""
+                for c_name, c_ip in docker_container_map.items():
+                    if _fuzzy_match(dev_name, c_name):
+                        if c_ip not in used_ips or c_ip == old_corrupted_ip:
+                            safe_ip = c_ip
+                            dev.is_online = True
+                            dev.ip_placeholder = False
+                            break
+
+            # 1c. Try restoring old_ip if valid and free
             if not safe_ip and dev.old_ip and not dev.old_ip.startswith("offline-") and is_ip_like(dev.old_ip):
                 if dev.old_ip not in used_ips:
                     safe_ip = dev.old_ip
                     dev.is_online = False
                     dev.ip_placeholder = True
 
-            # 1c. Fallback to unique 0.0.0.x IP
+            # 1d. Fallback to unique 0.0.0.x IP
             if not safe_ip:
                 dev.is_online = False
                 dev.ip_placeholder = True

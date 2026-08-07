@@ -28,6 +28,18 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
     logger.info("Dashboard: Starting hybrid strongest scan (Ping/ARP + Port Health).")
     if progress_callback: await progress_callback("Dashboard: Starting discovery...")
 
+    # Sync local Docker containers first
+    from app.services.docker_service import docker_service
+    from app.scanner.sync import sync_docker_containers
+    if docker_service.is_available():
+        try:
+            local_c = docker_service.get_local_containers()
+            if local_c:
+                logger.info(f"Dashboard: Syncing {len(local_c)} local Docker containers...")
+                await sync_docker_containers(local_c)
+        except Exception as e:
+            logger.warning(f"Dashboard: Docker container sync failed: {e}")
+
     all_resolved_hosts = []
     from app.scanner.sync import sync_hosts_batch
 

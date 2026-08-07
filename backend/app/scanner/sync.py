@@ -123,8 +123,15 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
         res_mac = await db.execute(select(Device).where(Device.mac == mac))
         mac_matches = res_mac.scalars().all()
         if len(mac_matches) == 1:
-            dev = mac_matches[0]
-            dev_match_type = "mac"
+            cand = mac_matches[0]
+            # GUARD: Do not hijack Unraid host IP via MAC-only match when a container scans on a new IP
+            cand_name = (cand.display_name or cand.hostname or "").lower()
+            if cand.ip != ip and "unraid" in cand_name:
+                logger.debug(f"Sync: Skipping MAC match for host {cand.display_name} ({cand.ip}) on new IP {ip} to prevent host IP hijacking.")
+                dev = None
+            else:
+                dev = cand
+                dev_match_type = "mac"
         elif len(mac_matches) > 1:
             logger.debug(f"Sync: Multiple devices found for MAC {mac} (ipvlan). Skipping MAC-only fallback matching.")
 
@@ -355,15 +362,19 @@ async def sync_docker_containers(containers: list[dict]):
                 dev = res_dev.scalar_one_or_none()
 
                 if not dev and container_name:
-                    res_dev_name = await db.execute(
-                        select(Device).where(
-                            or_(
-                                Device.display_name.ilike(container_name),
-                                Device.hostname.ilike(container_name)
-                            )
-                        )
-                    )
-                    cand_devs = res_dev_name.scalars().all()
+                    res_all_devs = await db.execute(select(Device))
+                    all_devices = res_all_devs.scalars().all()
+                    
+                    def _fuzzy_match(n1: str, n2: str) -> bool:
+                        if not n1 or not n2: return False
+                        s1 = n1.lower().replace("-", "").replace("_", "").replace(" ", "")
+                        s2 = n2.lower().replace("-", "").replace("_", "").replace(" ", "")
+                        return s1 in s2 or s2 in s1
+
+                    cand_devs = [
+                        d for d in all_devices 
+                        if _fuzzy_match(container_name, d.display_name) or _fuzzy_match(container_name, d.hostname)
+                    ]
                     if cand_devs:
                         placeholder_cand = next((d for d in cand_devs if getattr(d, 'ip_placeholder', False)), None)
                         dev = placeholder_cand or cand_devs[0]

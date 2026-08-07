@@ -76,6 +76,18 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
     subnets = sorted(normalized)
     logger.info(f"Planner: Starting discovery on {subnets}")
     
+    # Sync local Docker containers first
+    from app.services.docker_service import docker_service
+    from app.scanner.sync import sync_docker_containers
+    if docker_service.is_available():
+        try:
+            local_c = docker_service.get_local_containers()
+            if local_c:
+                logger.info(f"Planner: Syncing {len(local_c)} local Docker containers...")
+                await sync_docker_containers(local_c)
+        except Exception as e:
+            logger.warning(f"Planner: Docker container sync failed: {e}")
+
     total_found = 0
     all_alive_ips = set()
     from app.scanner.sync import sync_hosts_batch
