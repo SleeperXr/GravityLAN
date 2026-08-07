@@ -106,14 +106,24 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
         if dev:
             dev_match_type = "exact"
 
-    # Step 2: Match by IP only (provided device's MAC doesn't explicitly conflict with incoming MAC)
+    # Step 2: Match by IP only
     if not dev and ip:
         res_dev_ip = await db.execute(select(Device).where(Device.ip == ip))
         cand_dev = res_dev_ip.scalar_one_or_none()
         if cand_dev:
-            # If both incoming scan and candidate device have valid distinct MACs, reject candidate match
             if is_valid_mac and _mac_is_valid(cand_dev.mac) and cand_dev.mac.lower() != mac.lower():
-                dev = None
+                res_mac_owner = await db.execute(select(Device).where(Device.mac == mac))
+                mac_owner = res_mac_owner.scalar_one_or_none()
+                if mac_owner and mac_owner.id != cand_dev.id:
+                    mac_owner_name = (mac_owner.display_name or mac_owner.hostname or "").lower()
+                    if "unraid" in mac_owner_name or mac_owner.id == 29:
+                        dev = cand_dev
+                        dev_match_type = "ip"
+                    else:
+                        dev = None
+                else:
+                    dev = cand_dev
+                    dev_match_type = "ip"
             else:
                 dev = cand_dev
                 dev_match_type = "ip"
@@ -168,7 +178,18 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
         cand_disc = res_ip.scalar_one_or_none()
         if cand_disc:
             if is_valid_mac and _mac_is_valid(cand_disc.mac) and cand_disc.mac.lower() != mac.lower():
-                disc = None
+                res_mac_owner = await db.execute(select(DiscoveredHost).where(DiscoveredHost.mac == mac))
+                mac_owner_disc = res_mac_owner.scalar_one_or_none()
+                if mac_owner_disc and mac_owner_disc.id != cand_disc.id:
+                    disc_owner_name = (mac_owner_disc.custom_name or mac_owner_disc.hostname or "").lower()
+                    if "unraid" in disc_owner_name:
+                        disc = cand_disc
+                        disc_match_type = "ip"
+                    else:
+                        disc = None
+                else:
+                    disc = cand_disc
+                    disc_match_type = "ip"
             else:
                 disc = cand_disc
                 disc_match_type = "ip"
