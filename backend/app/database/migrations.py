@@ -37,30 +37,60 @@ MIGRATIONS = [
 ]
 
 async def _clean_corrupted_ip_placeholders(db: AsyncSession):
-    """Repair existing production database records corrupted with 'offline-<MAC>' IPs."""
-    from sqlalchemy import select
+    """Repair existing production database records corrupted with 'offline-<MAC>' or placeholder IPs."""
+    from sqlalchemy import select, or_
     from app.models.device import Device, DiscoveredHost
     from app.scanner.hostname import is_ip_like
+    from app.services.docker_service import docker_service
+
+    # Try mapping running Docker containers by container name
+    docker_container_map = {}
+    if docker_service.is_available():
+        try:
+            local_containers = docker_service.get_local_containers()
+            for c in local_containers:
+                c_name = c.get("name")
+                c_ips = c.get("ips", [])
+                c_status = c.get("status")
+                if c_name and c_ips and c_status == "running":
+                    docker_container_map[c_name.lower()] = c_ips[0]
+            if docker_container_map:
+                logger.info(f"Migration: Docker socket active. Found {len(docker_container_map)} running containers: {list(docker_container_map.keys())}")
+        except Exception as e:
+            logger.warning(f"Migration: Could not fetch local docker containers: {e}")
 
     # 1. Clean Devices
-    res_devs = await db.execute(select(Device).where(Device.ip.like("offline-%")))
+    res_devs = await db.execute(select(Device).where(or_(Device.ip.like("offline-%"), Device.ip_placeholder == True)))
     corrupted_devs = res_devs.scalars().all()
     if corrupted_devs:
-        logger.info(f"Migration: Cleaning {len(corrupted_devs)} corrupted Device records with offline- IPs...")
+        logger.info(f"Migration: Cleaning {len(corrupted_devs)} corrupted/placeholder Device records...")
         res_all_ips = await db.execute(select(Device.ip))
         used_ips = set(res_all_ips.scalars().all())
 
         for dev in corrupted_devs:
-            dev.is_online = False
-            dev.ip_placeholder = True
-            
             old_corrupted_ip = dev.ip
             safe_ip = None
-            if dev.old_ip and not dev.old_ip.startswith("offline-") and is_ip_like(dev.old_ip):
+            
+            # 1a. Try matching running Docker container by name
+            dev_name = (dev.display_name or dev.hostname or "").lower()
+            if dev_name and dev_name in docker_container_map:
+                docker_ip = docker_container_map[dev_name]
+                if docker_ip not in used_ips or docker_ip == old_corrupted_ip:
+                    safe_ip = docker_ip
+                    dev.is_online = True
+                    dev.ip_placeholder = False
+
+            # 1b. Try restoring old_ip if valid and free
+            if not safe_ip and dev.old_ip and not dev.old_ip.startswith("offline-") and is_ip_like(dev.old_ip):
                 if dev.old_ip not in used_ips:
                     safe_ip = dev.old_ip
-            
+                    dev.is_online = False
+                    dev.ip_placeholder = True
+
+            # 1c. Fallback to unique 0.0.0.x IP
             if not safe_ip:
+                dev.is_online = False
+                dev.ip_placeholder = True
                 counter = 0
                 while True:
                     candidate = f"0.0.0.{counter}"
@@ -68,35 +98,44 @@ async def _clean_corrupted_ip_placeholders(db: AsyncSession):
                         safe_ip = candidate
                         break
                     counter += 1
-            
+
             if old_corrupted_ip in used_ips:
                 used_ips.remove(old_corrupted_ip)
             used_ips.add(safe_ip)
             dev.ip = safe_ip
-            logger.info(f"Migration: Repaired Device id={dev.id} ({dev.display_name}) IP to {dev.ip}")
+            logger.info(f"Migration: Repaired Device id={dev.id} ({dev.display_name}) IP to {dev.ip} (online={dev.is_online})")
 
     # 2. Clean DiscoveredHosts
-    res_disc = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip.like("offline-%")))
+    res_disc = await db.execute(select(DiscoveredHost).where(or_(DiscoveredHost.ip.like("offline-%"), DiscoveredHost.ip_placeholder == True)))
     corrupted_disc = res_disc.scalars().all()
     if corrupted_disc:
-        logger.info(f"Migration: Cleaning {len(corrupted_disc)} corrupted DiscoveredHost records with offline- IPs...")
+        logger.info(f"Migration: Cleaning {len(corrupted_disc)} corrupted/placeholder DiscoveredHost records...")
         res_all_disc_ips = await db.execute(select(DiscoveredHost.ip))
         used_disc_ips = set(res_all_disc_ips.scalars().all())
 
         for disc in corrupted_disc:
-            disc.is_online = False
-            disc.ip_placeholder = True
-            
             old_corrupted_ip = disc.ip
             safe_ip = None
-            counter = 0
-            while True:
-                candidate = f"0.0.0.{counter}"
-                if candidate not in used_disc_ips:
-                    safe_ip = candidate
-                    break
-                counter += 1
+            disc_name = (disc.custom_name or disc.hostname or "").lower()
             
+            if disc_name and disc_name in docker_container_map:
+                docker_ip = docker_container_map[disc_name]
+                if docker_ip not in used_disc_ips or docker_ip == old_corrupted_ip:
+                    safe_ip = docker_ip
+                    disc.is_online = True
+                    disc.ip_placeholder = False
+
+            if not safe_ip:
+                disc.is_online = False
+                disc.ip_placeholder = True
+                counter = 0
+                while True:
+                    candidate = f"0.0.0.{counter}"
+                    if candidate not in used_disc_ips:
+                        safe_ip = candidate
+                        break
+                    counter += 1
+
             if old_corrupted_ip in used_disc_ips:
                 used_disc_ips.remove(old_corrupted_ip)
             used_disc_ips.add(safe_ip)

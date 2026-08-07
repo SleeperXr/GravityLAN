@@ -128,11 +128,20 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
         elif len(mac_matches) > 1:
             logger.debug(f"Sync: Multiple devices found for MAC {mac} (ipvlan). Skipping MAC-only fallback matching.")
 
-    # Step 4: Match by Hostname
+    # Step 4: Match by Hostname or Display Name
     if not dev and hostname and not is_ip_like(hostname):
-        res_dev_host = await db.execute(select(Device).where(Device.hostname == hostname))
-        dev = res_dev_host.scalar_one_or_none()
-        if dev:
+        res_dev_host = await db.execute(
+            select(Device).where(
+                or_(
+                    Device.hostname.ilike(hostname),
+                    Device.display_name.ilike(hostname)
+                )
+            )
+        )
+        cand_devs = res_dev_host.scalars().all()
+        if cand_devs:
+            placeholder_cand = next((d for d in cand_devs if getattr(d, 'ip_placeholder', False)), None)
+            dev = placeholder_cand or cand_devs[0]
             dev_match_type = "hostname"
 
     # 2. Discovery Table Deduplication & Search
@@ -171,11 +180,20 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
         elif len(matches) > 1:
             logger.debug(f"Sync: Multiple DiscoveredHost records found for MAC {mac} (ipvlan). Skipping MAC-only matching.")
 
-    # Step 4: Match by Hostname
+    # Step 4: Match by Hostname or Custom Name
     if not disc and hostname and not is_ip_like(hostname):
-        res_disc_host = await db.execute(select(DiscoveredHost).where(DiscoveredHost.hostname == hostname))
-        disc = res_disc_host.scalar_one_or_none()
-        if disc:
+        res_disc_host = await db.execute(
+            select(DiscoveredHost).where(
+                or_(
+                    DiscoveredHost.hostname.ilike(hostname),
+                    DiscoveredHost.custom_name.ilike(hostname)
+                )
+            )
+        )
+        cand_discs = res_disc_host.scalars().all()
+        if cand_discs:
+            placeholder_disc = next((d for d in cand_discs if getattr(d, 'ip_placeholder', False)), None)
+            disc = placeholder_disc or cand_discs[0]
             disc_match_type = "hostname"
 
     # 3. Apply Updates to DiscoveredHost
@@ -285,37 +303,101 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
 async def sync_docker_containers(containers: list[dict]):
     """
     Syncs local Docker container statuses to the database.
-    If a container is 'running', it overrides the offline status in the DB.
+    If a container is 'running', it overrides the offline status in the DB
+    and updates device IP by matching either by IP or by container name.
     """
+    if not containers:
+        return
+
     async with async_session() as db:
+        res_all_ips = await db.execute(select(Device.ip))
+        used_ips = set(res_all_ips.scalars().all())
+
         for container in containers:
             ips = container.get("ips", [])
             is_running = container.get("status") == "running"
+            container_name = container.get("name")
             
             if not ips or not is_running:
                 continue
                 
             for ip in ips:
-                # Update discovered hosts
+                # 1. Update discovered hosts
                 res_disc = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == ip))
                 disc = res_disc.scalar_one_or_none()
+                if not disc and container_name:
+                    res_disc_name = await db.execute(
+                        select(DiscoveredHost).where(
+                            or_(
+                                DiscoveredHost.custom_name.ilike(container_name),
+                                DiscoveredHost.hostname.ilike(container_name)
+                            )
+                        )
+                    )
+                    cand_discs = res_disc_name.scalars().all()
+                    if cand_discs:
+                        placeholder_disc = next((d for d in cand_discs if getattr(d, 'ip_placeholder', False)), None)
+                        disc = placeholder_disc or cand_discs[0]
+
                 if disc:
-                    if not disc.is_online:
-                        logger.info(f"Docker Sync: Marking container {container['name']} ({ip}) as ONLINE via Docker")
+                    if disc.ip != ip:
+                        await db.execute(delete(DiscoveredHost).where(DiscoveredHost.ip == ip).where(DiscoveredHost.id != disc.id))
+                        disc.ip = ip
                     disc.is_online = True
                     disc.last_seen = datetime.now(timezone.utc)
-                    # Optionally update name if unknown
+                    if getattr(disc, 'ip_placeholder', False):
+                        disc.ip_placeholder = False
                     if not disc.custom_name or disc.custom_name == "Unknown":
-                        disc.custom_name = container["name"]
+                        disc.custom_name = container_name
 
-                # Update dashboard devices
+                # 2. Update dashboard devices
                 res_dev = await db.execute(select(Device).where(Device.ip == ip))
                 dev = res_dev.scalar_one_or_none()
+
+                if not dev and container_name:
+                    res_dev_name = await db.execute(
+                        select(Device).where(
+                            or_(
+                                Device.display_name.ilike(container_name),
+                                Device.hostname.ilike(container_name)
+                            )
+                        )
+                    )
+                    cand_devs = res_dev_name.scalars().all()
+                    if cand_devs:
+                        placeholder_cand = next((d for d in cand_devs if getattr(d, 'ip_placeholder', False)), None)
+                        dev = placeholder_cand or cand_devs[0]
+
                 if dev:
-                    if not dev.is_online:
-                        logger.info(f"Docker Sync: Marking dashboard container {dev.display_name} ({ip}) as ONLINE via Docker")
+                    if dev.ip != ip:
+                        # Clear conflict on target IP if held by another device
+                        res_conflict = await db.execute(select(Device).where(Device.ip == ip).where(Device.id != dev.id))
+                        conflict_dev = res_conflict.scalar_one_or_none()
+                        if conflict_dev:
+                            conflict_dev.is_online = False
+                            conflict_dev.ip_placeholder = True
+                            counter = 0
+                            while True:
+                                cand_ip = f"0.0.0.{counter}"
+                                if cand_ip not in used_ips:
+                                    conflict_dev.ip = cand_ip
+                                    used_ips.add(cand_ip)
+                                    break
+                                counter += 1
+                            await db.flush()
+
+                        if dev.ip in used_ips:
+                            used_ips.remove(dev.ip)
+                        dev.old_ip = dev.ip
+                        dev.ip = ip
+                        used_ips.add(ip)
+                        dev.ip_changed_at = datetime.now(timezone.utc)
+
                     dev.is_online = True
                     dev.last_seen = datetime.now(timezone.utc)
+                    if getattr(dev, 'ip_placeholder', False):
+                        dev.ip_placeholder = False
+                    logger.info(f"Docker Sync: Marked container {container_name} ({ip}) as ONLINE")
         
         await db.commit()
         discovery_cache.invalidate()
