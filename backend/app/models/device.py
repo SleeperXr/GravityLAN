@@ -89,6 +89,7 @@ class Device(Base):
     status_changed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     old_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     ip_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ip_placeholder: Mapped[bool] = mapped_column(Boolean, default=False)
     
     # Topology & Virtualization
     parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
@@ -194,4 +195,5 @@ class DiscoveredHost(Base):
     is_online: Mapped[bool] = mapped_column(Boolean, default=True)
     is_monitored: Mapped[bool] = mapped_column(Boolean, default=False)
     is_reserved: Mapped[bool] = mapped_column(Boolean, default=False)
+    ip_placeholder: Mapped[bool] = mapped_column(Boolean, default=False)
     ports: Mapped[str | None] = mapped_column(Text, nullable=True) # JSON list of ports

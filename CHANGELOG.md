@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2026-08-07
+
+### Fixed
+
+- **ipvlan Container Recognition & Matching**: Refactored device matching logic in `backend/app/scanner/sync.py` to use a fallback chain (MAC+IP exact match -> IP match -> unique MAC match -> Hostname match). Prevents containers sharing the host MAC in `ipvlan` mode from overwriting host IP or misassigning devices.
+- **DB IP Field Corruption Removal (`offline-<MAC>`)**: Eliminated the `offline-<MAC>` IP replacement pattern. Conflicting offline devices now retain valid IPs and are flagged with `ip_placeholder=True` and `is_online=False`.
+- **Automatic DB Migration**: Added a migration step in `run_migrations` to repair existing production databases corrupted with `offline-` IP placeholders.
+- **Unverified IP Flap Suppression**: IP changed `DeviceHistory` logs and notifications are now restricted to verified matches (matching unique MAC), preventing false notification floods for unverified host scans.
+
 ## [0.3.2] - 2026-07-17
 
 ### Added

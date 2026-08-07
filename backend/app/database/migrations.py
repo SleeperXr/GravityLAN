@@ -17,9 +17,11 @@ MIGRATIONS = [
     ("devices", "is_wlan",    "BOOLEAN DEFAULT FALSE"),
     ("devices", "is_ap",      "BOOLEAN DEFAULT FALSE"),
     ("devices", "is_host",    "BOOLEAN DEFAULT FALSE"),
+    ("devices", "ip_placeholder", "BOOLEAN DEFAULT FALSE"),
     ("topology_links", "source_handle", "TEXT"),
     ("topology_links", "target_handle", "TEXT"),
     ("discovered_hosts", "is_reserved", "BOOLEAN DEFAULT FALSE"),
+    ("discovered_hosts", "ip_placeholder", "BOOLEAN DEFAULT FALSE"),
     ("discovered_hosts", "old_ip", "VARCHAR(45)"),
     ("discovered_hosts", "ip_changed_at", "DATETIME"),
     ("discovered_hosts", "ports", "TEXT"),
@@ -33,6 +35,60 @@ MIGRATIONS = [
     ("device_metrics", "major_upgrade_available", "VARCHAR(100)"),
     ("agent_configs", "enable_patch_check", "BOOLEAN DEFAULT TRUE"),
 ]
+
+async def _clean_corrupted_ip_placeholders(db: AsyncSession):
+    """Repair existing production database records corrupted with 'offline-<MAC>' IPs."""
+    from sqlalchemy import select
+    from app.models.device import Device, DiscoveredHost
+    from app.scanner.hostname import is_ip_like
+
+    # 1. Clean Devices
+    res_devs = await db.execute(select(Device).where(Device.ip.like("offline-%")))
+    corrupted_devs = res_devs.scalars().all()
+    if corrupted_devs:
+        logger.info(f"Migration: Cleaning {len(corrupted_devs)} corrupted Device records with offline- IPs...")
+        for dev in corrupted_devs:
+            dev.is_online = False
+            dev.ip_placeholder = True
+            
+            safe_ip = None
+            if dev.old_ip and not dev.old_ip.startswith("offline-") and is_ip_like(dev.old_ip):
+                res_taken = await db.execute(select(Device).where(Device.ip == dev.old_ip).where(Device.id != dev.id))
+                if not res_taken.scalar_one_or_none():
+                    safe_ip = dev.old_ip
+            
+            if not safe_ip:
+                counter = 0
+                while True:
+                    candidate = f"0.0.0.{counter}"
+                    res_taken = await db.execute(select(Device).where(Device.ip == candidate).where(Device.id != dev.id))
+                    if not res_taken.scalar_one_or_none():
+                        safe_ip = candidate
+                        break
+                    counter += 1
+            dev.ip = safe_ip
+            logger.info(f"Migration: Repaired Device id={dev.id} ({dev.display_name}) IP to {dev.ip}")
+
+    # 2. Clean DiscoveredHosts
+    res_disc = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip.like("offline-%")))
+    corrupted_disc = res_disc.scalars().all()
+    if corrupted_disc:
+        logger.info(f"Migration: Cleaning {len(corrupted_disc)} corrupted DiscoveredHost records with offline- IPs...")
+        for disc in corrupted_disc:
+            disc.is_online = False
+            disc.ip_placeholder = True
+            
+            safe_ip = None
+            counter = 0
+            while True:
+                candidate = f"0.0.0.{counter}"
+                res_taken = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == candidate).where(DiscoveredHost.id != disc.id))
+                if not res_taken.scalar_one_or_none():
+                    safe_ip = candidate
+                    break
+                counter += 1
+            disc.ip = safe_ip
+            logger.info(f"Migration: Repaired DiscoveredHost id={disc.id} IP to {disc.ip}")
 
 async def run_migrations(db: AsyncSession):
     """Run schema migrations for SQLite or any alternative database.
@@ -74,6 +130,8 @@ async def run_migrations(db: AsyncSession):
         except Exception as e:
             logger.error(f"Migration error on table '{table}': {e}")
             
+    await _clean_corrupted_ip_placeholders(db)
     await db.commit()
     logger.info("Schema migration complete.")
+
 

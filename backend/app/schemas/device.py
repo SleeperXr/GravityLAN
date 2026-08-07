@@ -95,6 +95,7 @@ class DeviceResponse(BaseModel):
     status_changed_at: datetime | None = None
     old_ip: str | None = None
     ip_changed_at: datetime | None = None
+    ip_placeholder: bool = False
     has_agent: bool = False
     agent_info: AgentInfo | None = None
     services: list[ServiceResponse] = []
@@ -141,6 +142,7 @@ class DeviceUpdate(BaseModel):
     is_reserved: bool | None = None
     old_ip: str | None = None
     ip_changed_at: datetime | None = None
+    ip_placeholder: bool | None = None
     # Rack placement
     rack_id: int | None = None
     rack_unit: int | None = None
@@ -206,6 +208,7 @@ class DiscoveredHostResponse(BaseModel):
     is_online: bool = True
     is_monitored: bool = False
     is_reserved: bool = False
+    ip_placeholder: bool = False
     first_seen: datetime
     last_seen: datetime
 
@@ -220,3 +223,4 @@ class DiscoveredHostUpdate(BaseModel):
     is_reserved: bool | None = None
     old_ip: str | None = None
     ip_changed_at: datetime | None = None
+    ip_placeholder: bool | None = None

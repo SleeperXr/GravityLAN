@@ -1,0 +1,171 @@
+import pytest
+from unittest.mock import patch
+from datetime import datetime, timezone
+from sqlalchemy import select
+from app.models.device import Device, DiscoveredHost, DeviceHistory
+from app.scanner.sync import sync_hosts_batch
+from app.database.migrations import _clean_corrupted_ip_placeholders
+
+class DBSessionContextMock:
+    def __init__(self, db):
+        self.db = db
+    async def __aenter__(self):
+        return self.db
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_ipvlan_shared_mac_matching(db):
+    """
+    Test scenario:
+    1. Unraid Host and a Docker container share the same host MAC address ('02:42:ac:11:00:01').
+    2. Host has IP '192.168.1.10', Container has IP '192.168.1.50'.
+    3. Scanning '192.168.1.50' with MAC '02:42:ac:11:00:01' must match the Container device,
+       NOT the Host device.
+    """
+    host_dev = Device(
+        ip="192.168.1.10",
+        mac="02:42:ac:11:00:01",
+        display_name="Unraid Host",
+        is_online=True
+    )
+    container_dev = Device(
+        ip="192.168.1.50",
+        mac="02:42:ac:11:00:01",
+        display_name="Nextcloud Container",
+        is_online=True
+    )
+    db.add_all([host_dev, container_dev])
+    await db.commit()
+
+    scan_hosts = [{
+        "ip": "192.168.1.50",
+        "mac": "02:42:ac:11:00:01",
+        "hostname": "nextcloud"
+    }]
+
+    session_ctx = DBSessionContextMock(db)
+    with patch("app.scanner.sync.async_session", return_value=session_ctx):
+        await sync_hosts_batch(scan_hosts, is_planner_scan=True)
+
+    res_host = await db.execute(select(Device).where(Device.ip == "192.168.1.10"))
+    h = res_host.scalar_one()
+    assert h.display_name == "Unraid Host"
+    assert h.ip == "192.168.1.10"
+
+    res_container = await db.execute(select(Device).where(Device.ip == "192.168.1.50"))
+    c = res_container.scalar_one()
+    assert c.display_name == "Nextcloud Container"
+    assert c.ip == "192.168.1.50"
+
+
+@pytest.mark.asyncio
+async def test_ip_conflict_sets_placeholder_without_offline_prefix(db):
+    """
+    Test scenario:
+    1. Device A has MAC A and IP '192.168.1.100'.
+    2. Device B has MAC B and IP '192.168.1.200'.
+    3. Scan finds MAC A at '192.168.1.200'.
+    4. Device A gets '192.168.1.200'. Device B gets an available valid IP (e.g. old_ip or 0.0.0.x)
+       with ip_placeholder=True and is_online=False. IP must NEVER start with 'offline-'.
+    """
+    dev_a = Device(
+        ip="192.168.1.100",
+        mac="00:11:22:33:44:aa",
+        display_name="Device A",
+        is_online=True
+    )
+    dev_b = Device(
+        ip="192.168.1.200",
+        mac="00:11:22:33:44:bb",
+        display_name="Device B",
+        is_online=True
+    )
+    db.add_all([dev_a, dev_b])
+    await db.commit()
+
+    scan_hosts = [{
+        "ip": "192.168.1.200",
+        "mac": "00:11:22:33:44:aa"
+    }]
+
+    session_ctx = DBSessionContextMock(db)
+    with patch("app.scanner.sync.async_session", return_value=session_ctx):
+        await sync_hosts_batch(scan_hosts, is_planner_scan=True)
+
+    res_a = await db.execute(select(Device).where(Device.mac == "00:11:22:33:44:aa"))
+    a = res_a.scalar_one()
+    assert a.ip == "192.168.1.200"
+
+    res_b = await db.execute(select(Device).where(Device.mac == "00:11:22:33:44:bb"))
+    b = res_b.scalar_one()
+    assert not b.ip.startswith("offline-")
+    assert b.ip_placeholder is True
+    assert b.is_online is False
+
+
+@pytest.mark.asyncio
+async def test_unverified_match_no_ip_changed_notification(db):
+    """
+    Test scenario:
+    1. Device is matched via Hostname (unverified match).
+    2. IP changes during sync.
+    3. Device IP is updated, but NO DeviceHistory "IP changed" entry is created.
+    """
+    dev = Device(
+        ip="10.0.0.5",
+        mac="00:00:00:00:00:00",  # invalid MAC
+        hostname="unverified-host",
+        display_name="Unverified Device",
+        is_online=True
+    )
+    db.add(dev)
+    await db.commit()
+
+    scan_hosts = [{
+        "ip": "10.0.0.99",
+        "mac": None,
+        "hostname": "unverified-host"
+    }]
+
+    session_ctx = DBSessionContextMock(db)
+    with patch("app.scanner.sync.async_session", return_value=session_ctx):
+        await sync_hosts_batch(scan_hosts, is_planner_scan=True)
+
+    res = await db.execute(select(Device).where(Device.hostname == "unverified-host"))
+    updated_dev = res.scalar_one()
+    assert updated_dev.ip == "10.0.0.99"
+
+    # Check DeviceHistory
+    res_hist = await db.execute(select(DeviceHistory).where(DeviceHistory.device_id == updated_dev.id))
+    histories = res_hist.scalars().all()
+    assert len(histories) == 0, "No DeviceHistory IP changed notification should be emitted for unverified match"
+
+
+@pytest.mark.asyncio
+async def test_migration_cleans_offline_mac_ips(db):
+    """
+    Test scenario:
+    1. Database contains a Device with ip='offline-02:63:aa:bb:cc:dd'.
+    2. Running _clean_corrupted_ip_placeholders repairs the IP to a valid string and sets ip_placeholder=True.
+    """
+    corrupted_dev = Device(
+        ip="offline-02:63:aa:bb:cc:dd",
+        mac="02:63:aa:bb:cc:dd",
+        display_name="Corrupted Container",
+        is_online=False,
+        old_ip="192.168.1.150"
+    )
+    db.add(corrupted_dev)
+    await db.commit()
+
+    await _clean_corrupted_ip_placeholders(db)
+    await db.commit()
+
+    res = await db.execute(select(Device).where(Device.id == corrupted_dev.id))
+    repaired = res.scalar_one()
+    assert not repaired.ip.startswith("offline-")
+    assert repaired.ip == "192.168.1.150"
+    assert repaired.ip_placeholder is True
+    assert repaired.is_online is False

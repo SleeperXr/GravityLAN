@@ -82,67 +82,120 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
     """
     Internal logic for syncing a single host. Does NOT commit.
     """
-    # 1. Dashboard Check (Is this host already monitored?)
-    dev = None
-    if mac:
-        res_dev = await db.execute(select(Device).where(Device.mac == mac))
-        dev = res_dev.scalar_one_or_none()
-    
-    if not dev:
-        res_dev_ip = await db.execute(select(Device).where(Device.ip == ip))
-        dev = res_dev_ip.scalar_one_or_none()
-    
-    if not dev and hostname and not is_ip_like(hostname):
-        res_dev_host = await db.execute(select(Device).where(Device.hostname == hostname))
-        dev = res_dev_host.scalar_one_or_none()
-
-    # 2. Discovery Table Deduplication & Search
-    disc = None
-    if mac:
-        res_macs = await db.execute(
-            select(DiscoveredHost)
-            .where(DiscoveredHost.mac == mac)
-            .order_by(DiscoveredHost.is_monitored.desc(), DiscoveredHost.custom_name.desc())
-        )
-        matches = res_macs.scalars().all()
-        if matches:
-            disc = matches[0]
-            if len(matches) > 1:
-                for extra in matches[1:]:
-                    await db.delete(extra)
-    
-    if not disc:
-        res_ip = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == ip))
-        disc = res_ip.scalar_one_or_none()
-
-    # 3. Apply Updates
     is_valid_mac = bool(
         mac and mac.strip() 
         and mac.lower() not in ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff") 
         and not mac.lower().startswith(("01:00:5e", "33:33"))
     )
 
+    def _mac_is_valid(m: str | None) -> bool:
+        return bool(
+            m and m.strip() 
+            and m.lower() not in ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff") 
+            and not m.lower().startswith(("01:00:5e", "33:33"))
+        )
+
+    # 1. Dashboard Check (Is this host already monitored?)
+    dev = None
+    dev_match_type = None
+
+    # Step 1: Match by MAC AND IP (Exact match)
+    if is_valid_mac and ip:
+        res_exact = await db.execute(select(Device).where(Device.mac == mac, Device.ip == ip))
+        dev = res_exact.scalar_one_or_none()
+        if dev:
+            dev_match_type = "exact"
+
+    # Step 2: Match by IP only (provided device's MAC doesn't explicitly conflict with incoming MAC)
+    if not dev and ip:
+        res_dev_ip = await db.execute(select(Device).where(Device.ip == ip))
+        cand_dev = res_dev_ip.scalar_one_or_none()
+        if cand_dev:
+            # If both incoming scan and candidate device have valid distinct MACs, reject candidate match
+            if is_valid_mac and _mac_is_valid(cand_dev.mac) and cand_dev.mac.lower() != mac.lower():
+                dev = None
+            else:
+                dev = cand_dev
+                dev_match_type = "ip"
+
+    # Step 3: Match by MAC only (ONLY IF exactly 1 device has this MAC!)
+    if not dev and is_valid_mac:
+        res_mac = await db.execute(select(Device).where(Device.mac == mac))
+        mac_matches = res_mac.scalars().all()
+        if len(mac_matches) == 1:
+            dev = mac_matches[0]
+            dev_match_type = "mac"
+        elif len(mac_matches) > 1:
+            logger.debug(f"Sync: Multiple devices found for MAC {mac} (ipvlan). Skipping MAC-only fallback matching.")
+
+    # Step 4: Match by Hostname
+    if not dev and hostname and not is_ip_like(hostname):
+        res_dev_host = await db.execute(select(Device).where(Device.hostname == hostname))
+        dev = res_dev_host.scalar_one_or_none()
+        if dev:
+            dev_match_type = "hostname"
+
+    # 2. Discovery Table Deduplication & Search
+    disc = None
+    disc_match_type = None
+
+    # Step 1: Match by MAC AND IP
+    if is_valid_mac and ip:
+        res_exact_disc = await db.execute(select(DiscoveredHost).where(DiscoveredHost.mac == mac, DiscoveredHost.ip == ip))
+        disc = res_exact_disc.scalar_one_or_none()
+        if disc:
+            disc_match_type = "exact"
+
+    # Step 2: Match by IP
+    if not disc and ip:
+        res_ip = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == ip))
+        cand_disc = res_ip.scalar_one_or_none()
+        if cand_disc:
+            if is_valid_mac and _mac_is_valid(cand_disc.mac) and cand_disc.mac.lower() != mac.lower():
+                disc = None
+            else:
+                disc = cand_disc
+                disc_match_type = "ip"
+
+    # Step 3: Match by MAC (ONLY IF exactly 1 record matches)
+    if not disc and is_valid_mac:
+        res_macs = await db.execute(
+            select(DiscoveredHost)
+            .where(DiscoveredHost.mac == mac)
+            .order_by(DiscoveredHost.is_monitored.desc(), DiscoveredHost.custom_name.desc())
+        )
+        matches = res_macs.scalars().all()
+        if len(matches) == 1:
+            disc = matches[0]
+            disc_match_type = "mac"
+        elif len(matches) > 1:
+            logger.debug(f"Sync: Multiple DiscoveredHost records found for MAC {mac} (ipvlan). Skipping MAC-only matching.")
+
+    # Step 4: Match by Hostname
+    if not disc and hostname and not is_ip_like(hostname):
+        res_disc_host = await db.execute(select(DiscoveredHost).where(DiscoveredHost.hostname == hostname))
+        disc = res_disc_host.scalar_one_or_none()
+        if disc:
+            disc_match_type = "hostname"
+
+    # 3. Apply Updates to DiscoveredHost
     if disc:
         if disc.ip != ip:
-            should_update_ip = False
-            if is_valid_mac and disc.mac == mac:
-                should_update_ip = True
-            else:
-                last_seen = ensure_utc(disc.last_seen)
-                if not last_seen or (datetime.now(timezone.utc) - last_seen) > IP_FLAP_THRESHOLD:
-                    should_update_ip = True
-
-            if should_update_ip:
-                # Clear the new IP from stale records to prevent UNIQUE constraint violation
-                await db.execute(delete(DiscoveredHost).where(DiscoveredHost.ip == ip).where(DiscoveredHost.id != disc.id))
-                disc.ip = ip
-                if hasattr(disc, 'ip_changed_at'):
-                    disc.ip_changed_at = datetime.now(timezone.utc)
+            await db.execute(delete(DiscoveredHost).where(DiscoveredHost.ip == ip).where(DiscoveredHost.id != disc.id))
+            disc.ip = ip
+            if hasattr(disc, 'ip_changed_at'):
+                disc.ip_changed_at = datetime.now(timezone.utc)
         
         disc.is_online = True
         disc.last_seen = datetime.now(timezone.utc)
+        if getattr(disc, 'ip_placeholder', False):
+            disc.ip_placeholder = False
         if hostname: disc.hostname = hostname
-        if mac: disc.mac = mac
+        
+        if is_valid_mac:
+            if not _mac_is_valid(disc.mac):
+                disc.mac = mac
+                
         if vendor: disc.vendor = vendor
         if ports: disc.ports = json.dumps(ports)
         
@@ -170,17 +223,19 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
     if dev:
         dev.is_online = True
         dev.last_seen = datetime.now(timezone.utc)
-        if mac: dev.mac = mac
-        if disc and disc.custom_name: dev.display_name = disc.custom_name
+        if getattr(dev, 'ip_placeholder', False):
+            dev.ip_placeholder = False
+
+        if is_valid_mac:
+            if not _mac_is_valid(dev.mac):
+                dev.mac = mac
+
+        if disc and disc.custom_name:
+            dev.display_name = disc.custom_name
         
         if dev.ip != ip:
-            should_update_ip = False
-            if is_valid_mac and dev.mac == mac:
-                should_update_ip = True
-            else:
-                last_seen = ensure_utc(dev.last_seen)
-                if not last_seen or (datetime.now(timezone.utc) - last_seen) > IP_FLAP_THRESHOLD:
-                    should_update_ip = True
+            should_update_ip = True
+            is_verified_change = bool(is_valid_mac and dev.mac and dev.mac.lower() == mac.lower() and dev_match_type in ("exact", "mac"))
 
             if should_update_ip:
                 # To prevent UNIQUE constraint error on devices.ip:
@@ -188,23 +243,43 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
                 res_conflict = await db.execute(select(Device).where(Device.ip == ip).where(Device.id != dev.id))
                 conflict_dev = res_conflict.scalar_one_or_none()
                 if conflict_dev:
-                    conflict_dev.ip = f"offline-{conflict_dev.mac or conflict_dev.id}"
                     conflict_dev.is_online = False
+                    conflict_dev.ip_placeholder = True
+                    safe_ip = None
+                    if conflict_dev.old_ip and not conflict_dev.old_ip.startswith("offline-") and is_ip_like(conflict_dev.old_ip):
+                        res_taken = await db.execute(select(Device).where(Device.ip == conflict_dev.old_ip).where(Device.id != conflict_dev.id))
+                        if not res_taken.scalar_one_or_none():
+                            safe_ip = conflict_dev.old_ip
+                    
+                    if not safe_ip:
+                        counter = 0
+                        while True:
+                            candidate = f"0.0.0.{counter}"
+                            res_taken = await db.execute(select(Device).where(Device.ip == candidate).where(Device.id != conflict_dev.id))
+                            if not res_taken.scalar_one_or_none():
+                                safe_ip = candidate
+                                break
+                            counter += 1
+                    
+                    conflict_dev.ip = safe_ip
                     await db.flush()
                     logger.warning(f"Sync: Resolved IP conflict. Moved conflicting device {conflict_dev.id} to placeholder IP {conflict_dev.ip}")
-
-                # Log IP change in DeviceHistory
-                from app.models.device import DeviceHistory
-                db.add(DeviceHistory(
-                    device_id=dev.id,
-                    status="info",
-                    message=f"IP changed from {dev.ip} to {ip}"
-                ))
 
                 dev.old_ip = dev.ip
                 dev.ip = ip
                 dev.ip_changed_at = datetime.now(timezone.utc)
-    
+
+                # ONLY emit DeviceHistory event if IP change is VERIFIED
+                if is_verified_change:
+                    from app.models.device import DeviceHistory
+                    db.add(DeviceHistory(
+                        device_id=dev.id,
+                        status="info",
+                        message=f"IP changed from {dev.old_ip} to {ip}"
+                    ))
+                else:
+                    logger.info(f"Sync: Updated IP of device {dev.id} to {ip} without DeviceHistory notification (unverified match).")
+
     return disc
 
 async def sync_docker_containers(containers: list[dict]):

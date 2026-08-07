@@ -123,7 +123,8 @@ async def test_device_matching_ip_conflict(db):
     # Verify Device B resolved conflict
     res_b = await db.execute(select(Device).where(Device.mac == "66:77:88:99:aa:bb"))
     b = res_b.scalar_one()
-    assert b.ip.startswith("offline-")
+    assert not b.ip.startswith("offline-")
+    assert b.ip_placeholder is True
     assert b.is_online is False
 
 
