@@ -224,13 +224,13 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
         if vendor: disc.vendor = vendor
         if ports: disc.ports = json.dumps(ports)
         
-        if not disc.custom_name and mac and dev:
+        if not disc.custom_name and dev and dev.ip == ip:
             disc.custom_name = dev.display_name
         
         disc.is_monitored = dev is not None
     else:
-        # Create new discovery record
-        inherited_name = dev.display_name if (mac and dev) else None
+        # Create new discovery record (only inherit name if IP matches)
+        inherited_name = dev.display_name if (dev and dev.ip == ip) else None
 
         disc = DiscoveredHost(
             ip=ip, mac=mac, hostname=hostname,
@@ -255,7 +255,8 @@ async def _sync_host_internal(db, ip: str, mac: str | None, hostname: str | None
             if not _mac_is_valid(dev.mac):
                 dev.mac = mac
 
-        if disc and disc.custom_name:
+        # Only set display_name if device has no name or generic name
+        if disc and disc.custom_name and (not dev.display_name or dev.display_name == "Unknown"):
             dev.display_name = disc.custom_name
         
         if dev.ip != ip:
