@@ -47,25 +47,31 @@ async def _clean_corrupted_ip_placeholders(db: AsyncSession):
     corrupted_devs = res_devs.scalars().all()
     if corrupted_devs:
         logger.info(f"Migration: Cleaning {len(corrupted_devs)} corrupted Device records with offline- IPs...")
+        res_all_ips = await db.execute(select(Device.ip))
+        used_ips = set(res_all_ips.scalars().all())
+
         for dev in corrupted_devs:
             dev.is_online = False
             dev.ip_placeholder = True
             
+            old_corrupted_ip = dev.ip
             safe_ip = None
             if dev.old_ip and not dev.old_ip.startswith("offline-") and is_ip_like(dev.old_ip):
-                res_taken = await db.execute(select(Device).where(Device.ip == dev.old_ip).where(Device.id != dev.id))
-                if not res_taken.scalar_one_or_none():
+                if dev.old_ip not in used_ips:
                     safe_ip = dev.old_ip
             
             if not safe_ip:
                 counter = 0
                 while True:
                     candidate = f"0.0.0.{counter}"
-                    res_taken = await db.execute(select(Device).where(Device.ip == candidate).where(Device.id != dev.id))
-                    if not res_taken.scalar_one_or_none():
+                    if candidate not in used_ips:
                         safe_ip = candidate
                         break
                     counter += 1
+            
+            if old_corrupted_ip in used_ips:
+                used_ips.remove(old_corrupted_ip)
+            used_ips.add(safe_ip)
             dev.ip = safe_ip
             logger.info(f"Migration: Repaired Device id={dev.id} ({dev.display_name}) IP to {dev.ip}")
 
@@ -74,19 +80,26 @@ async def _clean_corrupted_ip_placeholders(db: AsyncSession):
     corrupted_disc = res_disc.scalars().all()
     if corrupted_disc:
         logger.info(f"Migration: Cleaning {len(corrupted_disc)} corrupted DiscoveredHost records with offline- IPs...")
+        res_all_disc_ips = await db.execute(select(DiscoveredHost.ip))
+        used_disc_ips = set(res_all_disc_ips.scalars().all())
+
         for disc in corrupted_disc:
             disc.is_online = False
             disc.ip_placeholder = True
             
+            old_corrupted_ip = disc.ip
             safe_ip = None
             counter = 0
             while True:
                 candidate = f"0.0.0.{counter}"
-                res_taken = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == candidate).where(DiscoveredHost.id != disc.id))
-                if not res_taken.scalar_one_or_none():
+                if candidate not in used_disc_ips:
                     safe_ip = candidate
                     break
                 counter += 1
+            
+            if old_corrupted_ip in used_disc_ips:
+                used_disc_ips.remove(old_corrupted_ip)
+            used_disc_ips.add(safe_ip)
             disc.ip = safe_ip
             logger.info(f"Migration: Repaired DiscoveredHost id={disc.id} IP to {disc.ip}")
 

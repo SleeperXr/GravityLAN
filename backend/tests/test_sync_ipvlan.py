@@ -169,3 +169,30 @@ async def test_migration_cleans_offline_mac_ips(db):
     assert repaired.ip == "192.168.1.150"
     assert repaired.ip_placeholder is True
     assert repaired.is_online is False
+
+
+@pytest.mark.asyncio
+async def test_migration_cleans_multiple_corrupted_devices(db):
+    """
+    Test scenario:
+    Multiple devices in DB have 'offline-<MAC>' IPs. Migration must assign UNIQUE valid IPs to each
+    and commit without UNIQUE constraint errors.
+    """
+    devices = [
+        Device(ip=f"offline-mac-{i}", mac=f"02:00:00:00:00:0{i}", display_name=f"Corrupted {i}", is_online=False)
+        for i in range(8)
+    ]
+    db.add_all(devices)
+    await db.commit()
+
+    await _clean_corrupted_ip_placeholders(db)
+    await db.commit()
+
+    res = await db.execute(select(Device).where(Device.ip_placeholder == True))
+    repaired_devs = res.scalars().all()
+    assert len(repaired_devs) >= 8
+    assigned_ips = [d.ip for d in repaired_devs]
+    assert len(assigned_ips) == len(set(assigned_ips)), "All repaired IPs must be strictly unique"
+    for ip in assigned_ips:
+        assert not ip.startswith("offline-")
+
