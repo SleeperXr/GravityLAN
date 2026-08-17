@@ -193,6 +193,21 @@ async def receive_report(
             
             if db_token.agent_version != payload.agent_version:
                 db_token.agent_version = payload.agent_version
+
+            # Persist OS metadata reported by the agent (e.g. from /etc/os-release)
+            system = payload.system or {}
+            if system.get("os"):
+                db_token.os_pretty = str(system["os"])[:255]
+            if system.get("os_name"):
+                db_token.os_name = str(system["os_name"])[:100]
+            if system.get("os_version"):
+                db_token.os_version = str(system["os_version"])[:100]
+            if system.get("os_codename"):
+                db_token.os_codename = str(system["os_codename"])[:100]
+            if system.get("arch"):
+                db_token.os_arch = str(system["arch"])[:50]
+            if system.get("kernel"):
+                db_token.os_kernel = str(system["kernel"])[:100]
             device.has_agent = True
             
             # Clear stale pending token flags since we have a successful report with active token
@@ -459,6 +474,12 @@ async def get_agents_overview(
             ip=device.ip,
             is_online=is_active,
             agent_version=token.agent_version,
+            os_pretty=token.os_pretty,
+            os_name=token.os_name,
+            os_version=token.os_version,
+            os_codename=token.os_codename,
+            os_arch=token.os_arch,
+            os_kernel=token.os_kernel,
             last_seen=token.last_seen,
             cpu_usage=last_m.cpu_percent if last_m else 0.0,
             ram_usage=last_m.ram_percent if last_m else 0.0,

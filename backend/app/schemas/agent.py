@@ -192,6 +192,12 @@ class AgentSummary(BaseModel):
     ip: str
     is_online: bool
     agent_version: str | None = None
+    os_pretty: str | None = None
+    os_name: str | None = None
+    os_version: str | None = None
+    os_codename: str | None = None
+    os_arch: str | None = None
+    os_kernel: str | None = None
     last_seen: datetime | None = None
     cpu_usage: float = 0.0
     ram_usage: float = 0.0

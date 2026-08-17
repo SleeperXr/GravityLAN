@@ -33,7 +33,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 # Constants & Logging
 # ---------------------------------------------------------------------------
 
-VERSION = "0.3.2"
+VERSION = "0.3.4"
 AGENT_NAME = "gravitylan-agent"
 DEFAULT_CONFIG_FILENAME = "agent.conf"
 DEFAULT_LOG_FILENAME = "gravitylan-agent.log"
@@ -467,14 +467,31 @@ class NetworkMetrics(MetricProvider):
         return result
 
 class SystemInfoProvider(MetricProvider):
-    """Provides static system metadata."""
+    """Provides static system metadata (hostname, OS, architecture, kernel)."""
     def collect(self, config: AgentConfig) -> Dict[str, str]:
-        return {
+        info = {
             "hostname": socket.gethostname(),
             "os": f"{platform.system()} {platform.release()}",
             "arch": platform.machine(),
             "kernel": platform.release(),
         }
+        try:
+            release: Dict[str, str] = {}
+            for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    release[key.strip()] = value.strip().strip('"').strip("'")
+            if release:
+                pretty = release.get("PRETTY_NAME") or ""
+                fallback = f"{release.get('NAME', '')} {release.get('VERSION_ID', '')}".strip()
+                info["os"] = pretty or fallback or info["os"]
+                info["os_name"] = release.get("NAME") or platform.system()
+                info["os_version"] = release.get("VERSION_ID") or platform.release()
+                if release.get("VERSION_CODENAME"):
+                    info["os_codename"] = release["VERSION_CODENAME"]
+        except (OSError, UnicodeDecodeError):
+            pass
+        return info
 
 class ThermalMetrics(MetricProvider):
     """Reads CPU temperature from sysfs thermal zones."""
@@ -496,6 +513,36 @@ class ThermalMetrics(MetricProvider):
                 continue
         return None
 
+def _apt_cache_is_stale(max_age_seconds: int = 3600) -> bool:
+    """True when the local apt package-list cache is older than max_age."""
+    lists_dir = Path("/var/lib/apt/lists")
+    if not lists_dir.is_dir():
+        return True
+    try:
+        newest = 0.0
+        for p in lists_dir.iterdir():
+            if p.name.endswith("_Packages"):
+                newest = max(newest, p.stat().st_mtime)
+        return time.time() - newest > max_age_seconds
+    except OSError:
+        return True
+
+
+def _run_apt_update(timeout: int = 90) -> bool:
+    """Refresh apt package lists; falls back to `sudo -n` when not root."""
+    for cmd in (
+        ["apt-get", "update", "-o", "Acquire::Retries=1"],
+        ["sudo", "-n", "apt-get", "update", "-o", "Acquire::Retries=1"],
+    ):
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+            if res.returncode == 0:
+                return True
+        except subprocess.SubprocessError:
+            continue
+    return False
+
+
 class PatchMetrics(MetricProvider):
     """Calculates package updates, security updates, and reboot requirement."""
     def collect(self, config: AgentConfig) -> Optional[Dict[str, Any]]:
@@ -516,6 +563,13 @@ class PatchMetrics(MetricProvider):
         if shutil.which("apt-get"):
             result["patch_manager"] = "apt"
             try:
+                # Refresh package lists if the local cache is stale (>= 1h).
+                # Without this, `apt-get -s upgrade` only sees stale data and
+                # reports 0 updates until someone runs apt-get update manually.
+                if _apt_cache_is_stale():
+                    if not _run_apt_update():
+                        logger.warning("apt-get update failed; using stale package cache")
+
                 # Run simulate upgrade without locks
                 cmd = ["apt-get", "-s", "-o", "Debug::NoLocking=true", "upgrade"]
                 out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8")

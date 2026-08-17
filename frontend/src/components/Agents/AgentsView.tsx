@@ -38,6 +38,9 @@ interface AgentSummary {
   is_online: boolean;
   has_pending_token?: boolean;
   agent_version: string | null;
+  os_pretty?: string | null;
+  os_name?: string | null;
+  os_version?: string | null;
   last_seen: string | null;
   cpu_usage: number;
   ram_usage: number;
@@ -45,6 +48,11 @@ interface AgentSummary {
   uptime_pct: number;
   uptime_history: number[];
   metrics_count: number;
+  patch_available: number;
+  patch_security: number;
+  patch_manager: string | null;
+  reboot_required: boolean;
+  major_upgrade_available: string | null;
 }
 
 interface OverviewData {
@@ -213,6 +221,11 @@ export function AgentsView() {
                                 <span>{agent.ip}</span>
                                 <span className="w-1 h-1 rounded-full bg-slate-700"></span>
                                 <span className="bg-white/5 px-1.5 py-0.5 rounded">v{agent.agent_version || '0.0.0'}</span>
+                                {(agent.os_pretty || agent.os_name) && (
+                                  <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded" title={agent.os_pretty || `${agent.os_name} ${agent.os_version || ''}`.trim()}>
+                                    {agent.os_pretty || `${agent.os_name}${agent.os_version ? ' ' + agent.os_version : ''}`}
+                                  </span>
+                                )}
                                 {agent.patch_available > 0 && (
                                   <span className={`px-1.5 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 ${
                                     agent.patch_security > 0 
@@ -742,6 +755,10 @@ function AgentDetailView({ deviceId, agent, onRefresh }: { deviceId: number; age
 
     try {
       const res = await api.queryAgentPatches(deviceId, payload);
+      const updateError = (res as unknown as Record<string, unknown>).error;
+      if (typeof updateError === 'string' && updateError) {
+        alert(`Update check failed: ${updateError}`);
+      }
       setPackages(res.packages);
       setMajorUpgrade(res.major_upgrade_available);
       setPatchManager(res.patch_manager);

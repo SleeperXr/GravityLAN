@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 import io
 import uuid
 import paramiko
@@ -179,22 +180,49 @@ async def list_device_updates(
 
         if "apt-get" in pkg_manager_path:
             result["patch_manager"] = "apt"
-            # Refresh package cache first (requires sudo/root)
+            # Refresh package cache first (requires sudo/root).
+            # Read the channel continuously so the PTY buffer never fills up
+            # (previously this hung forever), and only send the password when
+            # sudo actually asks for it (SUDOPROMPT).
             needs_sudo = ssh_user != "root"
-            update_cmd = "sudo -S apt-get update" if needs_sudo else "apt-get update"
-            
-            # Execute update
+            update_cmd = (
+                "sudo -n -S -p 'SUDOPROMPT:' apt-get update" if needs_sudo else "apt-get update"
+            )
+
             chan = client.get_transport().open_session()
-            if needs_sudo:
-                chan.get_pty()
+            chan.get_pty()
             chan.exec_command(update_cmd)
-            if needs_sudo and ssh_password:
-                await asyncio.sleep(0.5)
-                if chan.send_ready():
-                    chan.send(f"{ssh_password}\n")
-            # Wait for update to complete
-            while not chan.exit_status_ready():
+
+            update_output = ""
+            password_sent = False
+            update_deadline = time.monotonic() + 90
+            while time.monotonic() < update_deadline:
+                if chan.recv_ready():
+                    update_output += chan.recv(4096).decode("utf-8", errors="replace")
+                    if (
+                        needs_sudo
+                        and ssh_password
+                        and not password_sent
+                        and "SUDOPROMPT" in update_output
+                    ):
+                        chan.send(f"{ssh_password}\n")
+                        password_sent = True
+                elif chan.exit_status_ready():
+                    while chan.recv_ready():
+                        update_output += chan.recv(4096).decode("utf-8", errors="replace")
+                    break
                 await asyncio.sleep(0.1)
+
+            update_exit = chan.get_exit_status() if chan.exit_status_ready() else None
+            if update_exit != 0:
+                logger.warning(
+                    "apt-get update on %s failed (exit %s): %s",
+                    host_ip, update_exit, update_output.strip()[-500:],
+                )
+                result["error"] = (
+                    "apt-get update failed (exit %s). Set an SSH password or "
+                    "enable passwordless sudo to refresh package lists."
+                ) % (update_exit if update_exit is not None else "timeout")
 
             # Query upgradable packages
             _, stdout, _ = client.exec_command("apt list --upgradable 2>/dev/null", timeout=15)

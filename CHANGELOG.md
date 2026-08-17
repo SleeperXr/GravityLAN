@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.4] - 2026-08-17
+
+### Fixed
+
+- **Agent: Stale package lists hid available updates**: The agent now refreshes the package cache (`apt-get update`, with a stale-cache check and at most once per hour) before counting available patches. Previously, newly installed agents never showed open updates until the cache was refreshed manually.
+- **Backend: apt-get update over SSH hung forever**: Rewrote the cache-refresh step in `patch_service.py` to use a PTY with a continuous read loop (no more full-buffer deadlock), send the SSH password only when sudo actually asks for it, fail fast when no password is available, and enforce a 90-second deadline. Failures now surface as a visible error in the Agents tab instead of an endless hang.
+
+### Added
+
+- **Agent OS display**: Agents report their installed OS (parsed from `/etc/os-release`). The server stores it per agent token (new auto-migrated `os_*` columns) and the Agents view shows it as a badge next to the agent version.
+
 ## [0.3.3] - 2026-08-07
 
 ### Fixed

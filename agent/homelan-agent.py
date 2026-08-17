@@ -516,12 +516,29 @@ def collect_system_info() -> dict[str, str]:
     Returns:
         Dictionary with 'hostname', 'os', 'arch', 'kernel' keys.
     """
-    return {
+    info = {
         "hostname": socket.gethostname(),
         "os": f"{platform.system()} {platform.release()}",
         "arch": platform.machine(),
         "kernel": platform.release(),
     }
+    try:
+        release: dict[str, str] = {}
+        for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                key, _, value = line.partition("=")
+                release[key.strip()] = value.strip().strip('"').strip("'")
+        if release:
+            pretty = release.get("PRETTY_NAME") or ""
+            fallback = f"{release.get('NAME', '')} {release.get('VERSION_ID', '')}".strip()
+            info["os"] = pretty or fallback or info["os"]
+            info["os_name"] = release.get("NAME") or platform.system()
+            info["os_version"] = release.get("VERSION_ID") or platform.release()
+            if release.get("VERSION_CODENAME"):
+                info["os_codename"] = release["VERSION_CODENAME"]
+    except (OSError, UnicodeDecodeError):
+        pass
+    return info
 
 
 # ---------------------------------------------------------------------------

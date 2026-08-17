@@ -45,6 +45,14 @@ class AgentToken(Base):
     pending_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     pending_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Last reported OS metadata (populated from the agent's /etc/os-release)
+    os_pretty: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    os_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    os_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    os_codename: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    os_arch: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    os_kernel: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     device: Mapped["Device"] = relationship()  # noqa: F821
 
 
