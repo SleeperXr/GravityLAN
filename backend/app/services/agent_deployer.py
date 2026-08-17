@@ -8,21 +8,19 @@ and starts the agent. SSH credentials are never stored.
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import logging
-import time
 import uuid
 from pathlib import Path
 
-import paramiko
+from app.services.ssh_utils import (
+    RemoteRunner,
+    build_connect_kwargs,
+    build_ssh_client,
+    connect_with_gateway_fallback,
+)
 
 logger = logging.getLogger(__name__)
-
-
-class CustomWarningPolicy(paramiko.WarningPolicy):
-    """Custom warning policy for missing host keys to satisfy CodeQL static analysis."""
-    pass
 
 
 def get_agent_script_path() -> Path:
@@ -98,171 +96,7 @@ REMOTE_CONFIG_PATH = f"{REMOTE_BASE_DIR}/agent.conf"
 REMOTE_SERVICE_PATH = "/etc/systemd/system/gravitylan-agent.service"
 
 
-def _load_ssh_key(ssh_key: str):
-    """Try to load an SSH private key from a string using various formats.
-
-    Supports RSA, Ed25519, ECDSA, and DSS. Detects PuTTY keys to provide better errors.
-    """
-    # Check for PuTTY keys which paramiko doesn't support
-    if "PuTTY-User-Key-File" in ssh_key:
-        raise ValueError(
-            "PuTTY-Key (.ppk) detected. Please convert the key using PuTTYgen "
-            "(Export -> Export OpenSSH key) or use a password instead."
-        )
-
-    key_types = [
-        paramiko.RSAKey,
-        paramiko.Ed25519Key,
-        paramiko.ECDSAKey,
-        paramiko.DSSKey
-    ]
-
-    errors = []
-    for key_cls in key_types:
-        try:
-            return key_cls.from_private_key(io.StringIO(ssh_key))
-        except Exception as e:
-            errors.append(f"{key_cls.__name__}: {str(e)}")
-            continue
-
-    raise ValueError(f"Invalid key format or encrypted key (passphrase not supported). Details: {'; '.join(errors)}")
-
-
-def _build_ssh_client() -> paramiko.SSHClient:
-    """Create an SSH client with host key policy based on settings."""
-    from app.config import settings
-    client = paramiko.SSHClient()
-    if settings.ssh_strict_mode:
-        client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.RejectPolicy())
-    else:
-        client.set_missing_host_key_policy(CustomWarningPolicy())
-    return client
-
-
-def _build_connect_kwargs(
-    host_ip: str,
-    ssh_user: str,
-    ssh_port: int,
-    ssh_password: str | None,
-    ssh_key: str | None,
-) -> tuple[dict, str | None]:
-    """Build connection kwargs for paramiko client.connect.
-
-    Returns:
-        (connect_kwargs, error_message_or_None)
-    """
-    connect_kwargs: dict = {
-        "hostname": host_ip,
-        "port": ssh_port,
-        "username": ssh_user,
-        "timeout": 15,
-    }
-
-    if ssh_key:
-        try:
-            connect_kwargs["pkey"] = _load_ssh_key(ssh_key)
-        except ValueError as e:
-            logger.error("SSH private key loading failed: %s", e)
-            return {}, "Invalid SSH key format or encrypted key."
-    elif ssh_password:
-        connect_kwargs["password"] = ssh_password
-    else:
-        return {}, "Neither password nor SSH key provided."
-
-    return connect_kwargs, None
-
-
-async def _connect_with_gateway_fallback(
-    client: paramiko.SSHClient,
-    connect_kwargs: dict,
-    host_ip: str,
-) -> None:
-    """Attempt SSH connection with Docker bridge gateway fallback."""
-    try:
-        client.connect(**connect_kwargs)
-        return
-    except Exception as e:
-        from app.services.docker_service import docker_service
-        gateway = docker_service.get_bridge_gateway()
-        if not gateway or host_ip == gateway:
-            raise e
-
-    logger.info("Direct connection failed. Attempting Host Bypass via bridge gateway: %s", gateway)
-    connect_kwargs["hostname"] = gateway
-    client.connect(**connect_kwargs)
-
-
-class _RemoteRunner:
-    """Executes commands on a remote host via paramiko, handling sudo and timeouts."""
-
-    def __init__(self, client: paramiko.SSHClient, has_sudo: bool, ssh_user: str, ssh_password: str | None):
-        self._client = client
-        self._has_sudo = has_sudo
-        self._ssh_user = ssh_user
-        self._ssh_password = ssh_password
-
-    @property
-    def _needs_sudo_wrap(self) -> bool:
-        return self._has_sudo and self._ssh_user != "root"
-
-    @property
-    def _sudo_password(self) -> str | None:
-        return self._ssh_password if self._needs_sudo_wrap else None
-
-    def run(self, command: str, timeout: int = 15) -> str:
-        """Execute a single command, raising on non-zero exit (except benign 1 for 'not found')."""
-        if self._needs_sudo_wrap and "sudo -S" not in command:
-            command = f"sudo -S bash << 'GRAVITYLAN_SUDO_EOF'\n{command}\nGRAVITYLAN_SUDO_EOF"
-
-        return _exec_impl(self._client, command, timeout, self._sudo_password)
-
-    def run_batch(self, commands: list[str], timeout: int = 15) -> list[str]:
-        """Execute multiple commands sequentially."""
-        results = []
-        for cmd in commands:
-            results.append(self.run(cmd, timeout))
-        return results
-
-    def run_sudo_batch(self, commands: list[str], timeout: int = 15) -> str:
-        """Execute multiple commands in a single sudo heredoc."""
-        if not self._has_sudo or self._ssh_user == "root":
-            return "\n".join(self.run(cmd, timeout) for cmd in commands)
-
-        full_cmd = " && ".join(commands)
-        heredoc = f"sudo -S bash << 'GRAVITYLAN_SUDO_EOF'\nset -e\n{full_cmd}\nGRAVITYLAN_SUDO_EOF"
-        return _exec_impl(self._client, heredoc, timeout, self._ssh_password)
-
-
-def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass: str | None) -> str:
-    """Low-level command execution with sudo password support and timeout handling."""
-    stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
-
-    if sudo_pass and "sudo -S" in command:
-        stdin.write(f"{sudo_pass}\n")
-        stdin.flush()
-
-    start_time = time.time()
-    while not stdout.channel.exit_status_ready():
-        if time.time() - start_time > timeout:
-            stdout.channel.close()
-            raise RuntimeError(f"Command timed out after {timeout}s: {command}")
-        time.sleep(0.1)
-
-    exit_code = stdout.channel.recv_exit_status()
-    out = stdout.read().decode(errors='ignore').strip()
-    err = stderr.read().decode(errors='ignore').strip()
-
-    if exit_code != 0:
-        if exit_code == 1 and ("not found" in err or "no such" in err.lower()):
-            return out
-        logger.warning("Command '%s' failed (exit %d): %s", command, exit_code, err)
-        raise RuntimeError(f"Command failed with exit code {exit_code}: {err or out}")
-
-    return out
-
-
-async def _probe_python(client: paramiko.SSHClient) -> str:
+async def _probe_python(client) -> str:
     """Detect available python3 binary on remote host."""
     try:
         _, stdout, _ = client.exec_command("which python3")
@@ -273,7 +107,7 @@ async def _probe_python(client: paramiko.SSHClient) -> str:
     return "python3"
 
 
-async def _probe_platform(client: paramiko.SSHClient, host_ip: str) -> tuple[bool, bool]:
+async def _probe_platform(client, host_ip: str) -> tuple[bool, bool]:
     """Detect systemd and Synology rc.d availability."""
     _, stdout, _ = client.exec_command("test -d /run/systemd/system && echo 'systemd'", timeout=5)
     has_systemd = stdout.read().decode().strip() == "systemd"
@@ -299,14 +133,15 @@ def _build_cleanup_script(has_systemd: bool, has_syno_rc: bool) -> list[str]:
     return cmds
 
 
-def _stage_file(client: paramiko.SSHClient, tmp_path: str, content: str) -> None:
+def _stage_file(client, tmp_path: str, content: str) -> None:
     """Write content to a remote temp file via heredoc."""
+    from app.services.ssh_utils import _exec_impl
     _exec_impl(client, f"cat > {tmp_path} << 'GRAVITYLAN_EOF'\n{content}\nGRAVITYLAN_EOF", 15, None)
 
 
 def _install_systemd_service(
-    runner: _RemoteRunner,
-    client: paramiko.SSHClient,
+    runner: RemoteRunner,
+    client,
     device_id: int,
     python_path: str,
     remote_agent_path: str,
@@ -337,8 +172,8 @@ def _install_systemd_service(
 
 
 def _install_syno_rc(
-    runner: _RemoteRunner,
-    client: paramiko.SSHClient,
+    runner: RemoteRunner,
+    client,
     device_id: int,
     python_path: str,
     remote_agent_path: str,
@@ -393,14 +228,14 @@ def _build_agent_config(server_url: str, token: str, device_id: int) -> str:
     return json.dumps(config, indent=2)
 
 
-def _is_agent_running(client: paramiko.SSHClient, remote_agent_path: str) -> bool:
+def _is_agent_running(client, remote_agent_path: str) -> bool:
     """Check if agent process is running via ps."""
     _, stdout, _ = client.exec_command(f"ps aux | grep -v grep | grep {remote_agent_path}")
     return stdout.read().decode().strip() != ""
 
 
 async def _nohup_fallback(
-    client: paramiko.SSHClient,
+    client,
     host_ip: str,
     base_dir: str,
     python_path: str,
@@ -454,20 +289,20 @@ async def deploy_agent(
     base_dir = REMOTE_BASE_DIR
     cleanup_msg = ""
 
-    client = _build_ssh_client()
+    client = build_ssh_client()
 
     try:
-        connect_kwargs, err = _build_connect_kwargs(host_ip, ssh_user, ssh_port, ssh_password, ssh_key)
+        connect_kwargs, err = build_connect_kwargs(host_ip, ssh_user, ssh_port, ssh_password, ssh_key)
         if err:
             return False, err, ""
 
-        await _connect_with_gateway_fallback(client, connect_kwargs, host_ip)
+        await connect_with_gateway_fallback(client, connect_kwargs, host_ip)
 
         # Check sudo availability
         _, stdout, _ = client.exec_command("which sudo", timeout=5)
         has_sudo = stdout.channel.recv_exit_status() == 0
 
-        runner = _RemoteRunner(client, has_sudo, ssh_user, ssh_password)
+        runner = RemoteRunner(client, has_sudo, ssh_user, ssh_password)
 
         # Pre-install cleanup
         has_systemd, has_syno_rc = await _probe_platform(client, host_ip)
@@ -512,25 +347,28 @@ async def deploy_agent(
         # Nohup fallback
         return await _nohup_fallback(client, host_ip, base_dir, python_path, REMOTE_AGENT_PATH, server_url, token)
 
-    except paramiko.ssh_exception.BadHostKeyException as exc:
-        msg = f"SSH Host Key verification failed: The host key presented by {host_ip} does not match the stored key in known_hosts."
-        from app.config import settings
-        if settings.ssh_strict_mode:
-            msg += " (SSH Strict Mode is active. Update the known_hosts file inside the server container to match the host key.)"
-        return False, msg, ""
-    except paramiko.ssh_exception.SSHException as exc:
-        err_str = str(exc)
-        from app.config import settings
-        if "not found in known_hosts" in err_str:
-            msg = f"SSH connection rejected: Unknown host key for {host_ip}."
-            if settings.ssh_strict_mode:
-                msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
-            return False, msg, ""
-        logger.error("SSH connection error for %s: %s", host_ip, exc)
-        return False, "SSH connection failed. Please check host availability and port.", ""
-    except paramiko.AuthenticationException:
-        return False, "SSH authentication failed. Please check your credentials.", ""
     except Exception as exc:
+        # Handle specific paramiko exceptions with user-friendly messages
+        import paramiko
+        from app.config import settings
+
+        if isinstance(exc, paramiko.ssh_exception.BadHostKeyException):
+            msg = f"SSH Host Key verification failed: The host key presented by {host_ip} does not match the stored key in known_hosts."
+            if settings.ssh_strict_mode:
+                msg += " (SSH Strict Mode is active. Update the known_hosts file inside the server container to match the host key.)"
+            return False, msg, ""
+        if isinstance(exc, paramiko.ssh_exception.SSHException):
+            err_str = str(exc)
+            if "not found in known_hosts" in err_str:
+                msg = f"SSH connection rejected: Unknown host key for {host_ip}."
+                if settings.ssh_strict_mode:
+                    msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
+                return False, msg, ""
+            logger.error("SSH connection error for %s: %s", host_ip, exc)
+            return False, "SSH connection failed. Please check host availability and port.", ""
+        if isinstance(exc, paramiko.AuthenticationException):
+            return False, "SSH authentication failed. Please check your credentials.", ""
+
         logger.exception("Agent deployment failed")
         return False, "Deployment failed due to an unexpected internal error.", ""
     finally:
@@ -554,20 +392,20 @@ async def remove_agent(
     3. Delete /etc/systemd/system/gravitylan-agent.service.
     4. Delete installation directory.
     """
-    client = _build_ssh_client()
+    client = build_ssh_client()
 
     try:
-        connect_kwargs, err = _build_connect_kwargs(host_ip, ssh_user, ssh_port, ssh_password, ssh_key)
+        connect_kwargs, err = build_connect_kwargs(host_ip, ssh_user, ssh_port, ssh_password, ssh_key)
         if err:
             return False, err
 
-        await _connect_with_gateway_fallback(client, connect_kwargs, host_ip)
+        await connect_with_gateway_fallback(client, connect_kwargs, host_ip)
 
         # Check for sudo
         _, stdout, _ = client.exec_command("which sudo", timeout=5)
         has_sudo = stdout.channel.recv_exit_status() == 0
 
-        runner = _RemoteRunner(client, has_sudo, ssh_user, ssh_password)
+        runner = RemoteRunner(client, has_sudo, ssh_user, ssh_password)
 
         # Scorched earth cleanup
         cleanup_commands = [
@@ -583,25 +421,27 @@ async def remove_agent(
 
         return True, "Agent has been completely removed and all processes stopped."
 
-    except paramiko.ssh_exception.BadHostKeyException as exc:
-        from app.config import settings
-        msg = f"SSH Host Key verification failed: The host key presented by {host_ip} does not match the stored key in known_hosts."
-        if settings.ssh_strict_mode:
-            msg += " (SSH Strict Mode is active. Update the known_hosts file inside the server container to match the host key.)"
-        return False, msg
-    except paramiko.ssh_exception.SSHException as exc:
-        from app.config import settings
-        err_str = str(exc)
-        if "not found in known_hosts" in err_str:
-            msg = f"SSH connection rejected: Unknown host key for {host_ip}."
-            if settings.ssh_strict_mode:
-                msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
-            return False, msg
-        logger.error("SSH connection error during agent removal on %s: %s", host_ip, exc)
-        return False, "SSH connection failed."
-    except paramiko.AuthenticationException:
-        return False, "SSH authentication failed. Please check your credentials."
     except Exception as exc:
+        import paramiko
+        from app.config import settings
+
+        if isinstance(exc, paramiko.ssh_exception.BadHostKeyException):
+            msg = f"SSH Host Key verification failed: The host key presented by {host_ip} does not match the stored key in known_hosts."
+            if settings.ssh_strict_mode:
+                msg += " (SSH Strict Mode is active. Update the known_hosts file inside the server container to match the host key.)"
+            return False, msg
+        if isinstance(exc, paramiko.ssh_exception.SSHException):
+            err_str = str(exc)
+            if "not found in known_hosts" in err_str:
+                msg = f"SSH connection rejected: Unknown host key for {host_ip}."
+                if settings.ssh_strict_mode:
+                    msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
+                return False, msg
+            logger.error("SSH connection error during agent removal on %s: %s", host_ip, exc)
+            return False, "SSH connection failed."
+        if isinstance(exc, paramiko.AuthenticationException):
+            return False, "SSH authentication failed. Please check your credentials."
+
         logger.exception("Agent removal failed")
         return False, "Deinstallation failed due to an unexpected internal error."
     finally:

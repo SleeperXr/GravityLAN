@@ -1,6 +1,6 @@
 """SSH-based service for listing and applying package updates on Linux agents.
 
-Reuses connection logic and warning policy from agent_deployer.py for robustness.
+Reuses connection logic and warning policy from ssh_utils.py for robustness.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 from app.config import settings
-from app.services.agent_deployer import CustomWarningPolicy, _load_ssh_key
+from app.services.ssh_utils import CustomWarningPolicy, _load_ssh_key
 
 logger = logging.getLogger(__name__)
 
