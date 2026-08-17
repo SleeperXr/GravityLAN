@@ -169,7 +169,7 @@ async def list_device_updates(
                 raise e
 
         # 1. Detect Package Manager
-        _, stdout, _ = client.exec_command("which apt-get || which dnf || which yum", timeout=10)
+        _, stdout, _ = client.exec_command("command -v apt-get || command -v dnf || command -v yum", timeout=10)
         pkg_manager_path = stdout.read().decode().strip()
         
         result = {
@@ -177,6 +177,18 @@ async def list_device_updates(
             "packages": [],
             "major_upgrade_available": None
         }
+
+        if not pkg_manager_path:
+            # Diagnostic fallback: report what the target system actually is,
+            # so the UI shows a useful message instead of a generic one.
+            try:
+                _, stdout_os, _ = client.exec_command(
+                    "cat /etc/os-release 2>/dev/null | grep -E '^(PRETTY_NAME|ID|VERSION_ID)=' || echo 'no /etc/os-release'",
+                    timeout=10,
+                )
+                result["detected_os"] = stdout_os.read().decode().strip()
+            except Exception:
+                result["detected_os"] = None
 
         if "apt-get" in pkg_manager_path:
             result["patch_manager"] = "apt"

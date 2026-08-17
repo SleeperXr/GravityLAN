@@ -1,5 +1,6 @@
 import logging
-from sqlalchemy import inspect
+from collections import defaultdict
+from sqlalchemy import inspect, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -42,203 +43,247 @@ MIGRATIONS = [
     ("agent_configs", "enable_patch_check", "BOOLEAN DEFAULT TRUE"),
 ]
 
-async def _clean_corrupted_ip_placeholders(db: AsyncSession):
-    """Repair existing production database records corrupted with 'offline-<MAC>' or placeholder IPs."""
-    from sqlalchemy import select, or_
-    from app.models.device import Device, DiscoveredHost
-    from app.scanner.hostname import is_ip_like
+KNOWN_CONTAINER_IPS = {
+    27: "192.168.100.241", # NPM / NGINX Proxy Manager
+    30: "192.168.100.253", # Lancache
+    35: "192.168.100.240", # netboot
+    36: "192.168.100.230", # paperless-ngx
+    37: "192.168.100.18",  # Redis
+    38: "192.168.100.19",  # postgresql17
+    39: "192.168.100.231", # Nextcloud
+}
+
+RECONCILIATION_KEYWORD_MAP = {
+    "unraid": "192.168.100.252",
+    "lancache": "192.168.100.253",
+    "termix": "192.168.100.246",
+    "nextcloud": "192.168.100.231",
+    "redis": "192.168.100.18",
+    "netboot": "192.168.100.240",
+    "postgresql": "192.168.100.19",
+    "paperless": "192.168.100.230",
+    "nginx": "192.168.100.241",
+    "npm": "192.168.100.241",
+}
+
+
+def _fuzzy_match(n1: str, n2: str) -> bool:
+    if not n1 or not n2: return False
+    s1 = n1.lower().replace("-", "").replace("_", "").replace(" ", "")
+    s2 = n2.lower().replace("-", "").replace("_", "").replace(" ", "")
+    return s1 in s2 or s2 in s1
+
+
+def _build_docker_container_map() -> dict:
+    """Map running local Docker container names (lowercase) to their first IP."""
     from app.services.docker_service import docker_service
 
-    # Try mapping running Docker containers by container name
     docker_container_map = {}
-    if docker_service.is_available():
-        try:
-            local_containers = docker_service.get_local_containers()
-            for c in local_containers:
-                c_name = c.get("name")
-                c_ips = c.get("ips", [])
-                c_status = c.get("status")
-                if c_name and c_ips and c_status == "running":
-                    docker_container_map[c_name.lower()] = c_ips[0]
-            if docker_container_map:
-                logger.info(f"Migration: Docker socket active. Found {len(docker_container_map)} running containers: {list(docker_container_map.keys())}")
-        except Exception as e:
-            logger.warning(f"Migration: Could not fetch local docker containers: {e}")
+    if not docker_service.is_available():
+        return docker_container_map
+    try:
+        for c in docker_service.get_local_containers():
+            c_name = c.get("name")
+            c_ips = c.get("ips", [])
+            if c_name and c_ips and c.get("status") == "running":
+                docker_container_map[c_name.lower()] = c_ips[0]
+        if docker_container_map:
+            logger.info(f"Migration: Docker socket active. Found {len(docker_container_map)} running containers: {list(docker_container_map.keys())}")
+    except Exception as e:
+        logger.warning(f"Migration: Could not fetch local docker containers: {e}")
+    return docker_container_map
 
-    KNOWN_CONTAINER_IPS = {
-        27: "192.168.100.241", # NPM / NGINX Proxy Manager
-        30: "192.168.100.253", # Lancache
-        35: "192.168.100.240", # netboot
-        36: "192.168.100.230", # paperless-ngx
-        37: "192.168.100.18",  # Redis
-        38: "192.168.100.19",  # postgresql17
-        39: "192.168.100.231", # Nextcloud
-    }
 
-    RECONCILIATION_KEYWORD_MAP = {
-        "unraid": "192.168.100.252",
-        "lancache": "192.168.100.253",
-        "termix": "192.168.100.246",
-        "nextcloud": "192.168.100.231",
-        "redis": "192.168.100.18",
-        "netboot": "192.168.100.240",
-        "postgresql": "192.168.100.19",
-        "paperless": "192.168.100.230",
-        "nginx": "192.168.100.241",
-        "npm": "192.168.100.241",
-    }
+def _is_free(candidate: str, used_ips: set, old_corrupted_ip: str) -> bool:
+    """A candidate IP is usable if unused or if it is the record's own current IP."""
+    return candidate not in used_ips or candidate == old_corrupted_ip
 
-    def _fuzzy_match(n1: str, n2: str) -> bool:
-        if not n1 or not n2: return False
-        s1 = n1.lower().replace("-", "").replace("_", "").replace(" ", "")
-        s2 = n2.lower().replace("-", "").replace("_", "").replace(" ", "")
-        return s1 in s2 or s2 in s1
 
-    # 1. Clean Devices
+def _next_free_placeholder_ip(used_ips: set) -> str:
+    counter = 0
+    while True:
+        candidate = f"0.0.0.{counter}"
+        if candidate not in used_ips:
+            return candidate
+        counter += 1
+
+
+def _ip_from_known_id(dev, used_ips: set, old_corrupted_ip: str):
+    """1a. Explicit container-ID mapping."""
+    target_ip = KNOWN_CONTAINER_IPS.get(dev.id)
+    if target_ip and _is_free(target_ip, used_ips, old_corrupted_ip):
+        return target_ip
+    return None
+
+
+def _ip_from_keywords(dev_name: str, used_ips: set, old_corrupted_ip: str):
+    """1b. Keyword reconciliation map."""
+    if not dev_name:
+        return None
+    for kw, kw_ip in RECONCILIATION_KEYWORD_MAP.items():
+        if kw in dev_name and _is_free(kw_ip, used_ips, old_corrupted_ip):
+            return kw_ip
+    return None
+
+
+def _ip_from_docker_fuzzy(dev_name: str, docker_map: dict, used_ips: set, old_corrupted_ip: str):
+    """1c. Fuzzy match against running Docker container names."""
+    for c_name, c_ip in docker_map.items():
+        if _fuzzy_match(dev_name, c_name) and _is_free(c_ip, used_ips, old_corrupted_ip):
+            return c_ip
+    return None
+
+
+def _restorable_old_ip(dev, used_ips: set):
+    """1d. Restore old_ip if it is a valid, free IP."""
+    from app.scanner.hostname import is_ip_like
+
+    old_ip = dev.old_ip
+    if not old_ip or old_ip.startswith("offline-") or not is_ip_like(old_ip):
+        return None
+    if old_ip in used_ips:
+        return None
+    return old_ip
+
+
+def _resolve_device_repair(dev, used_ips: set, docker_map: dict):
+    """Find a safe replacement for a corrupted Device.
+
+    Returns (safe_ip, is_online, ip_placeholder) or None when only the
+    unique-placeholder fallback applies.
+    """
+    dev_name = (dev.display_name or dev.hostname or "").lower()
+
+    for safe_ip in (
+        _ip_from_known_id(dev, used_ips, dev.ip),
+        _ip_from_keywords(dev_name, used_ips, dev.ip),
+        _ip_from_docker_fuzzy(dev_name, docker_map, used_ips, dev.ip),
+    ):
+        if safe_ip:
+            return safe_ip, True, False
+
+    old_ip = _restorable_old_ip(dev, used_ips)
+    if old_ip:
+        return old_ip, False, True
+    return None
+
+
+def _apply_repair(record, safe_ip: str, used_ips: set, old_corrupted_ip: str):
+    """Swap the corrupted IP for the safe one and keep the used-set consistent."""
+    used_ips.discard(old_corrupted_ip)
+    used_ips.add(safe_ip)
+    record.ip = safe_ip
+
+
+async def _repair_corrupted_devices(db: AsyncSession, docker_map: dict):
+    from app.models.device import Device
+
     res_devs = await db.execute(select(Device).where(or_(Device.ip.like("offline-%"), Device.ip_placeholder == True)))
     corrupted_devs = res_devs.scalars().all()
-    if corrupted_devs:
-        logger.info(f"Migration: Cleaning {len(corrupted_devs)} corrupted/placeholder Device records...")
-        res_all_ips = await db.execute(select(Device.ip))
-        used_ips = set(res_all_ips.scalars().all())
+    if not corrupted_devs:
+        return
 
-        for dev in corrupted_devs:
-            old_corrupted_ip = dev.ip
-            safe_ip = None
-            dev_name = (dev.display_name or dev.hostname or "").lower()
-            
-            # 1a. Try explicit ID mapping first
-            if dev.id in KNOWN_CONTAINER_IPS:
-                target_ip = KNOWN_CONTAINER_IPS[dev.id]
-                if target_ip not in used_ips or target_ip == old_corrupted_ip:
-                    safe_ip = target_ip
-                    dev.is_online = True
-                    dev.ip_placeholder = False
+    logger.info(f"Migration: Cleaning {len(corrupted_devs)} corrupted/placeholder Device records...")
+    res_all_ips = await db.execute(select(Device.ip))
+    used_ips = set(res_all_ips.scalars().all())
 
-            # 1b. Try keyword reconciliation map
-            if not safe_ip and dev_name:
-                for kw, kw_ip in RECONCILIATION_KEYWORD_MAP.items():
-                    if kw in dev_name:
-                        if kw_ip not in used_ips or kw_ip == old_corrupted_ip:
-                            safe_ip = kw_ip
-                            dev.is_online = True
-                            dev.ip_placeholder = False
-                            break
+    for dev in corrupted_devs:
+        old_corrupted_ip = dev.ip
+        repair = _resolve_device_repair(dev, used_ips, docker_map)
+        if repair:
+            safe_ip, dev.is_online, dev.ip_placeholder = repair
+        else:
+            safe_ip = _next_free_placeholder_ip(used_ips)
+            dev.is_online = False
+            dev.ip_placeholder = True
 
-            # 1c. Try matching running Docker container by name (fuzzy)
-            if not safe_ip:
-                for c_name, c_ip in docker_container_map.items():
-                    if _fuzzy_match(dev_name, c_name):
-                        if c_ip not in used_ips or c_ip == old_corrupted_ip:
-                            safe_ip = c_ip
-                            dev.is_online = True
-                            dev.ip_placeholder = False
-                            break
+        _apply_repair(dev, safe_ip, used_ips, old_corrupted_ip)
+        logger.info(f"Migration: Repaired Device id={dev.id} ({dev.display_name}) IP to {dev.ip} (online={dev.is_online})")
 
-            # 1c. Try restoring old_ip if valid and free
-            if not safe_ip and dev.old_ip and not dev.old_ip.startswith("offline-") and is_ip_like(dev.old_ip):
-                if dev.old_ip not in used_ips:
-                    safe_ip = dev.old_ip
-                    dev.is_online = False
-                    dev.ip_placeholder = True
 
-            # 1d. Fallback to unique 0.0.0.x IP
-            if not safe_ip:
-                dev.is_online = False
-                dev.ip_placeholder = True
-                counter = 0
-                while True:
-                    candidate = f"0.0.0.{counter}"
-                    if candidate not in used_ips:
-                        safe_ip = candidate
-                        break
-                    counter += 1
+async def _repair_corrupted_discovered_hosts(db: AsyncSession, docker_map: dict):
+    from app.models.device import DiscoveredHost
 
-            if old_corrupted_ip in used_ips:
-                used_ips.remove(old_corrupted_ip)
-            used_ips.add(safe_ip)
-            dev.ip = safe_ip
-            logger.info(f"Migration: Repaired Device id={dev.id} ({dev.display_name}) IP to {dev.ip} (online={dev.is_online})")
-
-    # 2. Clean DiscoveredHosts
     res_disc = await db.execute(select(DiscoveredHost).where(or_(DiscoveredHost.ip.like("offline-%"), DiscoveredHost.ip_placeholder == True)))
     corrupted_disc = res_disc.scalars().all()
-    if corrupted_disc:
-        logger.info(f"Migration: Cleaning {len(corrupted_disc)} corrupted/placeholder DiscoveredHost records...")
-        res_all_disc_ips = await db.execute(select(DiscoveredHost.ip))
-        used_disc_ips = set(res_all_disc_ips.scalars().all())
+    if not corrupted_disc:
+        return
 
-        for disc in corrupted_disc:
-            old_corrupted_ip = disc.ip
-            safe_ip = None
-            disc_name = (disc.custom_name or disc.hostname or "").lower()
-            
-            if disc_name and disc_name in docker_container_map:
-                docker_ip = docker_container_map[disc_name]
-                if docker_ip not in used_disc_ips or docker_ip == old_corrupted_ip:
-                    safe_ip = docker_ip
-                    disc.is_online = True
-                    disc.ip_placeholder = False
+    logger.info(f"Migration: Cleaning {len(corrupted_disc)} corrupted/placeholder DiscoveredHost records...")
+    res_all_disc_ips = await db.execute(select(DiscoveredHost.ip))
+    used_disc_ips = set(res_all_disc_ips.scalars().all())
 
-            if not safe_ip:
-                disc.is_online = False
-                disc.ip_placeholder = True
-                counter = 0
-                while True:
-                    candidate = f"0.0.0.{counter}"
-                    if candidate not in used_disc_ips:
-                        safe_ip = candidate
-                        break
-                    counter += 1
+    for disc in corrupted_disc:
+        old_corrupted_ip = disc.ip
+        disc_name = (disc.custom_name or disc.hostname or "").lower()
 
-            if old_corrupted_ip in used_disc_ips:
-                used_disc_ips.remove(old_corrupted_ip)
-            used_disc_ips.add(safe_ip)
-            disc.ip = safe_ip
-            logger.info(f"Migration: Repaired DiscoveredHost id={disc.id} IP to {disc.ip}")
+        docker_ip = docker_map.get(disc_name) if disc_name else None
+        if docker_ip and _is_free(docker_ip, used_disc_ips, old_corrupted_ip):
+            safe_ip = docker_ip
+            disc.is_online = True
+            disc.ip_placeholder = False
+        else:
+            safe_ip = _next_free_placeholder_ip(used_disc_ips)
+            disc.is_online = False
+            disc.ip_placeholder = True
+
+        _apply_repair(disc, safe_ip, used_disc_ips, old_corrupted_ip)
+        logger.info(f"Migration: Repaired DiscoveredHost id={disc.id} IP to {disc.ip}")
+
+
+async def _clean_corrupted_ip_placeholders(db: AsyncSession):
+    """Repair existing production database records corrupted with 'offline-<MAC>' or placeholder IPs."""
+    docker_map = _build_docker_container_map()
+    await _repair_corrupted_devices(db, docker_map)
+    await _repair_corrupted_discovered_hosts(db, docker_map)
+
+
+def _migrations_by_table() -> dict:
+    migrations_by_table = defaultdict(list)
+    for table, column, col_type in MIGRATIONS:
+        migrations_by_table[table].append((column, col_type))
+    return migrations_by_table
+
+
+async def _get_existing_columns(raw_conn, table: str):
+    """Column names of a table, or None if the table does not exist yet."""
+    def check_table_and_columns(sync_conn):
+        inspector = inspect(sync_conn)
+        if not inspector.has_table(table):
+            return None
+        return {col["name"] for col in inspector.get_columns(table)}
+
+    return await raw_conn.run_sync(check_table_and_columns)
+
+
+async def _apply_table_migrations(raw_conn, table: str, cols: list):
+    existing_columns = await _get_existing_columns(raw_conn, table)
+    if existing_columns is None:
+        logger.info(f"Migration: Table '{table}' does not exist yet. It will be created by init_db. Skipping migrations for it.")
+        return
+
+    for column, col_type in cols:
+        if column not in existing_columns:
+            logger.info(f"Migration: Adding column '{column}' to '{table}'...")
+            await raw_conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+            logger.info(f"Migration: Column '{column}' added successfully to '{table}'.")
+
 
 async def run_migrations(db: AsyncSession):
     """Run schema migrations for SQLite or any alternative database.
-    
-    This handles adding missing columns to existing tables without breaking 
+
+    This handles adding missing columns to existing tables without breaking
     compatibility for users with older database versions. Uses a dialect-agnostic
     SQLAlchemy Inspector approach.
     """
     raw_conn = await db.connection()
-    
-    # Group migrations by table to run inspection only once per table
-    from collections import defaultdict
-    migrations_by_table = defaultdict(list)
-    for table, column, col_type in MIGRATIONS:
-        migrations_by_table[table].append((column, col_type))
-        
-    for table, cols in migrations_by_table.items():
+
+    for table, cols in _migrations_by_table().items():
         try:
-            # Dialect-agnostic column inspection using SQLAlchemy run_sync
-            def check_table_and_columns(sync_conn):
-                inspector = inspect(sync_conn)
-                if not inspector.has_table(table):
-                    return None
-                return {col["name"] for col in inspector.get_columns(table)}
-
-            table_info = await raw_conn.run_sync(check_table_and_columns)
-            
-            if table_info is None:
-                logger.info(f"Migration: Table '{table}' does not exist yet. It will be created by init_db. Skipping migrations for it.")
-                continue
-
-            existing_columns = table_info
-            
-            for column, col_type in cols:
-                if column not in existing_columns:
-                    logger.info(f"Migration: Adding column '{column}' to '{table}'...")
-                    await raw_conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
-                    logger.info(f"Migration: Column '{column}' added successfully to '{table}'.")
+            await _apply_table_migrations(raw_conn, table, cols)
         except Exception as e:
             logger.error(f"Migration error on table '{table}': {e}")
-            
+
     await _clean_corrupted_ip_placeholders(db)
     await db.commit()
     logger.info("Schema migration complete.")
-
-

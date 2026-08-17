@@ -1243,17 +1243,30 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
     await websocket.send_text("[Info] Starting update session...\r\n")
     await websocket.send_text("[Info] Detecting target system configuration...\r\n")
     
-    probe = await list_device_updates(
-        host_ip=host_ip,
-        ssh_user=ssh_user,
-        ssh_password=ssh_password,
-        ssh_key=ssh_key,
-        ssh_port=ssh_port
-    )
+    try:
+        probe = await list_device_updates(
+            host_ip=host_ip,
+            ssh_user=ssh_user,
+            ssh_password=ssh_password,
+            ssh_key=ssh_key,
+            ssh_port=ssh_port
+        )
+    except Exception as e:
+        logger.exception("SSH probe failed for device %s", device_id)
+        await websocket.send_text(f"[Error] SSH probe failed: {e}\r\n")
+        await websocket.close()
+        return
     
     pkg_manager = probe.get("patch_manager")
     if not pkg_manager:
-        await websocket.send_text("[Error] Unsupported package manager or system type.\r\n")
+        probe_error = probe.get("error")
+        if probe_error:
+            await websocket.send_text(f"[Error] {probe_error}\r\n")
+        else:
+            detected_os = probe.get("detected_os")
+            detail = detected_os or "no recognizable package manager found"
+            await websocket.send_text("[Error] Unsupported package manager or system type.\r\n")
+            await websocket.send_text(f"[Info] Target system reports: {detail}\r\n")
         await websocket.close()
         return
 

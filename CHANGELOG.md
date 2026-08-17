@@ -13,6 +13,13 @@ All notable changes to this project will be documented in this file.
 
 - **Agent OS display**: Agents report their installed OS (parsed from `/etc/os-release`). The server stores it per agent token (new auto-migrated `os_*` columns) and the Agents view shows it as a badge next to the agent version.
 
+### Refactored (Code Health)
+
+- **Scanner Planner (`planner.py`)**: Split `run_planner_scan` into focused helpers (`_cleanup_devices`, `_cleanup_discovered_hosts`, `_mark_device_offline`, `_load_allowed_networks`, `_parse_subnet_list`). All fixable findings cleared (nested_complexity, complex_method, function_hotspot, untested_hotspot). 17 tests.
+- **Dashboard Scanner (`dashboard.py`)**: Refactored `run_dashboard_scan` into a 30-line orchestrator with extracted phases (`_run_discovery_phase`, `_run_health_phase`, `_sync_local_docker_containers`, `_discover_subnet_safely`, `_check_health_batch`). Reuses `_mark_device_offline` from planner. All fixable findings cleared. 7 tests.
+- **Database Migrations (`migrations.py`)**: Split `run_migrations` into table-scoped pipeline (`_migrations_by_table`, `_repair_corrupted_devices`, `_repair_corrupted_discovered_hosts`, `_apply_table_migrations`). Deduplicated IP resolution logic. All fixable findings cleared. 8 tests.
+- **Agent Deployer (`agent_deployer.py`)**: Introduced `_RemoteRunner` class, shared SSH helpers (`_build_ssh_client`, `_build_connect_kwargs`, `_connect_with_gateway_fallback`), and split `deploy_agent`/`remove_agent` into phased operations. Eliminates dry_violation and reduces nested complexity. All security tests pass.
+
 ## [0.3.3] - 2026-08-07
 
 ### Fixed
