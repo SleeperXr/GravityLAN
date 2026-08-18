@@ -48,17 +48,151 @@ class SetupCompleteRequest(BaseModel):
     dns_server: str | None = None
     admin_password: str | None = None
 
+
+def _adoptable_in_physical_network(host, physical_networks) -> bool:
+    """Return True when the host IP belongs to one of the physical networks."""
+    import ipaddress
+    try:
+        ip_obj = ipaddress.IPv4Address(host.ip)
+        return any(ip_obj in net for net in physical_networks)
+    except (ValueError, OSError):
+        return False
+
+
+async def _process_discovered_host(host, group_map, existing_ips, physical_networks, dns_server):
+    """Classify and package one discovered host into a (device, services, host) tuple or None."""
+    from app.models.device import Device, Service
+    from app.scanner.classifier import classify_device
+    from app.scanner.hostname import resolve_hostname, is_ip_like
+    from app.scanner.port_scanner import scan_ports, DEFAULT_SCAN_PORTS
+    from app.scanner.utils import GROUP_TYPE_MAP
+
+    # FILTER: Only adopt if in a physical network
+    if not _adoptable_in_physical_network(host, physical_networks):
+        logger.debug(f"Setup: Skipping {host.ip} - not in a physical network.")
+        return None
+
+    if host.ip in existing_ips:
+        return None
+
+    # Full discovery of key ports for better classification
+    found_ports = await scan_ports(host.ip, ports=DEFAULT_SCAN_PORTS, timeout=0.4)
+
+    # Try hostname resolution again if missing or just an IP
+    current_hostname = host.hostname
+    if is_ip_like(current_hostname):
+        new_hname = await resolve_hostname(host.ip, timeout=1.5, dns_server=dns_server)
+        if new_hname:
+            current_hostname = new_hname
+            host.hostname = new_hname
+
+    classified = classify_device({
+        "ip": host.ip,
+        "hostname": current_hostname,
+        "mac": host.mac,
+        "ports": found_ports
+    }) or {"device_type": "unknown", "device_subtype": "Unknown", "services": []}
+
+    device_type = classified.get("device_type", "unknown")
+    group_name = GROUP_TYPE_MAP.get(device_type, "Newly discovered")
+    group_id = group_map.get(group_name, group_map.get("Newly discovered"))
+
+    # Format display name (strip domain)
+    display_name = host.ip
+    if current_hostname and not is_ip_like(current_hostname):
+        display_name = current_hostname.split('.')[0]
+    elif host.custom_name:
+        display_name = host.custom_name
+
+    device = Device(
+        ip=host.ip, mac=host.mac, hostname=current_hostname, display_name=display_name,
+        device_type=device_type, device_subtype=classified.get("device_subtype", "Unknown"),
+        vendor=host.vendor, group_id=group_id, is_online=True
+    )
+
+    services = []
+    if "services" in classified:
+        for svc_data in classified["services"]:
+            services.append(Service(
+                name=svc_data["name"], protocol=svc_data["protocol"], port=svc_data["port"],
+                url_template=svc_data["url_template"], color=svc_data.get("color"),
+                is_auto_detected=True, is_up=True
+            ))
+
+    # CRITICAL: Only add device if it has at least one service
+    if not services:
+        logger.info(f"Setup: Skipping auto-adoption for {host.ip} (No services found)")
+        return None
+
+    return (device, services, host)
+
+
+async def _register_physical_subnets(db, local_subnets) -> None:
+    """Add physical subnets to the Network Planner if not already registered."""
+    from app.models.network import Subnet
+    for net in local_subnets:
+        if net.is_virtual:
+            continue
+        res_sub = await db.execute(select(Subnet).where(Subnet.cidr == net.subnet))
+        if not res_sub.scalar_one_or_none():
+            logger.info(f"Setup: Registering physical subnet {net.subnet} in Planner.")
+            db.add(Subnet(
+                name=net.interface_name,
+                cidr=net.subnet,
+                is_enabled=True
+            ))
+    await db.flush()
+
+
+async def _adopt_discovered_hosts(db, dns_server: str | None) -> None:
+    """Automatically add all discovered online hosts to the dashboard."""
+    import asyncio
+    import ipaddress
+    from app.models.device import DiscoveredHost, Device
+    from app.scanner.utils import ensure_default_groups, get_local_subnets
+
+    host_result = await db.execute(select(DiscoveredHost).where(DiscoveredHost.is_online == True))
+    discovered_hosts = host_result.scalars().all()
+    if not discovered_hosts:
+        return
+
+    group_map = await ensure_default_groups(db, commit=False)
+    local_subnets = get_local_subnets()
+    physical_networks = [ipaddress.ip_network(s.subnet) for s in local_subnets if not s.is_virtual]
+
+    # Avoid IP duplicates
+    existing_res = await db.execute(select(Device.ip))
+    existing_ips = set(existing_res.scalars().all())
+
+    # Process all hosts in parallel
+    tasks = [_process_discovered_host(h, group_map, existing_ips, physical_networks, dns_server) for h in discovered_hosts]
+    results = await asyncio.gather(*tasks)
+
+    # 2b. Add physical subnets to Network Planner
+    await _register_physical_subnets(db, local_subnets)
+
+    # 3. Process hosts
+    for res in results:
+        if not res:
+            continue
+        device, services, host = res
+
+        db.add(device)
+        await db.flush()
+        for svc in services:
+            svc.device_id = device.id
+            db.add(svc)
+
+        # Update discovered host status
+        host.is_monitored = True
+        db.add(host)
+
+
 @router.post("/complete")
 async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = Depends(get_db)) -> dict:
     """Mark the initial setup as completed and migrate discovered hosts."""
     logger.info(f"mark_setup_complete called: has_password={request.admin_password is not None}")
     
-    from app.models.device import DiscoveredHost, Device, Service
-    import ipaddress
-    from app.scanner.utils import ensure_default_groups, GROUP_TYPE_MAP
-    from app.scanner.classifier import classify_device
-    from app.scanner.hostname import resolve_hostname, is_ip_like
-    from app.scanner.port_scanner import scan_ports
     from app.models.setting import Setting
     from app.services.auth_service import hash_password
     
@@ -106,123 +240,8 @@ async def mark_setup_complete(request: SetupCompleteRequest, db: AsyncSession = 
     # 2. Commit basic settings and token now so the user can login even if migration takes long
     await db.commit()
 
-    # Start a new transaction for host processing
-    dns_server = request.dns_server
-    
     # 3. Automatically add all discovered online hosts to the dashboard
-    host_result = await db.execute(select(DiscoveredHost).where(DiscoveredHost.is_online == True))
-    discovered_hosts = host_result.scalars().all()
-    
-    if discovered_hosts:
-        import asyncio
-        from app.scanner.utils import ensure_default_groups, get_local_subnets
-        from app.scanner.port_scanner import scan_ports, DEFAULT_SCAN_PORTS
-        
-        group_map = await ensure_default_groups(db, commit=False)
-        local_subnets = get_local_subnets()
-        physical_networks = [ipaddress.ip_network(s.subnet) for s in local_subnets if not s.is_virtual]
-        
-        # Avoid IP duplicates
-        existing_res = await db.execute(select(Device.ip))
-        existing_ips = set(existing_res.scalars().all())
-        
-        async def process_host(host):
-            # FILTER: Only adopt if in a physical network
-            try:
-                ip_obj = ipaddress.IPv4Address(host.ip)
-                if not any(ip_obj in net for net in physical_networks):
-                    logger.debug(f"Setup: Skipping {host.ip} - not in a physical network.")
-                    return None
-            except (ValueError, OSError):
-                return None
-
-            if host.ip in existing_ips:
-                return None
-                
-            # Full discovery of key ports for better classification
-            found_ports = await scan_ports(host.ip, ports=DEFAULT_SCAN_PORTS, timeout=0.4)
-            
-            # Try hostname resolution again if missing or just an IP
-            current_hostname = host.hostname
-            if is_ip_like(current_hostname):
-                new_hname = await resolve_hostname(host.ip, timeout=1.5, dns_server=dns_server)
-                if new_hname:
-                    current_hostname = new_hname
-                    host.hostname = new_hname
-
-            classified = classify_device({
-                "ip": host.ip, 
-                "hostname": current_hostname, 
-                "mac": host.mac, 
-                "ports": found_ports
-            }) or {"device_type": "unknown", "device_subtype": "Unknown", "services": []}
-            
-            device_type = classified.get("device_type", "unknown")
-            group_name = GROUP_TYPE_MAP.get(device_type, "Newly discovered")
-            group_id = group_map.get(group_name, group_map.get("Newly discovered"))
-            
-            # Format display name (strip domain)
-            display_name = host.ip
-            if current_hostname and not is_ip_like(current_hostname):
-                display_name = current_hostname.split('.')[0]
-            elif host.custom_name:
-                display_name = host.custom_name
-            
-            device = Device(
-                ip=host.ip, mac=host.mac, hostname=current_hostname, display_name=display_name,
-                device_type=device_type, device_subtype=classified.get("device_subtype", "Unknown"),
-                vendor=host.vendor, group_id=group_id, is_online=True
-            )
-            
-            services = []
-            if "services" in classified:
-                for svc_data in classified["services"]:
-                    services.append(Service(
-                        name=svc_data["name"], protocol=svc_data["protocol"], port=svc_data["port"],
-                        url_template=svc_data["url_template"], color=svc_data.get("color"),
-                        is_auto_detected=True, is_up=True
-                    ))
-            
-            # CRITICAL: Only add device if it has at least one service
-            if not services:
-                logger.info(f"Setup: Skipping auto-adoption for {host.ip} (No services found)")
-                return None
-            
-            return (device, services, host)
-
-        # Process all hosts in parallel
-        tasks = [process_host(h) for h in discovered_hosts]
-        results = await asyncio.gather(*tasks)
-        
-        # 2b. Add physical subnets to Network Planner
-        from app.models.network import Subnet
-        for net in local_subnets:
-            if not net.is_virtual:
-                # Check if already exists
-                res_sub = await db.execute(select(Subnet).where(Subnet.cidr == net.subnet))
-                if not res_sub.scalar_one_or_none():
-                    logger.info(f"Setup: Registering physical subnet {net.subnet} in Planner.")
-                    db.add(Subnet(
-                        name=net.interface_name,
-                        cidr=net.subnet,
-                        is_enabled=True
-                    ))
-        await db.flush()
-
-        # 3. Process hosts
-        for res in results:
-            if not res: continue
-            device, services, host = res
-            
-            db.add(device)
-            await db.flush()
-            for svc in services:
-                svc.device_id = device.id
-                db.add(svc)
-            
-            # Update discovered host status
-            host.is_monitored = True
-            db.add(host)
+    await _adopt_discovered_hosts(db, request.dns_server)
 
     await db.commit()
     return {"status": "ok"}

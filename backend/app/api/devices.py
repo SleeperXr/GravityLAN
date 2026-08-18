@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 from datetime import datetime, timezone
@@ -317,7 +316,6 @@ async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=404, detail="Device not found")
     
     # 1. Try to resolve Hostname (FQDN)
-    from app.scanner.hostname import resolve_hostname
     from app.models.setting import Setting
     
     # Get DNS server from settings
@@ -357,6 +355,68 @@ async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db)
         dashboard_cache.invalidate_all()
         topology_cache.invalidate()
     return device
+
+def _mark_auto_services(device, open_ports: list[int]) -> None:
+    """Mark existing auto-detected services as up/down based on the scan result."""
+    for svc in device.services:
+        if svc.is_auto_detected:
+            svc.is_up = svc.port in open_ports
+            svc.last_checked = datetime.now(timezone.utc)
+
+
+def _apply_classification_services(db, device, classification) -> set[int]:
+    """Create/update services from the classification templates; returns handled ports."""
+    found_ports_handled = set()
+    if not (classification and "services" in classification):
+        return found_ports_handled
+
+    for svc_data in classification["services"]:
+        found_ports_handled.add(svc_data["port"])
+        existing_svc = next((s for s in device.services if s.port == svc_data["port"]), None)
+        if not existing_svc:
+            db.add(Service(
+                device_id=device.id,
+                name=svc_data["name"],
+                protocol=svc_data["protocol"],
+                port=svc_data["port"],
+                url_template=svc_data["url_template"],
+                color=svc_data.get("color", "#34495e"),
+                is_up=True,
+                is_auto_detected=True,
+                last_checked=datetime.now(timezone.utc)
+            ))
+        else:
+            # Update existing
+            existing_svc.is_up = True
+            if existing_svc.is_auto_detected:
+                if existing_svc.name.startswith("Service "):
+                    existing_svc.name = svc_data["name"]
+                if not existing_svc.color or existing_svc.color == "#34495e":
+                    existing_svc.color = svc_data.get("color")
+    return found_ports_handled
+
+
+def _add_missing_services(db, device, open_ports: list[int], found_ports_handled: set[int]) -> None:
+    """Add any port nmap found but classification skipped."""
+    for port in open_ports:
+        if port in found_ports_handled:
+            continue
+        existing_svc = next((s for s in device.services if s.port == port), None)
+        if not existing_svc:
+            db.add(Service(
+                device_id=device.id,
+                name=f"Service {port}",
+                protocol="tcp",
+                port=port,
+                url_template=f"http://{{ip}}:{port}",
+                color="#34495e",
+                is_up=True,
+                is_auto_detected=True,
+                last_checked=datetime.now(timezone.utc)
+            ))
+        else:
+            existing_svc.is_up = True
+
 
 @router.post("/{device_id}/refresh-services", response_model=DeviceResponse)
 async def refresh_device_services(device_id: int, db: AsyncSession = Depends(get_db), commit: bool = True) -> DeviceResponse:
@@ -398,57 +458,11 @@ async def refresh_device_services(device_id: int, db: AsyncSession = Depends(get
             device.icon = classification.get("icon")
 
     # 3. Update services in DB
-    # Mark existing auto-detected services as down if port not found
-    for svc in device.services:
-        if svc.is_auto_detected:
-            svc.is_up = svc.port in open_ports
-            svc.last_checked = datetime.now(timezone.utc)
-    
-    # 4. Add found ports. First use classification, then add anything else missing.
-    found_ports_handled = set()
-    
-    # Process classification templates first (better names/icons)
-    if classification and "services" in classification:
-        for svc_data in classification["services"]:
-            found_ports_handled.add(svc_data["port"])
-            existing_svc = next((s for s in device.services if s.port == svc_data["port"]), None)
-            if not existing_svc:
-                db.add(Service(
-                    device_id=device.id,
-                    name=svc_data["name"],
-                    protocol=svc_data["protocol"],
-                    port=svc_data["port"],
-                    url_template=svc_data["url_template"],
-                    color=svc_data.get("color", "#34495e"),
-                    is_up=True,
-                    is_auto_detected=True,
-                    last_checked=datetime.now(timezone.utc)
-                ))
-            else:
-                # Update existing
-                existing_svc.is_up = True
-                if existing_svc.is_auto_detected:
-                    if existing_svc.name.startswith("Service "): existing_svc.name = svc_data["name"]
-                    if not existing_svc.color or existing_svc.color == "#34495e": existing_svc.color = svc_data.get("color")
+    _mark_auto_services(device, open_ports)
 
-    # Now add ANY other port that nmap found but classification skipped
-    for port in open_ports:
-        if port not in found_ports_handled:
-            existing_svc = next((s for s in device.services if s.port == port), None)
-            if not existing_svc:
-                db.add(Service(
-                    device_id=device.id,
-                    name=f"Service {port}",
-                    protocol="tcp",
-                    port=port,
-                    url_template=f"http://{{ip}}:{port}",
-                    color="#34495e",
-                    is_up=True,
-                    is_auto_detected=True,
-                    last_checked=datetime.now(timezone.utc)
-                ))
-            else:
-                existing_svc.is_up = True
+    # 4. Add found ports. First use classification, then add anything else missing.
+    found_ports_handled = _apply_classification_services(db, device, classification)
+    _add_missing_services(db, device, open_ports, found_ports_handled)
 
     if commit:
         await db.commit()

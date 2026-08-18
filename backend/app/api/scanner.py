@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
 from app.api.auth import get_current_admin
@@ -271,6 +270,37 @@ async def stop_scan() -> Dict[str, str]:
     state.cancel_event.set()
     return {"status": "cancelling"}
 
+def _normalize_subnet_input(subnet: str) -> str:
+    """Normalize a bare IP or CIDR into a proper subnet string."""
+    if "/" in subnet:
+        return subnet
+    return f"{subnet}.0/24" if subnet.count(".") == 2 else f"{subnet}/24"
+
+
+async def _discover_and_sync_subnet(db, subnet: str, global_dns: str | None) -> list[dict]:
+    """Run discovery + MAC/hostname resolution + DB sync for one subnet."""
+    res_sub = await db.execute(select(Subnet).where(Subnet.cidr == subnet))
+    sub_obj = res_sub.scalar_one_or_none()
+    dns_server = sub_obj.dns_server if sub_obj and sub_obj.dns_server else global_dns
+
+    net = ipaddress.ip_network(subnet, strict=False)
+    target_ips = [str(ip) for ip in net.hosts()]
+
+    alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server, timeout=2.0)
+    if alive_hosts:
+        alive_hosts = await resolve_mac_addresses(alive_hosts)
+        await resolve_hostnames(alive_hosts, dns_server=dns_server)
+
+        for host in alive_hosts:
+            await sync_host_to_db(
+                ip=host["ip"],
+                mac=host.get("mac"),
+                hostname=host.get("hostname"),
+                vendor=host.get("vendor")
+            )
+    return alive_hosts
+
+
 @router.get("/live-discovery", dependencies=[Depends(get_current_admin)])
 async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
     """Perform a fast ICMP/ARP discovery and sync results to DB."""
@@ -284,29 +314,7 @@ async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
 
         for subnet in subnet_list:
             try:
-                if "/" not in subnet:
-                    subnet = f"{subnet}.0/24" if subnet.count(".") == 2 else f"{subnet}/24"
-                
-                res_sub = await db.execute(select(Subnet).where(Subnet.cidr == subnet))
-                sub_obj = res_sub.scalar_one_or_none()
-                dns_server = sub_obj.dns_server if sub_obj and sub_obj.dns_server else global_dns
-
-                net = ipaddress.ip_network(subnet, strict=False)
-                target_ips = [str(ip) for ip in net.hosts()]
-                
-                alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server, timeout=2.0)
-                if alive_hosts:
-                    alive_hosts = await resolve_mac_addresses(alive_hosts)
-                    await resolve_hostnames(alive_hosts, dns_server=dns_server)
-                    
-                    for host in alive_hosts:
-                        await sync_host_to_db(
-                            ip=host["ip"], 
-                            mac=host.get("mac"), 
-                            hostname=host.get("hostname"),
-                            vendor=host.get("vendor")
-                        )
-                all_hosts.extend(alive_hosts)
+                all_hosts.extend(await _discover_and_sync_subnet(db, _normalize_subnet_input(subnet), global_dns))
             except Exception as e:
                 logger.error("Live-discovery error for %s: %s", subnet, e)
             
@@ -315,15 +323,14 @@ async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
 @router.websocket("/ws")
 async def scan_websocket(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time scan progress updates with authentication."""
-    from app.api.auth import authenticate_websocket
-    
-    auth_info = await authenticate_websocket(websocket, endpoint_type="scanner")
-    if not auth_info.get("authenticated"):
-        return
+    from app.api.auth import authenticate_websocket_authorized
 
     # Scanner info is strictly restricted to browser-sessions, legacy master cookie, master token query params, setup bypass, or API tokens
-    if auth_info.get("auth_type") not in ("session", "master_legacy", "setup_bypass", "master", "api_token"):
-        await websocket.close(code=4003, reason="Unauthorized access level")
+    auth_info = await authenticate_websocket_authorized(
+        websocket, endpoint_type="scanner",
+        allowed_levels=("session", "master_legacy", "setup_bypass", "master", "api_token"),
+    )
+    if not auth_info:
         return
 
     await websocket.accept()

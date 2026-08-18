@@ -3,11 +3,10 @@ import logging
 import socket
 import sys
 import subprocess
-import concurrent.futures
 
 try:
     import dns.resolver # type: ignore
-    import dns.reversename # type: ignore
+    import dns.reversename  # noqa: F401 — availability probe used inside resolve_hostname
     HAS_DNS_PYTHON = True
 except ImportError:
     HAS_DNS_PYTHON = False
@@ -74,6 +73,53 @@ def _resolve_win32(ip: str) -> Optional[str]:
         pass
     return None
 
+def _try_avahi(ip: str) -> Optional[str]:
+    """Try avahi-resolve (mDNS) for reverse resolution."""
+    try:
+        res = subprocess.run(["avahi-resolve", "-a", ip], capture_output=True, text=True, timeout=1.0)
+        if res.returncode == 0 and res.stdout:
+            parts = res.stdout.strip().split()
+            if len(parts) >= 2:
+                return parts[1]
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return None
+
+
+def _try_dig(ip: str) -> Optional[str]:
+    """Try dig +short -x (Reverse DNS)."""
+    try:
+        res = subprocess.run(["dig", "+short", "-x", ip], capture_output=True, text=True, timeout=1.0)
+        if res.returncode == 0 and res.stdout:
+            name = res.stdout.strip().rstrip('.')
+            if name:
+                return name
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return None
+
+
+def _try_nmap(ip: str) -> Optional[str]:
+    """Try nmap -sn resolution (final powerful fallback)."""
+    try:
+        res = subprocess.run(["nmap", "-sn", ip], capture_output=True, text=True, timeout=3.0)
+        if res.returncode == 0:
+            # Look for "Nmap scan report for <hostname> (<ip>)"
+            match = re.search(r"Nmap scan report for (.*) \(" + re.escape(ip) + r"\)", res.stdout)
+            if match:
+                name = match.group(1).strip()
+                if name and not is_ip_like(name):
+                    return name
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return None
+
+
+def _resolve_linux_shell(ip: str) -> Optional[str]:
+    """Try Linux shell tools for reverse resolution (avahi, dig, nmap)."""
+    return _try_avahi(ip) or _try_dig(ip) or _try_nmap(ip)
+
+
 def _resolve_shell(ip: str) -> Optional[str]:
     """Try OS-specific shell commands (ping -a, avahi, dig)."""
     if sys.platform == 'win32':
@@ -94,41 +140,12 @@ def _resolve_shell(ip: str) -> Optional[str]:
         except (subprocess.SubprocessError, OSError):
             pass
     else:
-        # Try avahi-resolve (mDNS)
-        try:
-            res = subprocess.run(["avahi-resolve", "-a", ip], capture_output=True, text=True, timeout=1.0)
-            if res.returncode == 0 and res.stdout:
-                parts = res.stdout.strip().split()
-                if len(parts) >= 2: return parts[1]
-        except (subprocess.SubprocessError, OSError):
-            pass
-        
-        # Try dig (Reverse DNS)
-        try:
-            res = subprocess.run(["dig", "+short", "-x", ip], capture_output=True, text=True, timeout=1.0)
-            if res.returncode == 0 and res.stdout:
-                name = res.stdout.strip().rstrip('.')
-                if name: return name
-        except (subprocess.SubprocessError, OSError):
-            pass
-
-        # Try nmap resolution (Final powerful fallback)
-        try:
-            res = subprocess.run(["nmap", "-sn", ip], capture_output=True, text=True, timeout=3.0)
-            if res.returncode == 0:
-                # Look for "Nmap scan report for <hostname> (<ip>)"
-                match = re.search(r"Nmap scan report for (.*) \(" + re.escape(ip) + r"\)", res.stdout)
-                if match:
-                    name = match.group(1).strip()
-                    if name and not is_ip_like(name):
-                        return name
-        except (subprocess.SubprocessError, OSError):
-            pass
+        return _resolve_linux_shell(ip)
     return None
 
 async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None = None) -> str | None:
     """Resolve an IP address to its hostname via reverse DNS (FQDN)."""
-    from datetime import datetime, timezone
+    from datetime import datetime
     
     # 0. Check Cache
     now = datetime.now(timezone.utc)
@@ -148,7 +165,7 @@ async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None
         if HAS_DNS_PYTHON:
             try:
                 import dns.resolver # type: ignore
-                import dns.reversename # type: ignore
+                import dns.reversename  # noqa: F401 — availability probe used inside resolve_hostname
                 resolver = dns.resolver.Resolver()
                 
                 if dns_server:

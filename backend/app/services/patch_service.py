@@ -9,16 +9,65 @@ import asyncio
 import logging
 import re
 import time
-import io
-import uuid
 import paramiko
-from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 from app.config import settings
 from app.services.ssh_utils import CustomWarningPolicy, _load_ssh_key
 
 logger = logging.getLogger(__name__)
+
+
+def _build_client() -> paramiko.SSHClient:
+    """Create a hardened SSH client with the configured host-key policy."""
+    client = paramiko.SSHClient()
+    if settings.ssh_strict_mode:
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    else:
+        client.set_missing_host_key_policy(CustomWarningPolicy())
+    return client
+
+
+def _build_connect_kwargs(
+    host_ip: str,
+    ssh_user: str,
+    ssh_port: int,
+    ssh_password: str | None = None,
+    ssh_key: str | None = None,
+) -> tuple[dict | None, str | None]:
+    """Build paramiko connect kwargs; returns (kwargs, error_message)."""
+    connect_kwargs: dict = {
+        "hostname": host_ip,
+        "port": ssh_port,
+        "username": ssh_user,
+        "timeout": 15,
+    }
+    if ssh_key:
+        try:
+            connect_kwargs["pkey"] = _load_ssh_key(ssh_key)
+        except ValueError as e:
+            return None, f"Invalid SSH key format: {e}"
+    elif ssh_password:
+        connect_kwargs["password"] = ssh_password
+    else:
+        return None, "Neither password nor SSH key provided."
+    return connect_kwargs, None
+
+
+def _connect_with_fallback(client: paramiko.SSHClient, connect_kwargs: dict, host_ip: str) -> None:
+    """Connect directly, falling back to the Docker bridge gateway on failure."""
+    try:
+        client.connect(**connect_kwargs)
+    except Exception as e:
+        from app.services.docker_service import docker_service
+        gateway = docker_service.get_bridge_gateway()
+        if gateway and host_ip != gateway:
+            logger.info("Direct connection failed (%s). Trying Host Bypass gateway: %s", e, gateway)
+            connect_kwargs["hostname"] = gateway
+            client.connect(**connect_kwargs)
+        else:
+            raise e
 
 async def run_ssh_command_stream(
     *,
@@ -31,43 +80,14 @@ async def run_ssh_command_stream(
     output_callback: Callable[[str], None]
 ) -> tuple[bool, str]:
     """Connects to host and executes command, streaming stdout/stderr line-by-line."""
-    client = paramiko.SSHClient()
-    if settings.ssh_strict_mode:
-        client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.RejectPolicy())
-    else:
-        client.set_missing_host_key_policy(CustomWarningPolicy())
+    client = _build_client()
 
     try:
-        connect_kwargs: dict = {
-            "hostname": host_ip,
-            "port": ssh_port,
-            "username": ssh_user,
-            "timeout": 15,
-        }
+        connect_kwargs, err = _build_connect_kwargs(host_ip, ssh_user, ssh_port, ssh_password, ssh_key)
+        if err:
+            return False, err
 
-        if ssh_key:
-            try:
-                connect_kwargs["pkey"] = _load_ssh_key(ssh_key)
-            except ValueError as e:
-                return False, f"Invalid SSH key format: {e}"
-        elif ssh_password:
-            connect_kwargs["password"] = ssh_password
-        else:
-            return False, "Neither password nor SSH key provided."
-
-        # Connection logic with Macvlan/Docker isolation fallback
-        try:
-            client.connect(**connect_kwargs)
-        except Exception as e:
-            from app.services.docker_service import docker_service
-            gateway = docker_service.get_bridge_gateway()
-            if gateway and host_ip != gateway:
-                logger.info("Direct patch connection failed (%s). Trying Host Bypass gateway: %s", e, gateway)
-                connect_kwargs["hostname"] = gateway
-                client.connect(**connect_kwargs)
-            else:
-                raise e
+        _connect_with_fallback(client, connect_kwargs, host_ip)
 
         # Set up shell channel or execute command
         transport = client.get_transport()
@@ -138,35 +158,14 @@ async def list_device_updates(
     ssh_port: int = 22,
 ) -> dict[str, Any]:
     """Queries package updates lists over SSH (Debian/Ubuntu/Fedora/CentOS)."""
-    client = paramiko.SSHClient()
-    if settings.ssh_strict_mode:
-        client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.RejectPolicy())
-    else:
-        client.set_missing_host_key_policy(CustomWarningPolicy())
+    client = _build_client()
 
     try:
-        connect_kwargs: dict = {
-            "hostname": host_ip,
-            "port": ssh_port,
-            "username": ssh_user,
-            "timeout": 15,
-        }
-        if ssh_key:
-            connect_kwargs["pkey"] = _load_ssh_key(ssh_key)
-        elif ssh_password:
-            connect_kwargs["password"] = ssh_password
+        connect_kwargs, err = _build_connect_kwargs(host_ip, ssh_user, ssh_port, ssh_password, ssh_key)
+        if err:
+            return {"patch_manager": None, "packages": [], "major_upgrade_available": None, "error": err}
 
-        try:
-            client.connect(**connect_kwargs)
-        except Exception as e:
-            from app.services.docker_service import docker_service
-            gateway = docker_service.get_bridge_gateway()
-            if gateway and host_ip != gateway:
-                connect_kwargs["hostname"] = gateway
-                client.connect(**connect_kwargs)
-            else:
-                raise e
+        _connect_with_fallback(client, connect_kwargs, host_ip)
 
         # 1. Detect Package Manager
         _, stdout, _ = client.exec_command("command -v apt-get || command -v dnf || command -v yum", timeout=10)
@@ -192,140 +191,15 @@ async def list_device_updates(
 
         if "apt-get" in pkg_manager_path:
             result["patch_manager"] = "apt"
-            # Refresh package cache first (requires sudo/root).
-            # Read the channel continuously so the PTY buffer never fills up
-            # (previously this hung forever), and only send the password when
-            # sudo actually asks for it (SUDOPROMPT).
-            needs_sudo = ssh_user != "root"
-            update_cmd = (
-                "sudo -n -S -p 'SUDOPROMPT:' apt-get update" if needs_sudo else "apt-get update"
-            )
-
-            chan = client.get_transport().open_session()
-            chan.get_pty()
-            chan.exec_command(update_cmd)
-
-            update_output = ""
-            password_sent = False
-            update_deadline = time.monotonic() + 90
-            while time.monotonic() < update_deadline:
-                if chan.recv_ready():
-                    update_output += chan.recv(4096).decode("utf-8", errors="replace")
-                    if (
-                        needs_sudo
-                        and ssh_password
-                        and not password_sent
-                        and "SUDOPROMPT" in update_output
-                    ):
-                        chan.send(f"{ssh_password}\n")
-                        password_sent = True
-                elif chan.exit_status_ready():
-                    while chan.recv_ready():
-                        update_output += chan.recv(4096).decode("utf-8", errors="replace")
-                    break
-                await asyncio.sleep(0.1)
-
-            update_exit = chan.get_exit_status() if chan.exit_status_ready() else None
-            if update_exit != 0:
-                logger.warning(
-                    "apt-get update on %s failed (exit %s): %s",
-                    host_ip, update_exit, update_output.strip()[-500:],
-                )
-                result["error"] = (
-                    "apt-get update failed (exit %s). Set an SSH password or "
-                    "enable passwordless sudo to refresh package lists."
-                ) % (update_exit if update_exit is not None else "timeout")
-
-            # Query upgradable packages
-            _, stdout, _ = client.exec_command("apt list --upgradable 2>/dev/null", timeout=15)
-            output = stdout.read().decode("utf-8")
-            
-            # Parse apt list --upgradable output. Format:
-            # package/suite version arch [upgradable from: old_version]
-            # e.g., curl/jammy-updates 7.81.0-1ubuntu1.16 amd64 [upgradable from: 7.81.0-1ubuntu1.15]
-            for line in output.splitlines():
-                if "upgradable from" in line:
-                    match = re.match(r"^([^/]+)/([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+\[upgradable from:\s+([^\]]+)\]", line)
-                    if match:
-                        pkg_name, suite, new_ver, arch, old_ver = match.groups()
-                        result["packages"].append({
-                            "package": pkg_name,
-                            "current_version": old_ver,
-                            "new_version": new_ver,
-                            "repo": suite
-                        })
-
-            # Check major upgrade (Ubuntu only)
-            _, stdout, _ = client.exec_command("which do-release-upgrade", timeout=5)
-            if stdout.read().decode().strip():
-                _, stdout, _ = client.exec_command("do-release-upgrade -c", timeout=10)
-                out_upgrade = stdout.read().decode("utf-8")
-                for line in out_upgrade.splitlines():
-                    if "New release" in line and "available" in line:
-                        parts = line.split("'")
-                        if len(parts) >= 3:
-                            result["major_upgrade_available"] = parts[1]
+            await _query_apt_updates(client, result, host_ip, ssh_user, ssh_password)
 
         elif "dnf" in pkg_manager_path:
             result["patch_manager"] = "dnf"
-            # Get list of upgrades
-            _, stdout, _ = client.exec_command("dnf check-update --quiet", timeout=20)
-            output = stdout.read().decode("utf-8")
-            
-            # Parse dnf check-update output. Lines look like:
-            # curl.x86_64               7.81.0-1.fc39             updates
-            # Let's get installed versions of those packages to populate current_version
-            upgrades = []
-            pkg_names = []
-            for line in output.splitlines():
-                parts = line.split()
-                if len(parts) >= 3 and not line.startswith("Last metadata"):
-                    # parts: [package_name.arch, new_version, repo]
-                    pkg_and_arch = parts[0]
-                    pkg_name = pkg_and_arch.rsplit(".", 1)[0]
-                    upgrades.append({
-                        "package": pkg_name,
-                        "new_version": parts[1],
-                        "repo": parts[2],
-                        "current_version": "Installed" # Default fallback
-                    })
-                    pkg_names.append(pkg_name)
-
-            # Optimisation: fetch current versions in a batch if there are upgrades
-            if pkg_names:
-                batch_cmd = f"rpm -q --qf '%{{NAME}} %{{VERSION}}-%{{RELEASE}}\\n' {' '.join(pkg_names[:100])}"
-                _, stdout_rpm, _ = client.exec_command(batch_cmd, timeout=10)
-                rpm_output = stdout_rpm.read().decode("utf-8")
-                version_map = {}
-                for line in rpm_output.splitlines():
-                    subparts = line.split()
-                    if len(subparts) == 2:
-                        version_map[subparts[0]] = subparts[1]
-                
-                for item in upgrades:
-                    if item["package"] in version_map:
-                        item["current_version"] = version_map[item["package"]]
-            
-            result["packages"] = upgrades
+            await _query_dnf_updates(client, result)
 
         elif "yum" in pkg_manager_path:
             result["patch_manager"] = "yum"
-            _, stdout, _ = client.exec_command("yum check-update --quiet", timeout=20)
-            output = stdout.read().decode("utf-8")
-            
-            upgrades = []
-            for line in output.splitlines():
-                parts = line.split()
-                if len(parts) >= 3:
-                    pkg_and_arch = parts[0]
-                    pkg_name = pkg_and_arch.rsplit(".", 1)[0]
-                    upgrades.append({
-                        "package": pkg_name,
-                        "new_version": parts[1],
-                        "repo": parts[2],
-                        "current_version": "Installed"
-                    })
-            result["packages"] = upgrades
+            await _query_yum_updates(client, result)
 
         return result
 
@@ -334,3 +208,143 @@ async def list_device_updates(
         return {"patch_manager": None, "packages": [], "major_upgrade_available": None, "error": str(e)}
     finally:
         client.close()
+
+
+async def _query_apt_updates(client, result: dict[str, Any], host_ip: str, ssh_user: str, ssh_password: str | None) -> None:
+    """Populate apt upgrade results (refresh cache + parse 'apt list --upgradable')."""
+    # Refresh package cache first (requires sudo/root).
+    # Read the channel continuously so the PTY buffer never fills up
+    # (previously this hung forever), and only send the password when
+    # sudo actually asks for it (SUDOPROMPT).
+    needs_sudo = ssh_user != "root"
+    update_cmd = (
+        "sudo -n -S -p 'SUDOPROMPT:' apt-get update" if needs_sudo else "apt-get update"
+    )
+
+    chan = client.get_transport().open_session()
+    chan.get_pty()
+    chan.exec_command(update_cmd)
+
+    update_output = ""
+    password_sent = False
+    update_deadline = time.monotonic() + 90
+    while time.monotonic() < update_deadline:
+        if chan.recv_ready():
+            update_output += chan.recv(4096).decode("utf-8", errors="replace")
+            if (
+                needs_sudo
+                and ssh_password
+                and not password_sent
+                and "SUDOPROMPT" in update_output
+            ):
+                chan.send(f"{ssh_password}\n")
+                password_sent = True
+        elif chan.exit_status_ready():
+            while chan.recv_ready():
+                update_output += chan.recv(4096).decode("utf-8", errors="replace")
+            break
+        await asyncio.sleep(0.1)
+
+    update_exit = chan.get_exit_status() if chan.exit_status_ready() else None
+    if update_exit != 0:
+        logger.warning(
+            "apt-get update on %s failed (exit %s): %s",
+            host_ip, update_exit, update_output.strip()[-500:],
+        )
+        result["error"] = (
+            "apt-get update failed (exit %s). Set an SSH password or "
+            "enable passwordless sudo to refresh package lists."
+        ) % (update_exit if update_exit is not None else "timeout")
+
+    # Query upgradable packages
+    _, stdout, _ = client.exec_command("apt list --upgradable 2>/dev/null", timeout=15)
+    output = stdout.read().decode("utf-8")
+
+    # Parse apt list --upgradable output. Format:
+    # package/suite version arch [upgradable from: old_version]
+    # e.g., curl/jammy-updates 7.81.0-1ubuntu1.16 amd64 [upgradable from: 7.81.0-1ubuntu1.15]
+    for line in output.splitlines():
+        if "upgradable from" in line:
+            match = re.match(r"^([^/]+)/([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+\[upgradable from:\s+([^\]]+)\]", line)
+            if match:
+                pkg_name, suite, new_ver, arch, old_ver = match.groups()
+                result["packages"].append({
+                    "package": pkg_name,
+                    "current_version": old_ver,
+                    "new_version": new_ver,
+                    "repo": suite
+                })
+
+    # Check major upgrade (Ubuntu only)
+    _, stdout, _ = client.exec_command("which do-release-upgrade", timeout=5)
+    if stdout.read().decode().strip():
+        _, stdout, _ = client.exec_command("do-release-upgrade -c", timeout=10)
+        out_upgrade = stdout.read().decode("utf-8")
+        for line in out_upgrade.splitlines():
+            if "New release" in line and "available" in line:
+                parts = line.split("'")
+                if len(parts) >= 3:
+                    result["major_upgrade_available"] = parts[1]
+
+
+async def _query_dnf_updates(client, result: dict[str, Any]) -> None:
+    """Populate dnf upgrade results (check-update + batch rpm current versions)."""
+    # Get list of upgrades
+    _, stdout, _ = client.exec_command("dnf check-update --quiet", timeout=20)
+    output = stdout.read().decode("utf-8")
+
+    # Parse dnf check-update output. Lines look like:
+    # curl.x86_64               7.81.0-1.fc39             updates
+    # Let's get installed versions of those packages to populate current_version
+    upgrades = []
+    pkg_names = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and not line.startswith("Last metadata"):
+            # parts: [package_name.arch, new_version, repo]
+            pkg_and_arch = parts[0]
+            pkg_name = pkg_and_arch.rsplit(".", 1)[0]
+            upgrades.append({
+                "package": pkg_name,
+                "new_version": parts[1],
+                "repo": parts[2],
+                "current_version": "Installed"  # Default fallback
+            })
+            pkg_names.append(pkg_name)
+
+    # Optimisation: fetch current versions in a batch if there are upgrades
+    if pkg_names:
+        batch_cmd = f"rpm -q --qf '%{{NAME}} %{{VERSION}}-%{{RELEASE}}\\n' {' '.join(pkg_names[:100])}"
+        _, stdout_rpm, _ = client.exec_command(batch_cmd, timeout=10)
+        rpm_output = stdout_rpm.read().decode("utf-8")
+        version_map = {}
+        for line in rpm_output.splitlines():
+            subparts = line.split()
+            if len(subparts) == 2:
+                version_map[subparts[0]] = subparts[1]
+
+        for item in upgrades:
+            if item["package"] in version_map:
+                item["current_version"] = version_map[item["package"]]
+
+    result["packages"] = upgrades
+
+
+async def _query_yum_updates(client, result: dict[str, Any]) -> None:
+    """Populate yum upgrade results (check-update)."""
+    _, stdout, _ = client.exec_command("yum check-update --quiet", timeout=20)
+    output = stdout.read().decode("utf-8")
+
+    upgrades = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            pkg_and_arch = parts[0]
+            pkg_name = pkg_and_arch.rsplit(".", 1)[0]
+            upgrades.append({
+                "package": pkg_name,
+                "new_version": parts[1],
+                "repo": parts[2],
+                "current_version": "Installed"
+            })
+    result["packages"] = upgrades

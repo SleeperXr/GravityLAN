@@ -25,6 +25,12 @@ def ensure_utc(dt: datetime | None) -> datetime | None:
 
 logger = logging.getLogger(__name__)
 
+
+def get_auto_scan_subnets() -> list[str]:
+    """Returns a list of CIDR subnets that are suitable for automatic scanning (non-virtual)."""
+    all_subnets = get_local_subnets()
+    return [s.subnet for s in all_subnets if not s.is_virtual]
+
 DEFAULT_GROUPS = [
     {"name": "Firewalls", "icon": "shield", "sort_order": 0, "is_default": True},
     {"name": "Server", "icon": "server", "sort_order": 1, "is_default": True},
@@ -62,114 +68,139 @@ def get_local_subnets() -> list[SubnetInfo]:
     """
     subnets: list[SubnetInfo] = []
     seen_subnets = set()
-    
-    # Filter list for common virtual/tunnel interfaces
-    # We are more selective now: 
-    # 'br-' is usually docker, but 'br0' is often the main physical bridge on Unraid/NAS.
-    VIRTUAL_IFACE_KEYWORDS = [
-        'vbox', 'vmware', 'vEthernet', 'tailscale', 'zerotier', 
-        'wsl', 'tunnel', 'loopback', 'pseudo', 'veth'
-    ]
-
-    def add_subnet(name, ip, mask):
-        if not ip or ip.startswith("127.") or ip.startswith("169.254."):
-            return
-            
-        # Robust detection:
-        # 1. Explicitly virtual names
-        is_virtual = any(kw.lower() in name.lower() for kw in VIRTUAL_IFACE_KEYWORDS)
-        
-        # 2. Docker bridges (usually 'docker0' or 'br-XXXXX')
-        if name.lower().startswith('docker') or name.lower().startswith('br-'):
-            is_virtual = True
-            
-        # 3. Known virtual IP ranges (fallback check)
-        # 172.17.0.0/16 is the default docker bridge
-        if ip.startswith("172."):
-            # If the interface name is generic like 'eth0' but has a 172 IP, 
-            # and we are NOT in host mode, it's likely a docker bridge.
-            if name.lower() == 'eth0' or name.lower().startswith('veth'):
-                is_virtual = True
-            
-        try:
-            network = ipaddress.IPv4Network(f"{ip}/{mask}", strict=False)
-            subnet_str = str(network)
-            if subnet_str not in seen_subnets:
-                subnets.append(SubnetInfo(
-                    interface_name=name,
-                    ip_address=ip,
-                    subnet=subnet_str,
-                    netmask=mask,
-                    is_virtual=is_virtual
-                ))
-                seen_subnets.add(subnet_str)
-        except (ValueError, OSError):
-            pass
 
     # STAGE 1: psutil (Very reliable if installed)
+    _collect_psutil_subnets(subnets, seen_subnets)
+
+    # STAGE 2: netifaces (Alternative if psutil is missing)
+    if not subnets:
+        _collect_netifaces_subnets(subnets, seen_subnets)
+
+    # STAGE 3: PowerShell (Native Windows Truth)
+    if not subnets and sys.platform == 'win32':
+        _collect_powershell_subnets(subnets, seen_subnets)
+
+    # STAGE 4: Final socket fallback
+    if not subnets:
+        _collect_socket_subnets(subnets, seen_subnets)
+
+    # LAST RESORT: If no "physical" subnets were found, return all of them
+    # so the user isn't stuck with an empty list during setup.
+    physical_subnets = [s for s in subnets if not s.is_virtual]
+    return physical_subnets if physical_subnets else subnets
+
+
+# Filter list for common virtual/tunnel interfaces
+# We are more selective now:
+# 'br-' is usually docker, but 'br0' is often the main physical bridge on Unraid/NAS.
+VIRTUAL_IFACE_KEYWORDS = [
+    'vbox', 'vmware', 'vEthernet', 'tailscale', 'zerotier',
+    'wsl', 'tunnel', 'loopback', 'pseudo', 'veth'
+]
+
+
+def _is_virtual_interface(name: str, ip: str) -> bool:
+    """Heuristic detection of virtual/tunnel/Docker interfaces."""
+    if any(kw.lower() in name.lower() for kw in VIRTUAL_IFACE_KEYWORDS):
+        return True
+    # Docker bridges (usually 'docker0' or 'br-XXXXX')
+    if name.lower().startswith('docker') or name.lower().startswith('br-'):
+        return True
+    # Known virtual IP ranges (fallback check): 172.17.0.0/16 is the default docker bridge
+    if ip.startswith("172."):
+        # If the interface name is generic like 'eth0' but has a 172 IP,
+        # and we are NOT in host mode, it's likely a docker bridge.
+        if name.lower() == 'eth0' or name.lower().startswith('veth'):
+            return True
+    return False
+
+
+def _add_subnet(subnets: list[SubnetInfo], seen_subnets: set, name: str, ip: str, mask: str) -> None:
+    """Append a unique subnet entry, skipping loopback/link-local and virtual interfaces."""
+    if not ip or ip.startswith("127.") or ip.startswith("169.254."):
+        return
+
+    is_virtual = _is_virtual_interface(name, ip)
+
+    try:
+        network = ipaddress.IPv4Network(f"{ip}/{mask}", strict=False)
+        subnet_str = str(network)
+        if subnet_str not in seen_subnets:
+            subnets.append(SubnetInfo(
+                interface_name=name,
+                ip_address=ip,
+                subnet=subnet_str,
+                netmask=mask,
+                is_virtual=is_virtual
+            ))
+            seen_subnets.add(subnet_str)
+    except (ValueError, OSError):
+        pass
+
+
+def _collect_psutil_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> None:
+    """STAGE 1: Collect subnets via psutil (very reliable if installed)."""
     try:
         import psutil
-        import socket
         interfaces = psutil.net_if_addrs()
         stats = psutil.net_if_stats()
         for name, addrs in interfaces.items():
             # Skip if disabled or loopback
-            if name in stats and not stats[name].isup: continue
-            if "loopback" in name.lower() or name.startswith("lo"): continue
-            
+            if name in stats and not stats[name].isup:
+                continue
+            if "loopback" in name.lower() or name.startswith("lo"):
+                continue
+
             for addr in addrs:
                 if addr.family == socket.AF_INET:
-                    add_subnet(name, addr.address, addr.netmask or "255.255.255.0")
+                    _add_subnet(subnets, seen_subnets, name, addr.address, addr.netmask or "255.255.255.0")
     except Exception:
         pass
 
-    # STAGE 2: netifaces (Alternative if psutil is missing)
-    if not subnets:
-        try:
-            import netifaces
-            for iface in netifaces.interfaces():
-                addrs = netifaces.ifaddresses(iface)
-                if netifaces.AF_INET in addrs:
-                    for addr_info in addrs[netifaces.AF_INET]:
-                        add_subnet(iface, addr_info.get("addr"), addr_info.get("netmask", "255.255.255.0"))
-        except Exception:
-            pass
 
-    # STAGE 3: PowerShell (Native Windows Truth)
-    if not subnets and sys.platform == 'win32':
-        try:
-            import subprocess
-            import json
-            ps_cmd = "Get-NetIPAddress -AddressFamily IPv4 | Select-Object InterfaceAlias, IPAddress, PrefixLength | ConvertTo-Json"
-            output = subprocess.check_output(["powershell", "-Command", ps_cmd], timeout=10.0).decode('cp850')
-            data = json.loads(output)
-            if isinstance(data, dict): data = [data]
-            for item in data:
-                ip = item.get("IPAddress")
-                prefix = item.get("PrefixLength")
-                name = item.get("InterfaceAlias", "Windows Adapter")
-                if ip and prefix:
-                    # Convert prefix to mask
-                    mask = str(ipaddress.IPv4Network(f"0.0.0.0/{prefix}").netmask)
-                    add_subnet(name, ip, mask)
-        except Exception:
-            pass
+def _collect_netifaces_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> None:
+    """STAGE 2: Collect subnets via netifaces (alternative if psutil is missing)."""
+    try:
+        import netifaces
+        for iface in netifaces.interfaces():
+            addrs = netifaces.ifaddresses(iface)
+            if netifaces.AF_INET in addrs:
+                for addr_info in addrs[netifaces.AF_INET]:
+                    _add_subnet(subnets, seen_subnets, iface, addr_info.get("addr"), addr_info.get("netmask", "255.255.255.0"))
+    except Exception:
+        pass
 
-    # STAGE 4: Final socket fallback
-    if not subnets:
-        try:
-            import socket
-            hostname = socket.gethostname()
-            _, _, ip_list = socket.gethostbyname_ex(hostname)
-            for ip in ip_list:
-                add_subnet("default", ip, "255.255.255.0")
-        except (OSError, socket.error):
-            pass
-        
-    # LAST RESORT: If no "physical" subnets were found, return all of them 
-    # so the user isn't stuck with an empty list during setup.
-    physical_subnets = [s for s in subnets if not s.is_virtual]
-    return physical_subnets if physical_subnets else subnets
+
+def _collect_powershell_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> None:
+    """STAGE 3: Collect subnets via PowerShell (native Windows truth)."""
+    try:
+        import json
+        ps_cmd = "Get-NetIPAddress -AddressFamily IPv4 | Select-Object InterfaceAlias, IPAddress, PrefixLength | ConvertTo-Json"
+        output = subprocess.check_output(["powershell", "-Command", ps_cmd], timeout=10.0).decode('cp850')
+        data = json.loads(output)
+        if isinstance(data, dict):
+            data = [data]
+        for item in data:
+            ip = item.get("IPAddress")
+            prefix = item.get("PrefixLength")
+            name = item.get("InterfaceAlias", "Windows Adapter")
+            if ip and prefix:
+                # Convert prefix to mask
+                mask = str(ipaddress.IPv4Network(f"0.0.0.0/{prefix}").netmask)
+                _add_subnet(subnets, seen_subnets, name, ip, mask)
+    except Exception:
+        pass
+
+
+def _collect_socket_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> None:
+    """STAGE 4: Final socket fallback via hostname resolution."""
+    try:
+        hostname = socket.gethostname()
+        _, _, ip_list = socket.gethostbyname_ex(hostname)
+        for ip in ip_list:
+            _add_subnet(subnets, seen_subnets, "default", ip, "255.255.255.0")
+    except (OSError, socket.error):
+        pass
 
 async def check_port_async(ip: str, port: int, timeout: float = 0.4) -> bool:
     """Async check if a TCP port is open."""

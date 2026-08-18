@@ -133,6 +133,44 @@ def _build_cleanup_script(has_systemd: bool, has_syno_rc: bool) -> list[str]:
     return cmds
 
 
+def _is_ssh_connected(client) -> bool:
+    """Return True when the SSH transport is still alive."""
+    return bool(client and client.get_transport() and client.get_transport().is_active())
+
+
+def _map_ssh_error(exc: Exception, host_ip: str) -> tuple[bool, str] | None:
+    """Map a paramiko exception to a user-friendly message.
+
+    Returns ``(False, message)`` for recognized errors, or ``None`` when the
+    exception is not SSH-related (caller should log + fall back).
+    """
+    import paramiko
+    from app.config import settings
+
+    if isinstance(exc, paramiko.ssh_exception.BadHostKeyException):
+        msg = f"SSH Host Key verification failed: The host key presented by {host_ip} does not match the stored key in known_hosts."
+        if settings.ssh_strict_mode:
+            msg += " (SSH Strict Mode is active. Update the known_hosts file inside the server container to match the host key.)"
+        return False, msg
+    if isinstance(exc, paramiko.ssh_exception.SSHException):
+        err_str = str(exc)
+        if "not found in known_hosts" in err_str:
+            msg = f"SSH connection rejected: Unknown host key for {host_ip}."
+            if settings.ssh_strict_mode:
+                msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
+            return False, msg
+        return False, "SSH connection failed. Please check host availability and port."
+    if isinstance(exc, paramiko.AuthenticationException):
+        return False, "SSH authentication failed. Please check your credentials."
+    return None
+
+
+def _check_sudo(client) -> bool:
+    """Return True when the remote user can invoke sudo."""
+    _, stdout, _ = client.exec_command("which sudo", timeout=5)
+    return stdout.channel.recv_exit_status() == 0
+
+
 def _stage_file(client, tmp_path: str, content: str) -> None:
     """Write content to a remote temp file via heredoc."""
     from app.services.ssh_utils import _exec_impl
@@ -299,8 +337,7 @@ async def deploy_agent(
         await connect_with_gateway_fallback(client, connect_kwargs, host_ip)
 
         # Check sudo availability
-        _, stdout, _ = client.exec_command("which sudo", timeout=5)
-        has_sudo = stdout.channel.recv_exit_status() == 0
+        has_sudo = _check_sudo(client)
 
         runner = RemoteRunner(client, has_sudo, ssh_user, ssh_password)
 
@@ -348,26 +385,9 @@ async def deploy_agent(
         return await _nohup_fallback(client, host_ip, base_dir, python_path, REMOTE_AGENT_PATH, server_url, token)
 
     except Exception as exc:
-        # Handle specific paramiko exceptions with user-friendly messages
-        import paramiko
-        from app.config import settings
-
-        if isinstance(exc, paramiko.ssh_exception.BadHostKeyException):
-            msg = f"SSH Host Key verification failed: The host key presented by {host_ip} does not match the stored key in known_hosts."
-            if settings.ssh_strict_mode:
-                msg += " (SSH Strict Mode is active. Update the known_hosts file inside the server container to match the host key.)"
-            return False, msg, ""
-        if isinstance(exc, paramiko.ssh_exception.SSHException):
-            err_str = str(exc)
-            if "not found in known_hosts" in err_str:
-                msg = f"SSH connection rejected: Unknown host key for {host_ip}."
-                if settings.ssh_strict_mode:
-                    msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
-                return False, msg, ""
-            logger.error("SSH connection error for %s: %s", host_ip, exc)
-            return False, "SSH connection failed. Please check host availability and port.", ""
-        if isinstance(exc, paramiko.AuthenticationException):
-            return False, "SSH authentication failed. Please check your credentials.", ""
+        mapped = _map_ssh_error(exc, host_ip)
+        if mapped is not None:
+            return mapped[0], mapped[1], ""
 
         logger.exception("Agent deployment failed")
         return False, "Deployment failed due to an unexpected internal error.", ""
@@ -402,45 +422,20 @@ async def remove_agent(
         await connect_with_gateway_fallback(client, connect_kwargs, host_ip)
 
         # Check for sudo
-        _, stdout, _ = client.exec_command("which sudo", timeout=5)
-        has_sudo = stdout.channel.recv_exit_status() == 0
+        has_sudo = _check_sudo(client)
 
         runner = RemoteRunner(client, has_sudo, ssh_user, ssh_password)
 
         # Scorched earth cleanup
-        cleanup_commands = [
-            "systemctl stop gravitylan-agent.service homelan-agent.service agent.service || true",
-            "systemctl disable gravitylan-agent.service homelan-agent.service agent.service || true",
-            "pkill -9 -f 'agent.py|homelan-agent.py|gravitylan-agent.py' || true",
-            "rm -rf /opt/homelan /opt/gravitylan /opt/gravitylan-agent /root/gravitylan-agent /usr/local/homelan /usr/local/gravitylan-agent",
-            "rm -f /etc/systemd/system/gravitylan-agent.service /etc/systemd/system/homelan-agent.service",
-            "systemctl daemon-reload || true",
-        ]
-
+        cleanup_commands = _build_cleanup_script(has_systemd=True, has_syno_rc=False)
         runner.run_sudo_batch(cleanup_commands)
 
         return True, "Agent has been completely removed and all processes stopped."
 
     except Exception as exc:
-        import paramiko
-        from app.config import settings
-
-        if isinstance(exc, paramiko.ssh_exception.BadHostKeyException):
-            msg = f"SSH Host Key verification failed: The host key presented by {host_ip} does not match the stored key in known_hosts."
-            if settings.ssh_strict_mode:
-                msg += " (SSH Strict Mode is active. Update the known_hosts file inside the server container to match the host key.)"
-            return False, msg
-        if isinstance(exc, paramiko.ssh_exception.SSHException):
-            err_str = str(exc)
-            if "not found in known_hosts" in err_str:
-                msg = f"SSH connection rejected: Unknown host key for {host_ip}."
-                if settings.ssh_strict_mode:
-                    msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
-                return False, msg
-            logger.error("SSH connection error during agent removal on %s: %s", host_ip, exc)
-            return False, "SSH connection failed."
-        if isinstance(exc, paramiko.AuthenticationException):
-            return False, "SSH authentication failed. Please check your credentials."
+        mapped = _map_ssh_error(exc, host_ip)
+        if mapped is not None:
+            return mapped
 
         logger.exception("Agent removal failed")
         return False, "Deinstallation failed due to an unexpected internal error."

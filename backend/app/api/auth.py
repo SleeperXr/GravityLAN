@@ -1,10 +1,8 @@
-import hmac
 import hashlib
 import secrets
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Body, Response, Request, Header, WebSocket, Query
 from fastapi.requests import HTTPConnection
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
@@ -17,6 +15,132 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 from app.services.auth_service import hash_password, verify_password, looks_hashed, secure_compare
 from app.services.session_service import session_store
+
+def _required_scope_for(path: str, method: str) -> str | None:
+    """Map an API path/method to the scope a read-only token needs."""
+    read_methods = ("GET", "HEAD")
+    if path.startswith("/api/devices") or path.startswith("/api/groups") or path.startswith("/api/services"):
+        return "devices:read" if method in read_methods else "devices:write"
+    if path.startswith("/api/topology"):
+        return "topology:read" if method in read_methods else "topology:write"
+    if path.startswith("/api/network"):
+        return "network:read" if method in read_methods else "network:write"
+    if path.startswith("/api/agent"):
+        return "agent:read" if method in read_methods else "agent:write"
+    if path.startswith("/api/settings"):
+        return "settings:read" if method in read_methods else "settings:write"
+    if path.startswith("/api/backup"):
+        return "backup:read" if method in read_methods else "backup:write"
+    if path.startswith("/api/scanner"):
+        return "scanner:read" if method in read_methods else "scanner:start"
+    if path.startswith("/api/webhooks"):
+        return "settings:read" if method in read_methods else "settings:write"
+    if path.startswith("/api/summary") or path.startswith("/api/issues"):
+        return "devices:read"  # summary/issues require general read permission
+    if path.startswith("/api/auth/tokens") or path.startswith("/api/logs"):
+        return "settings:read" if method in read_methods else "settings:write"
+    if path.startswith("/api/agents"):
+        return "agent:read" if method in read_methods else "agent:write"
+    if path.startswith("/api/scan-profiles"):
+        return "scanner:read" if method in read_methods else "scanner:start"
+    if path.startswith("/api/notifications") or path.startswith("/api/health"):
+        return "devices:read" if method in read_methods else "devices:write"
+    return None
+
+
+_READONLY_FORBIDDEN_PATHS = ("/api/backup/export", "/api/settings/reset-db")
+_READONLY_DEFAULT_SCOPES = {
+    "devices:read", "topology:read", "network:read", "agent:read",
+    "settings:read", "backup:read", "scanner:read"
+}
+
+
+async def _verify_api_token(db: AsyncSession, token_val: str, conn: HTTPConnection) -> str:
+    """Validate a read-only API token, enforce scopes, and update last_used_at."""
+    h = hashlib.sha256(token_val.encode()).hexdigest()
+    from app.models.api_token import ApiToken
+    token_res = await db.execute(select(ApiToken).where(ApiToken.token_hash == h, ApiToken.is_active == True))
+    db_token = token_res.scalar_one_or_none()
+
+    if not db_token:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    _enforce_token_scopes(db_token, conn)
+
+    # Update last_used_at timestamp with throttling
+    try:
+        now = datetime.now(timezone.utc)
+        last_used = db_token.last_used_at
+        if last_used and last_used.tzinfo is None:
+            last_used = last_used.replace(tzinfo=timezone.utc)
+        if not last_used or (now - last_used).total_seconds() > 60:
+            db_token.last_used_at = now
+            await db.commit()
+    except Exception as e:
+        logger.error(f"Failed to update API token last_used_at: {e}")
+        await db.rollback()
+
+    return f"api_token:{db_token.name}"
+
+
+def _enforce_token_scopes(db_token, conn: HTTPConnection) -> None:
+    """Enforce scope rules for a read-only API token on HTTP requests."""
+    if db_token.scopes:
+        token_scopes = {s.strip() for s in db_token.scopes.split(",") if s.strip()}
+    else:
+        token_scopes = _READONLY_DEFAULT_SCOPES
+
+    if conn.scope.get("type") != "http":
+        return
+
+    method = conn.method
+    path = conn.url.path
+
+    # Exclude path /api/auth/check and /api/auth/me from strict scoping
+    if path in ("/api/auth/check", "/api/auth/me"):
+        return
+
+    # Block read-only token from accessing sensitive admin/export or token-management endpoints
+    if path in _READONLY_FORBIDDEN_PATHS or path.startswith("/api/auth/tokens"):
+        raise HTTPException(
+            status_code=403,
+            detail="Read-only token is not authorized for this administrative action. Token is not authorized for sensitive administrative actions."
+        )
+
+    required_scope = _required_scope_for(path, method)
+    if required_scope and required_scope not in token_scopes:
+        if method not in ("GET", "HEAD"):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Read-only token cannot perform state-modifying actions. Token is missing the required scope '{required_scope}'."
+            )
+        raise HTTPException(
+            status_code=403,
+            detail=f"Token is missing the required scope '{required_scope}'."
+        )
+
+
+async def _authenticate_query_param(db: AsyncSession, token: str, conn: HTTPConnection) -> str:
+    """Authenticate via query parameter (WebSockets ONLY)."""
+    is_websocket = conn.scope.get("type") == "websocket"
+    if not is_websocket:
+        logger.warning("Security Warning: Attempted query parameter authentication on non-WebSocket route. Blocked.")
+        raise HTTPException(
+            status_code=401,
+            detail="Query parameter authentication is restricted to WebSockets."
+        )
+
+    if token.startswith("session_"):
+        session = session_store.get_session(token)
+        if session:
+            return token
+    else:
+        res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
+        master_setting = res_token.scalar_one_or_none()
+        if master_setting and secure_compare(token, master_setting.value):
+            return token
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 
 async def get_current_admin(
     conn: HTTPConnection,
@@ -79,120 +203,11 @@ async def get_current_admin(
             return token_val
 
         # B. Check Read-Only API Tokens
-        h = hashlib.sha256(token_val.encode()).hexdigest()
-        from app.models.api_token import ApiToken
-        token_res = await db.execute(select(ApiToken).where(ApiToken.token_hash == h, ApiToken.is_active == True))
-        db_token = token_res.scalar_one_or_none()
-        
-        if db_token:
-            # Parse scopes from db_token. If scopes is None, default to read-only scopes.
-            if db_token.scopes:
-                token_scopes = {s.strip() for s in db_token.scopes.split(",") if s.strip()}
-            else:
-                # Backward compatibility fallback: read-only scopes
-                token_scopes = {
-                    "devices:read", "topology:read", "network:read", "agent:read",
-                    "settings:read", "backup:read", "scanner:read"
-                }
-
-            is_http = conn.scope.get("type") == "http"
-            if is_http:
-                method = conn.method
-                path = conn.url.path
-                
-                # Exclude path /api/auth/check and /api/auth/me from strict scoping
-                if path not in ("/api/auth/check", "/api/auth/me"):
-                    # Determine required scope
-                    required_scope = None
-                    if path.startswith("/api/devices") or path.startswith("/api/groups") or path.startswith("/api/services"):
-                        required_scope = "devices:read" if method in ("GET", "HEAD") else "devices:write"
-                    elif path.startswith("/api/topology"):
-                        required_scope = "topology:read" if method in ("GET", "HEAD") else "topology:write"
-                    elif path.startswith("/api/network"):
-                        required_scope = "network:read" if method in ("GET", "HEAD") else "network:write"
-                    elif path.startswith("/api/agent"):
-                        required_scope = "agent:read" if method in ("GET", "HEAD") else "agent:write"
-                    elif path.startswith("/api/settings"):
-                        required_scope = "settings:read" if method in ("GET", "HEAD") else "settings:write"
-                    elif path.startswith("/api/backup"):
-                        required_scope = "backup:read" if method in ("GET", "HEAD") else "backup:write"
-                    elif path.startswith("/api/scanner"):
-                        required_scope = "scanner:read" if method in ("GET", "HEAD") else "scanner:start"
-                    elif path.startswith("/api/webhooks"):
-                        required_scope = "settings:read" if method in ("GET", "HEAD") else "settings:write"
-                    elif path.startswith("/api/summary"):
-                        required_scope = "devices:read"  # summary requires general read permission
-                    elif path.startswith("/api/issues"):
-                        required_scope = "devices:read"  # issues requires general read permission
-                    elif path.startswith("/api/auth/tokens"):
-                        required_scope = "settings:read" if method in ("GET", "HEAD") else "settings:write"
-                    elif path.startswith("/api/logs"):
-                        required_scope = "settings:read" if method in ("GET", "HEAD") else "settings:write"
-                    elif path.startswith("/api/agents"):
-                        required_scope = "agent:read" if method in ("GET", "HEAD") else "agent:write"
-                    elif path.startswith("/api/scan-profiles"):
-                        required_scope = "scanner:read" if method in ("GET", "HEAD") else "scanner:start"
-                    elif path.startswith("/api/notifications"):
-                        required_scope = "devices:read" if method in ("GET", "HEAD") else "devices:write"
-                    elif path.startswith("/api/health"):
-                        required_scope = "devices:read" if method in ("GET", "HEAD") else "devices:write"
-                    
-                    # Block read-only token from accessing sensitive admin/export or token-management endpoints
-                    if path in ("/api/backup/export", "/api/settings/reset-db") or path.startswith("/api/auth/tokens"):
-                        raise HTTPException(
-                            status_code=403,
-                            detail="Read-only token is not authorized for this administrative action. Token is not authorized for sensitive administrative actions."
-                        )
-                    
-                    if required_scope and required_scope not in token_scopes:
-                        if method not in ("GET", "HEAD"):
-                            raise HTTPException(
-                                status_code=403,
-                                detail=f"Read-only token cannot perform state-modifying actions. Token is missing the required scope '{required_scope}'."
-                            )
-                        else:
-                            raise HTTPException(
-                                status_code=403,
-                                detail=f"Token is missing the required scope '{required_scope}'."
-                            )
-            
-            # Update last_used_at timestamp with throttling
-            try:
-                now = datetime.now(timezone.utc)
-                last_used = db_token.last_used_at
-                if last_used and last_used.tzinfo is None:
-                    last_used = last_used.replace(tzinfo=timezone.utc)
-                if not last_used or (now - last_used).total_seconds() > 60:
-                    db_token.last_used_at = now
-                    await db.commit()
-            except Exception as e:
-                logger.error(f"Failed to update API token last_used_at: {e}")
-                await db.rollback()
-                
-            return f"api_token:{db_token.name}"
-            
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        return await _verify_api_token(db, token_val, conn)
 
     # 3. Special Fallback Channel: Query Parameter (WebSockets ONLY)
     if token:
-        is_websocket = conn.scope.get("type") == "websocket"
-        if not is_websocket:
-            logger.warning("Security Warning: Attempted query parameter authentication on non-WebSocket route. Blocked.")
-            raise HTTPException(
-                status_code=401,
-                detail="Query parameter authentication is restricted to WebSockets."
-            )
-        
-        if token.startswith("session_"):
-            session = session_store.get_session(token)
-            if session:
-                return token
-        else:
-            res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-            master_setting = res_token.scalar_one_or_none()
-            if master_setting and secure_compare(token, master_setting.value):
-                return token
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        return await _authenticate_query_param(db, token, conn)
 
     raise HTTPException(status_code=401, detail="Missing authentication token")
 
@@ -227,6 +242,117 @@ async def authenticate_websocket(
     else:
         return await _authenticate_websocket_impl(websocket, endpoint_type, device_id, db)
 
+
+async def authenticate_websocket_authorized(
+    websocket: WebSocket,
+    endpoint_type: str,
+    allowed_levels: tuple[str, ...] = ("session", "master", "master_legacy", "api_token"),
+    device_id: int | None = None,
+) -> dict | None:
+    """
+    Authenticate a WebSocket and enforce an authorization level.
+
+    Returns the auth info dict when the client is authenticated AND the
+    auth type is allowed, otherwise closes the connection and returns None.
+    """
+    auth_info = await authenticate_websocket(websocket, endpoint_type=endpoint_type, device_id=device_id)
+    if not auth_info.get("authenticated"):
+        return None
+    if auth_info.get("auth_type") not in allowed_levels:
+        await websocket.close(code=4003, reason="Unauthorized access level")
+        return None
+    return auth_info
+
+async def _touch_api_token(db: AsyncSession, db_token) -> None:
+    """Throttled last_used_at update for an API token."""
+    try:
+        now = datetime.now(timezone.utc)
+        last_used = db_token.last_used_at
+        if last_used and last_used.tzinfo is None:
+            last_used = last_used.replace(tzinfo=timezone.utc)
+        if not last_used or (now - last_used).total_seconds() > 60:
+            db_token.last_used_at = now
+            await db.commit()
+    except Exception as e:
+        logger.error(f"Failed to update WebSocket API token last_used_at: {e}")
+        await db.rollback()
+
+
+async def _load_master_token(db: AsyncSession) -> str | None:
+    """Fetch the configured master token (or None when unset)."""
+    from app.models.setting import Setting
+    from sqlalchemy import select
+    master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
+    master_setting = master_res.scalar_one_or_none()
+    return master_setting.value if master_setting else None
+
+
+def _auth_result(auth_type: str, identity: str) -> dict:
+    """Build a successful websocket auth result dict."""
+    return {"authenticated": True, "auth_type": auth_type, "identity": identity}
+
+
+async def _auth_reject(websocket: WebSocket, reason: str = "Unauthorized") -> dict:
+    """Close the websocket with 4003 and return a failed auth dict."""
+    logger.warning("WebSocket connection rejected: %s", reason)
+    await websocket.close(code=4003, reason="Unauthorized")
+    return {"authenticated": False}
+
+
+async def _auth_logs_query(db: AsyncSession, query_token: str, websocket: WebSocket) -> dict | None:
+    """Query-token auth for the logs channel (Master-Token only)."""
+    master_token = await _load_master_token(db)
+    if master_token and secure_compare(query_token, master_token):
+        return _auth_result("master", query_token)
+    return await _auth_reject(websocket, "Invalid master token in query params for logs route.")
+
+
+async def _auth_agent_query(db: AsyncSession, query_token: str, device_id: int | None, websocket: WebSocket) -> dict | None:
+    """Query-token auth for the agent channel (Master-Token or device Agent-Token)."""
+    from app.models.agent import AgentToken
+
+    master_token = await _load_master_token(db)
+    if master_token and secure_compare(query_token, master_token):
+        return _auth_result("master", query_token)
+
+    if device_id is not None:
+        agent_res = await db.execute(
+            select(AgentToken).where(
+                AgentToken.device_id == device_id,
+                AgentToken.is_active.is_(True)
+            )
+        )
+        agent_token_obj = agent_res.scalar_one_or_none()
+        if agent_token_obj and secure_compare(query_token, agent_token_obj.token):
+            return _auth_result("agent", query_token)
+    return await _auth_reject(websocket, "Invalid agent/master token or device mismatch in query params.")
+
+
+async def _auth_scanner_query(db: AsyncSession, query_token: str, websocket: WebSocket) -> dict | None:
+    """Query-token auth for the scanner channel (Master-Token only)."""
+    master_token = await _load_master_token(db)
+    if master_token and secure_compare(query_token, master_token):
+        return _auth_result("master", query_token)
+    return await _auth_reject(websocket, "Invalid master token in query params for scanner route.")
+
+
+async def _auth_query_by_endpoint(
+    db: AsyncSession,
+    endpoint_type: str,
+    query_token: str,
+    device_id: int | None,
+    websocket: WebSocket,
+) -> dict | None:
+    """Channel-policy query-token auth for logs/agent/scanner; returns auth dict or None on failure."""
+    if endpoint_type == "logs":
+        return await _auth_logs_query(db, query_token, websocket)
+    if endpoint_type == "agent":
+        return await _auth_agent_query(db, query_token, device_id, websocket)
+    if endpoint_type == "scanner":
+        return await _auth_scanner_query(db, query_token, websocket)
+    return None
+
+
 async def _authenticate_websocket_impl(
     websocket: WebSocket,
     endpoint_type: str,
@@ -234,7 +360,6 @@ async def _authenticate_websocket_impl(
     db: AsyncSession
 ) -> dict:
     from app.models.setting import Setting
-    from app.models.agent import AgentToken
     from app.services.auth_service import secure_compare
     from sqlalchemy import select
 
@@ -251,13 +376,12 @@ async def _authenticate_websocket_impl(
                 "auth_type": "setup_bypass",
                 "identity": "anonymous"
             }
-        else:
-            logger.warning(
-                "WebSocket connection rejected: Setup bypass requested on non-scanner route '%s'.",
-                endpoint_type
-            )
-            await websocket.close(code=4003, reason="Setup incomplete")
-            return {"authenticated": False}
+        logger.warning(
+            "WebSocket connection rejected: Setup bypass requested on non-scanner route '%s'.",
+            endpoint_type
+        )
+        await websocket.close(code=4003, reason="Setup incomplete")
+        return {"authenticated": False}
 
     cookie_token = websocket.cookies.get("gravitylan_token")
     query_token = websocket.query_params.get("token")
@@ -297,94 +421,26 @@ async def _authenticate_websocket_impl(
         from app.models.api_token import ApiToken
         token_res = await db.execute(select(ApiToken).where(ApiToken.token_hash == h, ApiToken.is_active == True))
         db_token = token_res.scalar_one_or_none()
-        
+
         if db_token:
-            try:
-                now = datetime.now(timezone.utc)
-                last_used = db_token.last_used_at
-                if last_used and last_used.tzinfo is None:
-                    last_used = last_used.replace(tzinfo=timezone.utc)
-                if not last_used or (now - last_used).total_seconds() > 60:
-                    db_token.last_used_at = now
-                    await db.commit()
-            except Exception as e:
-                logger.error(f"Failed to update WebSocket API token last_used_at: {e}")
-                await db.rollback()
-                
+            await _touch_api_token(db, db_token)
             return {
                 "authenticated": True,
                 "auth_type": "api_token",
                 "identity": f"api_token:{db_token.name}"
             }
-        # A. Logs ("logs") allows ONLY Master-Token in query params for external Admin CLIs/Tools
-        if endpoint_type == "logs":
-            master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-            master_setting = master_res.scalar_one_or_none()
-            master_token = master_setting.value if master_setting else None
 
-            if master_token and secure_compare(query_token, master_token):
-                return {
-                    "authenticated": True,
-                    "auth_type": "master",
-                    "identity": query_token
-                }
-            logger.warning("WebSocket connection rejected: Invalid master token in query params for logs route.")
-            await websocket.close(code=4003, reason="Unauthorized")
-            return {"authenticated": False}
-
-        # B. Agent ("agent") allows Agent-Token or global Master-Token in query params
-        elif endpoint_type == "agent":
-            # First check if the token matches the global Master-Token (UI client/admin subscriber)
-            master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-            master_setting = master_res.scalar_one_or_none()
-            master_token = master_setting.value if master_setting else None
-            
-            if master_token and secure_compare(query_token, master_token):
-                return {
-                    "authenticated": True,
-                    "auth_type": "master",
-                    "identity": query_token
-                }
-
-            if device_id is not None:
-                agent_res = await db.execute(
-                    select(AgentToken).where(
-                        AgentToken.device_id == device_id,
-                        AgentToken.is_active.is_(True)
-                    )
-                )
-                agent_token_obj = agent_res.scalar_one_or_none()
-                if agent_token_obj and secure_compare(query_token, agent_token_obj.token):
-                    return {
-                        "authenticated": True,
-                        "auth_type": "agent",
-                        "identity": query_token
-                    }
-            logger.warning("WebSocket connection rejected: Invalid agent/master token or device mismatch in query params.")
-            await websocket.close(code=4003, reason="Unauthorized")
-            return {"authenticated": False}
-
-        # C. Scanner ("scanner") allows global Master-Token in query params
-        elif endpoint_type == "scanner":
-            master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-            master_setting = master_res.scalar_one_or_none()
-            master_token = master_setting.value if master_setting else None
-            
-            if master_token and secure_compare(query_token, master_token):
-                return {
-                    "authenticated": True,
-                    "auth_type": "master",
-                    "identity": query_token
-                }
-            logger.warning("WebSocket connection rejected: Invalid master token in query params for scanner route.")
-            await websocket.close(code=4003, reason="Unauthorized")
-            return {"authenticated": False}
+        channel_auth = await _auth_query_by_endpoint(db, endpoint_type, query_token, device_id, websocket)
+        if channel_auth is not None:
+            return channel_auth
+        # An invalid query token must not fall through to other channels: reject it.
+        logger.warning("WebSocket connection rejected: Invalid query token.")
+        await websocket.close(code=4003, reason="Unauthorized")
+        return {"authenticated": False}
 
     # 4. Deprecated Legacy Cookie Fallback (Master-Token in Cookie)
     if cookie_token:
-        master_res = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-        master_setting = master_res.scalar_one_or_none()
-        master_token = master_setting.value if master_setting else None
+        master_token = await _load_master_token(db)
         if master_token and secure_compare(cookie_token, master_token):
             logger.warning(
                 "DEPRECATION WARNING: Master-Token used in browser cookie for WebSocket auth. "

@@ -7,14 +7,42 @@ from app.models.setting import Setting
 from app.models.device import DeviceHistory
 from app.scanner.planner import run_planner_scan, run_arp_only_scan
 from app.scanner.dashboard import run_dashboard_scan
-from app.scanner.utils import get_local_subnets
+from app.scanner.utils import get_auto_scan_subnets
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 def _get_auto_scan_subnets():
-    """Returns a list of CIDR subnets that are suitable for automatic scanning (non-virtual)."""
-    all_subnets = get_local_subnets()
-    return [s.subnet for s in all_subnets if not s.is_virtual]
+    """Backwards-compatible alias for :func:`app.scanner.utils.get_auto_scan_subnets`."""
+    return get_auto_scan_subnets()
+
+async def _get_setting_value(db, key: str) -> str | None:
+    """Read a single setting value (or None when unset)."""
+    result = await db.execute(select(Setting).where(Setting.key == key))
+    setting = result.scalar_one_or_none()
+    return setting.value if setting else None
+
+async def _get_setting_int(db, key: str, default: int) -> int:
+    """Read an integer setting, falling back to ``default`` for missing/invalid values."""
+    value = await _get_setting_value(db, key)
+    return int(value) if value and value.isdigit() else default
+
+async def _get_retention_days(db) -> int:
+    """Read the history retention setting with a sane fallback to the app default."""
+    value = await _get_setting_value(db, "history_retention_days")
+    if value is not None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            pass
+    return settings.history_retention_days
+
+async def _get_scan_subnets(db, auto_subnets: list[str]) -> list[str]:
+    """Return configured scan subnets, falling back to auto-detected local subnets."""
+    value = await _get_setting_value(db, "scan_subnets")
+    if value:
+        return [s.strip() for s in value.split(",") if s.strip()]
+    return auto_subnets
 
 class ScanScheduler:
     def __init__(self):
@@ -72,26 +100,18 @@ class ScanScheduler:
 
                 async with async_session() as db:
                     # Get interval from settings (in minutes)
-                    result = await db.execute(select(Setting).where(Setting.key == "scan_interval"))
-                    setting = result.scalar_one_or_none()
-                    interval = int(setting.value) if setting and setting.value.isdigit() else 0
+                    interval = await _get_setting_int(db, "scan_interval", 0)
 
                     if interval > 0:
                         logger.info(f"Scheduled scan starting (Interval: {interval}m)")
-                        
+
                         # Get subnets to scan (fallback to all if not set)
-                        result = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
-                        subnet_setting = result.scalar_one_or_none()
-                        
-                        if subnet_setting and subnet_setting.value:
-                            subnets = [s.strip() for s in subnet_setting.value.split(",") if s.strip()]
-                        else:
-                            subnets = _get_auto_scan_subnets()
+                        subnets = await _get_scan_subnets(db, _get_auto_scan_subnets())
 
                         if subnets:
                             logger.info(f"Scheduled Full Scan (Dashboard) starting for: {subnets}")
                             await run_dashboard_scan(subnets)
-                        
+
                         # Wait for the next interval
                         await asyncio.sleep(interval * 60)
                     else:
@@ -124,23 +144,15 @@ class ScanScheduler:
             try:
                 # Get quick scan interval (default 300s / 5m)
                 async with async_session() as db:
-                    result = await db.execute(select(Setting).where(Setting.key == "quick_scan_interval"))
-                    setting = result.scalar_one_or_none()
-                    # Use provided value or 300 as default
-                    interval = int(setting.value) if setting and setting.value.isdigit() else 300
+                    interval = await _get_setting_int(db, "quick_scan_interval", 300)
+                    subnets = await _get_scan_subnets(db, _get_auto_scan_subnets())
 
                 if interval > 0:
                     logger.info(f"Scheduled Quick Scan (Planner) starting (Interval: {interval}s)")
-                    
-                    # Detect subnets for quick scan
-                    async with async_session() as db:
-                        res = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
-                        s_set = res.scalar_one_or_none()
-                        subnets = [s.strip() for s in s_set.value.split(",") if s.strip()] if s_set and s_set.value else _get_auto_scan_subnets()
-                    
+
                     if subnets:
                         await run_planner_scan(subnets)
-                    
+
                     await asyncio.sleep(interval)
                 else:
                     await asyncio.sleep(60)
@@ -185,18 +197,11 @@ class ScanScheduler:
 
             self._last_cleanup_time = now
 
-            from app.config import settings
             from app.models.agent import DeviceMetrics
             
             async with async_session() as db:
                 # Get retention period (in days)
-                result = await db.execute(select(Setting).where(Setting.key == "history_retention_days"))
-                setting = result.scalar_one_or_none()
-                
-                try:
-                    days = int(setting.value) if setting and setting.value is not None else settings.history_retention_days
-                except (TypeError, ValueError):
-                    days = settings.history_retention_days
+                days = await _get_retention_days(db)
 
                 # Guardrail: only clean up if days is a positive value within 1-365
                 if 1 <= days <= 365:

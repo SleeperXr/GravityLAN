@@ -24,42 +24,57 @@ async def get_all_settings(db: AsyncSession = Depends(get_db)):
 
 SettingsUpdate = RootModel[dict[str, str]]
 
+
+def _validate_server_url(value: str) -> None:
+    """Reject server URLs that are not valid HTTP(S) URLs without spaces."""
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(value)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError()
+        if " " in value:
+            raise ValueError()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid server URL: '{value}'. Must be a valid HTTP or HTTPS URL (e.g. http://192.168.1.100:8000)."
+        )
+
+
+def _validate_scan_subnets(value: str) -> None:
+    """Reject subnet lists containing invalid CIDR entries."""
+    import ipaddress
+    invalid_subnets = []
+    for sub in value.split(","):
+        sub = sub.strip()
+        if not sub:
+            continue
+        try:
+            ipaddress.ip_network(sub, strict=False)
+        except ValueError:
+            invalid_subnets.append(sub)
+
+    if invalid_subnets:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid subnets: {', '.join(invalid_subnets)}. Please use a format like 192.168.1.0/24."
+        )
+
+
+_VALIDATORS = {
+    "server.url": _validate_server_url,
+    "scan_subnets": _validate_scan_subnets,
+}
+
+
 @router.post("", dependencies=[Depends(get_current_admin)])
 async def update_settings(settings: SettingsUpdate, db: AsyncSession = Depends(get_db)):
     """Update or create system settings."""
     for key, value in settings.root.items():
-        # Validate server.url if provided
-        if key == "server.url" and value:
-            from urllib.parse import urlparse
-            try:
-                parsed = urlparse(value)
-                if parsed.scheme not in ("http", "https") or not parsed.netloc:
-                    raise ValueError()
-                if " " in value:
-                    raise ValueError()
-            except Exception:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid server URL: '{value}'. Must be a valid HTTP or HTTPS URL (e.g. http://192.168.1.100:8000)."
-                )
-
-        # Validate scan_subnets if provided
-        if key == "scan_subnets" and value:
-            import ipaddress
-            invalid_subnets = []
-            for sub in value.split(","):
-                sub = sub.strip()
-                if not sub: continue
-                try:
-                    ipaddress.ip_network(sub, strict=False)
-                except ValueError:
-                    invalid_subnets.append(sub)
-            
-            if invalid_subnets:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Invalid subnets: {', '.join(invalid_subnets)}. Please use a format like 192.168.1.0/24."
-                )
+        # Validate known keys before persisting
+        validator = _VALIDATORS.get(key)
+        if validator and value:
+            validator(value)
 
         result = await db.execute(select(Setting).where(Setting.key == key))
         setting = result.scalar_one_or_none()

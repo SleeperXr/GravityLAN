@@ -61,7 +61,7 @@ async def test_load_allowed_networks_from_setting(db):
 
 async def test_load_allowed_networks_fallback(monkeypatch, db):
     monkeypatch.setattr(
-        "app.scanner.scheduler._get_auto_scan_subnets", lambda: ["172.16.0.0/12", "nope"]
+        "app.scanner.utils.get_auto_scan_subnets", lambda: ["172.16.0.0/12", "nope"]
     )
 
     nets = await planner._load_allowed_networks(db)

@@ -64,6 +64,59 @@ class PollingFilter(logging.Filter):
 FRONTEND_DIR = Path("/app/static") if Path("/app/static").exists() else Path(__file__).parent.parent / "frontend" / "dist"
 
 
+def _normalize_cidr(cidr: str) -> str:
+    """Normalize a legacy subnet value into CIDR form (e.g. '192.168.1' -> '192.168.1.0/24')."""
+    if "/" in cidr:
+        return cidr
+    if cidr.count(".") == 2:
+        return f"{cidr}.0/24"
+    return f"{cidr}/24"
+
+
+async def _migrate_legacy_scan_subnets() -> None:
+    """Move scan_subnets from the legacy Setting into the Subnet table (one-time migration)."""
+    from app.database import async_session
+    from app.models.network import Subnet
+    from app.models.setting import Setting
+    from sqlalchemy import select
+
+    async with async_session() as db:
+        res_sub_count = await db.execute(select(Subnet))
+        if res_sub_count.scalars().first():
+            return
+
+        res_set = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
+        s_set = res_set.scalar_one_or_none()
+        if not (s_set and s_set.value):
+            return
+
+        logger.info("Migration: Found legacy scan_subnets, moving to Subnet table...")
+        sub_list = [s.strip() for s in s_set.value.split(",") if s.strip()]
+        for s in sub_list:
+            cidr = _normalize_cidr(s)
+            check_existing = await db.execute(select(Subnet).where(Subnet.cidr == cidr))
+            if not check_existing.scalar_one_or_none():
+                new_sub = Subnet(cidr=cidr, name=f"Network {cidr}", is_enabled=True)
+                db.add(new_sub)
+        await db.commit()
+
+
+async def _ensure_default_rack() -> None:
+    """Create the default 'Main Rack' when the racks table is empty."""
+    from app.database import async_session
+    from app.models.topology import Rack
+    from sqlalchemy import select
+
+    async with async_session() as db:
+        res_rack = await db.execute(select(Rack))
+        if res_rack.scalars().first():
+            return
+        logger.info("Database: Creating default 'Main Rack'...")
+        default_rack = Rack(name="Main Rack", units=42)
+        db.add(default_rack)
+        await db.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager — runs on startup and shutdown."""
@@ -159,33 +212,10 @@ async def lifespan(app: FastAPI):
     await scheduler.start()
 
     # Migration: Move scan_subnets from settings to Subnet table
-    async with async_session() as db:
-        res_sub_count = await db.execute(select(Subnet))
-        if not res_sub_count.scalars().first():
-            res_set = await db.execute(select(Setting).where(Setting.key == "scan_subnets"))
-            s_set = res_set.scalar_one_or_none()
-            if s_set and s_set.value:
-                logger.info("Migration: Found legacy scan_subnets, moving to Subnet table...")
-                sub_list = [s.strip() for s in s_set.value.split(",") if s.strip()]
-                for s in sub_list:
-                    cidr = s
-                    if "/" not in cidr:
-                        if cidr.count(".") == 2: cidr = f"{cidr}.0/24"
-                        else: cidr = f"{cidr}/24"
-                    
-                    check_existing = await db.execute(select(Subnet).where(Subnet.cidr == cidr))
-                    if not check_existing.scalar_one_or_none():
-                        new_sub = Subnet(cidr=cidr, name=f"Network {cidr}", is_enabled=True)
-                        db.add(new_sub)
-                await db.commit()
+    await _migrate_legacy_scan_subnets()
 
-        # Create default rack if empty
-        res_rack = await db.execute(select(Rack))
-        if not res_rack.scalars().first():
-            logger.info("Database: Creating default 'Main Rack'...")
-            default_rack = Rack(name="Main Rack", units=42)
-            db.add(default_rack)
-            await db.commit()
+    # Create default rack if empty
+    await _ensure_default_rack()
 
     yield
 
@@ -343,14 +373,14 @@ async def health_check() -> dict:
 @app.websocket("/api/logs/ws")
 async def logs_websocket(websocket: WebSocket):
     """WebSocket endpoint for real-time backend log streaming with authentication."""
-    from app.api.auth import authenticate_websocket
-    auth_info = await authenticate_websocket(websocket, endpoint_type="logs")
-    if not auth_info.get("authenticated"):
-        return
+    from app.api.auth import authenticate_websocket_authorized
 
     # Logs are strictly restricted to browser-sessions, master tokens, legacy master tokens, or API tokens
-    if auth_info.get("auth_type") not in ("session", "master", "master_legacy", "api_token"):
-        await websocket.close(code=4003, reason="Unauthorized access level")
+    auth_info = await authenticate_websocket_authorized(
+        websocket, endpoint_type="logs",
+        allowed_levels=("session", "master", "master_legacy", "api_token"),
+    )
+    if not auth_info:
         return
 
     from app.services.log_streamer import log_handler

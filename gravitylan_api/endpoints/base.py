@@ -1,11 +1,13 @@
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ..client import GravityLANClient
+from typing import Any
 
 
 class BaseEndpoint:
-    """Base class for all resource-specific API endpoints."""
+    """Base class for all resource-specific API endpoints.
 
-    def __init__(self, client: "GravityLANClient"):
+    The client reference is intentionally untyped (``Any``) to keep this
+    module free of imports from ``client.py`` — breaking the import cycle
+    client -> endpoints -> client.
+    """
+
+    def __init__(self, client: Any):
         self.client = client

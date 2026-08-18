@@ -52,8 +52,8 @@ async def _load_allowed_networks(db):
         return _parse_subnet_list(setting.value.split(","))
 
     # Fallback: Ignore virtual subnets from local interfaces
-    from app.scanner.scheduler import _get_auto_scan_subnets
-    return _parse_subnet_list(_get_auto_scan_subnets())
+    from app.scanner.utils import get_auto_scan_subnets
+    return _parse_subnet_list(get_auto_scan_subnets())
 
 
 def _ip_in_any_subnet(ip: str, subnets: list[str]) -> bool:

@@ -2,11 +2,9 @@
 
 import asyncio
 import json
-import os
 import logging
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 
 from app.scanner.utils import ensure_utc
@@ -20,10 +18,9 @@ from fastapi import (
     Request,
     WebSocket,
     WebSocketDisconnect,
-    Response,
 )
 from fastapi.responses import PlainTextResponse, FileResponse
-from sqlalchemy import delete, desc, select, func, case, and_
+from sqlalchemy import delete, desc, select, func
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
@@ -31,7 +28,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from app.config import settings
 from app.database import async_session, get_db
 from app.models.agent import AgentConfig, DeviceMetrics, AgentToken
-from app.models.device import Device, DeviceHistory, DiscoveredHost
+from app.models.device import Device
 from app.api.auth import get_current_admin
 from app.schemas.agent import (
     AgentReportPayload,
@@ -60,6 +57,65 @@ _setting_cache_time: datetime = datetime.min.replace(tzinfo=timezone.utc)
 
 # Maximum metrics rows to keep per device (prevents unbounded growth)
 MAX_METRICS_PER_DEVICE = 2880  # ~24h at 30s intervals
+
+
+# ---------------------------------------------------------------------------
+# Server-URL detection (shared by config download, install script, and deploy)
+# ---------------------------------------------------------------------------
+
+_PREFERRED_IFACE_KEYWORDS = ["eth", "eno", "ens", "enp", "wlan", "wlp"]
+_AVOID_IFACE_KEYWORDS = ["docker", "br-", "veth", "tailscale", "tun"]
+
+
+def _pick_best_subnet(subnets) -> Any | None:
+    """Pick the local subnet most likely to be the server's real interface.
+
+    Prioritizes physical NICs and private 192.168./10. ranges while
+    penalizing virtual/Docker bridge interfaces. ``None`` when no subnet
+    could be selected.
+    """
+    if not subnets:
+        return None
+
+    def ip_priority(s):
+        ip = s.ip_address
+        iface = s.interface_name.lower()
+        score = 0
+        if any(x in iface for x in _PREFERRED_IFACE_KEYWORDS):
+            score += 100
+        if ip.startswith("192.168."):
+            score += 50
+        if ip.startswith("10."):
+            score += 40
+        if any(x in iface for x in _AVOID_IFACE_KEYWORDS):
+            score -= 100
+        return score
+
+    return max(subnets, key=ip_priority)
+
+
+def _server_url_from_ip(ip: str) -> str:
+    """Build the server URL for a detected IP (port 80 omits the port)."""
+    port = settings.port
+    return f"http://{ip}:{port}" if port != 80 else f"http://{ip}"
+
+
+async def _detect_server_url(db: AsyncSession) -> str:
+    """Resolve the server URL from settings, falling back to local IP detection."""
+    from app.models.setting import Setting
+    res = await db.execute(select(Setting).where(Setting.key == "server.url"))
+    setting = res.scalar_one_or_none()
+    if setting and setting.value:
+        return setting.value
+
+    from app.scanner.utils import get_local_subnets
+    best = _pick_best_subnet(get_local_subnets())
+    if best:
+        logger.info("Auto-detected server URL: %s (via %s)", _server_url_from_ip(best.ip_address), best.interface_name)
+        return _server_url_from_ip(best.ip_address)
+
+    port = settings.port
+    return f"http://localhost:{port}" if port != 80 else "http://localhost"
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +160,33 @@ async def receive_report(
     agent_token = result.scalar_one_or_none()
 
     # 2. Settings Cache (Global)
+    allow_auto_adopt = await _get_auto_adopt_setting(db)
+
+    # 3. Handle Token Mismatch / Pending Adoption
+    agent_token = await _resolve_token_mismatch(db, agent_token, token, client_ip, payload.device_id, allow_auto_adopt)
+
+    # 4. Main Persistence Transaction (with Retry)
+    effective_device_id = agent_token.device_id
+    config_to_send = await _persist_agent_report(db, agent_token, payload, client_ip)
+
+    # 8. Broadcast to WebSocket subscribers
+    await _broadcast_metrics(payload, effective_device_id)
+
+    return AgentReportResponse(
+        status="success",
+        config_version=config_to_send["version"],
+        config={
+            "interval": config_to_send["interval"],
+            "disk_paths": config_to_send["disk_paths"],
+            "enable_temp": config_to_send["enable_temp"],
+            "enable_patch_check": config_to_send["enable_patch_check"]
+        },
+        commands=[]
+    )
+
+
+async def _get_auto_adopt_setting(db: AsyncSession) -> bool:
+    """Read the auto-adoption setting with a 5-minute global cache."""
     global _setting_cache, _setting_cache_time
     now = datetime.now(timezone.utc)
     if "allow_auto_adopt" not in _setting_cache or (now - _setting_cache_time).total_seconds() > 300:
@@ -112,60 +195,138 @@ async def receive_report(
         allow_adopt_setting = adopt_res.scalar_one_or_none()
         _setting_cache["allow_auto_adopt"] = allow_adopt_setting.value.lower() == "true" if allow_adopt_setting else False
         _setting_cache_time = now
-    allow_auto_adopt = _setting_cache["allow_auto_adopt"]
+    return _setting_cache["allow_auto_adopt"]
 
-    # 3. Handle Token Mismatch / Pending Adoption
-    if not agent_token and client_ip:
-        dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
-        device = dev_result.scalar_one_or_none()
-        if device and device.id == payload.device_id:
-            logger.warning(f"Token mismatch for device {device.id} ({client_ip}). Storing pending_token.")
-            token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
-            token_obj = token_res.scalar_one_or_none()
-            
-            # Check if device is offline or heartbeat is stale (older than 5 minutes)
-            is_device_offline_or_stale = False
-            if not token_obj:
-                is_device_offline_or_stale = True
-            else:
-                if not device.is_online:
-                    is_device_offline_or_stale = True
-                elif not token_obj.last_seen:
-                    is_device_offline_or_stale = True
-                else:
-                    last_seen_aware = ensure_utc(token_obj.last_seen)
-                    if (now - last_seen_aware).total_seconds() > 300:
-                        is_device_offline_or_stale = True
-            
-            if allow_auto_adopt and is_device_offline_or_stale:
-                logger.info(f"Auto-adopting token for device {device.id} ({client_ip}) because device is offline or stale.")
-                if token_obj:
-                    token_obj.token = token
-                    token_obj.pending_token = None
-                    token_obj.pending_at = None
-                    token_obj.is_active = True
-                else:
-                    token_obj = AgentToken(device_id=device.id, token=token, is_active=True)
-                    db.add(token_obj)
-                await db.commit()
-                agent_token = token_obj  # Proceed with normal metric persist!
-            else:
-                if token_obj:
-                    token_obj.pending_token = token
-                    token_obj.pending_at = datetime.now(timezone.utc)
-                else:
-                    new_token = AgentToken(device_id=device.id, token="TEMP_INVALID_" + token[:8], pending_token=token, pending_at=datetime.now(timezone.utc))
-                    db.add(new_token)
-                await db.commit()
-                raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
-        else:
-            raise HTTPException(status_code=401, detail="Invalid token.")
-    elif not agent_token:
+
+def _is_device_stale(now, device, token_obj) -> bool:
+    """Return True when a device/token is offline or its heartbeat is stale (> 5 min)."""
+    if not token_obj:
+        return True
+    if not device.is_online:
+        return True
+    if not token_obj.last_seen:
+        return True
+    last_seen_aware = ensure_utc(token_obj.last_seen)
+    return (now - last_seen_aware).total_seconds() > 300
+
+
+async def _resolve_token_mismatch(
+    db: AsyncSession,
+    agent_token,
+    token: str,
+    client_ip: str | None,
+    device_id: int,
+    allow_auto_adopt: bool,
+):
+    """Recover agent sessions after DB resets / device re-discovery via auto-adoption."""
+    if agent_token:
+        return agent_token
+
+    if not client_ip:
         raise HTTPException(status_code=401, detail="Invalid token.")
 
-    # 4. Main Persistence Transaction (with Retry)
+    dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
+    device = dev_result.scalar_one_or_none()
+    if not device or device.id != device_id:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    logger.warning(f"Token mismatch for device {device.id} ({client_ip}). Storing pending_token.")
+    token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
+    token_obj = token_res.scalar_one_or_none()
+
+    now = datetime.now(timezone.utc)
+    if allow_auto_adopt and _is_device_stale(now, device, token_obj):
+        logger.info(f"Auto-adopting token for device {device.id} ({client_ip}) because device is offline or stale.")
+        if token_obj:
+            token_obj.token = token
+            token_obj.pending_token = None
+            token_obj.pending_at = None
+            token_obj.is_active = True
+        else:
+            token_obj = AgentToken(device_id=device.id, token=token, is_active=True)
+            db.add(token_obj)
+        await db.commit()
+        return token_obj  # Proceed with normal metric persist!
+
+    if token_obj:
+        token_obj.pending_token = token
+        token_obj.pending_at = datetime.now(timezone.utc)
+    else:
+        new_token = AgentToken(device_id=device.id, token="TEMP_INVALID_" + token[:8], pending_token=token, pending_at=datetime.now(timezone.utc))
+        db.add(new_token)
+    await db.commit()
+    raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
+
+
+def _persist_device_metadata(db_token, device, payload) -> None:
+    """Update token/device metadata from the agent payload (throttled online flag)."""
+    now = datetime.now(timezone.utc)
+    last_seen = ensure_utc(db_token.last_seen)
+    if not last_seen or (now - last_seen).total_seconds() > 60:
+        db_token.last_seen = now
+        device.is_online = True
+        device.last_seen = now
+
+    if db_token.agent_version != payload.agent_version:
+        db_token.agent_version = payload.agent_version
+
+    # Persist OS metadata reported by the agent (e.g. from /etc/os-release)
+    system = payload.system or {}
+    if system.get("os"):
+        db_token.os_pretty = str(system["os"])[:255]
+    if system.get("os_name"):
+        db_token.os_name = str(system["os_name"])[:100]
+    if system.get("os_version"):
+        db_token.os_version = str(system["os_version"])[:100]
+    if system.get("os_codename"):
+        db_token.os_codename = str(system["os_codename"])[:100]
+    if system.get("arch"):
+        db_token.os_arch = str(system["arch"])[:50]
+    if system.get("kernel"):
+        db_token.os_kernel = str(system["kernel"])[:100]
+    device.has_agent = True
+
+    # Clear stale pending token flags since we have a successful report with active token
+    if db_token.pending_token is not None:
+        db_token.pending_token = None
+        db_token.pending_at = None
+
+
+def _build_metrics_row(db, effective_device_id: int, payload) -> DeviceMetrics:
+    """Create a DeviceMetrics row from the agent payload."""
+    metrics = DeviceMetrics(
+        device_id=effective_device_id,
+        cpu_percent=payload.cpu_percent,
+        ram_used_mb=payload.ram.used_mb,
+        ram_total_mb=payload.ram.total_mb,
+        ram_percent=payload.ram.percent,
+        disk_json=json.dumps([d.model_dump() for d in payload.disk]) if payload.disk else None,
+        temperature=payload.temperature,
+        net_json=json.dumps(payload.network) if payload.network else None,
+        patch_available=payload.patches.patch_available if payload.patches else 0,
+        patch_security=payload.patches.patch_security if payload.patches else 0,
+        patch_manager=payload.patches.patch_manager if payload.patches else None,
+        reboot_required=payload.patches.reboot_required if payload.patches else False,
+        major_upgrade_available=payload.patches.major_upgrade_available if payload.patches else None,
+    )
+    db.add(metrics)
+    return metrics
+
+
+def _build_config_payload(agent_config) -> dict:
+    """Serialize the remote agent config dict."""
+    return {
+        "version": agent_config.version,
+        "interval": agent_config.interval,
+        "disk_paths": agent_config.disk_paths,
+        "enable_temp": agent_config.enable_temp,
+        "enable_patch_check": agent_config.enable_patch_check
+    }
+
+
+async def _persist_agent_report(db: AsyncSession, agent_token, payload, client_ip: str | None) -> dict:
+    """Persist the agent report with up to 5 retries on stale/operational DB errors."""
     effective_device_id = agent_token.device_id
-    config_to_send = None
 
     for attempt in range(5):
         try:
@@ -183,55 +344,8 @@ async def receive_report(
                 else:
                     raise HTTPException(status_code=404, detail="Device mapping lost")
 
-            # Update metadata (throttled)
-            now = datetime.now(timezone.utc)
-            last_seen = ensure_utc(db_token.last_seen)
-            if not last_seen or (now - last_seen).total_seconds() > 60:
-                db_token.last_seen = now
-                device.is_online = True
-                device.last_seen = now
-            
-            if db_token.agent_version != payload.agent_version:
-                db_token.agent_version = payload.agent_version
-
-            # Persist OS metadata reported by the agent (e.g. from /etc/os-release)
-            system = payload.system or {}
-            if system.get("os"):
-                db_token.os_pretty = str(system["os"])[:255]
-            if system.get("os_name"):
-                db_token.os_name = str(system["os_name"])[:100]
-            if system.get("os_version"):
-                db_token.os_version = str(system["os_version"])[:100]
-            if system.get("os_codename"):
-                db_token.os_codename = str(system["os_codename"])[:100]
-            if system.get("arch"):
-                db_token.os_arch = str(system["arch"])[:50]
-            if system.get("kernel"):
-                db_token.os_kernel = str(system["kernel"])[:100]
-            device.has_agent = True
-            
-            # Clear stale pending token flags since we have a successful report with active token
-            if db_token.pending_token is not None:
-                db_token.pending_token = None
-                db_token.pending_at = None
-
-            # Add Metrics
-            metrics = DeviceMetrics(
-                device_id=effective_device_id,
-                cpu_percent=payload.cpu_percent,
-                ram_used_mb=payload.ram.used_mb,
-                ram_total_mb=payload.ram.total_mb,
-                ram_percent=payload.ram.percent,
-                disk_json=json.dumps([d.model_dump() for d in payload.disk]) if payload.disk else None,
-                temperature=payload.temperature,
-                net_json=json.dumps(payload.network) if payload.network else None,
-                patch_available=payload.patches.patch_available if payload.patches else 0,
-                patch_security=payload.patches.patch_security if payload.patches else 0,
-                patch_manager=payload.patches.patch_manager if payload.patches else None,
-                reboot_required=payload.patches.reboot_required if payload.patches else False,
-                major_upgrade_available=payload.patches.major_upgrade_available if payload.patches else None,
-            )
-            db.add(metrics)
+            _persist_device_metadata(db_token, device, payload)
+            _build_metrics_row(db, effective_device_id, payload)
 
             # Fetch Config
             config_res = await db.execute(select(AgentConfig).where(AgentConfig.device_id == effective_device_id))
@@ -241,16 +355,10 @@ async def receive_report(
                 db.add(agent_config)
                 await db.flush()
 
-            config_to_send = {
-                "version": agent_config.version,
-                "interval": agent_config.interval,
-                "disk_paths": agent_config.disk_paths,
-                "enable_temp": agent_config.enable_temp,
-                "enable_patch_check": agent_config.enable_patch_check
-            }
+            config_to_send = _build_config_payload(agent_config)
 
             await db.commit()
-            break
+            return config_to_send
 
         except (StaleDataError, OperationalError) as e:
             await db.rollback()
@@ -261,9 +369,13 @@ async def receive_report(
             logger.error(f"Agent report persistence failed after 5 attempts: {e}")
             raise
 
-    # 8. Broadcast to WebSocket subscribers
-    snapshot = {
-        "device_id": effective_device_id,
+    raise HTTPException(status_code=500, detail="Agent report persistence failed")
+
+
+def _build_metrics_snapshot(payload, device_id: int) -> dict:
+    """Build the WebSocket snapshot dict from a report payload."""
+    return {
+        "device_id": device_id,
         "cpu_percent": payload.cpu_percent,
         "ram": payload.ram.model_dump(),
         "disk": [d.model_dump() for d in payload.disk],
@@ -276,29 +388,24 @@ async def receive_report(
         "reboot_required": payload.patches.reboot_required if payload.patches else False,
         "major_upgrade_available": payload.patches.major_upgrade_available if payload.patches else None,
     }
-    _latest_metrics[effective_device_id] = snapshot
-    
-    if effective_device_id in _ws_subscribers:
-        dead_links = set()
-        for ws in _ws_subscribers[effective_device_id]:
-            try:
-                await ws.send_json({"type": "metrics", "data": snapshot})
-            except Exception as e:
-                logger.debug(f"Metrics WebSocket error for device {effective_device_id}: {e}")
-                dead_links.add(ws)
-        _ws_subscribers[effective_device_id] -= dead_links
 
-    return AgentReportResponse(
-        status="success",
-        config_version=config_to_send["version"],
-        config={
-            "interval": config_to_send["interval"],
-            "disk_paths": config_to_send["disk_paths"],
-            "enable_temp": config_to_send["enable_temp"],
-            "enable_patch_check": config_to_send["enable_patch_check"]
-        },
-        commands=[]
-    )
+
+async def _broadcast_metrics(payload, device_id: int) -> None:
+    """Push the latest snapshot to all subscribed WebSockets, pruning dead links."""
+    snapshot = _build_metrics_snapshot(payload, device_id)
+    _latest_metrics[device_id] = snapshot
+
+    if device_id not in _ws_subscribers:
+        return
+
+    dead_links = set()
+    for ws in _ws_subscribers[device_id]:
+        try:
+            await ws.send_json({"type": "metrics", "data": snapshot})
+        except Exception as e:
+            logger.debug(f"Metrics WebSocket error for device {device_id}: {e}")
+            dead_links.add(ws)
+    _ws_subscribers[device_id] -= dead_links
 
 
 @router.get("/config/{device_id}", response_model=AgentConfigResponse)
@@ -437,64 +544,18 @@ async def get_agents_overview(
         m_count = total_count_map.get(device_id, 0)
         total_metrics_count += m_count
 
-        # Active = last heartbeat within 5 minutes
-        last_seen = ensure_utc(token.last_seen)
-        created_at = ensure_utc(token.created_at)
-        is_active = bool(last_seen and (now - last_seen).total_seconds() < 300)
+        is_active = _is_agent_active(token, now)
         if is_active:
             active_count += 1
 
-        # Uptime % for last 24h
-        time_known = now - (created_at or cutoff_24h)
-        relevant_window = min(timedelta(hours=24), time_known)
-        window_seconds = max(60, relevant_window.total_seconds())
-        expected = window_seconds / 30.0
-        day_count = len(device_metrics_24h)
-        uptime_pct = min(100.0, (day_count / expected) * 100.0) if expected > 0 else 100.0
-
-        # Hourly uptime history — computed in Python from pre-fetched data (0 extra queries)
-        agent_birth = created_at or cutoff_24h
-        uptime_history: list[float] = []
-        for h in range(24):
-            h_start = cutoff_24h + timedelta(hours=h)
-            h_end = h_start + timedelta(hours=1)
-            if h_start < agent_birth:
-                uptime_history.append(100.0)  # unknown period → assume up
-                continue
-            h_count = sum(1 for m in device_metrics_24h if h_start.replace(tzinfo=None) <= m.timestamp < h_end.replace(tzinfo=None))
-            uptime_history.append(min(100.0, (h_count / 120.0) * 100.0))
+        uptime_pct = _compute_uptime_pct(token, now, cutoff_24h, device_metrics_24h)
+        uptime_history = _compute_uptime_history(token, now, cutoff_24h, device_metrics_24h)
 
         if last_m:
             total_cpu += last_m.cpu_percent
             total_ram += last_m.ram_percent
 
-        agents_list.append(AgentSummary(
-            device_id=device.id,
-            hostname=device.hostname or device.display_name,
-            ip=device.ip,
-            is_online=is_active,
-            agent_version=token.agent_version,
-            os_pretty=token.os_pretty,
-            os_name=token.os_name,
-            os_version=token.os_version,
-            os_codename=token.os_codename,
-            os_arch=token.os_arch,
-            os_kernel=token.os_kernel,
-            last_seen=token.last_seen,
-            cpu_usage=last_m.cpu_percent if last_m else 0.0,
-            ram_usage=last_m.ram_percent if last_m else 0.0,
-            temp=last_m.temperature if last_m else None,
-            uptime_pct=uptime_pct,
-            uptime_history=uptime_history,
-            metrics_count=m_count,
-            has_pending_token=bool(token.pending_token),
-            pending_at=token.pending_at,
-            patch_available=last_m.patch_available if last_m else 0,
-            patch_security=last_m.patch_security if last_m else 0,
-            patch_manager=last_m.patch_manager if last_m else None,
-            reboot_required=last_m.reboot_required if last_m else False,
-            major_upgrade_available=last_m.major_upgrade_available if last_m else None
-        ))
+        agents_list.append(_build_agent_summary(device, token, last_m, m_count, is_active, uptime_pct, uptime_history))
 
     n = len(agents_list)
     return AgentsOverviewResponse(
@@ -504,6 +565,70 @@ async def get_agents_overview(
         total_data_points=total_metrics_count,
         avg_cpu=total_cpu / n if n else 0.0,
         avg_ram=total_ram / n if n else 0.0
+    )
+
+
+def _is_agent_active(token, now: datetime) -> bool:
+    """Active = last heartbeat within 5 minutes."""
+    last_seen = ensure_utc(token.last_seen)
+    return bool(last_seen and (now - last_seen).total_seconds() < 300)
+
+
+def _compute_uptime_pct(token, now: datetime, cutoff_24h: datetime, device_metrics_24h: list) -> float:
+    """Uptime % for the last 24h based on expected heartbeat count."""
+    created_at = ensure_utc(token.created_at)
+    time_known = now - (created_at or cutoff_24h)
+    relevant_window = min(timedelta(hours=24), time_known)
+    window_seconds = max(60, relevant_window.total_seconds())
+    expected = window_seconds / 30.0
+    day_count = len(device_metrics_24h)
+    return min(100.0, (day_count / expected) * 100.0) if expected > 0 else 100.0
+
+
+def _compute_uptime_history(token, now: datetime, cutoff_24h: datetime, device_metrics_24h: list) -> list[float]:
+    """Hourly uptime history computed in Python from pre-fetched data (0 extra queries)."""
+    created_at = ensure_utc(token.created_at)
+    agent_birth = created_at or cutoff_24h
+    uptime_history: list[float] = []
+    for h in range(24):
+        h_start = cutoff_24h + timedelta(hours=h)
+        h_end = h_start + timedelta(hours=1)
+        if h_start < agent_birth:
+            uptime_history.append(100.0)  # unknown period → assume up
+            continue
+        h_count = sum(1 for m in device_metrics_24h if h_start.replace(tzinfo=None) <= m.timestamp < h_end.replace(tzinfo=None))
+        uptime_history.append(min(100.0, (h_count / 120.0) * 100.0))
+    return uptime_history
+
+
+def _build_agent_summary(device, token, last_m, m_count: int, is_active: bool, uptime_pct: float, uptime_history: list[float]) -> AgentSummary:
+    """Assemble a single AgentSummary entry from prefetched data."""
+    return AgentSummary(
+        device_id=device.id,
+        hostname=device.hostname or device.display_name,
+        ip=device.ip,
+        is_online=is_active,
+        agent_version=token.agent_version,
+        os_pretty=token.os_pretty,
+        os_name=token.os_name,
+        os_version=token.os_version,
+        os_codename=token.os_codename,
+        os_arch=token.os_arch,
+        os_kernel=token.os_kernel,
+        last_seen=token.last_seen,
+        cpu_usage=last_m.cpu_percent if last_m else 0.0,
+        ram_usage=last_m.ram_percent if last_m else 0.0,
+        temp=last_m.temperature if last_m else None,
+        uptime_pct=uptime_pct,
+        uptime_history=uptime_history,
+        metrics_count=m_count,
+        has_pending_token=bool(token.pending_token),
+        pending_at=token.pending_at,
+        patch_available=last_m.patch_available if last_m else 0,
+        patch_security=last_m.patch_security if last_m else 0,
+        patch_manager=last_m.patch_manager if last_m else None,
+        reboot_required=last_m.reboot_required if last_m else False,
+        major_upgrade_available=last_m.major_upgrade_available if last_m else None
     )
 
 
@@ -786,29 +911,7 @@ async def download_agent_config(device_id: int, db: AsyncSession = Depends(get_d
         token = token_obj.token
 
     # Detect Server URL (same logic as in deploy)
-    from app.models.setting import Setting
-    res = await db.execute(select(Setting).where(Setting.key == "server.url"))
-    setting = res.scalar_one_or_none()
-    server_url = setting.value if setting and setting.value else None
-    
-    if not server_url:
-        from app.scanner.utils import get_local_subnets
-        subnets = get_local_subnets()
-        if subnets:
-            def ip_priority(s):
-                ip = s.ip_address
-                iface = s.interface_name.lower()
-                score = 0
-                if any(x in iface for x in ["eth", "eno", "ens", "enp", "wlan", "wlp"]): score += 100
-                if ip.startswith("192.168."): score += 50
-                if any(x in iface for x in ["docker", "br-", "veth"]): score -= 100
-                return score
-            best = max(subnets, key=ip_priority)
-            port = settings.port
-            server_url = f"http://{best.ip_address}:{port}" if port != 80 else f"http://{best.ip_address}"
-        else:
-            port = settings.port
-            server_url = f"http://localhost:{port}" if port != 80 else "http://localhost"
+    server_url = await _detect_server_url(db)
 
     # Generate JSON config
     config_data = {
@@ -828,28 +931,7 @@ async def download_install_script(device_id: int, db: AsyncSession = Depends(get
         raise HTTPException(status_code=404, detail="Device not found")
 
     # Detect Server URL
-    from app.models.setting import Setting
-    res = await db.execute(select(Setting).where(Setting.key == "server.url"))
-    setting = res.scalar_one_or_none()
-    server_url = setting.value if setting and setting.value else None
-    
-    if not server_url:
-        from app.scanner.utils import get_local_subnets
-        subnets = get_local_subnets()
-        if subnets:
-            def ip_priority(s):
-                ip = s.ip_address
-                iface = s.interface_name.lower()
-                score = 0
-                if any(x in iface for x in ["eth", "eno", "ens", "enp", "wlan", "wlp"]): score += 100
-                if ip.startswith("192.168."): score += 50
-                return score
-            best = max(subnets, key=ip_priority)
-            port = settings.port
-            server_url = f"http://{best.ip_address}:{port}" if port != 80 else f"http://{best.ip_address}"
-        else:
-            port = settings.port
-            server_url = f"http://localhost:{port}" if port != 80 else "http://localhost"
+    server_url = await _detect_server_url(db)
 
     script = f"""#!/bin/bash
 set -e
@@ -923,37 +1005,7 @@ async def deploy_agent_endpoint(
 
     # 1. Determine Server URL
     # Strategy: Check settings first, then fall back to detecting local IP
-    from app.models.setting import Setting
-    res = await db.execute(select(Setting).where(Setting.key == "server.url"))
-    setting = res.scalar_one_or_none()
-    
-    server_url = setting.value if setting and setting.value else None
-    
-    if not server_url:
-        # Auto-detect local IP of this server
-        from app.scanner.utils import get_local_subnets
-        subnets = get_local_subnets()
-        if subnets:
-            # Sorter: Prioritize 192.168.x.x and 10.x.x.x, avoid 172.x.x.x (Docker) and bridge names
-            def ip_priority(s):
-                ip = s.ip_address
-                iface = s.interface_name.lower()
-                score = 0
-                if any(x in iface for x in ["eth", "eno", "ens", "enp", "wlan", "wlp"]): score += 100
-                if ip.startswith("192.168."): score += 50
-                if ip.startswith("10."): score += 40
-                if any(x in iface for x in ["docker", "br-", "veth", "tailscale", "tun"]): score -= 100
-                return score
-
-            best_subnet = max(subnets, key=ip_priority)
-            local_ip = best_subnet.ip_address
-            port = settings.port
-            server_url = f"http://{local_ip}:{port}" if port != 80 else f"http://{local_ip}"
-            logger.info("Auto-detected server URL: %s (via %s)", server_url, best_subnet.interface_name)
-        else:
-            port = settings.port
-            server_url = f"http://localhost:{port}" if port != 80 else "http://localhost"
-            logger.warning("Could not detect local IP, falling back to localhost for Agent URL")
+    server_url = await _detect_server_url(db)
 
     # 2. Run Deployment
     logger.info("Starting agent deployment for device %d (%s) to server %s", 
@@ -1029,15 +1081,14 @@ async def uninstall_agent_endpoint(
 @router.websocket("/ws/{device_id}")
 async def agent_websocket(websocket: WebSocket, device_id: int):
     """WebSocket for real-time metric streaming to the dashboard with authentication."""
-    from app.api.auth import authenticate_websocket
-    
-    auth_info = await authenticate_websocket(websocket, endpoint_type="agent", device_id=device_id)
-    if not auth_info.get("authenticated"):
-        return
+    from app.api.auth import authenticate_websocket_authorized
 
     # Agent websocket is restricted to browser-sessions, legacy master cookie, master token query params, agent-specific tokens, or API tokens
-    if auth_info.get("auth_type") not in ("session", "master_legacy", "agent", "master", "api_token"):
-        await websocket.close(code=4003, reason="Unauthorized access level")
+    auth_info = await authenticate_websocket_authorized(
+        websocket, endpoint_type="agent", device_id=device_id,
+        allowed_levels=("session", "master_legacy", "agent", "master", "api_token"),
+    )
+    if not auth_info:
         return
 
     await websocket.accept()
@@ -1200,36 +1251,87 @@ async def prepare_patch_action(
     return {"patch_token": token}
 
 
+def _consume_patch_session(websocket: WebSocket, device_id: int) -> dict | None:
+    """Validate and consume the one-shot patch session token; returns session data or None."""
+    patch_token = websocket.query_params.get("patch_token")
+    if not patch_token or patch_token not in _temp_patch_tokens:
+        asyncio.create_task(websocket.send_text("\r\n[Error] Invalid or expired patch session token. Please try again.\r\n"))
+        return None
+
+    session_data = _temp_patch_tokens.pop(patch_token)
+    if session_data["device_id"] != device_id:
+        asyncio.create_task(websocket.send_text("\r\n[Error] Session token device ID mismatch.\r\n"))
+        return None
+    return session_data
+
+
+def _build_update_command(pkg_manager: str, mode: str) -> str | None:
+    """Build the shell command for the given package manager and update mode."""
+    if pkg_manager == "apt":
+        if mode == "security-only":
+            return "DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" $(apt-get -s upgrade | awk '/^Inst/ { if ($0 ~ /security/ || $0 ~ /Security/) print $2 }')"
+        return "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\""
+    if pkg_manager == "dnf":
+        return "dnf upgrade --security -y" if mode == "security-only" else "dnf upgrade -y"
+    if pkg_manager == "yum":
+        return "yum update --security -y" if mode == "security-only" else "yum update -y"
+    return None
+
+
+async def _push_metrics_to_subscribers(device_id: int) -> None:
+    """Push the current snapshot to all WebSocket subscribers (best-effort)."""
+    if device_id not in _ws_subscribers or device_id not in _latest_metrics:
+        return
+    for ws in _ws_subscribers[device_id]:
+        try:
+            await ws.send_json({"type": "metrics", "data": _latest_metrics[device_id]})
+        except Exception:
+            pass
+
+
+async def _clear_device_patch_state(device_id: int) -> None:
+    """Reset patch counters in DB and push updated metrics to subscribers."""
+    try:
+        async with async_session() as db:
+            metrics_res = await db.execute(
+                select(DeviceMetrics)
+                .where(DeviceMetrics.device_id == device_id)
+                .order_by(DeviceMetrics.timestamp.desc())
+            )
+            last_metric = metrics_res.scalars().first()
+            if not last_metric:
+                return
+            last_metric.patch_available = 0
+            last_metric.patch_security = 0
+            await db.commit()
+
+            if device_id in _latest_metrics:
+                _latest_metrics[device_id]["patch_available"] = 0
+                _latest_metrics[device_id]["patch_security"] = 0
+                await _push_metrics_to_subscribers(device_id)
+    except Exception as e:
+        logger.error("Failed to update database metrics after patch execution: %s", e)
+
+
 @router.websocket("/patches/{device_id}/run-ws")
 async def run_patches_websocket(websocket: WebSocket, device_id: int):
     """WebSocket endpoint to run updates and stream output live to the frontend."""
     # Authenticate websocket first (standard browser-session/API-token check)
-    from app.api.auth import authenticate_websocket
-    auth_info = await authenticate_websocket(websocket, endpoint_type="agent", device_id=device_id)
-    if not auth_info.get("authenticated"):
-        return
-
-    # Check for correct auth level
-    if auth_info.get("auth_type") not in ("session", "master", "master_legacy", "api_token"):
-        await websocket.close(code=4003, reason="Unauthorized access level")
+    from app.api.auth import authenticate_websocket_authorized
+    auth_info = await authenticate_websocket_authorized(
+        websocket, endpoint_type="agent", device_id=device_id,
+        allowed_levels=("session", "master", "master_legacy", "api_token"),
+    )
+    if not auth_info:
         return
 
     # Accept the connection
     await websocket.accept()
 
-    # Get the patch token from query params
-    params = websocket.query_params
-    patch_token = params.get("patch_token")
-    if not patch_token or patch_token not in _temp_patch_tokens:
-        await websocket.send_text("\r\n[Error] Invalid or expired patch session token. Please try again.\r\n")
+    # Validate and consume the one-shot patch session token
+    session_data = _consume_patch_session(websocket, device_id)
+    if not session_data:
         await websocket.close(code=4001, reason="Invalid session token")
-        return
-
-    # Retrieve and consume the session data
-    session_data = _temp_patch_tokens.pop(patch_token)
-    if session_data["device_id"] != device_id:
-        await websocket.send_text("\r\n[Error] Session token device ID mismatch.\r\n")
-        await websocket.close(code=4002, reason="Device ID mismatch")
         return
 
     mode = session_data["mode"]
@@ -1272,31 +1374,16 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
 
     await websocket.send_text(f"[Info] Detected package manager: {pkg_manager}\r\n")
 
-    if pkg_manager == "apt":
-        if mode == "security-only":
-            await websocket.send_text("[Info] Running security updates only...\r\n")
-            cmd = "DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" $(apt-get -s upgrade | awk '/^Inst/ { if ($0 ~ /security/ || $0 ~ /Security/) print $2 }')"
-        else:
-            await websocket.send_text("[Info] Running full system upgrade...\r\n")
-            cmd = "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\""
-    elif pkg_manager == "dnf":
-        if mode == "security-only":
-            await websocket.send_text("[Info] Running security updates only...\r\n")
-            cmd = "dnf upgrade --security -y"
-        else:
-            await websocket.send_text("[Info] Running full system upgrade...\r\n")
-            cmd = "dnf upgrade -y"
-    elif pkg_manager == "yum":
-        if mode == "security-only":
-            await websocket.send_text("[Info] Running security updates only...\r\n")
-            cmd = "yum update --security -y"
-        else:
-            await websocket.send_text("[Info] Running full system upgrade...\r\n")
-            cmd = "yum update -y"
-    else:
+    cmd = _build_update_command(pkg_manager, mode)
+    if cmd is None:
         await websocket.send_text(f"[Error] Package manager {pkg_manager} is not supported.\r\n")
         await websocket.close()
         return
+
+    if mode == "security-only":
+        await websocket.send_text("[Info] Running security updates only...\r\n")
+    else:
+        await websocket.send_text("[Info] Running full system upgrade...\r\n")
 
     # Define a helper callback to stream output directly to WebSocket
     def stream_callback(data: str):
@@ -1316,30 +1403,7 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
 
     if success:
         await websocket.send_text("\r\n[Success] Updates completed successfully!\r\n")
-        try:
-            async with async_session() as db:
-                metrics_res = await db.execute(
-                    select(DeviceMetrics)
-                    .where(DeviceMetrics.device_id == device_id)
-                    .order_by(DeviceMetrics.timestamp.desc())
-                )
-                last_metric = metrics_res.scalars().first()
-                if last_metric:
-                    last_metric.patch_available = 0
-                    last_metric.patch_security = 0
-                    await db.commit()
-                    
-                    if device_id in _latest_metrics:
-                        _latest_metrics[device_id]["patch_available"] = 0
-                        _latest_metrics[device_id]["patch_security"] = 0
-                        if device_id in _ws_subscribers:
-                            for ws in _ws_subscribers[device_id]:
-                                try:
-                                    await ws.send_json({"type": "metrics", "data": _latest_metrics[device_id]})
-                                except Exception:
-                                    pass
-        except Exception as e:
-            logger.error("Failed to update database metrics after patch execution: %s", e)
+        await _clear_device_patch_state(device_id)
     else:
         await websocket.send_text(f"\r\n[Error] Update failed: {msg}\r\n")
 

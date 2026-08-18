@@ -106,7 +106,7 @@ class GravityLANClient:
     ) -> Any:
         """Central request wrapper handling retries, auth refresh, and exceptions."""
         url = f"{self.base_url}{path}"
-        
+
         # Exclude login/logout from auto-login checks to prevent infinite loops
         is_auth_route = path.startswith("/api/auth/login") or path.startswith("/api/auth/logout")
 
@@ -126,34 +126,17 @@ class GravityLANClient:
                 )
 
                 # If unauthorized on password auth, try to re-authenticate once
-                if response.status_code == 401 and not self.token and not is_auth_route and attempt < 3:
-                    logger.warning("Session unauthorized (401). Retrying authentication...")
-                    self.session.cookies.clear()
-                    self._ensure_login()
+                if self._is_session_expired(response, is_auth_route, attempt):
                     continue
 
-                # Handle HTTP errors
-                if not response.ok:
-                    try:
-                        error_detail = response.json().get("detail", response.reason)
-                    except Exception:
-                        error_detail = response.reason
-                    raise GravityLANHTTPError(response.status_code, error_detail)
-
-                # Return parsed JSON if content exists
-                if response.status_code == 204 or not response.content:
-                    return None
-                try:
-                    return response.json()
-                except ValueError as e:
-                    raise GravityLANError(f"Invalid JSON response from server: {e}")
+                return self._handle_response(response)
 
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
                 if attempt == 3:
                     raise GravityLANConnectionError(
                         f"Request failed after 3 attempts due to connection/timeout: {e}"
                     ) from e
-                
+
                 # Exponential backoff: 2s, 4s
                 backoff_time = 2**attempt
                 logger.warning(
@@ -163,3 +146,34 @@ class GravityLANClient:
             except requests.exceptions.RequestException as e:
                 # Catch other requests anomalies (e.g. TooManyRedirects)
                 raise GravityLANError(f"API request encountered an error: {e}") from e
+
+    def _is_session_expired(self, response, is_auth_route: bool, attempt: int) -> bool:
+        """Re-authenticate once when the password session expires (401)."""
+        if response.status_code == 401 and not self.token and not is_auth_route and attempt < 3:
+            logger.warning("Session unauthorized (401). Retrying authentication...")
+            self.session.cookies.clear()
+            self._ensure_login()
+            return True
+        return False
+
+    @staticmethod
+    def _parse_error_detail(response) -> str:
+        """Extract the API error detail from a response, with a safe fallback."""
+        try:
+            return response.json().get("detail", response.reason)
+        except Exception:
+            return response.reason
+
+    def _handle_response(self, response) -> Any:
+        """Validate a response, returning parsed JSON (or None for empty bodies)."""
+        # Handle HTTP errors
+        if not response.ok:
+            raise GravityLANHTTPError(response.status_code, self._parse_error_detail(response))
+
+        # Return parsed JSON if content exists
+        if response.status_code == 204 or not response.content:
+            return None
+        try:
+            return response.json()
+        except ValueError as e:
+            raise GravityLANError(f"Invalid JSON response from server: {e}")

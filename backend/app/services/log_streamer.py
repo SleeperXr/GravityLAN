@@ -36,22 +36,24 @@ class LogStreamerHandler(logging.Handler):
         try:
             msg = self.format(record)
             self.buffer.append(msg)
-            
+
             # Broadcast to active WebSocket subscribers
             # We use call_soon_threadsafe because emit might be called from a thread
-            if self.subscribers:
-                if self._loop is None:
-                    try:
-                        self._loop = asyncio.get_running_loop()
-                    except RuntimeError:
-                        pass
-                
-                if self._loop:
-                    self._loop.call_soon_threadsafe(
-                        lambda: asyncio.create_task(self._broadcast(msg))
-                    )
+            if self.subscribers and self._get_loop():
+                self._loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(self._broadcast(msg))
+                )
         except Exception:
             self.handleError(record)
+
+    def _get_loop(self):
+        """Cache the running event loop (or None when none is active)."""
+        if self._loop is None:
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+        return self._loop
 
     async def _broadcast(self, msg: str):
         if not self.subscribers:

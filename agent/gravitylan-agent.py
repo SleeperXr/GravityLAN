@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import platform
+import shutil
 import signal
 import socket
 import subprocess
@@ -308,6 +309,30 @@ class RAMMetrics(MetricProvider):
 
     def _collect_lxc(self) -> Dict[str, Any] | None:
         """Collect memory metrics using cgroups inside LXC."""
+        used_bytes, total_bytes = self._lxc_memory_limits()
+
+        if used_bytes is None:
+            return None
+
+        # Fallback to /proc/meminfo MemTotal if total limit is not set
+        if total_bytes is None:
+            total_bytes = self._meminfo_total()
+
+        if total_bytes is None or total_bytes == 0:
+            return None
+
+        total_mb = total_bytes // (1024 * 1024)
+        used_mb = used_bytes // (1024 * 1024)
+        percent = round(used_bytes / total_bytes * 100, 1)
+
+        return {
+            "total_mb": total_mb,
+            "used_mb": used_mb,
+            "percent": percent
+        }
+
+    def _lxc_memory_limits(self) -> tuple[int | None, int | None]:
+        """Read (used_bytes, total_bytes) from cgroups v2, then v1."""
         used_bytes = None
         total_bytes = None
 
@@ -338,33 +363,57 @@ class RAMMetrics(MetricProvider):
                 except Exception:
                     pass
 
-        if used_bytes is None:
-            return None
+        return used_bytes, total_bytes
 
-        # Fallback to /proc/meminfo MemTotal if total limit is not set
-        if total_bytes is None:
-            try:
-                meminfo_path = Path(self.root_path) / "proc/meminfo"
-                with open(meminfo_path, encoding="utf-8") as fh:
-                    for line in fh:
-                        if line.startswith("MemTotal:"):
-                            total_bytes = int(line.split()[1]) * 1024
-                            break
-            except Exception:
-                pass
+    def _meminfo_total(self) -> int | None:
+        """Read MemTotal from /proc/meminfo in bytes (or None when unavailable)."""
+        try:
+            meminfo_path = Path(self.root_path) / "proc/meminfo"
+            with open(meminfo_path, encoding="utf-8") as fh:
+                for line in fh:
+                    if line.startswith("MemTotal:"):
+                        return int(line.split()[1]) * 1024
+        except Exception:
+            pass
+        return None
 
-        if total_bytes is None or total_bytes == 0:
-            return None
+def _collect_zfs_stats() -> Dict[str, Dict[str, int]]:
+    """Pre-fetch ZFS dataset stats: {mountpoint: {used, avail, refer}}."""
+    zfs_stats: Dict[str, Dict[str, int]] = {}
+    try:
+        cmd = ["zfs", "list", "-H", "-p", "-o", "mountpoint,used,avail,refer"]
+        output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode()
+        for line in output.strip().split("\n"):
+            m, used, avail, refer = line.split("\t")
+            if m != "none":
+                zfs_stats[m] = {
+                    "used": int(used),
+                    "avail": int(avail),
+                    "refer": int(refer)
+                }
+    except Exception:
+        pass
+    return zfs_stats
 
-        total_mb = total_bytes // (1024 * 1024)
-        used_mb = used_bytes // (1024 * 1024)
-        percent = round(used_bytes / total_bytes * 100, 1)
 
-        return {
-            "total_mb": total_mb,
-            "used_mb": used_mb,
-            "percent": percent
-        }
+def _discover_mount_targets(default_paths: List[str]) -> set:
+    """Auto-discover physical mounts when the default '/' config is used."""
+    targets = set(default_paths)
+    try:
+        with open("/proc/mounts", "r", encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                dev, mount, fstype = parts[0], parts[1], parts[2]
+                if fstype in ("ext4", "xfs", "zfs", "btrfs", "ntfs", "fuse.shfs") or mount.startswith("/mnt/"):
+                    if any(x in mount for x in ("/docker/", "/container/", "/kubelet/")):
+                        continue
+                    targets.add(mount)
+    except Exception:
+        pass
+    return targets
+
 
 class DiskMetrics(MetricProvider):
     """Reads disk usage for configured paths and automatically discovers physical/ZFS mounts."""
@@ -372,36 +421,12 @@ class DiskMetrics(MetricProvider):
         # 1. Determine if we should use auto-discovery
         is_default = len(config.disk_paths) == 1 and config.disk_paths[0] == "/"
         targets = set(config.disk_paths)
-        
+
         # 2. Pre-fetch ZFS stats if available
-        zfs_stats = {}
-        try:
-            # We want: mountpoint, used, avail, refer
-            cmd = ["zfs", "list", "-H", "-p", "-o", "mountpoint,used,avail,refer"]
-            output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode()
-            for line in output.strip().split("\n"):
-                m, used, avail, refer = line.split("\t")
-                if m != "none":
-                    zfs_stats[m] = {
-                        "used": int(used),
-                        "avail": int(avail),
-                        "refer": int(refer)
-                    }
-        except Exception:
-            pass
+        zfs_stats = _collect_zfs_stats()
 
         if is_default:
-            # Auto-discovery fallback
-            try:
-                with open("/proc/mounts", "r", encoding="utf-8") as fh:
-                    for line in fh:
-                        parts = line.split()
-                        if len(parts) < 3: continue
-                        dev, mount, fstype = parts[0], parts[1], parts[2]
-                        if fstype in ("ext4", "xfs", "zfs", "btrfs", "ntfs", "fuse.shfs") or mount.startswith("/mnt/"):
-                            if any(x in mount for x in ("/docker/", "/container/", "/kubelet/")): continue
-                            targets.add(mount)
-            except Exception: pass
+            targets = _discover_mount_targets(list(targets))
 
         results = []
         seen_devices = set()
@@ -417,12 +442,14 @@ class DiskMetrics(MetricProvider):
                     # 4. Fallback to statvfs
                     st = os.statvfs(path)
                     fs_id = f"{st.f_blocks}-{st.f_files}"
-                    if fs_id in seen_devices and path != "/": continue
+                    if fs_id in seen_devices and path != "/":
+                        continue
                     seen_devices.add(fs_id)
                     total = st.f_blocks * st.f_frsize
                     used = total - (st.f_bavail * st.f_frsize)
 
-                if total == 0: continue
+                if total == 0:
+                    continue
 
                 results.append({
                     "path": path,
@@ -432,7 +459,7 @@ class DiskMetrics(MetricProvider):
                 })
             except (OSError, PermissionError):
                 continue
-                
+
         return results
 
 class NetworkMetrics(MetricProvider):
@@ -545,11 +572,10 @@ def _run_apt_update(timeout: int = 90) -> bool:
 
 class PatchMetrics(MetricProvider):
     """Calculates package updates, security updates, and reboot requirement."""
+
     def collect(self, config: AgentConfig) -> Optional[Dict[str, Any]]:
         if not getattr(config, "enable_patch_check", True):
             return None
-
-        import shutil
 
         result = {
             "patch_available": 0,
@@ -562,101 +588,122 @@ class PatchMetrics(MetricProvider):
         # 1. Debian/Ubuntu (apt)
         if shutil.which("apt-get"):
             result["patch_manager"] = "apt"
-            try:
-                # Refresh package lists if the local cache is stale (>= 1h).
-                # Without this, `apt-get -s upgrade` only sees stale data and
-                # reports 0 updates until someone runs apt-get update manually.
-                if _apt_cache_is_stale():
-                    if not _run_apt_update():
-                        logger.warning("apt-get update failed; using stale package cache")
-
-                # Run simulate upgrade without locks
-                cmd = ["apt-get", "-s", "-o", "Debug::NoLocking=true", "upgrade"]
-                out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8")
-                
-                available = 0
-                security = 0
-                for line in out.splitlines():
-                    if line.startswith("Inst "):
-                        available += 1
-                        if "-security" in line.lower() or "security" in line.lower():
-                            security += 1
-                result["patch_available"] = available
-                result["patch_security"] = security
-            except Exception:
-                pass
-
-            # Check if reboot is required
-            result["reboot_required"] = os.path.exists("/var/run/reboot-required")
-
-            # Check for major release upgrade (e.g. Ubuntu 22.04 -> 24.04)
-            if shutil.which("do-release-upgrade"):
-                try:
-                    cmd = ["do-release-upgrade", "-c"]
-                    out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8")
-                    for line in out.splitlines():
-                        if "New release" in line and "available" in line:
-                            parts = line.split("'")
-                            if len(parts) >= 3:
-                                result["major_upgrade_available"] = parts[1]
-                except Exception:
-                    pass
+            self._collect_apt(result)
 
         # 2. Fedora/CentOS/RHEL (dnf/yum)
         elif shutil.which("dnf"):
             result["patch_manager"] = "dnf"
-            try:
-                cmd = ["dnf", "check-update", "--quiet"]
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
-                out = proc.stdout.decode("utf-8")
-                
-                lines = [l.strip() for l in out.splitlines() if l.strip()]
-                pkg_count = 0
-                for line in lines:
-                    parts = line.split()
-                    if len(parts) >= 3 and not line.startswith("Last metadata"):
-                        pkg_count += 1
-                result["patch_available"] = pkg_count
-
-                # Security count
-                cmd_sec = ["dnf", "updateinfo", "list", "security", "--quiet"]
-                proc_sec = subprocess.run(cmd_sec, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
-                out_sec = proc_sec.stdout.decode("utf-8")
-                sec_count = 0
-                for line in out_sec.splitlines():
-                    if line.strip() and not line.startswith("Last metadata"):
-                        sec_count += 1
-                result["patch_security"] = sec_count
-            except Exception:
-                pass
-                
-            if shutil.which("needs-restarting"):
-                try:
-                    res = subprocess.run(["needs-restarting", "-r"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    if res.returncode == 1:
-                        result["reboot_required"] = True
-                except Exception:
-                    pass
+            self._collect_dnf(result)
 
         elif shutil.which("yum"):
             result["patch_manager"] = "yum"
-            try:
-                cmd = ["yum", "check-update", "--quiet"]
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
-                out = proc.stdout.decode("utf-8")
-                lines = [l.strip() for l in out.splitlines() if l.strip()]
-                pkg_count = 0
-                for line in lines:
-                    parts = line.split()
-                    if len(parts) >= 3:
-                        pkg_count += 1
-                result["patch_available"] = pkg_count
-            except Exception:
-                pass
+            self._collect_yum(result)
 
         if result["patch_manager"]:
             return result
         return None
+
+    @staticmethod
+    def _count_apt_upgrades(out: str) -> tuple[int, int]:
+        """Count total and security upgrades from 'apt-get -s upgrade' output."""
+        available = 0
+        security = 0
+        for line in out.splitlines():
+            if line.startswith("Inst "):
+                available += 1
+                if "-security" in line.lower() or "security" in line.lower():
+                    security += 1
+        return available, security
+
+    def _collect_apt(self, result: Dict[str, Any]) -> None:
+        """Populate patch counts via the apt package manager."""
+        try:
+            # Refresh package lists if the local cache is stale (>= 1h).
+            # Without this, `apt-get -s upgrade` only sees stale data and
+            # reports 0 updates until someone runs apt-get update manually.
+            if _apt_cache_is_stale() and not _run_apt_update():
+                logger.warning("apt-get update failed; using stale package cache")
+
+            # Run simulate upgrade without locks
+            cmd = ["apt-get", "-s", "-o", "Debug::NoLocking=true", "upgrade"]
+            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8")
+
+            available, security = self._count_apt_upgrades(out)
+            result["patch_available"] = available
+            result["patch_security"] = security
+        except Exception:
+            pass
+
+        # Check if reboot is required
+        result["reboot_required"] = os.path.exists("/var/run/reboot-required")
+
+        # Check for major release upgrade (e.g. Ubuntu 22.04 -> 24.04)
+        if shutil.which("do-release-upgrade"):
+            self._collect_major_upgrade(result)
+
+    def _collect_major_upgrade(self, result: Dict[str, Any]) -> None:
+        """Detect a major release upgrade (e.g. Ubuntu 22.04 -> 24.04) via do-release-upgrade."""
+        try:
+            cmd = ["do-release-upgrade", "-c"]
+            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8")
+            for line in out.splitlines():
+                if "New release" in line and "available" in line:
+                    parts = line.split("'")
+                    if len(parts) >= 3:
+                        result["major_upgrade_available"] = parts[1]
+        except Exception:
+            pass
+
+    def _collect_dnf(self, result: Dict[str, Any]) -> None:
+        """Populate patch counts via the dnf package manager."""
+        try:
+            cmd = ["dnf", "check-update", "--quiet"]
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+            out = proc.stdout.decode("utf-8")
+
+            lines = [l.strip() for l in out.splitlines() if l.strip()]
+            pkg_count = 0
+            for line in lines:
+                parts = line.split()
+                if len(parts) >= 3 and not line.startswith("Last metadata"):
+                    pkg_count += 1
+            result["patch_available"] = pkg_count
+
+            # Security count
+            cmd_sec = ["dnf", "updateinfo", "list", "security", "--quiet"]
+            proc_sec = subprocess.run(cmd_sec, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+            out_sec = proc_sec.stdout.decode("utf-8")
+            sec_count = 0
+            for line in out_sec.splitlines():
+                if line.strip() and not line.startswith("Last metadata"):
+                    sec_count += 1
+            result["patch_security"] = sec_count
+        except Exception:
+            pass
+
+        if shutil.which("needs-restarting"):
+            try:
+                res = subprocess.run(["needs-restarting", "-r"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if res.returncode == 1:
+                    result["reboot_required"] = True
+            except Exception:
+                pass
+
+    def _collect_yum(self, result: Dict[str, Any]) -> None:
+        """Populate patch counts via the yum package manager."""
+        try:
+            cmd = ["yum", "check-update", "--quiet"]
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+            out = proc.stdout.decode("utf-8")
+            lines = [l.strip() for l in out.splitlines() if l.strip()]
+            pkg_count = 0
+            for line in lines:
+                parts = line.split()
+                if len(parts) >= 3:
+                    pkg_count += 1
+            result["patch_available"] = pkg_count
+        except Exception:
+            pass
 
 # ---------------------------------------------------------------------------
 # Reporting & Communication
