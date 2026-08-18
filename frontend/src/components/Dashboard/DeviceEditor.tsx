@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Device, DeviceGroup } from '../../types';
+import type { Device, DeviceGroup, Service } from '../../types';
 import { api } from '../../api/client';
 import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight, Wifi, Radio, Server, Database } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -13,6 +13,36 @@ const PROTOCOL_ICON_MAP: Record<string, any> = {
   'rdp': Monitor,
   'tcp': Activity,
 };
+
+function computeGroupPlacement(formData: any, currentDevice: any, devices: Device[]): { x: number; y: number } | null {
+  if (formData.group_id === currentDevice.group_id) return null;
+  const targetGroupDevices = devices.filter(d => d.group_id === formData.group_id && d.id !== currentDevice.id);
+  let maxY = 0;
+  targetGroupDevices.forEach(d => {
+    const bottom = (d.y || 0) + (d.h || 1);
+    if (bottom > maxY) maxY = bottom;
+  });
+  return { x: 0, y: maxY };
+}
+
+function syncModifiedServices(device: Device, currentDevice: any): Promise<unknown>[] {
+  const originalServices = device.services || [];
+  const currentServices = currentDevice.services || [];
+  return currentServices.map(async (svc: Service) => {
+    const originalSvc = originalServices.find(s => s.id === svc.id);
+    if (originalSvc && (
+      originalSvc.port !== svc.port ||
+      originalSvc.name !== svc.name ||
+      originalSvc.protocol !== svc.protocol
+    )) {
+      return api.updateService(svc.id, {
+        port: svc.port,
+        name: svc.name,
+        protocol: svc.protocol,
+      });
+    }
+  });
+}
 
 interface DeviceEditorProps {
   device: Device;
@@ -101,12 +131,16 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
       const status = await api.getAgentStatus(currentDevice.id);
       setAgentStatus(status);
       if (status.is_installed) {
-        try {
-          const config = await api.getAgentConfig(currentDevice.id);
-          setAgentConfig(config);
-        } catch { /* no config yet */ }
+        await loadAgentConfig();
       }
     } catch { /* agent not available */ }
+  };
+
+  const loadAgentConfig = async () => {
+    try {
+      const config = await api.getAgentConfig(currentDevice.id);
+      setAgentConfig(config);
+    } catch { /* no config yet */ }
   };
 
   const handleDeploy = async () => {
@@ -212,41 +246,16 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
     e.preventDefault();
     setIsSaving(true);
     let updateData: any = { ...formData };
-    const isGroupChanged = formData.group_id !== currentDevice.group_id;
-    
-    if (isGroupChanged) {
-      // Find the exact bottom of the target group to avoid endless scrolling
-      const targetGroupDevices = devices.filter(d => d.group_id === formData.group_id && d.id !== currentDevice.id);
-      let maxY = 0;
-      targetGroupDevices.forEach(d => {
-        const bottom = (d.y || 0) + (d.h || 1);
-        if (bottom > maxY) maxY = bottom;
-      });
-      
-      updateData.x = 0;
-      updateData.y = maxY;
+
+    const placement = computeGroupPlacement(formData, currentDevice, devices);
+    if (placement) {
+      updateData.x = placement.x;
+      updateData.y = placement.y;
     }
 
     try {
       // Find and save any modified services to prevent race conditions from onBlur / typing
-      const originalServices = device.services || [];
-      const currentServices = currentDevice.services || [];
-      const servicePromises = currentServices.map(async (svc) => {
-        const originalSvc = originalServices.find(s => s.id === svc.id);
-        if (originalSvc) {
-          if (
-            originalSvc.port !== svc.port || 
-            originalSvc.name !== svc.name || 
-            originalSvc.protocol !== svc.protocol
-          ) {
-            return api.updateService(svc.id, {
-              port: svc.port,
-              name: svc.name,
-              protocol: svc.protocol
-            });
-          }
-        }
-      });
+      const servicePromises = syncModifiedServices(device, currentDevice);
       
       await Promise.all(servicePromises.filter(Boolean));
 
