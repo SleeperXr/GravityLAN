@@ -19,6 +19,7 @@ import 'reactflow/dist/style.css';
 import { Share2, Trash2, Server, Activity, Cpu, RefreshCw, Settings, X, Save, Layers, Wifi, Radio, Smartphone, Box, Monitor, Sliders, Wind, Zap, Maximize, Minimize, ChevronUp, ChevronDown } from 'lucide-react';
 import { api } from '../../api/client';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 
 // --- Context for Flow Settings ---
 const FlowSettingsContext = React.createContext({
@@ -321,6 +322,332 @@ const edgeTypes = {
   custom: CustomEdge,
 };
 
+// --- Pure helpers (extracted to reduce TopologyMap complexity) ---
+
+function findNearestAp(dev: any, aps: any[], devices: any[]) {
+  if (!dev.is_wlan || aps.length === 0) return null;
+  const x = dev.topology_x ?? (devices.indexOf(dev) % 5) * 300;
+  const y = dev.topology_y ?? Math.floor(devices.indexOf(dev) / 5) * 200;
+  let nearestAp = null;
+  let minDist = Infinity;
+  aps.forEach((ap: any) => {
+    const apX = ap.topology_x ?? (devices.indexOf(ap) % 5) * 300;
+    const apY = ap.topology_y ?? Math.floor(devices.indexOf(ap) / 5) * 200;
+    const dist = Math.sqrt(Math.pow(apX - x, 2) + Math.pow(apY - y, 2));
+    if (dist < minDist) {
+      minDist = dist;
+      nearestAp = { x: apX, y: apY, id: ap.id };
+    }
+  });
+  return nearestAp;
+}
+
+function buildInitialNodes(devices: any[], links: any[], onDelete: (id: string) => void): Node[] {
+  const aps = devices.filter((d: any) => d.is_ap);
+  return devices.map((dev: any, index: number) => {
+    const x = dev.topology_x ?? (index % 5) * 300;
+    const y = dev.topology_y ?? Math.floor(index / 5) * 200;
+    const nearestAp = findNearestAp(dev, aps, devices);
+    return {
+      id: dev.id.toString(),
+      type: 'device',
+      data: {
+        ...dev,
+        label: dev.display_name || dev.hostname,
+        nearest_ap: nearestAp,
+        x,
+        y,
+        onDelete,
+        link_count: links.filter((l: any) => l.source_id === dev.id || l.target_id === dev.id).length,
+      },
+      position: { x, y },
+    };
+  });
+}
+
+function buildInitialEdges(
+  links: any[],
+  devices: any[],
+  onRotateSpeed: (edgeId: string, speed: string, forcedSpeed?: string) => void,
+  onDeleteLink: (edgeId: string) => void,
+): Edge[] {
+  return links.map((link: any) => {
+    const sourceNode = devices.find((d: any) => d.id === link.source_id);
+    const targetNode = devices.find((d: any) => d.id === link.target_id);
+    const isWireless = sourceNode?.is_wlan || targetNode?.is_wlan;
+    return {
+      id: `e-${link.id}`,
+      source: link.source_id.toString(),
+      target: link.target_id.toString(),
+      sourceHandle: link.source_handle,
+      targetHandle: link.target_handle,
+      type: 'custom',
+      data: {
+        link_type: link.link_type,
+        is_wireless: isWireless,
+        source_online: sourceNode?.is_online,
+        target_online: targetNode?.is_online,
+        onRotateSpeed,
+        onDeleteLink,
+      },
+      animated: !isWireless,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: link.link_type?.includes('10G') ? '#f59e0b' :
+               (link.link_type?.includes('2.5G') || link.link_type?.includes('2500')) ? '#d946ef' : '#38bdf8',
+      },
+    };
+  });
+}
+
+function mergeNodesPreservingState(initialNodes: Node[], prevNodes: Node[]): Node[] {
+  const simplifiedIncoming = initialNodes.map((n: Node) => ({ id: n.id, data: n.data, position: n.position }));
+  const simplifiedCurrent = prevNodes.map((n: Node) => ({ id: n.id, data: n.data, position: n.position }));
+
+  if (JSON.stringify(simplifiedIncoming) === JSON.stringify(simplifiedCurrent)) {
+    return prevNodes;
+  }
+
+  return initialNodes.map((n: any) => {
+    const existing = prevNodes.find(node => node.id === n.id);
+    return existing ? {
+      ...n,
+      selected: existing.selected,
+      position: (existing as any).dragging ? existing.position : n.position,
+    } : n;
+  });
+}
+
+function mergeEdgesPreservingState(initialEdges: Edge[], prevEdges: Edge[]): Edge[] {
+  const simplifiedIncoming = initialEdges.map((e: Edge) => ({ id: e.id, data: e.data, source: e.source, target: e.target }));
+  const simplifiedCurrent = prevEdges.map((e: Edge) => ({ id: e.id, data: e.data, source: e.source, target: e.target }));
+
+  if (JSON.stringify(simplifiedIncoming) === JSON.stringify(simplifiedCurrent)) {
+    return prevEdges;
+  }
+
+  return initialEdges.map((e: any) => {
+    const existing = prevEdges.find(edge => edge.id === e.id);
+    return existing ? { ...e, selected: existing.selected } : e;
+  });
+}
+
+function portLimitReached(node: any, sourceId: string, edges: Edge[]): boolean {
+  if (!node || node.data.max_ports <= 0) return false;
+  const currentLinks = edges.filter(e => e.source === sourceId || e.target === sourceId).length;
+  return currentLinks >= node.data.max_ports;
+}
+
+function collectNeighborIds(edges: Edge[], nodeId: string): Set<string> {
+  const neighbors = new Set<string>();
+  edges.forEach(e => {
+    if (e.source === nodeId) neighbors.add(e.target);
+    if (e.target === nodeId) neighbors.add(e.source);
+  });
+  return neighbors;
+}
+
+interface FlowRangeProps {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  min: string;
+  max: string;
+  step: string;
+  onChange: (val: number) => void;
+}
+
+const FlowRange = ({ icon, label, value, min, max, step, onChange }: FlowRangeProps) => (
+  <div className="flow-control-item">
+    <div className="flow-control-item__label">
+      {icon}
+      <span>{label}</span>
+    </div>
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(parseFloat(e.target.value))}
+    />
+  </div>
+);
+
+interface TopologySidebarProps {
+  t: TFunction;
+  selectedNode: any;
+  selectedEdge: any;
+  configIsWlan: boolean;
+  setConfigIsWlan: (v: boolean) => void;
+  configIsAp: boolean;
+  setConfigIsAp: (v: boolean) => void;
+  configMaxPorts: number;
+  setConfigMaxPorts: (v: number) => void;
+  configTopHandle: string;
+  setConfigTopHandle: (v: string) => void;
+  configBottomHandle: string;
+  setConfigBottomHandle: (v: string) => void;
+  onSave: () => void;
+  onClose: () => void;
+  onRotateSpeed: (edgeId: string, currentSpeed: string, forcedSpeed?: string) => void;
+  onDeleteLink: (edgeId: string) => void;
+}
+
+const TopologySidebar = ({
+  t,
+  selectedNode,
+  selectedEdge,
+  configIsWlan,
+  setConfigIsWlan,
+  configIsAp,
+  setConfigIsAp,
+  configMaxPorts,
+  setConfigMaxPorts,
+  configTopHandle,
+  setConfigTopHandle,
+  configBottomHandle,
+  setConfigBottomHandle,
+  onSave,
+  onClose,
+  onRotateSpeed,
+  onDeleteLink,
+}: TopologySidebarProps) => (
+  <div className="topology-sidebar">
+    <div className="sidebar-header">
+      <div className="header-title">
+        <Settings size={18} />
+        {selectedNode ? t('topology.device_config', 'Device Configuration') : t('topology.connection_info', 'Connection Info')}
+      </div>
+      <button className="close-btn" onClick={onClose}>
+        <X size={18} />
+      </button>
+    </div>
+
+    <div className="sidebar-content">
+      {selectedNode && (
+        <div className="settings-group">
+          <div className="device-preview">
+            {selectedNode.data.is_ap ? (
+              <Radio size={32} className="text-amber-400" />
+            ) : selectedNode.data.virtual_type === 'docker' ? (
+              <Box size={32} className="text-cyan-400" />
+            ) : selectedNode.data.virtual_type === 'vm' ? (
+              <Monitor size={32} className="text-emerald-400" />
+            ) : selectedNode.data.is_wlan ? (
+              <Smartphone size={32} className="text-sky-400" />
+            ) : (
+              <Server size={32} className="text-sky-400" />
+            )}
+            <div>
+              <div className="preview-name">{selectedNode.data.label}</div>
+              <div className="preview-ip">{selectedNode.data.ip}</div>
+              {selectedNode.data.virtual_type && (
+                <div className="preview-type">
+                  {selectedNode.data.virtual_type.toUpperCase()}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="settings-section">
+            <label className="section-label">{t('topology.device_mode', 'Device Mode')}</label>
+            <div className="toggle-group">
+              <label className="toggle-item">
+                <input
+                  type="checkbox"
+                  checked={configIsWlan}
+                  onChange={(e) => setConfigIsWlan(e.target.checked)}
+                />
+                <div className="toggle-content">
+                  <Smartphone size={14} />
+                  <span>{t('editor.wlan_client')}</span>
+                </div>
+              </label>
+              <label className="toggle-item">
+                <input
+                  type="checkbox"
+                  checked={configIsAp}
+                  onChange={(e) => setConfigIsAp(e.target.checked)}
+                />
+                <div className="toggle-content">
+                  <Radio size={14} />
+                  <span>{t('editor.access_point')}</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div className="input-field">
+            <label>{t('topology.max_ports', 'Max Ports')}</label>
+            <input
+              type="number"
+              value={configMaxPorts}
+              onChange={(e) => setConfigMaxPorts(parseInt(e.target.value))}
+            />
+          </div>
+
+          <div className="input-field">
+            <label>{t('topology.top_handle', 'Top Handle')}</label>
+            <select value={configTopHandle} onChange={(e) => setConfigTopHandle(e.target.value)}>
+              <option value="target">{t('topology.handle_input', 'Input (Target)')}</option>
+              <option value="source">{t('topology.handle_output', 'Output (Source)')}</option>
+              <option value="both">{t('topology.handle_both', 'Both (Bi-Directional)')}</option>
+            </select>
+          </div>
+
+          <div className="input-field">
+            <label>{t('topology.bottom_handle', 'Bottom Handle')}</label>
+            <select value={configBottomHandle} onChange={(e) => setConfigBottomHandle(e.target.value)}>
+              <option value="source">{t('topology.handle_output', 'Output (Source)')}</option>
+              <option value="target">{t('topology.handle_input', 'Input (Target)')}</option>
+              <option value="both">{t('topology.handle_both', 'Both (Bi-Directional)')}</option>
+            </select>
+          </div>
+
+          <div className="sidebar-actions">
+            <button className="save-btn" onClick={onSave}>
+              <Save size={16} /> {t('common.save')}
+            </button>
+            <button className="delete-btn" onClick={() => selectedNode.data.onDelete(selectedNode.id)}>
+              <Trash2 size={16} /> {t('topology.remove_device', 'Remove Device')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {selectedEdge && (
+        <div className="settings-group">
+          <div className="edge-info">
+            <Share2 size={32} className="text-amber-400" />
+            <div>
+              <div className="preview-name">Link: {selectedEdge.data.link_type}</div>
+              <div className="preview-ip">ID: {selectedEdge.id}</div>
+            </div>
+          </div>
+
+          <div className="input-field">
+            <label>{t('topology.speed', 'Speed')}</label>
+            <select
+              value={selectedEdge.data.link_type}
+              onChange={(e) => onRotateSpeed(selectedEdge.id, selectedEdge.data.link_type, e.target.value)}
+            >
+              <option value="100Mb">100 Mb/s</option>
+              <option value="1GbE">1 Gb/s (1GbE)</option>
+              <option value="2.5GbE">2.5 Gb/s (2.5GbE)</option>
+              <option value="10GbE">10 Gb/s (10GbE)</option>
+            </select>
+          </div>
+
+          <button className="delete-btn full" onClick={() => onDeleteLink(selectedEdge.id)}>
+            <Trash2 size={16} /> {t('topology.disconnect', 'Disconnect')}
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+);
+
 const TopologyMap: React.FC = () => {
   const { t } = useTranslation();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -406,121 +733,30 @@ const TopologyMap: React.FC = () => {
         return;
       }
 
-      // Calculate nearest AP for WLAN devices
-      const aps = devices.filter((d: any) => d.is_ap);
-
-      const initialNodes = devices.map((dev: any, index: number) => {
-        const x = dev.topology_x ?? (index % 5) * 300;
-        const y = dev.topology_y ?? Math.floor(index / 5) * 200;
-        
-        let nearestAp = null;
-        if (dev.is_wlan && aps.length > 0) {
-          let minDist = Infinity;
-          aps.forEach((ap: any) => {
-            const apX = ap.topology_x ?? (devices.indexOf(ap) % 5) * 300;
-            const apY = ap.topology_y ?? Math.floor(devices.indexOf(ap) / 5) * 200;
-            const dist = Math.sqrt(Math.pow(apX - x, 2) + Math.pow(apY - y, 2));
-            if (dist < minDist) {
-              minDist = dist;
-              nearestAp = { x: apX, y: apY, id: ap.id };
-            }
-          });
+      const initialNodes = buildInitialNodes(devices, links, async (id: string) => {
+        if (window.confirm(t('editor.delete_device_confirm', 'Do you really want to permanently delete this device?'))) {
+          try {
+            await api.deleteDevice(parseInt(id));
+            setNodes(nds => nds.filter(n => n.id !== id));
+          } catch (err) {
+            console.error('Failed to delete device:', err);
+            alert(t('notifications.delete_failed', 'Delete failed'));
+          }
         }
-
-        return {
-          id: dev.id.toString(),
-          type: 'device',
-          data: {
-            ...dev,
-            label: dev.display_name || dev.hostname,
-            nearest_ap: nearestAp,
-            x: x,
-            y: y,
-            onDelete: async (id: string) => {
-              if (window.confirm(t('editor.delete_device_confirm', 'Do you really want to permanently delete this device?'))) {
-                try {
-                  await api.deleteDevice(parseInt(id));
-                  setNodes(nds => nds.filter(n => n.id !== id));
-                } catch (err) {
-                  console.error('Failed to delete device:', err);
-                  alert(t('notifications.delete_failed', 'Delete failed'));
-                }
-              }
-            },
-            link_count: links.filter((l: any) => l.source_id === dev.id || l.target_id === dev.id).length
-          },
-          position: { x, y },
-        };
       });
 
-      const initialEdges = links.map((link: any) => {
-        const sourceNode = devices.find((d: any) => d.id === link.source_id);
-        const targetNode = devices.find((d: any) => d.id === link.target_id);
-        const isWireless = sourceNode?.is_wlan || targetNode?.is_wlan;
-
-        return {
-          id: `e-${link.id}`,
-          source: link.source_id.toString(),
-          target: link.target_id.toString(),
-          sourceHandle: link.source_handle,
-          targetHandle: link.target_handle,
-          type: 'custom',
-          data: { 
-            link_type: link.link_type,
-            is_wireless: isWireless,
-            source_online: sourceNode?.is_online,
-            target_online: targetNode?.is_online,
-            onRotateSpeed,
-            onDeleteLink
-          },
-          animated: !isWireless,
-          markerEnd: { 
-            type: MarkerType.ArrowClosed, 
-            color: link.link_type?.includes('10G') ? '#f59e0b' : 
-                   (link.link_type?.includes('2.5G') || link.link_type?.includes('2500')) ? '#d946ef' : '#38bdf8' 
-          },
-        };
-      });
+      const initialEdges = buildInitialEdges(links, devices, onRotateSpeed, onDeleteLink);
 
       // Optimization: Only update if data actually changed to prevent React Flow re-renders
-      setNodes(prevNodes => {
-        const simplifiedIncoming = initialNodes.map((n: Node) => ({ id: n.id, data: n.data, position: n.position }));
-        const simplifiedCurrent = prevNodes.map((n: Node) => ({ id: n.id, data: n.data, position: n.position }));
-        
-        if (JSON.stringify(simplifiedIncoming) === JSON.stringify(simplifiedCurrent)) {
-          return prevNodes;
-        }
+      setNodes(prevNodes => mergeNodesPreservingState(initialNodes, prevNodes));
 
-        // Preserve selected state and dragging positions
-        return initialNodes.map((n: any) => {
-          const existing = prevNodes.find(node => node.id === n.id);
-          return existing ? { 
-            ...n, 
-            selected: existing.selected, 
-            position: (existing as any).dragging ? existing.position : n.position 
-          } : n;
-        });
-      });
-
-      setEdges(prevEdges => {
-        const simplifiedIncoming = initialEdges.map((e: Edge) => ({ id: e.id, data: e.data, source: e.source, target: e.target }));
-        const simplifiedCurrent = prevEdges.map((e: Edge) => ({ id: e.id, data: e.data, source: e.source, target: e.target }));
-        
-        if (JSON.stringify(simplifiedIncoming) === JSON.stringify(simplifiedCurrent)) {
-          return prevEdges;
-        }
-
-        return initialEdges.map((e: any) => {
-          const existing = prevEdges.find(edge => edge.id === e.id);
-          return existing ? { ...e, selected: existing.selected } : e;
-        });
-      });
+      setEdges(prevEdges => mergeEdgesPreservingState(initialEdges, prevEdges));
     } catch (err) { 
       console.error('Topology fetch failed:', err); 
     } finally { 
       setIsRefreshing(false); 
     }
-  }, [setNodes, setEdges, onRotateSpeed, onDeleteLink]);
+  }, [setNodes, setEdges, onRotateSpeed, onDeleteLink, t]);
 
   const onConnect = useCallback((params: Connection) => {
     if (params.source === params.target) return;
@@ -529,20 +765,14 @@ const TopologyMap: React.FC = () => {
     const sourceNode = nodes.find(n => n.id === params.source);
     const targetNode = nodes.find(n => n.id === params.target);
     
-    if (sourceNode && sourceNode.data.max_ports > 0) {
-      const currentLinks = edges.filter(e => e.source === params.source || e.target === params.source).length;
-      if (currentLinks >= sourceNode.data.max_ports) {
-        alert(t('topology.port_limit_reached', { name: sourceNode.data.label, current: currentLinks, max: sourceNode.data.max_ports, defaultValue: `Port limit reached! ${sourceNode.data.label} already has ${currentLinks} of ${sourceNode.data.max_ports} ports occupied.` }));
-        return;
-      }
+    if (sourceNode && portLimitReached(sourceNode, params.source!, edges)) {
+      alert(t('topology.port_limit_reached', { name: sourceNode.data.label, current: edges.filter(e => e.source === params.source || e.target === params.source).length, max: sourceNode.data.max_ports, defaultValue: `Port limit reached! ${sourceNode.data.label} already has ${edges.filter(e => e.source === params.source || e.target === params.source).length} of ${sourceNode.data.max_ports} ports occupied.` }));
+      return;
     }
     
-    if (targetNode && targetNode.data.max_ports > 0) {
-      const currentLinks = edges.filter(e => e.source === params.target || e.target === params.target).length;
-      if (currentLinks >= targetNode.data.max_ports) {
-        alert(t('topology.port_limit_reached', { name: targetNode.data.label, current: currentLinks, max: targetNode.data.max_ports, defaultValue: `Port limit reached! ${targetNode.data.label} already has ${currentLinks} of ${targetNode.data.max_ports} ports occupied.` }));
-        return;
-      }
+    if (targetNode && portLimitReached(targetNode, params.target!, edges)) {
+      alert(t('topology.port_limit_reached', { name: targetNode.data.label, current: edges.filter(e => e.source === params.target || e.target === params.target).length, max: targetNode.data.max_ports, defaultValue: `Port limit reached! ${targetNode.data.label} already has ${edges.filter(e => e.source === params.target || e.target === params.target).length} of ${targetNode.data.max_ports} ports occupied.` }));
+      return;
     }
 
     api.createTopologyLink({
@@ -601,11 +831,7 @@ const TopologyMap: React.FC = () => {
     
     if (dx === 0 && dy === 0) return;
 
-    const neighbors = new Set();
-    edges.forEach(e => {
-      if (e.source === node.id) neighbors.add(e.target);
-      if (e.target === node.id) neighbors.add(e.source);
-    });
+    const neighbors = collectNeighborIds(edges, node.id);
 
     setNodes(nds => nds.map(n => {
       if (neighbors.has(n.id)) {
@@ -628,11 +854,7 @@ const TopologyMap: React.FC = () => {
     await saveNodePos(node.id, node.position);
     
     if (stickyDrag) {
-      const neighbors = new Set();
-      edges.forEach(e => {
-        if (e.source === node.id) neighbors.add(e.target);
-        if (e.target === node.id) neighbors.add(e.source);
-      });
+      const neighbors = collectNeighborIds(edges, node.id);
 
       // Save all moved neighbors
       for (const nid of neighbors) {
@@ -752,43 +974,31 @@ const TopologyMap: React.FC = () => {
           
           {isFlowExpanded && (
             <>
-              <div className="flow-control-item">
-                <div className="flow-control-item__label">
-                  <Zap size={12} />
-                  <span>Speed: {flowSpeed.toFixed(1)}x</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0.1" 
-                  max="3.0" 
-                  step="0.1" 
-                  value={flowSpeed} 
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    setFlowSpeed(val);
-                    saveFlowSetting('topology.flow_speed', val);
-                  }}
-                />
-              </div>
+              <FlowRange
+                icon={<Zap size={12} />}
+                label={`Speed: ${flowSpeed.toFixed(1)}x`}
+                value={flowSpeed}
+                min="0.1"
+                max="3.0"
+                step="0.1"
+                onChange={(val) => {
+                  setFlowSpeed(val);
+                  saveFlowSetting('topology.flow_speed', val);
+                }}
+              />
 
-              <div className="flow-control-item">
-                <div className="flow-control-item__label">
-                  <Wind size={12} />
-                  <span>Intensity: {flowIntensity}</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="5" 
-                  step="1" 
-                  value={flowIntensity} 
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value);
-                    setFlowIntensity(val);
-                    saveFlowSetting('topology.flow_intensity', val);
-                  }}
-                />
-              </div>
+              <FlowRange
+                icon={<Wind size={12} />}
+                label={`Intensity: ${flowIntensity}`}
+                value={flowIntensity}
+                min="0"
+                max="5"
+                step="1"
+                onChange={(val) => {
+                  setFlowIntensity(val);
+                  saveFlowSetting('topology.flow_intensity', val);
+                }}
+              />
 
               <div style={{ 
                 display: 'flex', 
@@ -826,139 +1036,25 @@ const TopologyMap: React.FC = () => {
 
       {/* Settings Sidebar */}
       {(selectedNode || selectedEdge) && (
-        <div className="topology-sidebar">
-          <div className="sidebar-header">
-            <div className="header-title">
-              <Settings size={18} />
-              {selectedNode ? t('topology.device_config', 'Device Configuration') : t('topology.connection_info', 'Connection Info')}
-            </div>
-            <button className="close-btn" onClick={() => { setSelectedNode(null); setSelectedEdge(null); }}>
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="sidebar-content">
-            {selectedNode && (
-              <div className="settings-group">
-                <div className="device-preview">
-                  {selectedNode.data.is_ap ? (
-                    <Radio size={32} className="text-amber-400" />
-                  ) : selectedNode.data.virtual_type === 'docker' ? (
-                    <Box size={32} className="text-cyan-400" />
-                  ) : selectedNode.data.virtual_type === 'vm' ? (
-                    <Monitor size={32} className="text-emerald-400" />
-                  ) : selectedNode.data.is_wlan ? (
-                    <Smartphone size={32} className="text-sky-400" />
-                  ) : (
-                    <Server size={32} className="text-sky-400" />
-                  )}
-                  <div>
-                    <div className="preview-name">{selectedNode.data.label}</div>
-                    <div className="preview-ip">{selectedNode.data.ip}</div>
-                    {selectedNode.data.virtual_type && (
-                      <div className="preview-type">
-                        {selectedNode.data.virtual_type.toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="settings-section">
-                  <label className="section-label">{t('topology.device_mode', 'Device Mode')}</label>
-                  <div className="toggle-group">
-                    <label className="toggle-item">
-                      <input 
-                        type="checkbox" 
-                        checked={configIsWlan} 
-                        onChange={(e) => setConfigIsWlan(e.target.checked)} 
-                      />
-                      <div className="toggle-content">
-                        <Smartphone size={14} />
-                        <span>{t('editor.wlan_client')}</span>
-                      </div>
-                    </label>
-                    <label className="toggle-item">
-                      <input 
-                        type="checkbox" 
-                        checked={configIsAp} 
-                        onChange={(e) => setConfigIsAp(e.target.checked)} 
-                      />
-                      <div className="toggle-content">
-                        <Radio size={14} />
-                        <span>{t('editor.access_point')}</span>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="input-field">
-                  <label>{t('topology.max_ports', 'Max Ports')}</label>
-                  <input 
-                    type="number" 
-                    value={configMaxPorts} 
-                    onChange={(e) => setConfigMaxPorts(parseInt(e.target.value))} 
-                  />
-                </div>
-
-                <div className="input-field">
-                  <label>{t('topology.top_handle', 'Top Handle')}</label>
-                  <select value={configTopHandle} onChange={(e) => setConfigTopHandle(e.target.value)}>
-                    <option value="target">{t('topology.handle_input', 'Input (Target)')}</option>
-                    <option value="source">{t('topology.handle_output', 'Output (Source)')}</option>
-                    <option value="both">{t('topology.handle_both', 'Both (Bi-Directional)')}</option>
-                  </select>
-                </div>
-
-                <div className="input-field">
-                  <label>{t('topology.bottom_handle', 'Bottom Handle')}</label>
-                  <select value={configBottomHandle} onChange={(e) => setConfigBottomHandle(e.target.value)}>
-                    <option value="source">{t('topology.handle_output', 'Output (Source)')}</option>
-                    <option value="target">{t('topology.handle_input', 'Input (Target)')}</option>
-                    <option value="both">{t('topology.handle_both', 'Both (Bi-Directional)')}</option>
-                  </select>
-                </div>
-
-                <div className="sidebar-actions">
-                  <button className="save-btn" onClick={saveNodeSettings}>
-                    <Save size={16} /> {t('common.save')}
-                  </button>
-                  <button className="delete-btn" onClick={() => selectedNode.data.onDelete(selectedNode.id)}>
-                    <Trash2 size={16} /> {t('topology.remove_device', 'Remove Device')}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {selectedEdge && (
-               <div className="settings-group">
-                 <div className="edge-info">
-                    <Share2 size={32} className="text-amber-400" />
-                    <div>
-                      <div className="preview-name">Link: {selectedEdge.data.link_type}</div>
-                      <div className="preview-ip">ID: {selectedEdge.id}</div>
-                    </div>
-                 </div>
-
-                 <div className="input-field">
-                   <label>{t('topology.speed', 'Speed')}</label>
-                   <select 
-                     value={selectedEdge.data.link_type} 
-                     onChange={(e) => onRotateSpeed(selectedEdge.id, selectedEdge.data.link_type, e.target.value)}
-                   >
-                     <option value="100Mb">100 Mb/s</option>
-                     <option value="1GbE">1 Gb/s (1GbE)</option>
-                     <option value="2.5GbE">2.5 Gb/s (2.5GbE)</option>
-                     <option value="10GbE">10 Gb/s (10GbE)</option>
-                   </select>
-                 </div>
-                 
-                 <button className="delete-btn full" onClick={() => onDeleteLink(selectedEdge.id)}>
-                    <Trash2 size={16} /> {t('topology.disconnect', 'Disconnect')}
-                 </button>
-               </div>
-            )}
-          </div>
-        </div>
+        <TopologySidebar
+          t={t}
+          selectedNode={selectedNode}
+          selectedEdge={selectedEdge}
+          configIsWlan={configIsWlan}
+          setConfigIsWlan={setConfigIsWlan}
+          configIsAp={configIsAp}
+          setConfigIsAp={setConfigIsAp}
+          configMaxPorts={configMaxPorts}
+          setConfigMaxPorts={setConfigMaxPorts}
+          configTopHandle={configTopHandle}
+          setConfigTopHandle={setConfigTopHandle}
+          configBottomHandle={configBottomHandle}
+          setConfigBottomHandle={setConfigBottomHandle}
+          onSave={saveNodeSettings}
+          onClose={() => { setSelectedNode(null); setSelectedEdge(null); }}
+          onRotateSpeed={onRotateSpeed}
+          onDeleteLink={onDeleteLink}
+        />
       )}
 
       <style>{`
