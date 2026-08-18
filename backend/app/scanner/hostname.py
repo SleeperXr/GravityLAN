@@ -103,15 +103,17 @@ def _try_nmap(ip: str) -> Optional[str]:
     """Try nmap -sn resolution (final powerful fallback)."""
     try:
         res = subprocess.run(["nmap", "-sn", ip], capture_output=True, text=True, timeout=3.0)
-        if res.returncode == 0:
-            # Look for "Nmap scan report for <hostname> (<ip>)"
-            match = re.search(r"Nmap scan report for (.*) \(" + re.escape(ip) + r"\)", res.stdout)
-            if match:
-                name = match.group(1).strip()
-                if name and not is_ip_like(name):
-                    return name
     except (subprocess.SubprocessError, OSError):
-        pass
+        return None
+    if res.returncode != 0:
+        return None
+    # Look for "Nmap scan report for <hostname> (<ip>)"
+    match = re.search(r"Nmap scan report for (.*) \(" + re.escape(ip) + r"\)", res.stdout)
+    if not match:
+        return None
+    name = match.group(1).strip()
+    if name and not is_ip_like(name):
+        return name
     return None
 
 
@@ -120,28 +122,37 @@ def _resolve_linux_shell(ip: str) -> Optional[str]:
     return _try_avahi(ip) or _try_dig(ip) or _try_nmap(ip)
 
 
+def _parse_ping_hostname(stdout: str, ip: str) -> Optional[str]:
+    """Extract a hostname from 'ping -a' output lines like 'Pinging host [ip] ...'."""
+    for line in stdout.splitlines():
+        if "ping" in line.lower() and "[" in line:
+            name = line.split("[")[0].strip().split()[-1]
+            if name and name != ip:
+                return name
+    return None
+
+
+def _resolve_ping_win32(ip: str) -> Optional[str]:
+    """Try Windows 'ping -a' for reverse resolution."""
+    try:
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        res = subprocess.run(
+            ["ping", "-a", "-n", "1", "-w", "200", ip],
+            capture_output=True, text=True, encoding="cp850",
+            startupinfo=startupinfo, creationflags=subprocess.CREATE_NO_WINDOW,
+            timeout=2.0
+        )
+        return _parse_ping_hostname(res.stdout, ip)
+    except (subprocess.SubprocessError, OSError):
+        return None
+
+
 def _resolve_shell(ip: str) -> Optional[str]:
     """Try OS-specific shell commands (ping -a, avahi, dig)."""
     if sys.platform == 'win32':
-        try:
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            res = subprocess.run(
-                ["ping", "-a", "-n", "1", "-w", "200", ip],
-                capture_output=True, text=True, encoding="cp850",
-                startupinfo=startupinfo, creationflags=subprocess.CREATE_NO_WINDOW,
-                timeout=2.0
-            )
-            for line in res.stdout.splitlines():
-                if "ping" in line.lower() and "[" in line:
-                    name = line.split("[")[0].strip().split()[-1]
-                    if name and name != ip:
-                        return name
-        except (subprocess.SubprocessError, OSError):
-            pass
-    else:
-        return _resolve_linux_shell(ip)
-    return None
+        return _resolve_ping_win32(ip)
+    return _resolve_linux_shell(ip)
 
 async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None = None) -> str | None:
     """Resolve an IP address to its hostname via reverse DNS (FQDN)."""

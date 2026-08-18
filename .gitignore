@@ -237,5 +237,20 @@ implementation_plan.md
 docs/STABILIZATION_2026.md
 .agent/
 
+# Local agent tooling & Repowise index (not part of the project)
+.claude/
+.codex/
+.mcp.json
+.vscode/
+.repowise/
+AGENTS.md
+repowise-start.ps1
+
+# Scratch diagnostics generated during code-health work
+backend/check_findings.py
+backend/check_ssh.py
+backend/fix_agent_deployer.py
+backend/health.json
+
 # Keys and Secrets
 antigravity_key*
