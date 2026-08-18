@@ -126,6 +126,53 @@ def test_get_local_arp_table_exception(monkeypatch):
     assert arp.get_local_arp_table() == {}
 
 
+# --- _extract_neighbor ------------------------------------------------------
+
+def test_extract_neighbor_valid():
+    assert arp._extract_neighbor("192.168.1.10 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE") == \
+        ("192.168.1.10", "aa:bb:cc:dd:ee:ff")
+
+
+def test_extract_neighbor_short_line():
+    assert arp._extract_neighbor("192.168.1.10 dev eth0") is None
+
+
+def test_extract_neighbor_invalid_ip():
+    assert arp._extract_neighbor("not-an-ip dev eth0 lladdr aa:bb:cc:dd:ee:ff") is None
+
+
+def test_extract_neighbor_missing_lladdr():
+    assert arp._extract_neighbor("192.168.1.10 dev eth0 REACHABLE") is None
+
+
+def test_extract_neighbor_bad_mac_length():
+    assert arp._extract_neighbor("192.168.1.10 dev eth0 lladdr aa:bb:cc REACHABLE") is None
+
+
+# --- get_linux_neighbors ----------------------------------------------------
+
+def test_get_linux_neighbors_parses(monkeypatch):
+    monkeypatch.setattr(arp.sys, "platform", "linux")
+    monkeypatch.setattr(
+        arp.subprocess, "check_output",
+        lambda *a, **k: b"192.168.1.10 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE\n",
+    )
+    assert arp.get_linux_neighbors() == {"192.168.1.10": "aa:bb:cc:dd:ee:ff"}
+
+
+def test_get_linux_neighbors_win32_returns_empty(monkeypatch):
+    monkeypatch.setattr(arp.sys, "platform", "win32")
+    assert arp.get_linux_neighbors() == {}
+
+
+def test_get_linux_neighbors_exception(monkeypatch):
+    monkeypatch.setattr(arp.sys, "platform", "linux")
+    def boom(*a, **k):
+        raise OSError("ip missing")
+    monkeypatch.setattr(arp.subprocess, "check_output", boom)
+    assert arp.get_linux_neighbors() == {}
+
+
 # --- _merge_into_hosts ------------------------------------------------------
 
 def test_merge_into_hosts_backfills_existing():

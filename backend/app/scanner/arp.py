@@ -14,22 +14,19 @@ logger = logging.getLogger(__name__)
 
 async def trigger_arp_probe(ip: str):
     """Send a tiny UDP packet to trigger an ARP entry for the target IP."""
-    try:
-        # NetBIOS Name Service (137) is great for triggering responses
-        # Also try MDNS (5353) and LLMNR (5355)
-        loop = asyncio.get_running_loop()
-        for port in [137, 5353, 5355]:
-            try:
-                transport, _ = await loop.create_datagram_endpoint(
-                    lambda: asyncio.DatagramProtocol(),
-                    remote_addr=(ip, port)
-                )
-                transport.sendto(b'\x00', (ip, port))
-                transport.close()
-            except OSError:
-                pass
-    except Exception:
-        pass
+    loop = asyncio.get_running_loop()
+    # NetBIOS Name Service (137) is great for triggering responses
+    # Also try MDNS (5353) and LLMNR (5355)
+    for port in [137, 5353, 5355]:
+        try:
+            transport, _ = await loop.create_datagram_endpoint(
+                lambda: asyncio.DatagramProtocol(),
+                remote_addr=(ip, port)
+            )
+            transport.sendto(b'\x00', (ip, port))
+            transport.close()
+        except OSError:
+            pass
 
 def _decode_output(stdout: bytes) -> str:
     """Decode command output trying common encodings; falls back to empty string."""
@@ -85,6 +82,27 @@ def get_local_arp_table() -> Dict[str, str]:
         logger.error(f"ARP command failed: {e}")
         return {}
 
+def _extract_neighbor(line: str):
+    """Parse a single 'ip neighbor' line into (ip, mac) or None."""
+    parts = line.split()
+    if len(parts) < 4:
+        return None
+    ip = parts[0]
+    try:
+        socket.inet_aton(ip)
+    except (socket.error, ValueError):
+        return None
+    if 'lladdr' not in parts:
+        return None
+    mac_idx = parts.index('lladdr') + 1
+    if mac_idx >= len(parts):
+        return None
+    mac = parts[mac_idx].lower()
+    if len(mac) != 17:
+        return None
+    return ip, mac
+
+
 def get_linux_neighbors() -> Dict[str, str]:
     """Get MAC addresses via 'ip neighbor' (Linux native)."""
     if sys.platform == 'win32': return {}
@@ -92,19 +110,9 @@ def get_linux_neighbors() -> Dict[str, str]:
         output = subprocess.check_output(["ip", "neighbor", "show"], stderr=subprocess.STDOUT, timeout=10.0).decode(errors='ignore')
         mapping = {}
         for line in output.splitlines():
-            parts = line.split()
-            if len(parts) >= 4:
-                ip = parts[0]
-                try:
-                    socket.inet_aton(ip)
-                    if 'lladdr' in parts:
-                        mac_idx = parts.index('lladdr') + 1
-                        if mac_idx < len(parts):
-                            mac = parts[mac_idx].lower()
-                            if len(mac) == 17:
-                                mapping[ip] = mac
-                except (socket.error, ValueError, IndexError):
-                    continue
+            parsed = _extract_neighbor(line)
+            if parsed:
+                mapping[parsed[0]] = parsed[1]
         return mapping
     except Exception:
         return {}
@@ -163,20 +171,20 @@ async def _probe_and_retry_missing(discovered_hosts: List[Dict[str, Any]], arp_m
 
     # Re-read tables after probes
     arp_map_retry = await loop.run_in_executor(None, get_local_arp_table)
-    if arp_map_retry:
-        for ip, mac in arp_map_retry.items():
-            arp_map[ip] = mac
-            for host in discovered_hosts:
-                if host["ip"] == ip:
-                    host["mac"] = mac
+    if not arp_map_retry:
+        return
+    for ip, mac in arp_map_retry.items():
+        arp_map[ip] = mac
+        for host in discovered_hosts:
+            if host["ip"] == ip:
+                host["mac"] = mac
 
 
 def _merge_into_hosts(discovered_hosts: List[Dict[str, Any]], arp_map: Dict[str, str], all_target_ips: Optional[List[str]]) -> None:
     """Consolidate the ARP table into the discovered hosts list (append new, backfill existing)."""
     for ip, mac in arp_map.items():
-        if all_target_ips is not None and len(all_target_ips) > 0:
-            if ip not in all_target_ips:
-                continue
+        if all_target_ips is not None and len(all_target_ips) > 0 and ip not in all_target_ips:
+            continue
 
         existing = next((h for h in discovered_hosts if h["ip"] == ip), None)
         if not existing:
