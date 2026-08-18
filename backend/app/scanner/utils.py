@@ -138,6 +138,15 @@ def _add_subnet(subnets: list[SubnetInfo], seen_subnets: set, name: str, ip: str
         pass
 
 
+def _is_usable_psutil_interface(name: str, stats) -> bool:
+    """Return False for disabled or loopback interfaces."""
+    if name in stats and not stats[name].isup:
+        return False
+    if "loopback" in name.lower() or name.startswith("lo"):
+        return False
+    return True
+
+
 def _collect_psutil_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> None:
     """STAGE 1: Collect subnets via psutil (very reliable if installed)."""
     try:
@@ -145,12 +154,8 @@ def _collect_psutil_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> Non
         interfaces = psutil.net_if_addrs()
         stats = psutil.net_if_stats()
         for name, addrs in interfaces.items():
-            # Skip if disabled or loopback
-            if name in stats and not stats[name].isup:
+            if not _is_usable_psutil_interface(name, stats):
                 continue
-            if "loopback" in name.lower() or name.startswith("lo"):
-                continue
-
             for addr in addrs:
                 if addr.family == socket.AF_INET:
                     _add_subnet(subnets, seen_subnets, name, addr.address, addr.netmask or "255.255.255.0")
@@ -164,9 +169,10 @@ def _collect_netifaces_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> 
         import netifaces
         for iface in netifaces.interfaces():
             addrs = netifaces.ifaddresses(iface)
-            if netifaces.AF_INET in addrs:
-                for addr_info in addrs[netifaces.AF_INET]:
-                    _add_subnet(subnets, seen_subnets, iface, addr_info.get("addr"), addr_info.get("netmask", "255.255.255.0"))
+            if netifaces.AF_INET not in addrs:
+                continue
+            for addr_info in addrs[netifaces.AF_INET]:
+                _add_subnet(subnets, seen_subnets, iface, addr_info.get("addr"), addr_info.get("netmask", "255.255.255.0"))
     except Exception:
         pass
 

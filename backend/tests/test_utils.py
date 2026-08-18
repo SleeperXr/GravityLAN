@@ -113,6 +113,93 @@ def test_collect_psutil_subnets_handles_missing(monkeypatch):
     assert subnets == []
 
 
+# --- _is_usable_psutil_interface ---------------------------------------------
+
+def test_is_usable_psutil_interface_down_skipped():
+    class FakeStats:
+        isup = False
+
+    stats = {"eth0": FakeStats()}
+    assert utils._is_usable_psutil_interface("eth0", stats) is False
+
+
+def test_is_usable_psutil_interface_loopback_skipped():
+    class FakeStats:
+        isup = True
+
+    stats = {"lo": FakeStats()}
+    assert utils._is_usable_psutil_interface("lo", stats) is False
+    assert utils._is_usable_psutil_interface("Loopback Pseudo-Interface", stats) is False
+
+
+def test_is_usable_psutil_interface_unknown_iface_kept():
+    stats = {}
+    assert utils._is_usable_psutil_interface("eth0", stats) is True
+
+
+# --- netifaces collector -----------------------------------------------------
+
+def test_collect_netifaces_subnets(monkeypatch):
+    class FakeNetifaces:
+        @staticmethod
+        def interfaces():
+            return ["eth0"]
+
+        @staticmethod
+        def ifaddresses(iface):
+            return {2: [{"addr": "10.0.0.5", "netmask": "255.255.255.0"}]}
+
+    fake = MagicMock()
+    fake.interfaces = FakeNetifaces.interfaces
+    fake.ifaddresses = FakeNetifaces.ifaddresses
+    fake.AF_INET = 2
+    monkeypatch.setitem(utils.sys.modules, "netifaces", fake)
+
+    subnets = []
+    seen = set()
+    utils._collect_netifaces_subnets(subnets, seen)
+    assert len(subnets) == 1
+    assert subnets[0].subnet == "10.0.0.0/24"
+
+
+def test_collect_netifaces_subnets_skips_no_ipv4(monkeypatch):
+    class FakeNetifaces:
+        @staticmethod
+        def interfaces():
+            return ["eth0"]
+
+        @staticmethod
+        def ifaddresses(iface):
+            return {10: [{"addr": "fe80::1"}]}
+
+    fake = MagicMock()
+    fake.interfaces = FakeNetifaces.interfaces
+    fake.ifaddresses = FakeNetifaces.ifaddresses
+    fake.AF_INET = 2
+    monkeypatch.setitem(utils.sys.modules, "netifaces", fake)
+
+    subnets = []
+    seen = set()
+    utils._collect_netifaces_subnets(subnets, seen)
+    assert subnets == []
+
+
+def test_collect_netifaces_subnets_handles_missing(monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "netifaces":
+            raise ImportError("netifaces not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    subnets = []
+    seen = set()
+    utils._collect_netifaces_subnets(subnets, seen)  # must not raise
+    assert subnets == []
+
+
 def test_get_local_subnets_fallback_returns_virtual(monkeypatch):
     """When no physical subnet is found, virtual ones must be returned as a fallback."""
     monkeypatch.setattr(utils.sys, "platform", "linux")
