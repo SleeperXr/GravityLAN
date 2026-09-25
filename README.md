@@ -101,7 +101,11 @@ Uninstall works the same way (via SSH or the uninstall one-liner). Package updat
 
 ### Python client
 
-The client lives in [`gravitylan_api/`](gravitylan_api) and only needs `requests`. Use it from the repository root (or put the repository root on your `PYTHONPATH`):
+The client lives in [`gravitylan_api/`](gravitylan_api) and only needs `requests`:
+
+```bash
+pip install ./gravitylan_api
+```
 
 ```python
 from gravitylan_api import GravityLANClient
@@ -286,7 +290,11 @@ Deinstallieren funktioniert genauso (per SSH oder Deinstallations-Einzeiler). Pa
 
 ### Python-Client
 
-Der Client liegt in [`gravitylan_api/`](gravitylan_api) und braucht nur `requests`. Nutze ihn aus dem Repo-Root heraus (oder nimm den Repo-Root in deinen `PYTHONPATH` auf):
+Der Client liegt in [`gravitylan_api/`](gravitylan_api) und braucht nur `requests`:
+
+```bash
+pip install ./gravitylan_api
+```
 
 ```python
 from gravitylan_api import GravityLANClient
