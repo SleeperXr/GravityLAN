@@ -6,8 +6,7 @@
 
 <p align="center">
   <strong>EN:</strong> Your homelab radar — discover the network, organise devices, sketch topology, add agents.<br>
-  <strong>DE:</strong> Dein Homelab-Radar — Netz finden, Geräte sortieren, Topologie skizzieren, Agenten draufpacken.<br><br>
-  <em>EN: Started fast, now hardened for reliability. Run it and see what’s on your LAN. · DE: Schnell gestartet, jetzt für Zuverlässigkeit gehärtet. Einfach laufen lassen und gucken, was im LAN passiert.</em>
+  <strong>DE:</strong> Dein Homelab-Radar — Netz finden, Geräte sortieren, Topologie skizzieren, Agenten draufpacken.
 </p>
 
 <p align="center">
@@ -15,9 +14,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/GravityLAN-v0.2.2-blue?style=flat-square" alt="Version">
-  <img src="https://img.shields.io/badge/Agent-v0.2.3-green?style=flat-square" alt="Agent Version">
+  <img src="https://img.shields.io/badge/GravityLAN-v0.3.4-blue?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/Agent-v0.3.4-green?style=flat-square" alt="Agent Version">
   <img src="https://img.shields.io/badge/Status-Pre--Release-orange?style=flat-square" alt="Status">
+  <a href="https://github.com/SleeperXr/GravityLAN/actions/workflows/ci.yml"><img src="https://github.com/SleeperXr/GravityLAN/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black" alt="React">
@@ -26,7 +26,7 @@
 </p>
 
 > [!WARNING]
-> **Pre-Release Phase**: GravityLAN is currently in an early development stage. Features are subject to change, and while we strive for stability, you may encounter bugs. Use with caution in production environments.
+> **Pre-release:** GravityLAN is still evolving. Features and APIs may change between versions and you may hit bugs — keep a backup (Settings → Backup) before upgrading.
 
 ---
 
@@ -34,71 +34,21 @@
 
 ## English
 
-> **Homelab ready, hardened for reliability** — Built with enthusiasm, velocity, and a healthy “ship it first” attitude, but now significantly improved in reliability and security posture: FastAPI backend, React UI, SQLite, Nmap, WebSockets. Meant for your **homelab**, not bare exposure on the public internet (use VPN like you already would).
+GravityLAN scans your home network, keeps an inventory of every device it finds, lets you model racks and cabling, and — optionally — monitors and patches your Linux hosts through a small agent. One container, one SQLite file, a React dashboard on top. Built for the **homelab**, not for bare exposure on the internet.
 
-### What GravityLAN does
+### Features
 
-| Area | In short |
-|------|----------|
-| **Discovery (scanner)** | Scan subnets, find hosts, rough-in ports and services — answers “what’s on my LAN again?”. |
-| **Dashboard** | Device overview, status, groups — your main panel after login. |
-| **Network (`/network`)** | Manage subnets, enable/disable, basis for LAN scans. |
-| **Topology (`/topology`)** | Model racks and links — physical or logical, your choice. |
-| **Agents (`/agents`)** | Optional **Linux agent** (Python): push metrics; deploy from the UI over SSH; per-device tokens. |
-| **Settings (`/settings`)** | App config, scan scheduler, themes, log level, etc. |
-| **Live logs (`/logs`)** | Backend logs via WebSocket — handy for debugging or “is the scan still running?”. |
-| **Setup wizard** | First boot: prepare data dir/DB and access, then the normal UI. |
-| **Backup / restore** | JSON export/import of core tables — homelab convenience before experiments or migrations. |
-| **API (`/docs`)** | Swagger UI — for curl nerds and automation. |
-
-### UI navigation
-
-```mermaid
-flowchart LR
-  subgraph onboarding [First run]
-    S[Setup wizard]
-  end
-  subgraph app [After login]
-    D[Dashboard /]
-    N[Network /network]
-    T[Topology /topology]
-    A[Agents /agents]
-    E[Settings /settings]
-    L[Logs /logs]
-  end
-  S --> D
-  D --> N
-  D --> T
-  D --> A
-  D --> E
-  D --> L
-```
-
-### Architecture at a glance
-
-```mermaid
-flowchart TB
-  subgraph client [Browser]
-    SPA[React SPA — Vite, TypeScript]
-  end
-  subgraph server [GravityLAN container / host]
-    API[FastAPI — REST + WebSockets]
-    SC[Scanner + scheduler]
-    DB[(SQLite / aiosqlite)]
-    ST[Static: built frontend/dist]
-  end
-  subgraph lan [Your LAN]
-    NM[Nmap scans]
-    AG[Linux agent optional]
-  end
-  SPA <-->|HTTP/HTTPS depends on setup| API
-  API --> DB
-  API --> ST
-  SC --> NM
-  AG -->|Report + WS| API
-```
-
-**Main backend modules** (same concepts as the UI): `auth`, `setup`, `scanner`, `devices` / `groups` / `services`, `network`, `topology`, `agent`, `backup`, `settings`.
+| Area | What you get |
+|------|--------------|
+| **Discovery** | Scheduled Nmap/ARP scans of your subnets: hosts, open ports, services, vendor lookup, Docker containers (including `ipvlan` setups with shared MACs). |
+| **Dashboard** | All devices with status, groups and service health; IP-change history, issues and a notification feed. |
+| **Network** (`/network`) | Manage subnets, enable/disable them as scan targets, per-IP view of your address space. |
+| **Topology** (`/topology`) | Model racks, devices and links — physical or logical. |
+| **Agents** (`/agents`) | Optional Linux agent: CPU/RAM/disk/network/temperature metrics with 6 h – 30 d history, OS detection, available package updates (apt/dnf/yum) and one-click patching with a live terminal. |
+| **Settings** (`/settings`) | Scan schedule, history retention, read-only API tokens, themes, log level, backup/restore. |
+| **Live logs** (`/logs`) | Backend log stream via WebSocket. |
+| **Setup wizard** | First start: detect subnets, run the first scan, set the admin password. |
+| **API** (`/docs`) | Full REST API with Swagger UI (incl. webhooks and scan profiles), plus a Python client (`gravitylan_api`). |
 
 ### Screenshots
 
@@ -106,37 +56,17 @@ flowchart TB
 |:---:|:---:|
 | ![Dashboard overview](./docs/screenshots/GravityLanDashboard.png) | ![Network planner — subnets & scan basis](./docs/screenshots/GravityLanNetwork-Planer.png) |
 
-| Agents | Topology Designer |
+| Agents | Topology designer |
 |:---:|:---:|
-| ![Linux agents — metrics & deploy](./docs/screenshots/GravityLANAgents.png) | ![Topology — model racks and links](./docs/screenshots/GravityLanTopology.png) |
+| ![Linux agents — metrics & patching](./docs/screenshots/GravityLANAgents.png) | ![Topology — model racks and links](./docs/screenshots/GravityLanTopology.png) |
 
-| Device Editor |
-|:---:|
-| <img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Device details & services" width="450"> |
+| Device editor | Device editor — agent tab |
+|:---:|:---:|
+| <img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Device details & services" width="420"> | <img src="./docs/screenshots/GravityLanDeviceEditorAgent.png" alt="Agent deployment from the device editor" width="420"> |
 
-### Tech stack
-
-| Layer | Choice |
-|-------|--------|
-| **Backend** | Python 3.12+, FastAPI, SQLAlchemy 2 (async), Pydantic Settings |
-| **Database** | SQLite under configurable data path |
-| **Scanner** | Nmap (host/subnet orchestration in the app) |
-| **Frontend** | React 19, Vite, TypeScript, Router, Tailwind |
-| **Realtime** | WebSockets (scanner progress, logs, agent) |
-| **Deploy** | Multi-stage Dockerfile (frontend build + Python runtime), optional Compose / Macvlan (e.g. Unraid-style) |
-
-### Requirements
-
-- **Docker** (recommended) or **Windows/Linux** for local dev  
-- **Nmap** (included in the image mindset; install locally too if not using containers)  
-- **Node 20+** / **npm** — only when building the frontend yourself  
-
-### Quick start (Docker Hub)
-
-The easiest way to run GravityLAN is using the official image from [Docker Hub](https://hub.docker.com/r/sleeperxr/gravitylan).
+### Quick start (Docker)
 
 ```bash
-docker pull sleeperxr/gravitylan:latest
 docker run -d --name gravitylan \
   -p 8000:8000 \
   -v gravitylan-data:/app/data \
@@ -144,99 +74,144 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-Open **http://localhost:8000** → finish setup → log in.
+Open **http://localhost:8000**, finish the setup wizard, log in.
 
-### Quick start (Local Build)
+> [!IMPORTANT]
+> **Finish the setup wizard right after the first start.** Until setup is completed, only the wizard's own routes are reachable, but whoever opens the UI first sets the admin password. The same applies after a factory reset.
 
-If you want to build the image yourself (multi-stage: Vite → static assets + Python):
+**Compose variants** (all use the Docker Hub image):
 
-```bash
-docker build -t gravitylan:local .
-docker run -d --name gravitylan \
-  -p 8000:8000 \
-  -v gravitylan-data:/app/data \
-  --cap-add=NET_RAW --cap-add=NET_ADMIN \
-  gravitylan:local
+| File | Networking | When to use |
+|------|------------|-------------|
+| `docker-compose.yml` | Bridge, port 8000 | Simplest start. ARP/MAC detection only sees what the bridge exposes. |
+| `docker-compose.hostnet.yml` | Host network | Best LAN visibility (ARP, MAC addresses, multicast). Less container isolation. |
+| `docker-compose.unraid.yml` | Host network | Unraid template-style setup. |
+| `docker-compose.macvlan.yml` | Macvlan, own LAN IP | Container gets its own address in your LAN (configure `GRAVITYLAN_SUBNET`, `_GATEWAY`, `_IP`, `_INTERFACE`). |
+
+Build the image yourself instead: `docker build -t gravitylan:local .` (multi-stage: Vite build + Python runtime, runs as non-root user).
+
+### GravityLAN agent (optional)
+
+A single Python script that runs as a service on your Linux hosts and reports metrics with a per-device token. Two ways to install it, both from the device editor's **Agent** tab:
+
+1. **Deploy via SSH** — enter SSH credentials, GravityLAN installs and starts the agent (systemd, Synology rc.d or nohup fallback). Credentials are used for that request only and never stored on the server.
+2. **Manual one-liner** — copy the `curl … | sudo bash` command and run it on the host. The command contains a **one-time code** (valid 30 minutes, usable once); get a new one with "New code".
+
+Uninstall works the same way (via SSH or the uninstall one-liner). Package updates are counted passively by the agent; running updates is done on demand over SSH from the Agents view. Details: [AGENT.md](AGENT.md).
+
+### Python client
+
+The client lives in [`gravitylan_api/`](gravitylan_api) and only needs `requests`. Use it from the repository root (or put the repository root on your `PYTHONPATH`):
+
+```python
+from gravitylan_api import GravityLANClient
+
+client = GravityLANClient(base_url="http://gravitylan.local:8000", token="<API token>")
+for device in client.devices.list():
+    print(device["display_name"], device["ip"])
 ```
 
-Open **http://localhost:8000** → finish setup → log in.
+Create API tokens under **Settings → API Tokens (Read-Only)**. The client also reads `GRAVITYLAN_BASE_URL` and `GRAVITYLAN_TOKEN` from the environment.
 
-- **Compose**: 
-  - `docker-compose.yml`: Standard bridge mode (simplest).
-  - `docker-compose.macvlan.yml`: Advanced mode with fixed IP in LAN.
-  - `docker-compose.hostnet.yml`: Host networking for direct LAN access.
-- **Host networking** trades container isolation for the simplest LAN interface access during scans — valid when you want that.
+### Configuration
 
-### Development (Windows)
-
-1. Install **Python 3.12+**, **Node 20+**, **Nmap**, **Git**.  
-2. From repo root:
-
-```powershell
-.\start_gravitylan.ps1
-```
-
-Runs **Uvicorn** on `http://0.0.0.0:8000` and **Vite** on `http://127.0.0.1:5173`.
-
-> **Single-process SPA:** Run `cd frontend && npm run build` so FastAPI serves `frontend/dist` or `/app/static` — same pattern as the release image.
-
-### Running Tests
-
-To run the backend test suite locally, navigate to the `backend` folder and run `pytest`:
-```bash
-cd backend
-python -m pytest
-```
-For more information, see the [tests/](tests) directory.
-
-### Environment variables (selected)
+Environment variables (prefix `GRAVITYLAN_`, see `backend/app/config.py`):
 
 | Variable | Meaning | Default |
 |----------|---------|---------|
-| `GRAVITYLAN_DATA_DIR` | SQLite + persistence path | depends on deployment (often `/data` locally, `/app/data` in image) |
-| `GRAVITYLAN_DATABASE_URL` | Full SQLAlchemy URL (optional) | empty → SQLite under data dir |
+| `GRAVITYLAN_DATA_DIR` | Data directory (SQLite database) | `/app/data` |
+| `GRAVITYLAN_DATABASE_URL` | Full SQLAlchemy URL (optional) | empty → SQLite in data dir |
+| `GRAVITYLAN_PORT` / `GRAVITYLAN_HOST` | Listen port / address | `8000` / `0.0.0.0` |
 | `GRAVITYLAN_DEBUG` | Verbose logging | `false` |
-| `GRAVITYLAN_CORS_ORIGINS` | CORS for dev split frontend | includes localhost:5173 |
-| `GRAVITYLAN_SCAN_TIMEOUT` | Per-target timeout (seconds) | `1.5` |
+| `GRAVITYLAN_SECURE_COOKIES` | Mark the session cookie `Secure` — enable behind HTTPS | `false` |
+| `GRAVITYLAN_SSH_STRICT_MODE` | Reject unknown SSH host keys during agent deploy and patching | `false` |
+| `GRAVITYLAN_HISTORY_RETENTION_DAYS` | Keep metrics/history for N days (1–365) | `30` |
+| `GRAVITYLAN_SCAN_TIMEOUT` | Port connect timeout per target (seconds) | `1.5` |
 | `GRAVITYLAN_SCAN_WORKERS` | Scanner concurrency | `20` |
-| `GRAVITYLAN_SUBNET` | Subnet for docker-compose macvlan | `192.168.100.0/24` |
-| `GRAVITYLAN_GATEWAY` | Gateway for docker-compose macvlan | `192.168.100.1` |
-| `GRAVITYLAN_IP` | Fixed container IP for macvlan | `192.168.100.254` |
-| `GRAVITYLAN_INTERFACE` | Parent interface for macvlan | `ens19` |
+| `GRAVITYLAN_SCAN_INTERVAL_MINUTES` | Auto-scan interval (0 = disabled) | `0` |
+| `GRAVITYLAN_CORS_ORIGINS` | Extra CORS origins (not needed with the bundled UI or the Vite dev proxy) | empty |
 
-Keys like **`api.master_token`** / **`api.admin_password`** live in the DB via setup/UI — see `backend/app/config.py` and the settings API.
+The admin password, the master API token and most runtime options live in the database and are managed through the setup wizard and the Settings page.
+
+### Security at a glance
+
+- **Login** sets an `httpOnly` session cookie; passwords are hashed with Argon2.
+- **API tokens** are stored hashed, scoped and read-only by default; each agent has its own device token.
+- **Agent install** uses SSH credentials only for the request, or a single-use enrollment code for the manual one-liner.
+- **Remote access:** GravityLAN assumes a trusted home network — use a VPN or your usual reverse proxy (with HTTPS and `GRAVITYLAN_SECURE_COOKIES=true`).
+
+More: [SECURITY.md](SECURITY.md), [docs/threat-model.md](docs/threat-model.md), [docs/container-hardening.md](docs/container-hardening.md).
+
+### Architecture
+
+```mermaid
+flowchart TB
+  subgraph client [Clients]
+    SPA[React SPA — Vite, TypeScript]
+    PY[gravitylan_api / scripts]
+  end
+  subgraph server [GravityLAN container]
+    API[FastAPI — REST + WebSockets]
+    SC[Scanner + scheduler]
+    DB[(SQLite)]
+  end
+  subgraph lan [Your LAN]
+    HOSTS[Hosts, services, containers]
+    AG[Linux agents — optional]
+  end
+  SPA <-->|session cookie| API
+  PY -->|API token| API
+  API --> DB
+  SC -->|Nmap / ARP| HOSTS
+  AG -->|metrics + device token| API
+  API -->|SSH: deploy, patching| AG
+```
+
+### Development
+
+**Windows:** `.\start_gravitylan.ps1` installs dependencies and starts Uvicorn on `:8000` and Vite on `:5173`.
+
+**Linux/macOS (manual):**
+
+```bash
+# Backend (Python 3.12+, Nmap installed)
+cd backend
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Frontend (Node 20+), in a second terminal — proxies /api to :8000
+cd frontend
+npm install
+npm run dev
+```
+
+For a single-process setup like the release image, run `npm run build` in `frontend/`; FastAPI then serves `frontend/dist`.
+
+**Tests & checks:**
+
+```bash
+cd backend && python -m pytest          # backend test suite
+python -m pytest gravitylan_api/tests   # Python client (from the repo root)
+cd frontend && npx tsc --noEmit         # frontend type check
+```
+
+Architecture decisions are recorded in [docs/adr/](docs/adr). Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md); changes per release: [CHANGELOG.md](CHANGELOG.md).
 
 ### Repository layout
 
 ```
-agent/                 # gravitylan-agent.py (+ systemd unit template)
-backend/app/           # FastAPI: api/, models/, scanner/, services/, …
-backend/tests/         # Automated Pytest suite
-frontend/              # React (Vite, TypeScript)
-tests/                 # Test directory overview & local running guides
-docs/screenshots/      # README images
-SECURITY.md            # Security policy & trust model
-SOUL.md                # Project philosophy
-AGENT.md               # Agent protocol
-CONTRIBUTING.md        # How to contribute
+agent/            Linux agent (gravitylan-agent.py) + systemd unit
+backend/app/      FastAPI app: api/, models/, schemas/, scanner/, services/, database/
+backend/tests/    Backend test suite (pytest)
+frontend/         React UI (Vite, TypeScript, Tailwind)
+gravitylan_api/   Python client library
+docs/             Security, hardening and design docs, ADRs, screenshots
+scripts/          Maintenance scripts (e.g. version sync)
 ```
-
-Interactive API: **`/docs`** (Swagger) while the server runs.
-
-### GravityLAN Agent (optional)
-
-- One **Python script** + config (server URL + device token).  
-- Reports metrics with `Authorization: Bearer <token>` to the agent API.  
-- Live WebSockets accept master or device agent token depending on endpoint.  
-- SSH creds used for “deploy from UI” exist only **for that request**, not persisted in DB for passwords/keys in that flow.
-
-### Homelab note (short)
-
-GravityLAN assumes a **friendly home network**. Login/tokens gate the UI and streams; they’re not a full internet-facing perimeter story. Remote access → VPN or your usual reverse proxy, same as the rest of the lab.
 
 ### License & credits
 
-Open source under the [MIT License](LICENSE). Built with **Antigravity** and “maybe too much UI fun” by **SleeperXr**.
+Open source under the [MIT License](LICENSE). Built with **Antigravity** and "maybe too much UI fun" by **SleeperXr**.
 
 ---
 
@@ -244,71 +219,21 @@ Open source under the [MIT License](LICENSE). Built with **Antigravity** and “
 
 ## Deutsch
 
-> **Homelab ready, hardened for reliability** — Dieses Projekt ist mit Ideenfeuer und Schnelligkeit entstanden, wurde aber nun für den zuverlässigen Homelab-Betrieb gehärtet: FastAPI-Backend, React-UI, SQLite, Nmap, WebSockets. Perfekt fürs **Heimnetz / Homelab**, nicht fürs öffentliche Internet ohne VPN.
+GravityLAN scannt dein Heimnetz, führt ein Inventar aller gefundenen Geräte, lässt dich Racks und Verkabelung modellieren und überwacht und patcht auf Wunsch deine Linux-Hosts über einen kleinen Agenten. Ein Container, eine SQLite-Datei, ein React-Dashboard obendrauf. Gebaut fürs **Homelab**, nicht für den ungeschützten Betrieb im Internet.
 
-### Was GravityLAN für dich tut
+### Funktionen
 
-| Bereich | Kurz erklärt |
-|--------|----------------|
-| **Erkennung (Scanner)** | Subnetze scannen, Hosts finden, Ports und Dienste grob einordnen — ideal, um „was hängt nochmal bei mir im Netz?“ zu beantworten. |
-| **Dashboard** | Übersicht über Geräte, Status, Gruppen — dein zentrales Panel nach dem Login. |
-| **Netzwerk (`/network`)** | Subnetze verwalten, aktivieren/deaktivieren, Scan-Basis für dein LAN. |
-| **Topologie (`/topology`)** | Racks und Verbindungen modellieren — physisch oder logisch, wie es dir passt. |
-| **Agents (`/agents`)** | Optionaler **Linux-Agent** (Python): Metriken melden; Deployment per UI (SSH), Tokens pro Gerät. |
-| **Einstellungen (`/settings`)** | App-Konfiguration, Scan-Scheduler, Themes, Log-Level u. a. |
-| **Live-Logs (`/logs`)** | Backend-Logs per WebSocket — praktisch beim Debuggen oder „läuft der Scan noch?“. |
-| **Setup-Wizard** | Erststart: Datenordner/DB anlegen, Zugang einrichten, danach normale Oberfläche. |
-| **Backup / Restore** | JSON-Export/-Import der wichtigen Tabellen — Homelab-Komfort beim Umzug oder vor Experimenten. |
-| **API (`/docs`)** | Swagger UI — wenn du lieber curl oder Automatisierung nutzt. |
-
-### Navigation in der Oberfläche
-
-```mermaid
-flowchart LR
-  subgraph onboarding [Erststart]
-    S[Setup-Wizard]
-  end
-  subgraph app [Nach Login]
-    D[Dashboard /]
-    N[Netzwerk /network]
-    T[Topologie /topology]
-    A[Agents /agents]
-    E[Einstellungen /settings]
-    L[Logs /logs]
-  end
-  S --> D
-  D --> N
-  D --> T
-  D --> A
-  D --> E
-  D --> L
-```
-
-### Architektur auf einen Blick
-
-```mermaid
-flowchart TB
-  subgraph client [Browser]
-    SPA[React SPA — Vite, TypeScript]
-  end
-  subgraph server [GravityLAN Container / Host]
-    API[FastAPI — REST + WebSockets]
-    SC[Scanner + Scheduler]
-    DB[(SQLite / aiosqlite)]
-    ST[Static: gebautes frontend/dist]
-  end
-  subgraph lan [Dein LAN]
-    NM[Nmap Scans]
-    AG[Linux Agent optional]
-  end
-  SPA <-->|HTTPS/HTTP je nach Setup| API
-  API --> DB
-  API --> ST
-  SC --> NM
-  AG -->|Report + WS| API
-```
-
-**Wichtige Backend-Module:** `auth`, `setup`, `scanner`, `devices` / `groups` / `services`, `network`, `topology`, `agent`, `backup`, `settings`.
+| Bereich | Was du bekommst |
+|--------|------------------|
+| **Erkennung** | Geplante Nmap-/ARP-Scans deiner Subnetze: Hosts, offene Ports, Dienste, Hersteller-Erkennung, Docker-Container (auch `ipvlan`-Setups mit geteilter MAC). |
+| **Dashboard** | Alle Geräte mit Status, Gruppen und Dienst-Zustand; IP-Wechsel-Historie, Probleme und ein Benachrichtigungs-Feed. |
+| **Netzwerk** (`/network`) | Subnetze verwalten, als Scan-Ziel aktivieren/deaktivieren, IP-Übersicht deines Adressraums. |
+| **Topologie** (`/topology`) | Racks, Geräte und Verbindungen modellieren — physisch oder logisch. |
+| **Agents** (`/agents`) | Optionaler Linux-Agent: CPU-/RAM-/Disk-/Netzwerk-/Temperatur-Metriken mit 6 h – 30 d Historie, OS-Erkennung, verfügbare Paket-Updates (apt/dnf/yum) und Patchen per Klick mit Live-Terminal. |
+| **Einstellungen** (`/settings`) | Scan-Zeitplan, Aufbewahrung der Historie, schreibgeschützte API-Token, Themes, Log-Level, Backup/Restore. |
+| **Live-Logs** (`/logs`) | Backend-Logs live per WebSocket. |
+| **Setup-Wizard** | Erststart: Subnetze erkennen, ersten Scan starten, Admin-Passwort setzen. |
+| **API** (`/docs`) | Komplette REST-API mit Swagger UI (inkl. Webhooks und Scan-Profilen), dazu ein Python-Client (`gravitylan_api`). |
 
 ### Screenshots
 
@@ -318,35 +243,15 @@ flowchart TB
 
 | Agents | Topologie-Designer |
 |:---:|:---:|
-| ![Linux-Agenten — Metriken & Deploy](./docs/screenshots/GravityLANAgents.png) | ![Topologie — Racks und Verbindungen modellieren](./docs/screenshots/GravityLanTopology.png) |
+| ![Linux-Agenten — Metriken & Patchen](./docs/screenshots/GravityLANAgents.png) | ![Topologie — Racks und Verbindungen modellieren](./docs/screenshots/GravityLanTopology.png) |
 
-| Geräte-Editor |
-|:---:|
-| <img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Gerätedetails & Dienste" width="450"> |
+| Geräte-Editor | Geräte-Editor — Agent-Tab |
+|:---:|:---:|
+| <img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Gerätedetails & Dienste" width="420"> | <img src="./docs/screenshots/GravityLanDeviceEditorAgent.png" alt="Agent-Installation aus dem Geräte-Editor" width="420"> |
 
-### Tech-Stack
-
-| Schicht | Wahl |
-|--------|-----|
-| **Backend** | Python 3.12+, FastAPI, SQLAlchemy 2 (async), Pydantic Settings |
-| **Datenbank** | SQLite unter konfigurierbarem Datenpfad |
-| **Scanner** | Nmap (Host/Subnet-Logik über die App) |
-| **Frontend** | React 19, Vite, TypeScript, Router, Tailwind |
-| **Echtzeit** | WebSockets (Scanner-Fortschritt, Logs, Agent) |
-| **Deploy** | Multi-Stage Dockerfile, optional Compose mit Macvlan/Unraid-Stil |
-
-### Voraussetzungen
-
-- **Docker** (empfohlen) *oder* **Windows/Linux** zum lokalen Entwickeln  
-- **Nmap** (im Docker-Image mitgedacht; lokal installieren wenn du ohne Container scannst)  
-- **Node 20+** und **npm** — nur wenn du das Frontend selbst baust  
-
-### Schnellstart (Docker Hub)
-
-Der einfachste Weg GravityLAN zu nutzen, ist das offizielle Image vom [Docker Hub](https://hub.docker.com/r/sleeperxr/gravitylan).
+### Schnellstart (Docker)
 
 ```bash
-docker pull sleeperxr/gravitylan:latest
 docker run -d --name gravitylan \
   -p 8000:8000 \
   -v gravitylan-data:/app/data \
@@ -354,94 +259,141 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-Öffne **http://localhost:8000** → Setup abschließen → einloggen.
+**http://localhost:8000** öffnen, Setup-Wizard abschließen, einloggen.
 
-### Schnellstart (Lokaler Build)
+> [!IMPORTANT]
+> **Schließ den Setup-Wizard direkt nach dem ersten Start ab.** Bis dahin sind nur die Routen des Wizards erreichbar — aber wer die Oberfläche zuerst öffnet, legt das Admin-Passwort fest. Das gilt genauso nach einem Werksreset.
 
-Wenn du das Image selbst bauen möchtest (Multi-Stage: Vite → statische Dateien + Python):
+**Compose-Varianten** (alle mit dem Image von Docker Hub):
 
-```bash
-docker build -t gravitylan:local .
-docker run -d --name gravitylan \
-  -p 8000:8000 \
-  -v gravitylan-data:/app/data \
-  --cap-add=NET_RAW --cap-add=NET_ADMIN \
-  gravitylan:local
+| Datei | Netzwerk | Wann sinnvoll |
+|------|------------|-------------|
+| `docker-compose.yml` | Bridge, Port 8000 | Einfachster Start. ARP/MAC-Erkennung sieht nur, was die Bridge durchreicht. |
+| `docker-compose.hostnet.yml` | Host-Netzwerk | Beste Sicht aufs LAN (ARP, MAC-Adressen, Multicast). Weniger Container-Isolation. |
+| `docker-compose.unraid.yml` | Host-Netzwerk | Setup im Stil eines Unraid-Templates. |
+| `docker-compose.macvlan.yml` | Macvlan, eigene LAN-IP | Container bekommt eine eigene Adresse im LAN (`GRAVITYLAN_SUBNET`, `_GATEWAY`, `_IP`, `_INTERFACE` anpassen). |
+
+Image selbst bauen: `docker build -t gravitylan:local .` (Multi-Stage: Vite-Build + Python-Runtime, läuft als Nicht-root-User).
+
+### GravityLAN-Agent (optional)
+
+Ein einzelnes Python-Skript, das als Dienst auf deinen Linux-Hosts läuft und Metriken mit einem Token pro Gerät meldet. Zwei Installationswege, beide im **Agent**-Tab des Geräte-Editors:
+
+1. **Per SSH ausrollen** — SSH-Zugangsdaten eingeben, GravityLAN installiert und startet den Agenten (systemd, Synology rc.d oder nohup als Fallback). Die Zugangsdaten gelten nur für diese Anfrage und werden auf dem Server nie gespeichert.
+2. **Manueller Einzeiler** — den Befehl `curl … | sudo bash` kopieren und auf dem Host ausführen. Er enthält einen **Einmal-Code** (30 Minuten gültig, nur einmal nutzbar); einen neuen gibt es über „Neuer Code“.
+
+Deinstallieren funktioniert genauso (per SSH oder Deinstallations-Einzeiler). Paket-Updates zählt der Agent passiv; eingespielt werden sie auf Wunsch per SSH aus der Agents-Ansicht. Details: [AGENT.md](AGENT.md).
+
+### Python-Client
+
+Der Client liegt in [`gravitylan_api/`](gravitylan_api) und braucht nur `requests`. Nutze ihn aus dem Repo-Root heraus (oder nimm den Repo-Root in deinen `PYTHONPATH` auf):
+
+```python
+from gravitylan_api import GravityLANClient
+
+client = GravityLANClient(base_url="http://gravitylan.local:8000", token="<API-Token>")
+for device in client.devices.list():
+    print(device["display_name"], device["ip"])
 ```
 
-Öffne **http://localhost:8000** → Setup abschließen → einloggen.
+API-Token erstellst du unter **Einstellungen → API-Token (Read-Only)**. Der Client liest außerdem `GRAVITYLAN_BASE_URL` und `GRAVITYLAN_TOKEN` aus der Umgebung.
 
-- **Compose:**
-  - `docker-compose.yml`: Standard-Modus (Bridge).
-  - `docker-compose.macvlan.yml`: Advanced (feste IP im LAN).
-  - `docker-compose.hostnet.yml`: Host-Netzwerk für maximale LAN-Nähe.
-- **Host-Netzwerk-Mode:** mehr LAN-Nähe, weniger Container-Isolation — bewusst so nutzbar.
+### Konfiguration
 
-### Entwicklung unter Windows
-
-1. **Python 3.12+**, **Node 20+**, **Nmap**, **Git** installieren.  
-2. Im Repo-Root:
-
-```powershell
-.\start_gravitylan.ps1
-```
-
-Startet **Uvicorn** auf `http://0.0.0.0:8000` und **Vite** auf `http://127.0.0.1:5173`.
-
-> **SPA aus einem Prozess:** `cd frontend && npm run build` — FastAPI liefert `frontend/dist` bzw. `/app/static`, wie im Release-Image.
-
-### Tests ausführen
-
-Um die Backend-Testsuite lokal auszuführen, wechsle in den Ordner `backend` und starte `pytest`:
-```bash
-cd backend
-python -m pytest
-```
-Weitere Informationen findest du im [tests/](tests)-Verzeichnis.
-
-### Umgebungsvariablen (Auswahl)
+Umgebungsvariablen (Präfix `GRAVITYLAN_`, siehe `backend/app/config.py`):
 
 | Variable | Bedeutung | Default |
 |----------|-----------|---------|
-| `GRAVITYLAN_DATA_DIR` | Persistenzpfad für SQLite und Daten | je nach Deployment |
-| `GRAVITYLAN_DATABASE_URL` | Volle SQLAlchemy-URL optional | leer → SQLite |
-| `GRAVITYLAN_DEBUG` | Ausführlichere Logs | `false` |
-| `GRAVITYLAN_CORS_ORIGINS` | CORS (Dev mit Vite) | u. a. localhost:5173 |
-| `GRAVITYLAN_SCAN_TIMEOUT` | Timeout pro Scan-Ziel (Sekunden) | `1.5` |
-| `GRAVITYLAN_SCAN_WORKERS` | Parallelität Scanner | `20` |
+| `GRAVITYLAN_DATA_DIR` | Datenordner (SQLite-Datenbank) | `/app/data` |
+| `GRAVITYLAN_DATABASE_URL` | Volle SQLAlchemy-URL (optional) | leer → SQLite im Datenordner |
+| `GRAVITYLAN_PORT` / `GRAVITYLAN_HOST` | Port / Adresse | `8000` / `0.0.0.0` |
+| `GRAVITYLAN_DEBUG` | Ausführliche Logs | `false` |
+| `GRAVITYLAN_SECURE_COOKIES` | Session-Cookie als `Secure` markieren — hinter HTTPS aktivieren | `false` |
+| `GRAVITYLAN_SSH_STRICT_MODE` | Unbekannte SSH-Host-Keys bei Agent-Deploy und Patchen ablehnen | `false` |
+| `GRAVITYLAN_HISTORY_RETENTION_DAYS` | Metriken/Historie N Tage aufbewahren (1–365) | `30` |
+| `GRAVITYLAN_SCAN_TIMEOUT` | Port-Timeout pro Ziel (Sekunden) | `1.5` |
+| `GRAVITYLAN_SCAN_WORKERS` | Parallelität des Scanners | `20` |
+| `GRAVITYLAN_SCAN_INTERVAL_MINUTES` | Auto-Scan-Intervall (0 = aus) | `0` |
+| `GRAVITYLAN_CORS_ORIGINS` | Zusätzliche CORS-Origins (mit der mitgelieferten UI oder dem Vite-Proxy nicht nötig) | leer |
 
-Weitere Schlüssel wie **`api.master_token`**, **`api.admin_password`** → Setup/UI/DB (`backend/app/config.py`).
+Admin-Passwort, Master-API-Token und die meisten Laufzeit-Optionen liegen in der Datenbank und werden über den Setup-Wizard und die Einstellungen verwaltet.
+
+### Sicherheit auf einen Blick
+
+- **Login** setzt ein `httpOnly`-Session-Cookie; Passwörter werden mit Argon2 gehasht.
+- **API-Token** werden gehasht gespeichert, haben Scopes und sind standardmäßig schreibgeschützt; jeder Agent hat sein eigenes Geräte-Token.
+- **Agent-Installation** nutzt SSH-Zugangsdaten nur für die Anfrage bzw. einen Einmal-Code für den manuellen Einzeiler.
+- **Fernzugriff:** GravityLAN geht von einem vertrauenswürdigen Heimnetz aus — nutze VPN oder deinen gewohnten Reverse-Proxy (mit HTTPS und `GRAVITYLAN_SECURE_COOKIES=true`).
+
+Mehr dazu: [SECURITY.md](SECURITY.md), [docs/threat-model.md](docs/threat-model.md), [docs/container-hardening.md](docs/container-hardening.md).
+
+### Architektur
+
+```mermaid
+flowchart TB
+  subgraph client [Clients]
+    SPA[React SPA — Vite, TypeScript]
+    PY[gravitylan_api / Skripte]
+  end
+  subgraph server [GravityLAN-Container]
+    API[FastAPI — REST + WebSockets]
+    SC[Scanner + Scheduler]
+    DB[(SQLite)]
+  end
+  subgraph lan [Dein LAN]
+    HOSTS[Hosts, Dienste, Container]
+    AG[Linux-Agenten — optional]
+  end
+  SPA <-->|Session-Cookie| API
+  PY -->|API-Token| API
+  API --> DB
+  SC -->|Nmap / ARP| HOSTS
+  AG -->|Metriken + Geräte-Token| API
+  API -->|SSH: Deploy, Patchen| AG
+```
+
+### Entwicklung
+
+**Windows:** `.\start_gravitylan.ps1` installiert die Abhängigkeiten und startet Uvicorn auf `:8000` und Vite auf `:5173`.
+
+**Linux/macOS (manuell):**
+
+```bash
+# Backend (Python 3.12+, Nmap installiert)
+cd backend
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Frontend (Node 20+), in einem zweiten Terminal — leitet /api an :8000 weiter
+cd frontend
+npm install
+npm run dev
+```
+
+Für den Ein-Prozess-Betrieb wie im Release-Image in `frontend/` `npm run build` ausführen; FastAPI liefert dann `frontend/dist` aus.
+
+**Tests & Checks:**
+
+```bash
+cd backend && python -m pytest          # Backend-Testsuite
+python -m pytest gravitylan_api/tests   # Python-Client (aus dem Repo-Root)
+cd frontend && npx tsc --noEmit         # Typprüfung Frontend
+```
+
+Architekturentscheidungen stehen in [docs/adr/](docs/adr). Mitmachen: [CONTRIBUTING.md](CONTRIBUTING.md); Änderungen pro Version: [CHANGELOG.md](CHANGELOG.md).
 
 ### Repo-Übersicht
 
 ```
-agent/                 # gravitylan-agent.py (+ systemd-Vorlage)
-backend/app/           # FastAPI: api/, models/, scanner/, …
-backend/tests/         # Automatisierte Pytest-Suite
-frontend/              # React (Vite, TypeScript)
-tests/                 # Test-Verzeichnis-Übersicht & Anleitungen zum Ausführen
-docs/screenshots/      # README-Bilder
-SECURITY.md            # Sicherheitsrichtlinien
-SOUL.md                # Projekt-Philosophie
-AGENT.md               # Agenten-Protokoll
-CONTRIBUTING.md        # Mitwirken
+agent/            Linux-Agent (gravitylan-agent.py) + systemd-Unit
+backend/app/      FastAPI-App: api/, models/, schemas/, scanner/, services/, database/
+backend/tests/    Backend-Testsuite (pytest)
+frontend/         React-UI (Vite, TypeScript, Tailwind)
+gravitylan_api/   Python-Client-Bibliothek
+docs/             Sicherheits-, Härtungs- und Design-Doku, ADRs, Screenshots
+scripts/          Wartungsskripte (z. B. Versions-Sync)
 ```
-
-**API:** `/docs` (Swagger).
-
-### GravityLAN Agent (optional)
-
-- Ein **Python-Skript** + Config (Server-URL + Geräte-Token).  
-- Metriken per `Authorization: Bearer <token>` an die Agent-API.  
-- WebSockets für Live-Ansichten: Master- oder Agent-Token je nach Endpunkt.  
-- SSH-Zugangsdaten für „Deploy aus der UI“ nur **während** der Anfrage — keine dauerhafte Speicherung von Passwort/Key in diesem Flow.
-
-### Homelab-Hinweis
-
-Für ein **vertrauenswürdiges Heimnetz gedacht.** Von unterwegs: VPN oder Reverse-Proxy, wie gewohnt im Lab.
 
 ### Lizenz
 
-Open Source unter der [MIT License](LICENSE).
-
-Gebaut mit **Antigravity**, Kaffee und „ein bisschen zu viel Spaß am UI“ von **SleeperXr**.
+Open Source unter der [MIT License](LICENSE). Gebaut mit **Antigravity**, Kaffee und „ein bisschen zu viel Spaß am UI“ von **SleeperXr**.
