@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 - **Agent deployment froze the whole server**: SSH deploy/uninstall ran blocking paramiko calls on the event loop, so API, WebSockets and the scan scheduler stalled for the whole deployment. They now run in a worker thread.
 - **Agent cleanup hit unrelated software on target hosts**: The pre-install/uninstall cleanup stopped and disabled any `agent.service` and killed every process whose command line contained `agent.py`. It now only touches GravityLAN's own agents, and its `pkill` pattern no longer kills the invoking shell (which could abort deployments as `root`).
 - **Manual installer wiped the old agent before downloading**: The install script now downloads the agent and config first and only replaces the existing installation once both succeeded.
+- **Python client was not installable**: `pip install ./gravitylan_api` failed (missing README, package discovery found nothing). The package layout is now mapped explicitly and the client has its own README.
+- **Frontend: React was not a declared dependency**: `react` and `react-dom` were only pulled in as peer dependencies of other packages; they are now listed in `frontend/package.json`. Package versions (`frontend/package.json`, `backend/pyproject.toml`) are synced to 0.3.4.
 
 ## [0.3.4] - 2026-08-17
 
