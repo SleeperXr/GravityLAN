@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.3.5] - 2026-09-25
 
 ### Security
 
@@ -15,7 +15,17 @@ All notable changes to this project will be documented in this file.
 - **Agent cleanup hit unrelated software on target hosts**: The pre-install/uninstall cleanup stopped and disabled any `agent.service` and killed every process whose command line contained `agent.py`. It now only touches GravityLAN's own agents, and its `pkill` pattern no longer kills the invoking shell (which could abort deployments as `root`).
 - **Manual installer wiped the old agent before downloading**: The install script now downloads the agent and config first and only replaces the existing installation once both succeeded.
 - **Python client was not installable**: `pip install ./gravitylan_api` failed (missing README, package discovery found nothing). The package layout is now mapped explicitly and the client has its own README.
-- **Frontend: React was not a declared dependency**: `react` and `react-dom` were only pulled in as peer dependencies of other packages; they are now listed in `frontend/package.json`. Package versions (`frontend/package.json`, `backend/pyproject.toml`) are synced to 0.3.4.
+- **Frontend: React was not a declared dependency**: `react` and `react-dom` were only pulled in as peer dependencies of other packages; they are now listed in `frontend/package.json`. Package versions (`frontend/package.json`, `backend/pyproject.toml`) are synced with `VERSION` again (they were still on 0.3.2).
+- **CI: lint and agent test failures**: Removed an unused `global` declaration that newer flake8 reports as F824, and made `test_orchestrator_collect_all` deterministic — it no longer runs the real package manager on Linux runners.
+
+### Added
+
+- **Agent enrollment codes**: New `POST /api/agent/enroll/{device_id}` (admin) issues single-use codes for the manual installer. The Agent tab shows the code's expiry time and a "New code" button.
+
+### Changed
+
+- **Agent version 0.3.5**: Version bump alongside the server release; the agent itself has no functional changes. Installed agents show an update notice in the UI.
+- **Documentation**: README rewritten for the current feature set (verified configuration table, agent install options, Python client, compose variants). ADR-001 amended for the deployment changes above.
 
 ## [0.3.4] - 2026-08-17
 
