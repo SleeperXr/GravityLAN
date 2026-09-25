@@ -48,7 +48,16 @@
     "device_added": "Device {{ip}} added to dashboard.",
     "update_available": "Update available: v{{version}}",
     "scan_started": "Scan started",
-    "refresh_started": "Refresh started"
+    "refresh_started": "Refresh started",
+    "clear": "Clear",
+    "copy": "Copy",
+    "done": "Done",
+    "offline": "Offline",
+    "pause": "Pause",
+    "ready": "Ready",
+    "resume": "Resume",
+    "retry": "Retry",
+    "update": "Update"
   },
   "notifications": {
     "scan_completed": "Scan completed",
@@ -82,7 +91,10 @@
     "rdp_generated": ".rdp file for {{ip}} has been generated.",
     "rdp_download": "Download RDP file for {{ip}}",
     "refresh_started_details": "Refreshing hostnames and MAC addresses...",
-    "deleted": "Successfully deleted"
+    "deleted": "Successfully deleted",
+    "delete_failed": "Delete failed",
+    "device_added": "{{ip}} was added to the overview",
+    "host_removed": "Host {{ip}} removed"
   },
   "agents_page": {
     "title": "Agents",
@@ -139,7 +151,9 @@
     "scan": "Scan",
     "agent_updates": "Agent Updates",
     "delete_selected": "Delete {{count}}",
-    "bulk_delete_confirm": "Do you really want to permanently delete {{count}} devices?"
+    "bulk_delete_confirm": "Do you really want to permanently delete {{count}} devices?",
+    "ip_changed_hint": "IP address changed. Click to hide.",
+    "refresh_info": "Refresh device info"
   },
   "network": {
     "title": "Network Planner",
@@ -177,7 +191,13 @@
     "alarm": "Alarm",
     "recent_findings": "Recent Findings",
     "subnet_settings": "Subnet Settings",
-    "subnet_config": "Subnet Configuration"
+    "subnet_config": "Subnet Configuration",
+    "area_name": "Area name",
+    "device": "Device",
+    "dns_gateway": "DNS gateway",
+    "remove_from_list": "Remove from list",
+    "reserve": "Mark IP as reserved (fixed)",
+    "unreserve": "Remove reservation"
   },
   "editor": {
     "title_edit": "Edit Device",
@@ -224,7 +244,9 @@
     "no_dns_name": "No DNS Name",
     "delete_service_confirm": "Remove service?",
     "delete_device_confirm": "Do you really want to permanently delete this device?",
-    "manual": "MANUAL"
+    "manual": "MANUAL",
+    "network_info": "Network info",
+    "service_note": "Changes to services are saved immediately."
   },
   "agent": {
     "status_active": "Agent active",
@@ -278,7 +300,8 @@
     "adopt_success": "Agent successfully adopted!",
     "install_code_hint": "One-time code: valid until {{time}}, usable once.",
     "install_code_failed": "Could not create an install command. Please try again.",
-    "install_code_retry": "New code"
+    "install_code_retry": "New code",
+    "adopt_confirm": "Permanently accept this new agent key?"
   },
   "settings": {
     "title": "GravityLAN Settings",
@@ -352,7 +375,8 @@
     "no_tokens": "No API tokens configured.",
     "token_created": "Created",
     "token_used": "Used",
-    "delete_token_confirm": "Really revoke this API token? External scripts using this token will lose access."
+    "delete_token_confirm": "Really revoke this API token? External scripts using this token will lose access.",
+    "live_logs_title": "System live logs"
   },
   "setup": {
     "welcome": "Welcome to GravityLAN",
@@ -384,6 +408,24 @@
     "stabilizing_backend": "Stabilizing backend...",
     "scanning_network": "Scanning your network...",
     "almost_done": "Almost done...",
-    "welcome_done": "Welcome to GravityLAN!"
+    "welcome_done": "Welcome to GravityLAN!",
+    "password_placeholder": "Admin password",
+    "password_confirm_placeholder": "Repeat password"
+  },
+  "topology": {
+    "bottom_handle": "Bottom handle",
+    "top_handle": "Top handle",
+    "connection_error": "Error creating connection. Does it already exist?",
+    "connection_info": "Connection info",
+    "device_config": "Device configuration",
+    "device_mode": "Device mode",
+    "disconnect": "Disconnect",
+    "handle_both": "Both (bi-directional)",
+    "handle_input": "Input (target)",
+    "handle_output": "Output (source)",
+    "max_ports": "Max. ports",
+    "port_limit_reached": "Port limit reached: {{name}} already uses {{current}} of {{max}} ports.",
+    "remove_device": "Remove device",
+    "speed": "Speed"
   }
 }

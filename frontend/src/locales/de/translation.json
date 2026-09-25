@@ -48,7 +48,16 @@
     "device_added": "Gerät {{ip}} zum Dashboard hinzugefügt.",
     "update_available": "Update verfügbar: v{{version}}",
     "scan_started": "Scan gestartet",
-    "refresh_started": "Aktualisierung gestartet"
+    "refresh_started": "Aktualisierung gestartet",
+    "clear": "Leeren",
+    "copy": "Kopieren",
+    "done": "Fertig",
+    "offline": "Offline",
+    "pause": "Pausieren",
+    "ready": "Bereit",
+    "resume": "Fortsetzen",
+    "retry": "Erneut versuchen",
+    "update": "Aktualisieren"
   },
   "notifications": {
     "scan_completed": "Scan abgeschlossen",
@@ -82,7 +91,10 @@
     "rdp_generated": ".rdp Datei für {{ip}} wurde generiert.",
     "rdp_download": "RDP-Datei für {{ip}} herunterladen",
     "refresh_started_details": "Hostnamen und MAC-Adressen werden automatisch aktualisiert...",
-    "deleted": "Erfolgreich gelöscht"
+    "deleted": "Erfolgreich gelöscht",
+    "delete_failed": "Löschen fehlgeschlagen",
+    "device_added": "{{ip}} wurde zur Übersicht hinzugefügt",
+    "host_removed": "Host {{ip}} entfernt"
   },
   "agents_page": {
     "title": "Agents",
@@ -139,7 +151,9 @@
     "scan": "Scan",
     "agent_updates": "Agent Updates",
     "delete_selected": "{{count}} löschen",
-    "bulk_delete_confirm": "Möchten Sie wirklich {{count}} Geräte dauerhaft löschen?"
+    "bulk_delete_confirm": "Möchten Sie wirklich {{count}} Geräte dauerhaft löschen?",
+    "ip_changed_hint": "IP-Adresse hat sich geändert. Klicken zum Ausblenden.",
+    "refresh_info": "Geräteinfos aktualisieren"
   },
   "network": {
     "title": "Netzwerk-Planer",
@@ -177,7 +191,13 @@
     "alarm": "Alarm",
     "recent_findings": "Aktuelle Funde",
     "subnet_settings": "Subnetz-Settings",
-    "subnet_config": "Subnetz-Konfiguration"
+    "subnet_config": "Subnetz-Konfiguration",
+    "area_name": "Bereichsname",
+    "device": "Gerät",
+    "dns_gateway": "DNS-Gateway",
+    "remove_from_list": "Aus der Liste entfernen",
+    "reserve": "IP als reserviert (fest) markieren",
+    "unreserve": "Reservierung aufheben"
   },
   "editor": {
     "title_edit": "Gerät bearbeiten",
@@ -221,7 +241,9 @@
     "no_dns_name": "Kein DNS Name",
     "delete_service_confirm": "Dienst entfernen?",
     "delete_device_confirm": "Möchten Sie dieses Gerät wirklich dauerhaft löschen?",
-    "manual": "MANUELL"
+    "manual": "MANUELL",
+    "network_info": "Netzwerk-Infos",
+    "service_note": "Änderungen an Diensten werden sofort gespeichert."
   },
   "agent": {
     "status_active": "Agent aktiv",
@@ -275,7 +297,8 @@
     "adopt_success": "Agent erfolgreich adoptiert!",
     "install_code_hint": "Einmal-Code: gültig bis {{time}} Uhr, nur einmal nutzbar.",
     "install_code_failed": "Installationsbefehl konnte nicht erstellt werden. Bitte erneut versuchen.",
-    "install_code_retry": "Neuer Code"
+    "install_code_retry": "Neuer Code",
+    "adopt_confirm": "Diesen neuen Agent-Schlüssel dauerhaft übernehmen?"
   },
   "settings": {
     "title": "GravityLAN Einstellungen",
@@ -348,7 +371,9 @@
     "no_tokens": "Keine API-Token konfiguriert.",
     "token_created": "Erstellt",
     "token_used": "Genutzt",
-    "delete_token_confirm": "Diesen API-Token wirklich widerrufen? Externe Skripte, die diesen Token nutzen, verlieren den Zugriff."
+    "delete_token_confirm": "Diesen API-Token wirklich widerrufen? Externe Skripte, die diesen Token nutzen, verlieren den Zugriff.",
+    "dns_custom_title": "Eigener DNS-Server",
+    "live_logs_title": "System-Live-Logs"
   },
   "setup": {
     "welcome": "Willkommen bei GravityLAN",
@@ -380,6 +405,24 @@
     "stabilizing_backend": "Backend wird stabilisiert...",
     "scanning_network": "Netzwerk wird gescannt...",
     "almost_done": "Fast fertig...",
-    "welcome_done": "Willkommen bei GravityLAN!"
+    "welcome_done": "Willkommen bei GravityLAN!",
+    "password_placeholder": "Admin-Passwort",
+    "password_confirm_placeholder": "Passwort wiederholen"
+  },
+  "topology": {
+    "bottom_handle": "Anschluss unten",
+    "top_handle": "Anschluss oben",
+    "connection_error": "Verbindung konnte nicht erstellt werden. Existiert sie bereits?",
+    "connection_info": "Verbindungsinfo",
+    "device_config": "Gerätekonfiguration",
+    "device_mode": "Gerätemodus",
+    "disconnect": "Verbindung trennen",
+    "handle_both": "Beides (bidirektional)",
+    "handle_input": "Eingang (Ziel)",
+    "handle_output": "Ausgang (Quelle)",
+    "max_ports": "Max. Ports",
+    "port_limit_reached": "Port-Limit erreicht: {{name}} belegt bereits {{current}} von {{max}} Ports.",
+    "remove_device": "Gerät entfernen",
+    "speed": "Geschwindigkeit"
   }
 }
