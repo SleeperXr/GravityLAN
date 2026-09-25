@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 from pathlib import Path
 
@@ -96,7 +97,7 @@ REMOTE_CONFIG_PATH = f"{REMOTE_BASE_DIR}/agent.conf"
 REMOTE_SERVICE_PATH = "/etc/systemd/system/gravitylan-agent.service"
 
 
-async def _probe_python(client) -> str:
+def _probe_python(client) -> str:
     """Detect available python3 binary on remote host."""
     try:
         _, stdout, _ = client.exec_command("which python3")
@@ -107,7 +108,7 @@ async def _probe_python(client) -> str:
     return "python3"
 
 
-async def _probe_platform(client, host_ip: str) -> tuple[bool, bool]:
+def _probe_platform(client, host_ip: str) -> tuple[bool, bool]:
     """Detect systemd and Synology rc.d availability."""
     _, stdout, _ = client.exec_command("test -d /run/systemd/system && echo 'systemd'", timeout=5)
     has_systemd = stdout.read().decode().strip() == "systemd"
@@ -119,12 +120,31 @@ async def _probe_platform(client, host_ip: str) -> tuple[bool, bool]:
     return has_systemd, has_syno_rc
 
 
+def _pkill_pattern_for(*targets: str) -> str:
+    """Build a ``pkill -f`` regex for ``targets`` that cannot match the invoking shell.
+
+    ``pkill`` never kills itself, but it does kill its parent ``sh -c "..."``,
+    whose argv contains the pattern text. Bracketing the first character
+    (``[g]ravitylan-agent\\.py``) still matches the agent's command line while
+    the literal pattern text no longer matches itself.
+    """
+    parts = []
+    for target in targets:
+        rest = target[1:].replace(".", r"\.")
+        parts.append(f"[{target[0]}]{rest}")
+    return "|".join(parts)
+
+
+# Only GravityLAN's own agents (current and legacy HomeLan naming) — never generic names.
+_AGENT_PKILL_PATTERN = _pkill_pattern_for("gravitylan-agent.py", "homelan-agent.py")
+
+
 def _build_cleanup_script(has_systemd: bool, has_syno_rc: bool) -> list[str]:
     """Build pre-install cleanup command list."""
     cmds = [
-        "systemctl stop gravitylan-agent.service homelan-agent.service agent.service || true",
-        "systemctl disable gravitylan-agent.service homelan-agent.service agent.service || true",
-        "pkill -9 -f 'agent.py|homelan-agent.py|gravitylan-agent.py' || true",
+        "systemctl stop gravitylan-agent.service homelan-agent.service || true",
+        "systemctl disable gravitylan-agent.service homelan-agent.service || true",
+        f"pkill -9 -f '{_AGENT_PKILL_PATTERN}' || true",
         "rm -rf /opt/homelan /opt/gravitylan /opt/gravitylan-agent /root/gravitylan-agent /usr/local/homelan /usr/local/gravitylan-agent",
         "rm -f /etc/systemd/system/gravitylan-agent.service /etc/systemd/system/homelan-agent.service",
     ]
@@ -272,7 +292,7 @@ def _is_agent_running(client, remote_agent_path: str) -> bool:
     return stdout.read().decode().strip() != ""
 
 
-async def _nohup_fallback(
+def _nohup_fallback(
     client,
     host_ip: str,
     base_dir: str,
@@ -285,10 +305,10 @@ async def _nohup_fallback(
     logger.info("Agent not running via service. Falling back to nohup...")
 
     client.exec_command(f"rm -f {base_dir}/gravitylan-agent.log || true")
-    client.exec_command(f"pkill -f {remote_agent_path} || true")
+    client.exec_command(f"pkill -f '{_pkill_pattern_for(remote_agent_path)}' || true")
     client.exec_command(f"cd {base_dir} && nohup {python_path} {remote_agent_path} > {base_dir}/gravitylan-agent.log 2>&1 &")
 
-    await asyncio.sleep(3)
+    time.sleep(3)
 
     if _is_agent_running(client, remote_agent_path):
         msg = f"Agent started (Nohup fallback, URL: {server_url})"
@@ -320,9 +340,35 @@ async def deploy_agent(
 ) -> tuple[bool, str, str]:
     """Deploy and start the GravityLAN agent on a remote Linux host.
 
+    paramiko is fully blocking, so the SSH session runs in a worker thread to
+    keep the event loop (API, WebSockets, scheduler) responsive meanwhile.
+
     Returns:
         (success, message, token)
     """
+    return await asyncio.to_thread(
+        _deploy_agent_blocking,
+        host_ip=host_ip,
+        ssh_user=ssh_user,
+        ssh_password=ssh_password,
+        ssh_key=ssh_key,
+        ssh_port=ssh_port,
+        server_url=server_url,
+        device_id=device_id,
+    )
+
+
+def _deploy_agent_blocking(
+    *,
+    host_ip: str,
+    ssh_user: str,
+    ssh_password: str | None,
+    ssh_key: str | None,
+    ssh_port: int,
+    server_url: str,
+    device_id: int,
+) -> tuple[bool, str, str]:
+    """Blocking body of :func:`deploy_agent`; only call it via ``asyncio.to_thread``."""
     token = uuid.uuid4().hex
     base_dir = REMOTE_BASE_DIR
     cleanup_msg = ""
@@ -334,7 +380,7 @@ async def deploy_agent(
         if err:
             return False, err, ""
 
-        await connect_with_gateway_fallback(client, connect_kwargs, host_ip)
+        connect_with_gateway_fallback(client, connect_kwargs, host_ip)
 
         # Check sudo availability
         has_sudo = _check_sudo(client)
@@ -342,7 +388,7 @@ async def deploy_agent(
         runner = RemoteRunner(client, has_sudo, ssh_user, ssh_password)
 
         # Pre-install cleanup
-        has_systemd, has_syno_rc = await _probe_platform(client, host_ip)
+        has_systemd, has_syno_rc = _probe_platform(client, host_ip)
         cleanup_cmds = _build_cleanup_script(has_systemd, has_syno_rc)
         runner.run_sudo_batch(cleanup_cmds)
 
@@ -366,7 +412,7 @@ async def deploy_agent(
         logger.info("Agent config deployed to %s", REMOTE_CONFIG_PATH)
 
         # Install service
-        python_path = await _probe_python(client)
+        python_path = _probe_python(client)
 
         if has_systemd:
             success = _install_systemd_service(runner, client, device_id, python_path, REMOTE_AGENT_PATH, base_dir)
@@ -376,13 +422,13 @@ async def deploy_agent(
             _install_syno_rc(runner, client, device_id, python_path, REMOTE_AGENT_PATH)
 
         # Verification
-        await asyncio.sleep(2)
+        time.sleep(2)
 
         if _is_agent_running(client, REMOTE_AGENT_PATH):
             return True, f"Agent started successfully{cleanup_msg} (Directory: {base_dir}, URL: {server_url})", token
 
         # Nohup fallback
-        return await _nohup_fallback(client, host_ip, base_dir, python_path, REMOTE_AGENT_PATH, server_url, token)
+        return _nohup_fallback(client, host_ip, base_dir, python_path, REMOTE_AGENT_PATH, server_url, token)
 
     except Exception as exc:
         mapped = _map_ssh_error(exc, host_ip)
@@ -411,7 +457,28 @@ async def remove_agent(
     2. Kill any running nohup processes.
     3. Delete /etc/systemd/system/gravitylan-agent.service.
     4. Delete installation directory.
+
+    Like :func:`deploy_agent`, the blocking SSH session runs in a worker thread.
     """
+    return await asyncio.to_thread(
+        _remove_agent_blocking,
+        host_ip=host_ip,
+        ssh_user=ssh_user,
+        ssh_password=ssh_password,
+        ssh_key=ssh_key,
+        ssh_port=ssh_port,
+    )
+
+
+def _remove_agent_blocking(
+    *,
+    host_ip: str,
+    ssh_user: str,
+    ssh_password: str | None,
+    ssh_key: str | None,
+    ssh_port: int,
+) -> tuple[bool, str]:
+    """Blocking body of :func:`remove_agent`; only call it via ``asyncio.to_thread``."""
     client = build_ssh_client()
 
     try:
@@ -419,7 +486,7 @@ async def remove_agent(
         if err:
             return False, err
 
-        await connect_with_gateway_fallback(client, connect_kwargs, host_ip)
+        connect_with_gateway_fallback(client, connect_kwargs, host_ip)
 
         # Check for sudo
         has_sudo = _check_sudo(client)

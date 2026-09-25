@@ -140,12 +140,12 @@ def _load_ssh_key(ssh_key: str):
     raise ValueError(f"Invalid key format or encrypted key (passphrase not supported). Details: {'; '.join(errors)}")
 
 
-async def connect_with_gateway_fallback(
+def connect_with_gateway_fallback(
     client: paramiko.SSHClient,
     connect_kwargs: dict,
     host_ip: str,
 ) -> None:
-    """Attempt SSH connection with Docker bridge gateway fallback."""
+    """Attempt SSH connection with Docker bridge gateway fallback (blocking; run in a thread)."""
     try:
         client.connect(**connect_kwargs)
         return
