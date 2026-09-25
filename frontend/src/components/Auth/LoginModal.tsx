@@ -36,16 +36,12 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         className="w-full max-w-md p-8 glass-panel bg-slate-900/50 border-white/10 shadow-2xl relative overflow-hidden"
       >
-        {/* Decorative background blur */}
-        <div className="absolute -top-24 -left-24 w-48 h-48 bg-sky-500/10 blur-[80px] rounded-full" />
-        <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-indigo-500/10 blur-[80px] rounded-full" />
-
         <div className="relative text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 mb-6">
-            <Lock className="text-sky-400" size={32} />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-slate-800 border border-white/10 mb-6">
+            <Lock className="text-sky-400" size={26} />
           </div>
-          
-          <h1 className="text-2xl font-black text-white mb-2 tracking-tight uppercase">
+
+          <h1 className="text-2xl font-semibold text-white mb-2 tracking-tight">
             {t('auth.required')}
           </h1>
           <p className="text-slate-400 text-sm mb-8">
@@ -57,10 +53,11 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
               <input
                 autoFocus
                 type="password"
-                placeholder="Admin Password"
+                placeholder={t('auth.password_placeholder')}
+                aria-label={t('auth.password_placeholder')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-5 py-4 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/50 transition-all placeholder:text-slate-600"
+                className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-5 py-4 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/50 transition-all placeholder:text-slate-500"
                 disabled={loading}
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -85,10 +82,10 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
             <button
               type="submit"
               disabled={loading || !password}
-              className="w-full bg-sky-500 hover:bg-sky-400 disabled:opacity-50 disabled:hover:bg-sky-500 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all group"
+              className="w-full bg-sky-400 hover:bg-sky-300 disabled:opacity-50 disabled:hover:bg-sky-400 text-slate-950 font-semibold py-4 rounded-xl flex items-center justify-center gap-2 transition-all group"
             >
               {loading ? (
-                <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-slate-950/20 border-t-slate-950 rounded-full animate-spin" />
               ) : (
                 <>
                   <span>{t('auth.sign_in')}</span>
@@ -99,8 +96,8 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
           </form>
 
           <div className="mt-8 pt-8 border-t border-white/5">
-            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-              {t('auth.security_node')} v{window.location.hostname === 'localhost' ? 'DEV' : ((window as any).APP_VERSION || '0.2.1')}
+            <div className="text-xs text-slate-500 font-mono">
+              GravityLAN{(window as any).APP_VERSION ? ` v${(window as any).APP_VERSION}` : ''}
             </div>
           </div>
         </div>

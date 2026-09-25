@@ -20,7 +20,8 @@
     "description": "Der Zugriff auf das GravityLAN-Kontrollzentrum ist geschützt. Bitte gib dein Administrator-Passwort ein.",
     "sign_in": "Anmelden",
     "invalid_password": "Ungültiges Passwort",
-    "security_node": "GravityLAN Sicherheitsknoten"
+    "security_node": "GravityLAN Sicherheitsknoten",
+    "password_placeholder": "Admin-Passwort"
   },
   "app_status": {
     "initializing": "Initialisierung...",

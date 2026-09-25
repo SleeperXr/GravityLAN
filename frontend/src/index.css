@@ -266,27 +266,25 @@ input, textarea, select, [contenteditable], [contenteditable="true"] {
 }
 
 .ip-tile:hover {
-  transform: scale(1.1) translateY(-2px);
   z-index: 50;
-  box-shadow: var(--shadow-lg);
   border-color: var(--accent-primary);
+  background: var(--bg-elevated);
 }
 
 .ip-tile:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
   z-index: 50;
-  transform: scale(1.05);
 }
 
 .ip-tile.online {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: var(--accent-success);
-  color: var(--accent-success);
+  background: rgba(46, 160, 67, 0.12);
+  border-color: rgba(46, 160, 67, 0.7);
+  color: #7EE08F;
 }
 
 .ip-tile.offline {
-  background: rgba(239, 68, 68, 0.05);
+  background: rgba(244, 112, 103, 0.06);
   border-color: var(--accent-danger);
   color: var(--accent-danger);
   border-style: dashed;
@@ -295,7 +293,6 @@ input, textarea, select, [contenteditable], [contenteditable="true"] {
 .ip-tile.new {
   border-color: var(--accent-warning);
   color: var(--accent-warning);
-  box-shadow: inset 0 0 8px rgba(245, 158, 11, 0.2);
 }
 
 .ip-tile.reserved {
@@ -1598,4 +1595,42 @@ input[type="number"] {
 
 .stat-card__note {
   font-size: 0.8125rem;
+}
+
+/* --- Topology (React Flow) controls in the dark theme --- */
+.react-flow .react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.react-flow .react-flow__controls-button {
+  width: 32px;
+  height: 32px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  fill: var(--text-secondary);
+}
+
+.react-flow .react-flow__controls-button:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  fill: var(--text-primary);
+}
+
+.react-flow .react-flow__minimap {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.react-flow .react-flow__attribution {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.react-flow .react-flow__attribution a {
+  color: var(--text-tertiary);
 }
