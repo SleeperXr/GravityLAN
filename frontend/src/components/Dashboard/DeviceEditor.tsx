@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import type { Device, DeviceGroup, Service } from '../../types';
 import { api } from '../../api/client';
-import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight, Wifi, Radio, Server, Database } from 'lucide-react';
+import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight, Wifi, Radio, Server } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { DeviceMetrics } from './DeviceMetrics';
@@ -512,7 +512,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                       max={10}
                       onChange={(e) => setFormData({ ...formData, h: parseInt(e.target.value) })}
                     />
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginLeft: 4 }}>Units</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginLeft: 4 }}>{t('editor.units')}</span>
                   </div>
                 </div>
 
@@ -649,33 +649,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                 </div>
               </div>
 
-              {/* Host Assignment */}
-              {!formData.is_host && (
-                <div className="form-group" style={{ marginBottom: '24px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' }}>
-                    <Database size={14} /> {t('editor.parent_host', 'Physisches Host-System')}
-                  </label>
-                  <select
-                    className="input"
-                    value={formData.parent_id || ''}
-                    onChange={(e) => setFormData({ ...formData, parent_id: e.target.value ? parseInt(e.target.value) : null })}
-                    style={{
-                      width: '100%',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      padding: '10px',
-                      color: '#f1f5f9'
-                    }}
-                  >
-                    <option value="">{t('editor.no_parent_host')}</option>
-                    {devices.filter(d => d.is_host && d.id !== currentDevice.id).map(d => (
-                      <option key={d.id} value={d.id}>{d.display_name || d.hostname || d.ip}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
+              {/* The parent host is chosen once, in the "Physical host" field above. */}
 
               <div className="form-group">
                 <label>{t('editor.notes')}</label>
