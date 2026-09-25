@@ -252,5 +252,8 @@ backend/check_ssh.py
 backend/fix_agent_deployer.py
 backend/health.json
 
+# Local demo database created by scripts/dev_demo.py
+.demo-data/
+
 # Keys and Secrets
 antigravity_key*
