@@ -54,6 +54,24 @@ _READONLY_DEFAULT_SCOPES = {
     "settings:read", "backup:read", "scanner:read"
 }
 
+# Routes the first-run wizard calls before any admin credential exists.
+# Everything else stays closed until setup.complete is set (fresh install or
+# after a factory reset), so an unconfigured instance cannot be exported,
+# reconfigured or used to deploy agents by anyone on the LAN.
+_SETUP_WIZARD_ROUTES = frozenset({
+    ("GET", "/api/scanner/subnets"),
+    ("GET", "/api/scanner/discovered"),
+    ("POST", "/api/scanner/start"),
+    ("POST", "/api/scanner/stop"),
+    ("WEBSOCKET", "/api/scanner/ws"),
+})
+
+
+def _is_setup_wizard_route(conn: HTTPConnection) -> bool:
+    """Return True when the request targets a route the setup wizard needs."""
+    method = conn.scope.get("method") or conn.scope.get("type", "").upper()
+    return (method, conn.url.path) in _SETUP_WIZARD_ROUTES
+
 
 async def _verify_api_token(db: AsyncSession, token_val: str, conn: HTTPConnection) -> str:
     """Validate a read-only API token, enforce scopes, and update last_used_at."""
@@ -152,14 +170,16 @@ async def get_current_admin(
     Dependency to validate authentication via Cookie, Authorization header, or Query param.
     Works for both HTTP Requests and WebSockets.
     """
-    # 0. Check if setup is complete (Bypass if not)
+    # 0. Before setup is complete no credentials exist: only the wizard's routes are open
     from app.models.setting import Setting
     setup_res = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
     setup_setting = setup_res.scalar_one_or_none()
     is_setup_done = setup_setting is not None and setup_setting.value == "true"
-    
+
     if not is_setup_done:
-        return "setup_mode"
+        if _is_setup_wizard_route(conn):
+            return "setup_mode"
+        raise HTTPException(status_code=403, detail="Initial setup not completed.")
 
     # 1. Try Browser Cookie (Primary channel for Browser sessions)
     cookie_token = conn.cookies.get("gravitylan_token")

@@ -244,3 +244,45 @@ async def test_ssh_strict_mode_policies():
             args, _ = mock_client.set_missing_host_key_policy.call_args
             assert isinstance(args[0], paramiko.RejectPolicy)
             mock_client.load_system_host_keys.assert_called_once()
+
+
+# --- Setup-mode bypass must be limited to the first-run wizard ---------------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path", [
+    ("GET", "/api/backup/export"),
+    ("GET", "/api/settings"),
+    ("GET", "/api/devices"),
+    ("POST", "/api/agent/deploy/1"),
+    ("POST", "/api/scanner/quick-subnet-scan"),
+])
+async def test_setup_mode_blocks_admin_routes(client, db, method, path):
+    """Without setup.complete (fresh install or after a factory reset) admin routes stay closed."""
+    body = {"ssh_user": "root", "ssh_password": "pw"} if method == "POST" else None
+    response = await client.request(method, path, json=body)
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_setup_mode_keeps_wizard_routes_open(client, db, monkeypatch):
+    """The first-run wizard still detects local subnets before setup."""
+    monkeypatch.setattr("app.api.scanner.get_local_subnets", lambda: [])
+    response = await client.get("/api/scanner/subnets")
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_setup_mode_allows_scanner_websocket_only(db):
+    """The wizard's live scan progress WebSocket passes the admin dependency before setup."""
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from app.api.auth import get_current_admin
+
+    def ws_conn(path):
+        return SimpleNamespace(scope={"type": "websocket"}, url=SimpleNamespace(path=path), cookies={}, headers={})
+
+    assert await get_current_admin(conn=ws_conn("/api/scanner/ws"), authorization=None, token=None, db=db) == "setup_mode"
+
+    with pytest.raises(HTTPException) as exc:
+        await get_current_admin(conn=ws_conn("/api/agent/ws/1"), authorization=None, token=None, db=db)
+    assert exc.value.status_code == 403
