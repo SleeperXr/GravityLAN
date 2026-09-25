@@ -1423,3 +1423,133 @@ input[type="number"] {
   justify-content: space-between;
   align-items: center;
 }
+
+/* --- Device inspector: side panel on desktop, full screen on phones --- */
+.inspector-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(5, 7, 10, 0.55);
+}
+
+.inspector-panel {
+  width: min(600px, 100vw);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-subtle);
+  box-shadow: -24px 0 48px rgba(0, 0, 0, 0.35);
+  animation: inspector-in 0.22s ease-out;
+}
+
+.inspector-panel.is-wide {
+  width: min(1040px, 100vw);
+}
+
+@keyframes inspector-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inspector-panel { animation: none; }
+}
+
+.inspector-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.inspector-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.inspector-path__current {
+  color: var(--text-primary);
+}
+
+.inspector-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.inspector-title-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.inspector-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inspector-subtitle {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.inspector-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.inspector-tab {
+  height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.inspector-tab:hover {
+  color: var(--text-primary);
+}
+
+.inspector-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+.inspector-tab:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+@media (max-width: 768px) {
+  .inspector-panel,
+  .inspector-panel.is-wide {
+    width: 100vw;
+    border-left: 0;
+  }
+
+  .inspector-header {
+    padding: 12px 16px 0;
+  }
+}

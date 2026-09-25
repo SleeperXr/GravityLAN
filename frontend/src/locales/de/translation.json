@@ -159,6 +159,7 @@
   },
   "editor": {
     "title_edit": "Gerät bearbeiten",
+    "network_path": "Netzwerkpfad",
     "display_name": "Anzeigename",
     "group": "Gruppe",
     "notes": "Notizen",

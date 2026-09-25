@@ -159,6 +159,7 @@
   },
   "editor": {
     "title_edit": "Edit Device",
+    "network_path": "Network path",
     "display_name": "Display Name",
     "group": "Group",
     "notes": "Notes",
