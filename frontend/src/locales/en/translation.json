@@ -7,10 +7,13 @@
     "network": "Network",
     "system": "System",
     "agents": "Agents",
-    "dashboard": "Dashboard",
-    "network_planner": "Network Planner",
+    "dashboard": "Overview",
+    "network_planner": "IP addresses",
     "topology": "Topology",
-    "settings": "Settings"
+    "logs": "Logs",
+    "settings": "Settings",
+    "navigation": "Main navigation",
+    "open_menu": "Open menu"
   },
   "auth": {
     "required": "Authentication required",

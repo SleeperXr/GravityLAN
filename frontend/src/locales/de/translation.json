@@ -6,11 +6,14 @@
     "main": "Hauptbereich",
     "network": "Netzwerk",
     "system": "System",
-    "agents": "Agenten",
-    "dashboard": "Dashboard",
-    "network_planner": "Netzwerkplaner",
+    "agents": "Agents",
+    "dashboard": "Übersicht",
+    "network_planner": "IP-Adressen",
     "topology": "Topologie",
-    "settings": "Einstellungen"
+    "logs": "Logs",
+    "settings": "Einstellungen",
+    "navigation": "Hauptnavigation",
+    "open_menu": "Menü öffnen"
   },
   "auth": {
     "required": "Anmeldung erforderlich",
