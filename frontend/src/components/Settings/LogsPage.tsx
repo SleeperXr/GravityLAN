@@ -11,9 +11,9 @@ export function LogsPage() {
   return (
     <div className="app-layout">
       <Sidebar active="logs" isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
-      <main className="app-main" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <main className="app-main app-main--fill" style={{ display: 'flex', flexDirection: 'column' }}>
         <MobileHeader title={t('sidebar.logs')} onMenuClick={() => setIsSidebarOpen(true)} />
-        <header className="desktop-only" style={{ marginBottom: 'var(--space-lg)' }}>
+        <header className="visually-hidden-mobile" style={{ marginBottom: 'var(--space-lg)' }}>
           <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 600 }}>
             {t('settings.live_logs_title') || 'System Live Logs'}
           </h1>

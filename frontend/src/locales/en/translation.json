@@ -256,6 +256,7 @@
     "ram": "RAM",
     "disk": "Disk",
     "temperature": "Temperature",
+    "temp_short": "Temp",
     "network": "Network",
     "ssh_management": "SSH Management",
     "ssh_hint": "SSH credentials are used only once for this action.",

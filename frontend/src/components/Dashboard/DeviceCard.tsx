@@ -181,7 +181,12 @@ export const DeviceCard = memo(({ device, isEditMode, onEdit, onRefresh, isSelec
     prev.device.ip === next.device.ip &&
     prev.device.old_ip === next.device.old_ip &&
     prev.device.has_pending_token === next.device.has_pending_token &&
+    prev.device.parent_id === next.device.parent_id &&
+    prev.device.parent_name === next.device.parent_name &&
+    prev.device.virtual_type === next.device.virtual_type &&
+    prev.device.is_host === next.device.is_host &&
     JSON.stringify(prev.device.services) === JSON.stringify(next.device.services) &&
-    prev.device.agent_info?.agent_version === next.device.agent_info?.agent_version
+    prev.device.agent_info?.agent_version === next.device.agent_info?.agent_version &&
+    prev.device.agent_info?.latest_version === next.device.agent_info?.latest_version
   );
 });

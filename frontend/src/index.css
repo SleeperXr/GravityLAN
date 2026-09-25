@@ -17,6 +17,9 @@
   --color-slate-800: #232B35;
   --color-slate-900: #151A21;
   --color-slate-950: #0E1116;
+  /* sky-300/400 = the accent, so Tailwind-styled screens (login, agents) match it */
+  --color-sky-300: #7CCFF8;
+  --color-sky-400: #3DB8F5;
   --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 }
@@ -1633,4 +1636,41 @@ input[type="number"] {
 
 .react-flow .react-flow__attribution a {
   color: var(--text-tertiary);
+}
+
+/* --- Review fixes --- */
+.inspector-panel:focus {
+  outline: none;
+}
+
+.device-card__parent {
+  color: var(--text-secondary);
+}
+
+/* Full-height page body that respects mobile browser toolbars */
+.app-main--fill {
+  height: 100vh;
+  height: 100dvh;
+}
+
+@media (max-width: 768px) {
+  /* Keep toasts above the fixed bottom tab bar */
+  .toast-container {
+    bottom: calc(80px + env(safe-area-inset-bottom));
+    right: var(--space-md);
+    left: var(--space-md);
+  }
+
+  /* Page title stays available to screen readers when the mobile header shows it */
+  .visually-hidden-mobile {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import type { Device, DeviceGroup, Service } from '../../types';
 import { api } from '../../api/client';
 import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight, Wifi, Radio, Server } from 'lucide-react';
@@ -127,6 +127,43 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
     }
     return chain;
   }, [devices, currentDevice.parent_id]);
+
+  // Modal dialog behaviour: focus moves into the panel, Tab stays inside it,
+  // Escape closes, and focus returns to the element that opened it.
+  const panelRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    panel?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== 'Tab' || !panel) return;
+      const focusables = panel.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previous?.focus?.();
+    };
+  }, []);
 
   useEffect(() => {
     const loadGroups = async () => {
@@ -323,6 +360,8 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
   return (
     <div className="inspector-overlay">
       <aside
+        ref={panelRef}
+        tabIndex={-1}
         className={`inspector-panel ${activeTab === 'agent' ? 'is-wide' : ''}`}
         role="dialog"
         aria-modal="true"
@@ -352,13 +391,28 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
             </div>
             <button type="button" className="btn-close" onClick={onClose} aria-label={t('common.close')}><X size={18} /></button>
           </div>
-          <div className="inspector-tabs" role="tablist" aria-label={t('editor.title_edit')}>
+          <div
+            className="inspector-tabs"
+            role="tablist"
+            aria-label={t('editor.title_edit')}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              e.preventDefault();
+              const index = tabs.findIndex((tab) => tab.id === activeTab);
+              const next = tabs[(index + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+              setActiveTab(next.id);
+              document.getElementById(`inspector-tab-${next.id}`)?.focus();
+            }}
+          >
             {tabs.map((tab) => (
               <button
                 key={tab.id}
+                id={`inspector-tab-${tab.id}`}
                 type="button"
                 role="tab"
                 aria-selected={activeTab === tab.id}
+                aria-controls="inspector-tabpanel"
+                tabIndex={activeTab === tab.id ? 0 : -1}
                 className={`inspector-tab ${activeTab === tab.id ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
               >
@@ -368,7 +422,14 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
           </div>
         </header>
 
-        <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-lg)', minHeight: 400 }}>
+        <div
+          className="modal-body"
+          id="inspector-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`inspector-tab-${activeTab}`}
+          tabIndex={0}
+          style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-lg)', minHeight: 400 }}
+        >
           {activeTab === 'settings' ? (
             <form onSubmit={handleSubmit}>
               {/* Basic Information */}

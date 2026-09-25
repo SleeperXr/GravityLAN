@@ -103,7 +103,7 @@ export function AgentsView() {
         <header className="page-header" style={{ marginBottom: 'var(--space-xl)' }}>
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center w-full gap-4">
             <div>
-              <h1 className="desktop-only" style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.01em' }}>{t('agents_page.title')}</h1>
+              <h1 className="visually-hidden-mobile" style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.01em' }}>{t('agents_page.title')}</h1>
               <p className="text-slate-400 text-sm">{t('agents_page.subtitle', { count: data?.total_agents || 0 })}</p>
             </div>
             <div className="flex gap-3">

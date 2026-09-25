@@ -148,7 +148,7 @@ export function DeviceMetrics({ deviceId, compact = true, onUpdate }: DeviceMetr
         text: `${(fullestDisk.percent ?? 0).toFixed(0)} %`, color: meterColor(fullestDisk.percent ?? 0, 85, 95),
       }] : []),
       ...(metrics.temperature != null ? [{
-        key: 'temp', label: 'Temp', percent: Math.min(metrics.temperature, 100),
+        key: 'temp', label: t('agent.temp_short'), percent: Math.min(metrics.temperature, 100),
         text: `${metrics.temperature.toFixed(0)} °C`, color: meterColor(metrics.temperature, 70, 85),
       }] : []),
     ];
@@ -161,7 +161,7 @@ export function DeviceMetrics({ deviceId, compact = true, onUpdate }: DeviceMetr
               <span>{m.label}</span>
               <span className="metric__value" style={{ color: m.color === 'var(--accent-primary)' ? undefined : m.color }}>{m.text}</span>
             </div>
-            <div className="metric__track" role="meter" aria-label={m.label} aria-valuenow={Math.round(m.percent)} aria-valuemin={0} aria-valuemax={100}>
+            <div className="metric__track" role="meter" aria-label={m.label} aria-valuenow={Math.round(m.percent)} aria-valuemin={0} aria-valuemax={100} aria-valuetext={m.text}>
               <div className="metric__fill" style={{ width: `${Math.min(m.percent, 100)}%`, background: m.color }} />
             </div>
           </div>

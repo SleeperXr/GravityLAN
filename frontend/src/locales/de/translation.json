@@ -253,6 +253,7 @@
     "ram": "RAM",
     "disk": "Disk",
     "temperature": "Temperatur",
+    "temp_short": "Temp.",
     "network": "Netzwerk",
     "ssh_management": "SSH-Management",
     "ssh_hint": "Die SSH-Zugangsdaten werden einmalig für diese Aktion verwendet.",
