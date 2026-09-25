@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import type { Device, DeviceGroup, Service } from '../../types';
 import { api } from '../../api/client';
-import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight, Wifi, Radio, Server, Database } from 'lucide-react';
+import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, Lock, Terminal, Monitor, Activity, ExternalLink, Upload, HardDrive, Thermometer, ChevronDown, ChevronRight, Wifi, Radio, Server } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { DeviceMetrics } from './DeviceMetrics';
@@ -112,6 +112,58 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
       });
     return () => { cancelled = true; };
   }, [showManual, currentDevice.id, installCodeRequest, showToast, t]);
+
+  // Parents from the outermost host down to this device (e.g. Proxmox › Docker VM), cycle-safe.
+  const networkPath = useMemo(() => {
+    const byId = new Map((devices || []).map((d) => [d.id, d]));
+    const chain: Device[] = [];
+    const seen = new Set<number>();
+    let parentId = currentDevice.parent_id;
+    while (parentId && byId.has(parentId) && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = byId.get(parentId)!;
+      chain.unshift(parent);
+      parentId = parent.parent_id;
+    }
+    return chain;
+  }, [devices, currentDevice.parent_id]);
+
+  // Modal dialog behaviour: focus moves into the panel, Tab stays inside it,
+  // Escape closes, and focus returns to the element that opened it.
+  const panelRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    panel?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== 'Tab' || !panel) return;
+      const focusables = panel.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previous?.focus?.();
+    };
+  }, []);
 
   useEffect(() => {
     const loadGroups = async () => {
@@ -294,94 +346,90 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
     }
   };
 
+  const deviceName = currentDevice.display_name || currentDevice.hostname || currentDevice.ip;
+  const deviceRole = currentDevice.virtual_type === 'docker' ? 'Docker'
+    : currentDevice.virtual_type === 'vm' ? 'VM'
+    : currentDevice.virtual_type || (currentDevice.is_host ? 'Host' : null);
+  const tabs: { id: typeof activeTab; label: string }[] = [
+    { id: 'settings', label: t('editor.tabs.general') },
+    { id: 'services', label: t('editor.tabs.services') },
+    { id: 'history', label: t('editor.tabs.history') },
+    { id: 'agent', label: t('editor.tabs.agent') },
+  ];
+
   return (
-    <div className="modal-overlay">
-      <div className="modal-content animate-in" style={{ 
-        maxWidth: activeTab === 'agent' ? '1150px' : '800px', 
-        maxHeight: '90vh',
-        display: 'flex',
-        flexDirection: 'column',
-        transition: 'all 0.3s ease' 
-      }}>
-        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-            <div className="logo__icon" style={{ width: 32, height: 32 }}>
-              <Settings size={16} color="white" />
+    <div className="inspector-overlay">
+      <aside
+        ref={panelRef}
+        tabIndex={-1}
+        className={`inspector-panel ${activeTab === 'agent' ? 'is-wide' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="inspector-title"
+      >
+        <header className="inspector-header">
+          {networkPath.length > 0 && (
+            <nav className="inspector-path" aria-label={t('editor.network_path')}>
+              {networkPath.map((node) => (
+                <Fragment key={node.id}>
+                  <span>{node.display_name || node.ip}</span>
+                  <span aria-hidden="true">›</span>
+                </Fragment>
+              ))}
+              <span className="inspector-path__current">{deviceName}</span>
+            </nav>
+          )}
+          <div className="inspector-title-row">
+            <span
+              className={`status-dot ${currentDevice.is_online ? 'status-dot--online' : 'status-dot--offline'}`}
+              role="img"
+              aria-label={currentDevice.is_online ? t('network.online') : t('network.offline')}
+            />
+            <div className="inspector-title-text">
+              <h2 id="inspector-title" className="inspector-title">{deviceName}</h2>
+              <span className="inspector-subtitle">{currentDevice.ip}{deviceRole ? ` · ${deviceRole}` : ''}</span>
             </div>
-            <h3>{t('editor.title_edit')}</h3>
+            <button type="button" className="btn-close" onClick={onClose} aria-label={t('common.close')}><X size={18} /></button>
           </div>
-          <button className="btn-close" onClick={onClose}><X size={18} /></button>
-        </div>
+          <div
+            className="inspector-tabs"
+            role="tablist"
+            aria-label={t('editor.title_edit')}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              e.preventDefault();
+              const index = tabs.findIndex((tab) => tab.id === activeTab);
+              const next = tabs[(index + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+              setActiveTab(next.id);
+              document.getElementById(`inspector-tab-${next.id}`)?.focus();
+            }}
+          >
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                id={`inspector-tab-${tab.id}`}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                aria-controls="inspector-tabpanel"
+                tabIndex={activeTab === tab.id ? 0 : -1}
+                className={`inspector-tab ${activeTab === tab.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </header>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', padding: '0 var(--space-lg)' }}>
-          <button 
-            className={`tab-item ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-            style={{ 
-              padding: 'var(--space-md)', 
-              background: 'none', 
-              border: 'none', 
-              color: activeTab === 'settings' ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-              borderBottom: activeTab === 'settings' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.875rem'
-            }}
-          >
-            {t('editor.tabs.general')}
-          </button>
-          <button 
-            className={`tab-item ${activeTab === 'services' ? 'active' : ''}`}
-            onClick={() => setActiveTab('services')}
-            style={{ 
-              padding: 'var(--space-md)', 
-              background: 'none', 
-              border: 'none', 
-              color: activeTab === 'services' ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-              borderBottom: activeTab === 'services' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.875rem'
-            }}
-          >
-            {t('editor.tabs.services')}
-          </button>
-          <button 
-            className={`tab-item ${activeTab === 'history' ? 'active' : ''}`}
-            onClick={() => setActiveTab('history')}
-            style={{ 
-              padding: 'var(--space-md)', 
-              background: 'none', 
-              border: 'none', 
-              color: activeTab === 'history' ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-              borderBottom: activeTab === 'history' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.875rem'
-            }}
-          >
-            {t('editor.tabs.history')}
-          </button>
-          <button 
-            className={`tab-item ${activeTab === 'agent' ? 'active' : ''}`}
-            onClick={() => setActiveTab('agent')}
-            style={{ 
-              padding: 'var(--space-md)', 
-              background: 'none', 
-              border: 'none', 
-              color: activeTab === 'agent' ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-              borderBottom: activeTab === 'agent' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.875rem'
-            }}
-          >
-            {t('editor.tabs.agent')}
-          </button>
-        </div>
-
-        <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-lg)', minHeight: 400 }}>
+        <div
+          className="modal-body"
+          id="inspector-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`inspector-tab-${activeTab}`}
+          tabIndex={0}
+          style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-lg)', minHeight: 400 }}
+        >
           {activeTab === 'settings' ? (
             <form onSubmit={handleSubmit}>
               {/* Basic Information */}
@@ -525,7 +573,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                       max={10}
                       onChange={(e) => setFormData({ ...formData, h: parseInt(e.target.value) })}
                     />
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginLeft: 4 }}>Units</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginLeft: 4 }}>{t('editor.units')}</span>
                   </div>
                 </div>
 
@@ -662,33 +710,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                 </div>
               </div>
 
-              {/* Host Assignment */}
-              {!formData.is_host && (
-                <div className="form-group" style={{ marginBottom: '24px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' }}>
-                    <Database size={14} /> {t('editor.parent_host', 'Physisches Host-System')}
-                  </label>
-                  <select
-                    className="input"
-                    value={formData.parent_id || ''}
-                    onChange={(e) => setFormData({ ...formData, parent_id: e.target.value ? parseInt(e.target.value) : null })}
-                    style={{
-                      width: '100%',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      padding: '10px',
-                      color: '#f1f5f9'
-                    }}
-                  >
-                    <option value="">{t('editor.no_parent_host')}</option>
-                    {devices.filter(d => d.is_host && d.id !== currentDevice.id).map(d => (
-                      <option key={d.id} value={d.id}>{d.display_name || d.hostname || d.ip}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
+              {/* The parent host is chosen once, in the "Physical host" field above. */}
 
               <div className="form-group">
                 <label>{t('editor.notes')}</label>
@@ -1300,7 +1322,7 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
             <Trash2 size={16} /> {t('common.delete')}
           </button>
         </div>
-      </div>
+      </aside>
     </div>
   );
 }

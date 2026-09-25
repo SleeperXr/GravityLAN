@@ -11,11 +11,11 @@ export function MobileHeader({ title, onMenuClick }: MobileHeaderProps) {
   
   return (
     <header className="mobile-header mobile-only">
-      <button className="mobile-menu-btn" onClick={onMenuClick}>
+      <button type="button" className="mobile-menu-btn" onClick={onMenuClick} aria-label={t('sidebar.open_menu')}>
         <Menu size={24} />
       </button>
       <div className="mobile-header__title">{title}</div>
-      <div style={{ width: 40 }} /> {/* Spacer for balance */}
+      <div style={{ width: 44 }} /> {/* Spacer for balance */}
     </header>
   );
 }

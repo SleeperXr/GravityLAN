@@ -2,7 +2,7 @@ import { memo } from 'react';
 import type { Device } from '../../types';
 import { ServiceBadge } from './ServiceBadge';
 import { DeviceMetrics } from './DeviceMetrics';
-import { Move, Settings, Box, Database, RefreshCw, Check, Trash2, Server } from 'lucide-react';
+import { Move, Settings, RefreshCw, Check, Trash2, ShieldAlert, ArrowRight, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 
@@ -15,295 +15,161 @@ interface DeviceCardProps {
   onSelect?: (selected: boolean) => void;
 }
 
+// More chips than this crowd the card; the rest is listed in the device editor.
+const MAX_VISIBLE_SERVICES = 4;
+
+/** Short role label: physical host, VM or container. */
+function roleLabel(device: Device): string | null {
+  if (device.virtual_type === 'docker') return 'Docker';
+  if (device.virtual_type === 'vm') return 'VM';
+  if (device.virtual_type) return device.virtual_type;
+  if (device.is_host) return 'Host';
+  return null;
+}
+
 export const DeviceCard = memo(({ device, isEditMode, onEdit, onRefresh, isSelected, onSelect }: DeviceCardProps) => {
   const { t } = useTranslation();
   const displayName = device.display_name || device.hostname || device.ip;
+  const role = roleLabel(device);
+  const services = [...device.services].sort((a, b) => a.sort_order - b.sort_order);
+  const visibleServices = services.slice(0, MAX_VISIBLE_SERVICES);
+  const hiddenServices = services.slice(MAX_VISIBLE_SERVICES);
+  const agent = device.agent_info;
+  const hasAgentUpdate = !isEditMode && !!agent?.agent_version && !!agent?.latest_version && agent.agent_version !== agent.latest_version;
+  const hasPendingKey = !isEditMode && !!device.has_pending_token;
+
+  const refreshInfo = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    btn.classList.add('spinning');
+    try {
+      await api.refreshDeviceInfo(device.id);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error("Refresh failed:", err);
+    } finally {
+      setTimeout(() => btn.classList.remove('spinning'), 1000);
+    }
+  };
+
+  const adoptKey = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm(t('agent.adopt_confirm', 'Permanently accept this new agent key?'))) return;
+    try {
+      await api.adoptAgent(device.id);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error("Adoption failed:", err);
+    }
+  };
+
+  const clearIpChange = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.updateDevice(device.id, { old_ip: null, ip_changed_at: null });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error("Failed to clear IP change badge:", err);
+    }
+  };
 
   return (
-    <div className={`device-card ${isEditMode ? 'is-editing' : ''} ${isSelected ? 'is-selected' : ''}`} style={{ height: '100%', width: '100%', position: 'relative' }}>
-      {/* Selection Tool (Top Left, shifted for mover handle) */}
+    <article
+      className={`device-card ${isEditMode ? 'is-editing' : ''} ${isSelected ? 'is-selected' : ''} ${device.is_online ? '' : 'is-offline'}`}
+      style={{ height: '100%', width: '100%', position: 'relative' }}
+    >
       {isEditMode && onSelect && (
-        <div 
+        <button
+          type="button"
+          className={`device-card__select ${isSelected ? 'is-selected' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
             onSelect(!isSelected);
           }}
+          aria-pressed={isSelected}
+          aria-label={t('dashboard.delete_selected', { count: 1 })}
           title={t('dashboard.delete_selected', { count: 1 })}
-          style={{ 
-            position: 'absolute', top: 8, left: 42, zIndex: 30,
-            width: 24, height: 24, 
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: isSelected ? 'var(--accent-danger)' : 'rgba(255,255,255,0.1)',
-            borderRadius: '6px',
-            border: isSelected ? 'none' : '1px solid rgba(255,255,255,0.2)',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            boxShadow: isSelected ? '0 0 10px var(--accent-danger)' : 'none',
-            color: isSelected ? 'white' : 'var(--text-tertiary)'
-          }}
         >
           {isSelected ? <Check size={16} /> : <Trash2 size={12} />}
-        </div>
+        </button>
       )}
 
-      {/* Edit Handle */}
       {isEditMode && (
         <div className="device-card__handle" style={{ right: 8, top: 8, left: 'auto' }}>
           <Move size={14} />
         </div>
       )}
 
-      {/* Header Indicators (Top Right) */}
-      {!isEditMode && (
-        <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', alignItems: 'center', gap: '8px', zIndex: 10 }}>
-          <button 
-            className="device-card__refresh-btn" 
-            onClick={async (e) => {
-              e.stopPropagation();
-              const btn = e.currentTarget;
-              btn.classList.add('spinning');
-              try {
-                await api.refreshDeviceInfo(device.id);
-                if (onRefresh) onRefresh(); 
-              } catch (err) {
-                console.error("Refresh failed:", err);
-              } finally {
-                setTimeout(() => btn.classList.remove('spinning'), 1000);
-              }
-            }}
-            title={t('dashboard.refresh_info')}
-            style={{ 
-              background: 'transparent', border: 'none', color: 'var(--text-tertiary)',
-              cursor: 'pointer', opacity: 0.6, display: 'flex', padding: '4px'
-            }}
-          >
-            <RefreshCw size={12} />
-          </button>
-          <button 
-            className="device-card__settings-btn" 
-            onClick={onEdit}
-            title={t('sidebar.settings')}
-            style={{ 
-              position: 'static',
-              opacity: 0.6,
-              transition: 'opacity 0.2s',
-              display: 'flex',
-              padding: '4px'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
-          >
-            <Settings size={14} />
-          </button>
-          <div 
-            className={`status-dot ${device.is_online ? 'status-dot--online' : 'status-dot--offline'}`} 
-            title={device.is_online ? t('network.online') : t('network.offline')} 
-            style={{ position: 'static', border: 'none' }}
-          />
-        </div>
-      )}
-
-      {/* Offline Overlay dimming */}
-      {!device.is_online && !isEditMode && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.2)', pointerEvents: 'none', borderRadius: 'inherit',
-          zIndex: 1
-        }} />
-      )}
-
-      {/* Device info */}
-      <div className="device-card__info" style={{ width: '100%' }}>
-        <div className="device-card__name" title={displayName}>
-          {displayName}
-        </div>
-        <div className="device-card__meta">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span className="device-card__ip">
-              {device.ip}
-            </span>
-            
-            {device.virtual_type && (
-              <div className="badge-virtual" style={{
-                background: device.virtual_type === 'docker' ? 'rgba(36, 150, 237, 0.1)' : 'rgba(56, 189, 248, 0.1)',
-                color: device.virtual_type === 'docker' ? '#2496ed' : 'var(--accent-primary)',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontSize: '0.6rem',
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                width: 'fit-content',
-                border: `1px solid ${device.virtual_type === 'docker' ? 'rgba(36, 150, 237, 0.2)' : 'rgba(56, 189, 248, 0.2)'}`,
-                textTransform: 'uppercase'
-              }}>
-                {device.virtual_type === 'docker' ? <Database size={10} /> : <Box size={10} />}
-                {device.virtual_type}
-              </div>
-            )}
-
-            {/* Agent Update Badge */}
-            {!isEditMode && device.agent_info?.agent_version && device.agent_info?.latest_version && device.agent_info.agent_version !== device.agent_info.latest_version && (
-              <div className="badge-update" style={{
-                background: 'rgba(245, 158, 11, 0.1)',
-                color: '#f59e0b',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontSize: '0.6rem',
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                width: 'fit-content',
-                border: '1px solid rgba(245, 158, 11, 0.2)',
-                textTransform: 'uppercase',
-                animation: 'pulse 2s infinite'
-              }} title={t('common.update_available', { version: device.agent_info.latest_version })}>
-                <RefreshCw size={10} />
-                {t('dashboard.agent_updates')}
-              </div>
-            )}
-
-            {/* Host Badge */}
-            {device.is_host && (
-              <div className="badge-host" style={{
-                background: 'rgba(245, 158, 11, 0.15)',
-                color: '#f59e0b',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontSize: '0.6rem',
-                fontWeight: 900,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                width: 'fit-content',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
-                textTransform: 'uppercase'
-              }}>
-                <Server size={10} />
-                HOST
-              </div>
-            )}
-
-            {/* Token Mismatch Badge */}
-            {!isEditMode && device.has_pending_token && (
-              <div 
-                className="badge-security" 
-                style={{
-                  background: 'rgba(244, 63, 94, 0.1)',
-                  color: '#f43f5e',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  fontSize: '0.6rem',
-                  fontWeight: 900,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  width: 'fit-content',
-                  border: '1px solid rgba(244, 63, 94, 0.3)',
-                  textTransform: 'uppercase',
-                  marginTop: '2px',
-                  animation: 'pulse 1.5s infinite'
-                }}
-              >
-                <div className="w-1.5 h-1.5 rounded-full bg-rose-500"></div>
-                SECURITY ALERT
-                <button 
-                  className="ml-1 bg-rose-500 hover:bg-rose-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black transition-colors"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    if (window.confirm(t('agent.adopt_confirm', 'Permanently accept this new agent key?'))) {
-                      try {
-                        await api.adoptAgent(device.id);
-                        if (onRefresh) onRefresh();
-                      } catch (err) {
-                        console.error("Adoption failed:", err);
-                      }
-                    }
-                  }}
-                >
-                  ADOPT
-                </button>
-              </div>
-            )}
-
-            {/* Parent Info */}
+      <header className="device-card__header">
+        <span
+          className={`status-dot ${device.is_online ? 'status-dot--online' : 'status-dot--offline'}`}
+          role="img"
+          aria-label={device.is_online ? t('network.online') : t('network.offline')}
+          title={device.is_online ? t('network.online') : t('network.offline')}
+        />
+        <div className="device-card__title">
+          <h3 className="device-card__name" title={displayName}>{displayName}</h3>
+          <div className="device-card__meta">
+            <span className="device-card__ip">{device.ip}</span>
+            {role && <span className="device-tag">{role}</span>}
             {device.parent_id && (
-              <div className="badge-parent" style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                color: 'var(--text-secondary)',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontSize: '0.6rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                width: 'fit-content',
-                border: '1px solid var(--border-subtle)',
-                marginTop: '2px'
-              }}>
-                <Server size={10} />
-                On: {device.parent_name || 'Host System'}
-              </div>
-            )}
-            {/* IP Change Badge */}
-            {device.old_ip && (
-              <div 
-                className="badge-ip-change" 
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  try {
-                    await api.updateDevice(device.id, { old_ip: null, ip_changed_at: null });
-                    if (onRefresh) onRefresh();
-                  } catch (err) {
-                    console.error("Failed to clear IP change badge:", err);
-                  }
-                }}
-                style={{
-                  background: 'rgba(59, 130, 246, 0.1)',
-                  color: '#3b82f6',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  fontSize: '0.6rem',
-                  fontWeight: 800,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  width: 'fit-content',
-                  border: '1px solid rgba(59, 130, 246, 0.2)',
-                  cursor: 'pointer',
-                  marginTop: '4px'
-                }}
-                title={t('dashboard.ip_changed_hint', 'IP has changed. Click to hide.')}
-              >
-                <RefreshCw size={10} />
-                {device.old_ip} ➔ {device.ip}
-                <div style={{ marginLeft: '4px', opacity: 0.7 }}>✕</div>
-              </div>
+              <span className="device-card__parent">{t('dashboard.on_host', { host: device.parent_name || 'Host' })}</span>
             )}
           </div>
         </div>
-      </div>
+        {!isEditMode && (
+          <div className="device-card__actions">
+            <button type="button" className="device-card__icon-btn" onClick={refreshInfo} aria-label={t('dashboard.refresh_info')} title={t('dashboard.refresh_info')}>
+              <RefreshCw size={14} />
+            </button>
+            <button type="button" className="device-card__icon-btn" onClick={onEdit} aria-label={`${t('dashboard.edit_device')}: ${displayName}`} title={t('dashboard.edit_device')}>
+              <Settings size={15} />
+            </button>
+          </div>
+        )}
+      </header>
 
-      {/* Agent Metrics */}
+      {(hasAgentUpdate || hasPendingKey || device.old_ip) && (
+        <div className="device-card__flags">
+          {hasAgentUpdate && (
+            <span className="device-tag device-tag--warn" title={t('common.update_available', { version: agent?.latest_version })}>
+              <RefreshCw size={11} aria-hidden="true" /> {t('dashboard.agent_update')}
+            </span>
+          )}
+          {hasPendingKey && (
+            <span className="device-tag device-tag--danger">
+              <ShieldAlert size={11} aria-hidden="true" /> {t('dashboard.security_alert')}
+              <button type="button" className="device-tag__action" onClick={adoptKey}>{t('dashboard.adopt')}</button>
+            </span>
+          )}
+          {device.old_ip && (
+            <button
+              type="button"
+              className="device-tag device-tag--info"
+              onClick={clearIpChange}
+              title={t('dashboard.ip_changed_hint', 'IP has changed. Click to hide.')}
+            >
+              {device.old_ip} <ArrowRight size={11} aria-hidden="true" /> {device.ip} <X size={11} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      )}
+
       {!isEditMode && <DeviceMetrics deviceId={device.id} compact={true} />}
 
-      {/* Service buttons */}
-      <div className="device-card__services">
-        {device.services
-          .sort((a, b) => a.sort_order - b.sort_order)
-          .map((service) => (
-            <ServiceBadge 
-              key={service.id} 
-              service={service} 
-              ip={device.ip} 
-              disabled={isEditMode} 
-            />
+      {services.length > 0 && (
+        <div className="device-card__services">
+          {visibleServices.map((service) => (
+            <ServiceBadge key={service.id} service={service} ip={device.ip} disabled={isEditMode} />
           ))}
-      </div>
-    </div>
+          {hiddenServices.length > 0 && (
+            <span className="service-badge service-badge--more" title={hiddenServices.map((s) => s.name).join(', ')}>
+              +{hiddenServices.length}
+            </span>
+          )}
+        </div>
+      )}
+    </article>
   );
 }, (prev, next) => {
   return (
@@ -315,7 +181,12 @@ export const DeviceCard = memo(({ device, isEditMode, onEdit, onRefresh, isSelec
     prev.device.ip === next.device.ip &&
     prev.device.old_ip === next.device.old_ip &&
     prev.device.has_pending_token === next.device.has_pending_token &&
+    prev.device.parent_id === next.device.parent_id &&
+    prev.device.parent_name === next.device.parent_name &&
+    prev.device.virtual_type === next.device.virtual_type &&
+    prev.device.is_host === next.device.is_host &&
     JSON.stringify(prev.device.services) === JSON.stringify(next.device.services) &&
-    prev.device.agent_info?.agent_version === next.device.agent_info?.agent_version
+    prev.device.agent_info?.agent_version === next.device.agent_info?.agent_version &&
+    prev.device.agent_info?.latest_version === next.device.agent_info?.latest_version
   );
 });

@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Monitor, Globe, Server, Cpu, Shield, Lock, Eye, EyeOff, Info, Activity, Plus, Save, Trash2 } from 'lucide-react';
 import type { Device, DiscoveredHost } from '../../types';
 
@@ -51,7 +51,7 @@ export const IPTile = memo(({
         fontSize: `${0.7 * safeZoom}rem`, 
         borderColor: group ? group.color : (isDashboardDevice ? 'var(--accent-primary)' : undefined),
         borderWidth: group ? '2px' : (isDashboardDevice ? '1.5px' : '1px'), 
-        opacity: status === 'empty' ? 0.3 : 1,
+        opacity: status === 'empty' ? 0.6 : 1,
         boxShadow: (discovered?.is_monitored && !isResponding) ? 'inset 0 0 10px rgba(239, 68, 68, 0.4)' : undefined, 
         position: 'relative', 
         cursor: (device || discovered) ? 'pointer' : 'default',

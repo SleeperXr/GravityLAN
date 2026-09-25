@@ -35,6 +35,8 @@ export function Dashboard() {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
+      // The free-form card grid does not fit phones; they always get the list.
+      if (mobile) setViewMode('list');
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -361,7 +363,7 @@ export function Dashboard() {
       <div className="app-layout">
         <Sidebar active="dashboard" isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
         <main className="app-main">
-          <MobileHeader title="Dashboard" onMenuClick={() => setIsSidebarOpen(true)} />
+          <MobileHeader title={t('sidebar.dashboard')} onMenuClick={() => setIsSidebarOpen(true)} />
           <div className="empty-state">
             <div style={{ animation: 'pulse 2s infinite' }}>{t('dashboard.loading')}</div>
           </div>
@@ -432,19 +434,18 @@ export function Dashboard() {
                     const minW = 2;
                     const minH = 2;
                     
-                    // SMART DEFAULTS: Optimized to show services
-                    let defaultW = 2;
-                    let defaultH = 4; // Minimum 4 to show services clearly
-                    
+                    // Defaults for devices without a saved layout: agent cards (2×2 metric
+                    // grid) three per row, plain cards (header + service chips) narrower and lower.
+                    let defaultW = 3;
+                    let defaultH = 3;
+
                     if (device.has_agent) {
-                      defaultW = 3;
-                      const hasBadge = !!device.virtual_type || device.device_subtype !== 'Unknown';
-                      defaultH = hasBadge ? 6 : 5; // Enough for metrics
+                      defaultW = 4;
+                      defaultH = 5;
                     }
-                    
-                    // If many services, grow horizontally
-                    if ((device.services?.length || 0) > 4) defaultW = Math.max(defaultW, 3);
-                    if ((device.services?.length || 0) > 8) defaultW = Math.max(defaultW, 4);
+
+                    // Many services: one more row for the chips
+                    if ((device.services?.length || 0) > 2 && !device.has_agent) defaultH = 4;
                     
                     const initialH = (device.h !== null && device.h !== undefined) ? device.h : defaultH;
                     const initialW = (device.w !== null && device.w !== undefined) ? device.w : defaultW;
@@ -500,7 +501,7 @@ export function Dashboard() {
     <div className="app-layout">
       <Sidebar active="dashboard" isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <main className="app-main">
-        <MobileHeader title="Dashboard" onMenuClick={() => setIsSidebarOpen(true)} />
+        <MobileHeader title={t('sidebar.dashboard')} onMenuClick={() => setIsSidebarOpen(true)} />
         {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -509,7 +510,7 @@ export function Dashboard() {
           gap: 'var(--space-md)'
         }}>
           <div>
-            <h1 style={{ marginBottom: 4 }}>Dashboard</h1>
+            <h1 style={{ marginBottom: 4, fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.01em' }}>{t('sidebar.dashboard')}</h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
               {t('dashboard.devices_sections', { devices: devices.length, groups: groups.length })}
             </p>
@@ -521,22 +522,30 @@ export function Dashboard() {
             alignItems: 'center',
             flexWrap: 'wrap'
           }}>
-            <div className="view-toggle">
-              <button 
-                className={`view-toggle__btn ${viewMode === 'grid' ? 'active' : ''}`}
-                onClick={() => setViewMode('grid')}
-                title="Grid View"
-              >
-                <Grid size={18} />
-              </button>
-              <button 
-                className={`view-toggle__btn ${viewMode === 'list' ? 'active' : ''}`}
-                onClick={() => setViewMode('list')}
-                title="List View"
-              >
-                <List size={18} />
-              </button>
-            </div>
+            {!isMobile && (
+              <div className="view-toggle" role="group" aria-label={t('dashboard.view_mode', 'Ansicht')}>
+                <button
+                  type="button"
+                  className={`view-toggle__btn ${viewMode === 'grid' ? 'active' : ''}`}
+                  onClick={() => setViewMode('grid')}
+                  aria-pressed={viewMode === 'grid'}
+                  aria-label={t('dashboard.view_grid', 'Kacheln')}
+                  title={t('dashboard.view_grid', 'Kacheln')}
+                >
+                  <Grid size={18} />
+                </button>
+                <button
+                  type="button"
+                  className={`view-toggle__btn ${viewMode === 'list' ? 'active' : ''}`}
+                  onClick={() => setViewMode('list')}
+                  aria-pressed={viewMode === 'list'}
+                  aria-label={t('dashboard.view_list', 'Liste')}
+                  title={t('dashboard.view_list', 'Liste')}
+                >
+                  <List size={18} />
+                </button>
+              </div>
+            )}
 
             <NotificationCenter />
             

@@ -10,10 +10,8 @@ import {
   MemoryStick as Memory, 
   RefreshCw,
   Search,
-  Filter,
   TrendingUp,
   Activity,
-  ArrowUpRight,
   ShieldCheck,
   ChevronDown,
   ChevronRight,
@@ -100,56 +98,48 @@ export function AgentsView() {
       <Sidebar active="agents" isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       
       <main className="app-main">
-        <MobileHeader onMenuClick={() => setIsSidebarOpen(true)} title="Agent Control Center" />
+        <MobileHeader onMenuClick={() => setIsSidebarOpen(true)} title={t('agents_page.title')} />
         
         <header className="page-header" style={{ marginBottom: 'var(--space-xl)' }}>
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center w-full gap-4">
             <div>
-              <div className="flex items-center gap-2 mb-1">
-                <ShieldCheck className="text-sky-500" size={24} />
-                <h1 className="text-3xl font-bold text-white tracking-tight">Agent Control Center</h1>
-              </div>
-              <p className="text-slate-400 text-sm">Managing {data?.total_agents || 0} telemetry nodes across your infrastructure.</p>
+              <h1 className="visually-hidden-mobile" style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.01em' }}>{t('agents_page.title')}</h1>
+              <p className="text-slate-400 text-sm">{t('agents_page.subtitle', { count: data?.total_agents || 0 })}</p>
             </div>
             <div className="flex gap-3">
-              <button className="btn btn-secondary" onClick={loadData} disabled={loading}>
+              <button type="button" className="btn btn-secondary" onClick={loadData} disabled={loading}>
                 <RefreshCw size={18} className={loading ? 'spinning' : ''} />
-                Sync Agents
+                {t('agents_page.sync')}
               </button>
             </div>
           </div>
         </header>
 
-        {/* Global Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-          <StatCard 
-            title="Telemetrie Nodes" 
-            value={data?.total_agents || 0} 
-            icon={<Server size={20} />} 
-            color="sky"
-            trend={data?.active_agents || 0}
-            trendLabel="active now"
+        {/* Global stats (real values only; no decorative trend lines) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <StatCard
+            title={t('agents_page.nodes')}
+            value={data?.total_agents || 0}
+            icon={<Server size={18} />}
+            note={t('agents_page.active', { count: data?.active_agents || 0 })}
+            noteTone="ok"
           />
-          <StatCard 
-            title="System Load (Avg)" 
-            value={`${(data?.avg_cpu || 0).toFixed(1)}%`} 
-            icon={<Cpu size={20} />} 
-            color="amber"
-            chartData={[20, 35, 25, 45, 30, 55, (data?.avg_cpu || 0)]}
+          <StatCard
+            title={t('agents_page.avg_cpu')}
+            value={`${(data?.avg_cpu || 0).toFixed(1)} %`}
+            icon={<Cpu size={18} />}
+            noteTone={(data?.avg_cpu || 0) >= 80 ? 'warn' : 'muted'}
           />
-          <StatCard 
-            title="Memory Usage (Avg)" 
-            value={`${(data?.avg_ram || 0).toFixed(1)}%`} 
-            icon={<Memory size={20} />} 
-            color="emerald"
-            chartData={[40, 42, 38, 45, 43, 44, (data?.avg_ram || 0)]}
+          <StatCard
+            title={t('agents_page.avg_ram')}
+            value={`${(data?.avg_ram || 0).toFixed(1)} %`}
+            icon={<Memory size={18} />}
           />
-          <StatCard 
-            title="Ingested Data" 
-            value={(data?.total_data_points || 0).toLocaleString()} 
-            icon={<Database size={20} />} 
-            color="indigo"
-            trendLabel="Total snapshots"
+          <StatCard
+            title={t('agents_page.snapshots')}
+            value={(data?.total_data_points || 0).toLocaleString()}
+            icon={<Database size={18} />}
+            note={t('agents_page.snapshots_note')}
           />
         </div>
 
@@ -161,36 +151,35 @@ export function AgentsView() {
               type="text" 
               className="input w-full h-12 bg-white/5 border-white/10" 
               style={{ paddingLeft: '3rem' }}
-              placeholder="Filter by name, IP, or version..."
+              placeholder={t('agents_page.search_placeholder')}
+              aria-label={t('agents_page.search_placeholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="flex gap-3 w-full md:w-auto">
-             <button className="btn btn-ghost flex-1 md:flex-none">
-               <Filter size={18} /> Filter
-             </button>
-             <button 
+             <button
+              type="button"
               className="btn btn-primary flex-1 md:flex-none px-6"
               onClick={() => setShowGlobalMetrics(true)}
              >
-               <Activity size={18} /> Global Analytics
+               <Activity size={18} /> {t('agents_page.global_analytics')}
              </button>
           </div>
         </div>
 
         {/* Agents Master Table */}
-        <div className="glass-panel overflow-hidden border border-white/10 shadow-2xl">
+        <div className="glass-panel overflow-hidden border border-white/10">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[1000px]">
               <thead>
-                <tr className="bg-white/[0.03] text-slate-400 text-xs uppercase tracking-widest font-bold">
-                  <th className="px-6 py-5 border-b border-white/5 w-12"></th>
-                  <th className="px-6 py-5 border-b border-white/5">Agent Identity</th>
-                  <th className="px-6 py-5 border-b border-white/5 text-center">Connection</th>
-                  <th className="px-6 py-5 border-b border-white/5">Performance (Live)</th>
-                  <th className="px-6 py-5 border-b border-white/5">Uptime History (24h)</th>
-                  <th className="px-6 py-5 border-b border-white/5 text-right">Activity</th>
+                <tr className="bg-white/[0.03] text-slate-400 text-sm font-medium">
+                  <th className="px-6 py-4 border-b border-white/5 w-12"><span className="sr-only">{t('agents_page.col_expand')}</span></th>
+                  <th className="px-6 py-4 border-b border-white/5">{t('agents_page.col_agent')}</th>
+                  <th className="px-6 py-4 border-b border-white/5 text-center">{t('agents_page.col_connection')}</th>
+                  <th className="px-6 py-4 border-b border-white/5">{t('agents_page.col_performance')}</th>
+                  <th className="px-6 py-4 border-b border-white/5">{t('agents_page.col_uptime')}</th>
+                  <th className="px-6 py-4 border-b border-white/5 text-right">{t('agents_page.col_activity')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -279,7 +268,7 @@ export function AgentsView() {
                               : 'bg-rose-500/10 text-rose-400 ring-1 ring-rose-500/20'
                           }`}>
                             <span className={`w-2 h-2 rounded-full ${agent.is_online ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`}></span>
-                            {agent.is_online ? 'CONNECTED' : 'DISCONNECTED'}
+                            {agent.is_online ? t('agents_page.connected') : t('agents_page.disconnected')}
                           </div>
                         </td>
                         <td className="px-6 py-5">
@@ -1501,53 +1490,23 @@ function DetailGraph({ data, color, label, suffix, max = 100 }: {
   );
 }
 
-function StatCard({ title, value, icon, color, trend, trendLabel, chartData }: any) {
-  const colorMap: any = {
-    sky: 'from-sky-500/20 to-sky-500/5 text-sky-400 border-sky-500/20',
-    amber: 'from-amber-500/20 to-amber-500/5 text-amber-400 border-amber-500/20',
-    emerald: 'from-emerald-500/20 to-emerald-500/5 text-emerald-400 border-emerald-500/20',
-    indigo: 'from-indigo-500/20 to-indigo-500/5 text-indigo-400 border-indigo-500/20',
-  };
-
+/** Neutral KPI tile: label, value, optional note; colour only for the note's state. */
+function StatCard({ title, value, icon, note, noteTone }: {
+  title: string;
+  value: React.ReactNode;
+  icon: React.ReactNode;
+  note?: string;
+  noteTone?: 'ok' | 'warn' | 'muted';
+}) {
+  const noteColor = noteTone === 'warn' ? 'var(--accent-warning)' : noteTone === 'ok' ? 'var(--accent-success)' : 'var(--text-secondary)';
   return (
-    <div className={`glass-panel p-6 border bg-gradient-to-br ${colorMap[color]} relative group overflow-hidden`}>
-      <div className="flex justify-between items-start mb-4">
-        <div className={`p-3 rounded-2xl bg-white/5 border border-white/10 transition-transform group-hover:scale-110`}>
-          {icon}
-        </div>
-        {trend !== undefined && (
-          <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-tighter bg-white/10 px-2 py-1 rounded-lg">
-            <ArrowUpRight size={12} />
-            {trend} {trendLabel}
-          </div>
-        )}
+    <div className="stat-card">
+      <div className="stat-card__head">
+        <span className="stat-card__title">{title}</span>
+        <span className="stat-card__icon" aria-hidden="true">{icon}</span>
       </div>
-      
-      <div className="flex flex-col">
-        <span className="text-slate-400 text-xs font-black uppercase tracking-widest mb-1">{title}</span>
-        <div className="text-4xl font-black text-white tracking-tight">{value}</div>
-        
-        {chartData && (
-          <div className="mt-4 h-12 w-full opacity-50">
-            <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 20">
-              <path 
-                d={`M 0 20 ${chartData.map((v: number, i: number) => `L ${i * (100 / (chartData.length - 1))} ${20 - (v / 100) * 20}`).join(' ')} L 100 20 Z`}
-                fill="currentColor"
-                fillOpacity="0.1"
-              />
-              <path 
-                d={`M 0 ${20 - (chartData[0] / 100) * 20} ${chartData.map((v: number, i: number) => `L ${i * (100 / (chartData.length - 1))} ${20 - (v / 100) * 20}`).join(' ')}`}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-            </svg>
-          </div>
-        )}
-        {trendLabel && !trend && (
-           <span className="text-[10px] text-slate-500 font-bold uppercase mt-2 tracking-widest">{trendLabel}</span>
-        )}
-      </div>
+      <div className="stat-card__value">{value}</div>
+      {note && <span className="stat-card__note" style={{ color: noteColor }}>{note}</span>}
     </div>
   );
 }
