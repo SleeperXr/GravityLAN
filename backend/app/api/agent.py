@@ -189,7 +189,7 @@ async def receive_report(
 
 async def _get_auto_adopt_setting(db: AsyncSession) -> bool:
     """Read the auto-adoption setting with a 5-minute global cache."""
-    global _setting_cache, _setting_cache_time
+    global _setting_cache_time
     now = datetime.now(timezone.utc)
     if "allow_auto_adopt" not in _setting_cache or (now - _setting_cache_time).total_seconds() > 300:
         from app.models.setting import Setting
