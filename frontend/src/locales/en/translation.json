@@ -238,7 +238,10 @@
     "credentials_missing": "Credentials missing",
     "connection_error": "Connection error",
     "manual_install_options": "Show manual installation/uninstallation options",
-    "adopt_success": "Agent successfully adopted!"
+    "adopt_success": "Agent successfully adopted!",
+    "install_code_hint": "One-time code: valid until {{time}}, usable once.",
+    "install_code_failed": "Could not create an install command. Please try again.",
+    "install_code_retry": "New code"
   },
   "settings": {
     "title": "GravityLAN Settings",

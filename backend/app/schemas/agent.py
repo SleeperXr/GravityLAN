@@ -134,6 +134,13 @@ class AgentDeployResponse(BaseModel):
     agent_version: str | None = None
 
 
+class AgentEnrollmentResponse(BaseModel):
+    """Single-use code that authorises the manual install script for one device."""
+
+    code: str
+    expires_in: int  # seconds
+
+
 class PackageUpdateInfo(BaseModel):
     """Detailed info for an upgradeable package."""
     package: str

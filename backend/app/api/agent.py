@@ -36,6 +36,7 @@ from app.schemas.agent import (
     AgentStatusResponse,
     AgentDeployRequest,
     AgentDeployResponse,
+    AgentEnrollmentResponse,
     AgentConfigUpdate,
     AgentConfigResponse,
     MetricsHistoryResponse,
@@ -45,6 +46,7 @@ from app.schemas.agent import (
     GlobalMetricsResponse,
 )
 from app.services.agent_deployer import deploy_agent, remove_agent, LATEST_AGENT_VERSION
+from app.services.enrollment_service import enrollment_store
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -891,9 +893,40 @@ async def download_agent_file():
     )
 
 
+@router.post("/enroll/{device_id}", response_model=AgentEnrollmentResponse)
+async def create_enrollment_code(
+    device_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_admin: str = Depends(get_current_admin),
+) -> AgentEnrollmentResponse:
+    """Issue a single-use code that authorises the manual install script for one device."""
+    device = await db.get(Device, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    code = enrollment_store.issue(device_id)
+    return AgentEnrollmentResponse(code=code, expires_in=int(enrollment_store.ttl_seconds))
+
+
 @router.get("/download/config/{device_id}")
-async def download_agent_config(device_id: int, db: AsyncSession = Depends(get_db)):
-    """Generate and download the agent.conf for a specific device."""
+async def download_agent_config(
+    device_id: int,
+    request: Request,
+    code: str | None = None,
+    authorization: str | None = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate and download the agent.conf for a specific device.
+
+    The config carries the agent token, so it needs admin auth or a single-use
+    enrollment code (redeemed by the manual install script).
+    """
+    if code is not None:
+        if not enrollment_store.consume(code, device_id):
+            raise HTTPException(status_code=403, detail="Invalid, expired or already used enrollment code")
+    else:
+        await get_current_admin(conn=request, authorization=authorization, token=None, db=db)
+
     device = await db.get(Device, device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -923,9 +956,25 @@ async def download_agent_config(device_id: int, db: AsyncSession = Depends(get_d
     return PlainTextResponse(json.dumps(config_data, indent=2))
 
 
+_INSTALL_CODE_REJECTED_SCRIPT = """#!/bin/bash
+echo "Error: this GravityLAN install command is invalid, expired or was already used." >&2
+echo "Copy a fresh install command from the device's Agent tab in the GravityLAN UI." >&2
+exit 1
+"""
+
+
 @router.get("/download/install-sh/{device_id}")
-async def download_install_script(device_id: int, db: AsyncSession = Depends(get_db)):
-    """Generate a shell script for easy 'curl | bash' installation."""
+async def download_install_script(device_id: int, code: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Generate a shell script for easy 'curl | bash' installation.
+
+    ``code`` is a single-use enrollment code from ``POST /enroll/{device_id}``.
+    It is only checked here (not used up) and embedded into the script, which
+    redeems it when downloading the agent config.
+    """
+    if not enrollment_store.is_valid(code, device_id):
+        # Served as a script so `curl ... | sudo bash` prints a readable error instead of feeding JSON to bash.
+        return PlainTextResponse(_INSTALL_CODE_REJECTED_SCRIPT, status_code=403)
+
     device = await db.get(Device, device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -940,23 +989,35 @@ echo "--- GravityLAN Agent Installer ---"
 INSTALL_DIR="/opt/gravitylan-agent"
 SERVER_URL="{server_url}"
 DEVICE_ID="{device_id}"
+ENROLL_CODE="{code}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Error: This script must be run as root to install the agent."
   echo "Please run the command with sudo bash:"
-  echo "curl -sSL $SERVER_URL/api/agent/download/install-sh/$DEVICE_ID | sudo bash"
+  echo "curl -sSL '$SERVER_URL/api/agent/download/install-sh/$DEVICE_ID?code=$ENROLL_CODE' | sudo bash"
   exit 1
 fi
 
-echo "1. Cleaning up old versions..."
+# Download first, so an expired install code never leaves the host without its current agent.
+echo "1. Downloading agent and config..."
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+curl -fsSL "$SERVER_URL/api/agent/download/agent" -o "$TMP_DIR/gravitylan-agent.py" || {{
+  echo "Error: could not download the agent from $SERVER_URL - is the GravityLAN server reachable from this host?" >&2
+  exit 1
+}}
+curl -fsSL "$SERVER_URL/api/agent/download/config/$DEVICE_ID?code=$ENROLL_CODE" -o "$TMP_DIR/agent.conf" || {{
+  echo "Error: the install code is invalid, expired or was already used." >&2
+  echo "Copy a fresh install command from the device's Agent tab in the GravityLAN UI." >&2
+  exit 1
+}}
+
+echo "2. Cleaning up old versions..."
 systemctl stop gravitylan-agent.service 2>/dev/null || true
-pkill -9 -f gravitylan-agent.py 2>/dev/null || true
+pkill -9 -f '[g]ravitylan-agent\\.py' 2>/dev/null || true
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
-
-echo "2. Downloading agent and config..."
-curl -sSL "$SERVER_URL/api/agent/download/agent" -o "$INSTALL_DIR/gravitylan-agent.py"
-curl -sSL "$SERVER_URL/api/agent/download/config/$DEVICE_ID" -o "$INSTALL_DIR/agent.conf"
+mv "$TMP_DIR/gravitylan-agent.py" "$TMP_DIR/agent.conf" "$INSTALL_DIR/"
 
 echo "3. Setting up systemd service..."
 PYTHON_BIN=$(which python3 || which python)

@@ -112,6 +112,8 @@ export const api = {
     request<{ status: string; message: string; agent_version?: string }>(`/api/agent/deploy/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
   uninstallAgent: (deviceId: number, data: { ssh_user: string; ssh_password?: string; ssh_key?: string; ssh_port?: number }) =>
     request<{ status: string; message: string }>(`/api/agent/uninstall/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
+  createAgentEnrollment: (deviceId: number) =>
+    request<{ code: string; expires_in: number }>(`/api/agent/enroll/${deviceId}`, { method: 'POST' }),
   getAgentStatus: (deviceId: number) =>
     request<{ device_id: number; is_installed: boolean; is_active: boolean; agent_version?: string; last_seen?: string }>(`/api/agent/status/${deviceId}`),
   getAgentMetrics: (deviceId: number, limit?: number, range?: string) => {

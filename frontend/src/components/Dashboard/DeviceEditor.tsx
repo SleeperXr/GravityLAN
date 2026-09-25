@@ -87,6 +87,31 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
   const [newDiskPath, setNewDiskPath] = useState('');
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [showManual, setShowManual] = useState(false);
+  const [installCode, setInstallCode] = useState<{ code: string; expiresAt: Date } | null>(null);
+  const [installCodeFailed, setInstallCodeFailed] = useState(false);
+  const [installCodeRequest, setInstallCodeRequest] = useState(0);
+
+  // The manual install command must carry a fresh single-use enrollment code.
+  useEffect(() => {
+    if (!showManual) return;
+    let cancelled = false;
+    setInstallCode(null);
+    setInstallCodeFailed(false);
+    api.createAgentEnrollment(currentDevice.id)
+      .then(({ code, expires_in }) => {
+        if (cancelled) return;
+        // The code ends up in a root shell command: accept only the backend's token_urlsafe alphabet.
+        if (!/^[A-Za-z0-9_-]+$/.test(code)) throw new Error('Unexpected install code format');
+        setInstallCode({ code, expiresAt: new Date(Date.now() + expires_in * 1000) });
+      })
+      .catch((err) => {
+        console.error('Failed to create install code:', err);
+        if (cancelled) return;
+        setInstallCodeFailed(true);
+        showToast('error', t('common.error'), t('agent.install_code_failed'));
+      });
+    return () => { cancelled = true; };
+  }, [showManual, currentDevice.id, installCodeRequest, showToast, t]);
 
   useEffect(() => {
     const loadGroups = async () => {
@@ -1064,10 +1089,11 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                           cursor: 'pointer'
                         }}
                         onClick={() => {
+                          if (!installCode) return;
                           const host = window.location.hostname;
                           const port = window.location.port === '5173' ? ':8000' : (window.location.port ? `:${window.location.port}` : '');
                           const protocol = window.location.protocol;
-                          const cmd = `curl -sSL ${protocol}//${host}${port}/api/agent/download/install-sh/${currentDevice.id} | sudo bash`;
+                          const cmd = `curl -sSL "${protocol}//${host}${port}/api/agent/download/install-sh/${currentDevice.id}?code=${installCode.code}" | sudo bash`;
                           
                           if (navigator.clipboard && window.isSecureContext) {
                             navigator.clipboard.writeText(cmd);
@@ -1086,7 +1112,21 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                             document.body.removeChild(textArea);
                           }
                         }}>
-                          <code>install-sh/{currentDevice.id} | sudo bash</code>
+                          <code>{installCode ? `install-sh/${currentDevice.id}?code=… | sudo bash` : t(installCodeFailed ? 'agent.install_code_failed' : 'common.loading')}</code>
+                        </div>
+                        <div style={{ marginTop: 6, fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                          <span>
+                            {installCode && t('agent.install_code_hint', {
+                              time: installCode.expiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setInstallCodeRequest(n => n + 1)}
+                            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent-primary)', cursor: 'pointer', fontSize: 'inherit' }}
+                          >
+                            {t('agent.install_code_retry')}
+                          </button>
                         </div>
                       </div>
 
