@@ -88,23 +88,8 @@ export function ServiceBadge({ service, ip, disabled, isMini }: ServiceBadgeProp
   return (
     <a
       href={isSmb ? '#' : url}
-      className={`service-badge ${disabled ? 'disabled' : ''} ${isCopied ? 'copied' : ''} ${isMini ? 'is-mini' : ''}`}
-      style={{ 
-        backgroundColor: isCopied ? '#22c55e' : (service.color || '#34495e'),
-        textDecoration: 'none',
-        display: 'flex',
-        alignItems: 'center',
-        gap: isMini ? '4px' : '6px',
-        padding: isMini ? '4px 6px' : '4px 8px',
-        borderRadius: '4px',
-        color: 'white',
-        fontSize: '0.75rem',
-        border: 'none',
-        transition: 'all 0.2s',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        boxShadow: isCopied ? '0 0 10px rgba(34, 197, 94, 0.5)' : 'none',
-        height: isMini ? '24px' : 'auto'
-      }}
+      className={`service-badge ${disabled ? 'disabled' : ''} ${isCopied ? 'copied' : ''} ${isMini ? 'is-mini' : ''} ${service.is_up ? '' : 'is-down'}`}
+      aria-disabled={disabled || undefined}
       onClick={(e) => {
         if (disabled) {
           e.preventDefault();

@@ -57,6 +57,33 @@ function formatBps(bytesPerSec: number): string {
 }
 
 /**
+ * Bring a metrics sample into one shape: live WebSocket/agent payloads are
+ * nested (`ram.percent`, `disk[]`), stored history rows can be flat
+ * (`ram_percent`, `disk_json`).
+ */
+function toMetricsData(sample: any): MetricsData {
+  if (sample?.ram) return sample as MetricsData;
+  const parse = (raw: string | null | undefined) => {
+    try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+  };
+  return {
+    cpu_percent: sample?.cpu_percent ?? 0,
+    ram: { used_mb: sample?.ram_used_mb ?? 0, total_mb: sample?.ram_total_mb ?? 0, percent: sample?.ram_percent ?? 0 },
+    disk: parse(sample?.disk_json) ?? [],
+    temperature: sample?.temperature ?? null,
+    network: parse(sample?.net_json) ?? {},
+    timestamp: sample?.timestamp ?? '',
+  };
+}
+
+/** Accent while normal; amber/red only when a threshold is crossed. */
+function meterColor(value: number, warnAt: number, dangerAt: number): string {
+  if (value >= dangerAt) return 'var(--accent-danger)';
+  if (value >= warnAt) return 'var(--accent-warning)';
+  return 'var(--accent-primary)';
+}
+
+/**
  * Real-time device metrics overlay for DeviceCards.
  */
 export function DeviceMetrics({ deviceId, compact = true, onUpdate }: DeviceMetricsProps) {
@@ -77,7 +104,7 @@ export function DeviceMetrics({ deviceId, compact = true, onUpdate }: DeviceMetr
           try {
             const history = await api.getAgentMetrics(deviceId, 1);
             if (history.snapshots.length > 0 && mounted) {
-              setMetrics(history.snapshots[history.snapshots.length - 1]);
+              setMetrics(toMetricsData(history.snapshots[history.snapshots.length - 1]));
             }
           } catch { /* metrics not available yet */ }
 
@@ -85,7 +112,7 @@ export function DeviceMetrics({ deviceId, compact = true, onUpdate }: DeviceMetr
             wsRef.current = createMetricsSocket(deviceId, (msg) => {
               if (mounted) {
                 // WebSocket messages are wrapped: { type: 'metrics', data: { ... } }
-                const snapshot = (msg && msg.type === 'metrics' && msg.data) ? msg.data : msg;
+                const snapshot = toMetricsData((msg && msg.type === 'metrics' && msg.data) ? msg.data : msg);
                 setMetrics(snapshot);
                 if (onUpdate) onUpdate(snapshot);
               }
@@ -108,59 +135,37 @@ export function DeviceMetrics({ deviceId, compact = true, onUpdate }: DeviceMetr
   if (!isAgentActive || !metrics) return null;
 
   if (compact) {
+    // Show the fullest disk: that is the one worth noticing on a card.
+    const fullestDisk = (metrics.disk || []).reduce<MetricsData['disk'][number] | null>(
+      (max, d) => (!max || (d.percent ?? 0) > (max.percent ?? 0) ? d : max), null);
+    const cpu = metrics.cpu_percent ?? 0;
+    const ram = metrics.ram?.percent ?? 0;
+    const items = [
+      { key: 'cpu', label: t('agent.cpu'), percent: cpu, text: `${cpu.toFixed(0)} %`, color: meterColor(cpu, 80, 95) },
+      { key: 'ram', label: t('agent.ram'), percent: ram, text: `${ram.toFixed(0)} %`, color: meterColor(ram, 85, 95) },
+      ...(fullestDisk ? [{
+        key: 'disk', label: t('agent.disk'), percent: fullestDisk.percent ?? 0,
+        text: `${(fullestDisk.percent ?? 0).toFixed(0)} %`, color: meterColor(fullestDisk.percent ?? 0, 85, 95),
+      }] : []),
+      ...(metrics.temperature != null ? [{
+        key: 'temp', label: 'Temp', percent: Math.min(metrics.temperature, 100),
+        text: `${metrics.temperature.toFixed(0)} °C`, color: meterColor(metrics.temperature, 70, 85),
+      }] : []),
+    ];
+
     return (
-      <div style={{
-        display: 'flex', flexDirection: 'column', gap: 4,
-        padding: '4px 0 0', borderTop: '1px solid var(--border-subtle)',
-        marginTop: 'auto', width: '100%'
-      }}>
-        {/* CPU */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Cpu size={11} style={{ color: utilizationColor(metrics.cpu_percent ?? 0), flexShrink: 0 }} />
-          <div style={{ flex: 1 }}>
-            <MiniBar percent={metrics.cpu_percent ?? 0} color={utilizationColor(metrics.cpu_percent ?? 0)} />
-          </div>
-          <span style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', minWidth: 32, textAlign: 'right' }}>
-            {(metrics.cpu_percent ?? 0).toFixed(0)}%
-          </span>
-        </div>
-
-        {/* RAM */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <MemoryStick size={11} style={{ color: utilizationColor(metrics.ram?.percent ?? 0), flexShrink: 0 }} />
-          <div style={{ flex: 1 }}>
-            <MiniBar percent={metrics.ram?.percent ?? 0} color={utilizationColor(metrics.ram?.percent ?? 0)} />
-          </div>
-          <span style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', minWidth: 32, textAlign: 'right' }}>
-            {(metrics.ram?.percent ?? 0).toFixed(0)}%
-          </span>
-        </div>
-
-        {/* Disks */}
-        {(metrics.disk || []).map((d, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <HardDrive size={11} style={{ color: utilizationColor(d.percent ?? 0), flexShrink: 0 }} />
-            <div style={{ flex: 1 }}>
-              <MiniBar percent={d.percent ?? 0} color={utilizationColor(d.percent ?? 0)} />
+      <div className="metric-grid">
+        {items.map((m) => (
+          <div key={m.key} className="metric">
+            <div className="metric__head">
+              <span>{m.label}</span>
+              <span className="metric__value" style={{ color: m.color === 'var(--accent-primary)' ? undefined : m.color }}>{m.text}</span>
             </div>
-            <span style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', minWidth: 32, textAlign: 'right' }}>
-              {(d.percent ?? 0).toFixed(0)}%
-            </span>
+            <div className="metric__track" role="meter" aria-label={m.label} aria-valuenow={Math.round(m.percent)} aria-valuemin={0} aria-valuemax={100}>
+              <div className="metric__fill" style={{ width: `${Math.min(m.percent, 100)}%`, background: m.color }} />
+            </div>
           </div>
         ))}
-
-        {/* Temperature */}
-        {metrics.temperature != null && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Thermometer size={11} style={{ color: tempColor(metrics.temperature), flexShrink: 0 }} />
-            <span style={{ 
-              fontSize: '0.6rem', fontFamily: 'var(--font-mono)', fontWeight: 700,
-              color: tempColor(metrics.temperature)
-            }}>
-              {metrics.temperature.toFixed(0)}°C
-            </span>
-          </div>
-        )}
       </div>
     );
   }

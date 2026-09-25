@@ -450,75 +450,230 @@ input, textarea, select, [contenteditable], [contenteditable="true"] {
 }
 
 .group-section__title {
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 1.0625rem;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
 .group-section__count {
-  background: var(--bg-card);
-  padding: 2px 10px;
-  border-radius: 20px;
+  background: var(--bg-elevated);
+  padding: 2px 9px;
+  border-radius: 999px;
   font-size: 0.75rem;
   color: var(--text-secondary);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 /* --- Device Cards --- */
 .device-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-medium);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: 8px 12px;
+  padding: 14px 16px;
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  transition: all var(--transition-fast);
+  gap: 12px;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
   position: relative;
   overflow: hidden;
 }
 
 .device-card:hover {
-  border-color: var(--accent-primary);
-  background: rgba(56, 189, 248, 0.05);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  border-color: var(--border-medium);
+  background: #171D25;
+}
+
+.device-card.is-offline {
+  opacity: 0.72;
+}
+
+.device-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.device-card__header .status-dot {
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.device-card__title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .device-card__name {
-  font-weight: 800;
-  font-size: 1.15rem;
+  margin: 0;
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 4px;
   color: var(--text-primary);
-  letter-spacing: -0.01em;
 }
 
 .device-card__meta {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
 }
 
 .device-card__ip {
-  background: rgba(56, 189, 248, 0.12);
-  color: var(--accent-primary);
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 0.95rem;
-  font-weight: 800;
   font-family: var(--font-mono);
-  letter-spacing: 0.03em;
-  width: fit-content;
+  color: #C5CDD8;
+}
+
+.device-card__actions {
+  display: flex;
+  gap: 2px;
+  margin: -4px -6px 0 0;
+}
+
+.device-card__icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.device-card__icon-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.device-card__icon-btn:focus-visible,
+.service-badge:focus-visible,
+.device-tag:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.device-card__select {
+  position: absolute;
+  top: 8px;
+  left: 42px;
+  z-index: 30;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-elevated);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.device-card__select.is-selected {
+  background: var(--accent-danger);
+  border-color: var(--accent-danger);
+  color: #1A0A09;
+}
+
+.device-card__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Small neutral label: role (Host/VM/Docker) and state flags */
+.device-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: var(--bg-elevated);
+  color: #C5CDD8;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.device-tag--warn { background: rgba(227, 179, 65, 0.12); color: var(--accent-warning); }
+.device-tag--danger { background: rgba(244, 112, 103, 0.12); color: var(--accent-danger); }
+.device-tag--info { background: rgba(61, 184, 245, 0.1); color: var(--accent-secondary); cursor: pointer; }
+
+.device-tag__action {
+  margin-left: 4px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--accent-danger);
+  color: #1A0A09;
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Labeled 2×2 metric meters on device cards */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.metric__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.metric__value {
+  font-family: var(--font-mono);
+  color: #C5CDD8;
+}
+
+.metric__track {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+
+.metric__fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
 }
 
 .device-card__services {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin-top: auto;
-  padding-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .device-card__settings-btn {
@@ -544,11 +699,11 @@ input, textarea, select, [contenteditable], [contenteditable="true"] {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  border: 2px solid var(--bg-surface);
 }
 
-.status-dot--online { background: var(--accent-success); box-shadow: 0 0 10px var(--accent-success); }
-.status-dot--offline { background: var(--accent-danger); }
+.status-dot--online { background: var(--accent-success); }
+/* Offline is a hollow ring, so it differs from online by shape, not only hue */
+.status-dot--offline { background: transparent; box-shadow: inset 0 0 0 2px var(--accent-danger); }
 
 /* --- Forms --- */
 .form-group {
@@ -655,31 +810,51 @@ input[type="number"] {
 
 /* --- Service Badges --- */
 .service-badge {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  font-size: 0.8rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  display: flex;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-medium);
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 500;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  color: white;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+  color: #C5CDD8;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .service-badge:hover:not(.disabled) {
-  transform: translateY(-2px);
-  filter: brightness(1.2);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-  border-color: rgba(255, 255, 255, 0.3);
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.service-badge.is-down {
+  border-color: rgba(244, 112, 103, 0.45);
+  color: var(--accent-danger);
+}
+
+.service-badge.copied {
+  border-color: var(--accent-success);
+  color: var(--accent-success);
+}
+
+.service-badge.is-mini {
+  height: 24px;
+  padding: 0 6px;
+  gap: 4px;
+}
+
+.service-badge--more {
+  cursor: default;
+  border-style: dashed;
+  color: var(--text-secondary);
 }
 
 .service-badge.disabled {
-  filter: grayscale(0.5);
   cursor: default;
   opacity: 0.5;
 }
@@ -692,13 +867,11 @@ input[type="number"] {
 }
 
 .service-badge__dot--up {
-  background: #10b981;
-  box-shadow: 0 0 8px #10b981;
+  background: var(--accent-success);
 }
 
 .service-badge__dot--down {
-  background: #ef4444;
-  box-shadow: 0 0 4px #ef4444;
+  background: var(--accent-danger);
 }
 
 /* --- Gridstack Enhancements --- */

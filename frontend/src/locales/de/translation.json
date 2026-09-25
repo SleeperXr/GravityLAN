@@ -84,7 +84,15 @@
     "deleted": "Erfolgreich gelöscht"
   },
   "dashboard": {
-    "loading": "Lade Dashboard...",
+    "on_host": "auf {{host}}",
+    "edit_device": "Gerät bearbeiten",
+    "agent_update": "Agent-Update",
+    "security_alert": "Neuer Agent-Schlüssel",
+    "adopt": "Übernehmen",
+    "view_mode": "Ansicht",
+    "view_grid": "Kacheln",
+    "view_list": "Liste",
+    "loading": "Lade Übersicht...",
     "unassigned_devices": "Nicht zugeordnete Geräte",
     "click_to_expand": "(Geklickt zum Aufklappen)",
     "move_group_up": "Gruppe nach oben verschieben",

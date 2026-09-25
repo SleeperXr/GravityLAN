@@ -84,7 +84,15 @@
     "deleted": "Successfully deleted"
   },
   "dashboard": {
-    "loading": "Loading Dashboard...",
+    "on_host": "on {{host}}",
+    "edit_device": "Edit device",
+    "agent_update": "Agent update",
+    "security_alert": "New agent key",
+    "adopt": "Adopt",
+    "view_mode": "View",
+    "view_grid": "Tiles",
+    "view_list": "List",
+    "loading": "Loading overview...",
     "unassigned_devices": "Unassigned Devices",
     "click_to_expand": "(Click to expand)",
     "move_group_up": "Move group up",
