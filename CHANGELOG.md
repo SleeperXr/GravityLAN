@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Security
+
+- **Agent tokens were downloadable without login**: `GET /api/agent/download/config/{id}` now requires admin auth or a single-use enrollment code. Previously anyone on the LAN could enumerate device ids and collect every agent token (and create new ones). The manual install command in the Agent tab now carries a one-time code (valid 30 minutes, usable once); commands copied before this update no longer work — copy a fresh one.
+- **Setup mode opened every admin route**: Until the first-run setup is completed (fresh install or after a factory reset), only the routes the setup wizard needs are reachable. Backup export/import, settings, device management and agent deployment are closed (403) instead of being open to anyone.
+
+### Fixed
+
+- **Agent deployment froze the whole server**: SSH deploy/uninstall ran blocking paramiko calls on the event loop, so API, WebSockets and the scan scheduler stalled for the whole deployment. They now run in a worker thread.
+- **Agent cleanup hit unrelated software on target hosts**: The pre-install/uninstall cleanup stopped and disabled any `agent.service` and killed every process whose command line contained `agent.py`. It now only touches GravityLAN's own agents, and its `pkill` pattern no longer kills the invoking shell (which could abort deployments as `root`).
+- **Manual installer wiped the old agent before downloading**: The install script now downloads the agent and config first and only replaces the existing installation once both succeeded.
+
 ## [0.3.4] - 2026-08-17
 
 ### Fixed

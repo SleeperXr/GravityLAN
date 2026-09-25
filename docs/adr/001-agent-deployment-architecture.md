@@ -87,6 +87,12 @@ REMOTE_SERVICE_PATH = "/etc/systemd/system/gravitylan-agent.service"
 - SSH protocol change (e.g., SSH certificates) → modify `_build_connect_kwargs`
 - Agent protocol change (config schema, RPC) → version bump + migration strategy
 
+## Amendment 1 (2026-09-25): Event loop safety, cleanup scope, manual-install enrollment
+
+- **Worker thread:** paramiko is fully blocking. `deploy_agent` / `remove_agent` keep their async signatures, but their SSH session (`_deploy_agent_blocking` / `_remove_agent_blocking`) runs via `asyncio.to_thread`, and every helper below them is synchronous. Before, a deployment froze the whole server (API, WebSockets, scheduler) for its full duration.
+- **Cleanup scope:** the pre-install cleanup only stops `gravitylan-agent` / `homelan-agent` units and processes — never generic names such as `agent.service` or `*agent.py`. `pkill -f` patterns come from `_pkill_pattern_for()` (bracketed first character), so they cannot match and kill the invoking shell.
+- **Manual install (`curl | sudo bash`):** `GET /api/agent/download/config/{id}` carries the agent token and requires admin auth or a single-use enrollment code (`POST /api/agent/enroll/{id}`, 30 min TTL, in-memory like sessions). `install-sh` requires a valid code and embeds it; the script redeems it when fetching the config. The agent script and `uninstall-sh` contain no secrets and stay public.
+
 ---
 
 **Links:**
