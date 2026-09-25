@@ -262,16 +262,23 @@ def test_orchestrator_collect_all(agent_mod, monkeypatch):
         getenv=agent_mod.os.getenv,
     )
     monkeypatch.setattr(agent_mod, "os", fake_os)
+    # Behave like a Linux host with apt on every OS, so an unmocked patch
+    # collector would fail here too instead of only on the Linux CI runner.
+    monkeypatch.setattr(agent_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
 
     config = _make_config(agent_mod)
     orch = agent_mod.AgentOrchestrator(config)
+    patches = {"patch_available": 3, "patch_security": 1, "patch_manager": "apt"}
 
+    # The patch collector shells out to apt/dnf/yum; never run real package managers in tests.
     with patch.object(orch.collectors["system"], "collect", return_value={"os": "TestOS"}), \
-         patch.object(orch.collectors["temperature"], "collect", return_value=None):
+         patch.object(orch.collectors["temperature"], "collect", return_value=None), \
+         patch.object(orch.collectors["patches"], "collect", return_value=patches):
         payload = orch.collect_all()
 
     assert payload["device_id"] == 1
     assert payload["system"] == {"os": "TestOS"}
+    assert payload["patches"] == patches
     assert "temperature" not in payload
 
 
