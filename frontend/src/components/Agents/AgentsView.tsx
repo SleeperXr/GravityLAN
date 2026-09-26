@@ -15,17 +15,18 @@ import {
   ShieldCheck,
   ChevronDown,
   ChevronRight,
-  Clock,
   Thermometer,
-  Zap,
-  Info,
   HardDrive,
   X,
   LineChart,
   History,
   Lock,
   Terminal,
-  Shield
+  Shield,
+  ShieldAlert,
+  Package,
+  RotateCcw,
+  ArrowUpCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -143,215 +144,138 @@ export function AgentsView() {
           />
         </div>
 
-        {/* Action Bar */}
-        <div className="flex flex-col md:flex-row gap-4 mb-8 items-center justify-between glass-panel p-4 border-white/5">
-          <div className="relative w-full md:w-96">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-            <input 
-              type="text" 
-              className="input w-full h-12 bg-white/5 border-white/10" 
-              style={{ paddingLeft: '3rem' }}
+        {/* Search and global analytics */}
+        <div className="agents-toolbar">
+          <div className="agents-toolbar__search">
+            <Search size={16} aria-hidden="true" />
+            <input
+              type="search"
+              className="input"
               placeholder={t('agents_page.search_placeholder')}
               aria-label={t('agents_page.search_placeholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex gap-3 w-full md:w-auto">
-             <button
-              type="button"
-              className="btn btn-primary flex-1 md:flex-none px-6"
-              onClick={() => setShowGlobalMetrics(true)}
-             >
-               <Activity size={18} /> {t('agents_page.global_analytics')}
-             </button>
-          </div>
+          <button type="button" className="btn btn-secondary" onClick={() => setShowGlobalMetrics(true)}>
+            <Activity size={16} aria-hidden="true" /> {t('agents_page.global_analytics')}
+          </button>
         </div>
 
-        {/* Agents Master Table */}
-        <div className="glass-panel overflow-hidden border border-white/10">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[1000px]">
-              <thead>
-                <tr className="bg-white/[0.03] text-slate-400 text-sm font-medium">
-                  <th className="px-6 py-4 border-b border-white/5 w-12"><span className="sr-only">{t('agents_page.col_expand')}</span></th>
-                  <th className="px-6 py-4 border-b border-white/5">{t('agents_page.col_agent')}</th>
-                  <th className="px-6 py-4 border-b border-white/5 text-center">{t('agents_page.col_connection')}</th>
-                  <th className="px-6 py-4 border-b border-white/5">{t('agents_page.col_performance')}</th>
-                  <th className="px-6 py-4 border-b border-white/5">{t('agents_page.col_uptime')}</th>
-                  <th className="px-6 py-4 border-b border-white/5 text-right">{t('agents_page.col_activity')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                <AnimatePresence>
-                  {filteredAgents.map((agent, i) => (
-                    <React.Fragment key={agent.device_id}>
-                      <motion.tr 
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ delay: i * 0.03 }}
-                        className={`hover:bg-white/[0.04] transition-all group cursor-pointer ${expandedId === agent.device_id ? 'bg-white/[0.06]' : ''}`}
-                        onClick={() => setExpandedId(expandedId === agent.device_id ? null : agent.device_id)}
-                      >
-                        <td className="px-6 py-5 text-center">
-                          {expandedId === agent.device_id ? <ChevronDown size={20} className="text-sky-400" /> : <ChevronRight size={20} className="text-slate-600 group-hover:text-slate-400" />}
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-4">
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${
-                              agent.is_online ? 'bg-sky-500/20 text-sky-400 shadow-lg shadow-sky-500/10' : 'bg-slate-800 text-slate-500'
-                            }`}>
-                              <Server size={22} />
-                            </div>
-                            <div>
-                              <div className="font-bold text-white text-base group-hover:text-sky-400 transition-colors">{agent.hostname}</div>
-                              <div className="text-xs text-slate-500 font-mono mt-0.5 flex items-center gap-2">
-                                <span>{agent.ip}</span>
-                                <span className="w-1 h-1 rounded-full bg-slate-700"></span>
-                                <span className="bg-white/5 px-1.5 py-0.5 rounded">v{agent.agent_version || '0.0.0'}</span>
-                                {(agent.os_pretty || agent.os_name) && (
-                                  <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded" title={agent.os_pretty || `${agent.os_name} ${agent.os_version || ''}`.trim()}>
-                                    {agent.os_pretty || `${agent.os_name}${agent.os_version ? ' ' + agent.os_version : ''}`}
-                                  </span>
-                                )}
-                                {agent.patch_available > 0 && (
-                                  <span className={`px-1.5 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 ${
-                                    agent.patch_security > 0 
-                                      ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' 
-                                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                  }`} title={agent.patch_security > 0 ? `${agent.patch_security} security updates` : 'Package updates available'}>
-                                    {agent.patch_security > 0 ? '🛡️' : '📦'} {agent.patch_available}
-                                  </span>
-                                )}
-                                {agent.reboot_required && (
-                                  <span className="bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 animate-pulse" title="System reboot required to apply updates">
-                                    🔄 reboot
-                                  </span>
-                                )}
-                                {agent.major_upgrade_available && (
-                                  <span className="bg-sky-500/20 text-sky-400 border border-sky-500/30 px-1.5 py-0.5 rounded font-bold text-[10px] flex items-center gap-1" title={`Major OS Upgrade Available: ${agent.major_upgrade_available}`}>
-                                    🚀 {agent.major_upgrade_available}
-                                  </span>
-                                )}
-                                {agent.has_pending_token && (
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-1 h-1 rounded-full bg-rose-500"></span>
-                                    <span className="bg-rose-500/20 text-rose-400 px-1.5 py-0.5 rounded border border-rose-500/30 flex items-center gap-1 animate-pulse">
-                                      <ShieldCheck size={10} />
-                                      TOKEN MISMATCH
-                                    </span>
-                                    <button 
-                                      className="text-[10px] bg-sky-500 hover:bg-sky-400 text-white px-2 py-0.5 rounded font-black transition-colors"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (confirm(t('agent.adopt_confirm', 'Permanently accept this new agent key?'))) {
-                                          api.adoptAgent(agent.device_id).then(() => {
-                                             alert(t('agent.adopt_success'));
-                                             window.location.reload();
-                                          });
-                                        }
-                                      }}
-                                    >
-                                      ADOPT
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5 text-center">
-                          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-tight ${
-                            agent.is_online 
-                              ? 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20' 
-                              : 'bg-rose-500/10 text-rose-400 ring-1 ring-rose-500/20'
-                          }`}>
-                            <span className={`w-2 h-2 rounded-full ${agent.is_online ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`}></span>
-                            {agent.is_online ? t('agents_page.connected') : t('agents_page.disconnected')}
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-6">
-                            <div className="flex-1 space-y-3 min-w-[140px]">
-                              <div className="space-y-1">
-                                <div className="flex justify-between text-[10px] text-slate-400 uppercase font-bold">
-                                  <span>CPU Load</span>
-                                  <span>{agent.cpu_usage.toFixed(1)}%</span>
-                                </div>
-                                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                                  <motion.div 
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${agent.cpu_usage}%` }}
-                                    className="h-full bg-amber-500"
-                                  ></motion.div>
-                                </div>
-                              </div>
-                              <div className="space-y-1">
-                                <div className="flex justify-between text-[10px] text-slate-400 uppercase font-bold">
-                                  <span>Memory</span>
-                                  <span>{agent.ram_usage.toFixed(1)}%</span>
-                                </div>
-                                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                                  <motion.div 
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${agent.ram_usage}%` }}
-                                    className="h-full bg-emerald-500"
-                                  ></motion.div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex flex-col gap-2">
-                             <div className="flex items-end justify-between">
-                               <span className={`text-lg font-bold ${
-                                 agent.uptime_pct > 99 ? 'text-sky-400' : 
-                                 agent.uptime_pct > 95 ? 'text-emerald-400' :
-                                 agent.uptime_pct > 80 ? 'text-amber-400' : 'text-rose-400'
-                               }`}>{agent.uptime_pct.toFixed(1)}%</span>
-                               <span className="text-[10px] text-slate-500 font-bold mb-1">AVAILABILITY</span>
-                             </div>
-                             <div className="flex items-center gap-1.5 h-10">
-                                <UptimeStatusGrid data={agent.uptime_history} />
-                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5 text-right">
-                          <div className="text-sm font-bold text-slate-200">
-                            {agent.last_seen ? new Date(agent.last_seen).toLocaleTimeString() : 'Never'}
-                          </div>
-                          <div className="text-[10px] text-slate-500 font-bold uppercase mt-1 flex items-center justify-end gap-1">
-                            <TrendingUp size={10} />
-                            {agent.last_seen ? new Date(agent.last_seen).toLocaleDateString() : '-'}
-                          </div>
-                        </td>
-                      </motion.tr>
-                      
-                      {/* Expanded Details Section */}
-                      <AnimatePresence>
-                        {expandedId === agent.device_id && (
-                          <tr>
-                            <td colSpan={6} className="p-0 border-b border-white/10 bg-white/[0.02]">
-                              <motion.div 
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 'auto', opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                className="overflow-hidden"
-                              >
-                                <AgentDetailView deviceId={agent.device_id} agent={agent} onRefresh={loadData} />
-                              </motion.div>
-                            </td>
-                          </tr>
-                        )}
-                      </AnimatePresence>
-                    </React.Fragment>
-                  ))}
-                </AnimatePresence>
-              </tbody>
-            </table>
+        {/* Agents: one grid row per agent on wide screens, a card on phones */}
+        <div className="agent-list">
+          <div className="agent-list__head" aria-hidden="true">
+            <span>{t('agents_page.col_agent')}</span>
+            <span>{t('agents_page.col_connection')}</span>
+            <span>{t('agents_page.col_performance')}</span>
+            <span>{t('agents_page.col_uptime')}</span>
+            <span className="agent-list__head-end">{t('agents_page.col_activity')}</span>
           </div>
+          <ul className="agent-list__items">
+            {filteredAgents.map((agent) => {
+              const isOpen = expandedId === agent.device_id;
+              const osLabel = agent.os_pretty
+                || (agent.os_name ? `${agent.os_name}${agent.os_version ? ` ${agent.os_version}` : ''}` : null);
+              return (
+                <li key={agent.device_id} className={`agent-row${isOpen ? ' is-open' : ''}`}>
+                  <button
+                    type="button"
+                    className="agent-row__summary"
+                    aria-expanded={isOpen}
+                    aria-controls={`agent-detail-${agent.device_id}`}
+                    onClick={() => setExpandedId(isOpen ? null : agent.device_id)}
+                  >
+                    <span className="agent-row__identity">
+                      {isOpen
+                        ? <ChevronDown size={16} className="agent-row__chevron" aria-hidden="true" />
+                        : <ChevronRight size={16} className="agent-row__chevron" aria-hidden="true" />}
+                      <span className={`agent-row__icon${agent.is_online ? '' : ' is-offline'}`} aria-hidden="true">
+                        <Server size={18} />
+                      </span>
+                      <span className="agent-row__text">
+                        <span className="agent-row__name">{agent.hostname}</span>
+                        <span className="agent-row__meta">{agent.ip} · v{agent.agent_version || '0.0.0'}</span>
+                        <span className="agent-row__tags">
+                          {osLabel && <span className="device-tag agent-row__os" title={osLabel}>{osLabel}</span>}
+                          {agent.patch_available > 0 && (
+                            <span
+                              className={`device-tag ${agent.patch_security > 0 ? 'device-tag--danger' : 'device-tag--warn'}`}
+                              title={t('agent_detail.updates_badge', { count: agent.patch_available, security: agent.patch_security })}
+                            >
+                              {agent.patch_security > 0
+                                ? <ShieldAlert size={11} aria-hidden="true" />
+                                : <Package size={11} aria-hidden="true" />}
+                              {agent.patch_available}
+                            </span>
+                          )}
+                          {agent.reboot_required && (
+                            <span className="device-tag device-tag--danger">
+                              <RotateCcw size={11} aria-hidden="true" /> {t('agent_detail.reboot_badge')}
+                            </span>
+                          )}
+                          {agent.major_upgrade_available && (
+                            <span className="device-tag device-tag--info" title={t('agent_detail.major_upgrade', { target: agent.major_upgrade_available })}>
+                              <ArrowUpCircle size={11} aria-hidden="true" /> {agent.major_upgrade_available}
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                    </span>
+
+                    <span className={`agent-row__status${agent.is_online ? ' is-online' : ' is-offline'}`}>
+                      <span className={`status-dot ${agent.is_online ? 'status-dot--online' : 'status-dot--offline'}`} aria-hidden="true" />
+                      {agent.is_online ? t('agents_page.connected') : t('agents_page.disconnected')}
+                    </span>
+
+                    <span className="agent-row__meters">
+                      <AgentMeter label="CPU" value={agent.cpu_usage} />
+                      <AgentMeter label="RAM" value={agent.ram_usage} />
+                    </span>
+
+                    <span className="agent-row__uptime">
+                      <span className={`agent-row__uptime-value ${uptimeTone(agent.uptime_pct)}`}>{agent.uptime_pct.toFixed(1)} %</span>
+                      <UptimeStatusGrid data={agent.uptime_history} />
+                    </span>
+
+                    <span className="agent-row__seen">
+                      <span>{agent.last_seen ? new Date(agent.last_seen).toLocaleTimeString() : t('agent_detail.never')}</span>
+                      <span className="agent-row__seen-date">{agent.last_seen ? new Date(agent.last_seen).toLocaleDateString() : '–'}</span>
+                    </span>
+                  </button>
+
+                  {agent.has_pending_token && (
+                    <div className="callout callout--danger agent-row__alert">
+                      <ShieldCheck size={16} className="callout__icon" aria-hidden="true" />
+                      <p className="callout__body">{t('agent_detail.token_mismatch')}</p>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          if (confirm(t('agent.adopt_confirm', 'Permanently accept this new agent key?'))) {
+                            api.adoptAgent(agent.device_id).then(() => {
+                              alert(t('agent.adopt_success'));
+                              window.location.reload();
+                            });
+                          }
+                        }}
+                      >
+                        {t('dashboard.adopt')}
+                      </button>
+                    </div>
+                  )}
+
+                  {isOpen && (
+                    <div id={`agent-detail-${agent.device_id}`} className="agent-row__detail">
+                      <AgentDetailView deviceId={agent.device_id} agent={agent} onRefresh={loadData} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {filteredAgents.length === 0 && !loading && (
+            <p className="settings-empty agent-list__empty">{t('agent_detail.no_agents')}</p>
+          )}
         </div>
 
         {/* Global Metrics Overlay */}
@@ -365,53 +289,45 @@ export function AgentsView() {
   );
 }
 
-function UptimeStatusGrid({ data }: { data: number[] }) {
-  if (!data || data.length === 0) {
-    return (
-      <div className="flex gap-1">
-        {[...Array(24)].map((_, i) => (
-          <div key={i} className="w-1.5 h-6 rounded-sm bg-white/5 animate-pulse"></div>
-        ))}
-      </div>
-    );
-  }
-
-  // We have 24 blocks for 24 hours
+/** CPU/RAM meter; the bar turns amber at 75 % and red at 90 %. */
+function AgentMeter({ label, value }: { label: string; value: number }) {
+  const tone = value >= 90 ? ' is-danger' : value >= 75 ? ' is-warn' : '';
   return (
-    <div className="flex items-center gap-1">
-      {data.map((val, i) => {
-        let colorClass = "bg-slate-800";
-        let glowClass = "";
+    <span className={`agent-meter${tone}`}>
+      <span className="agent-meter__label">
+        <span>{label}</span>
+        <span className="agent-meter__value">{value.toFixed(1)} %</span>
+      </span>
+      <span className="agent-meter__track">
+        <span className="agent-meter__fill" style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+      </span>
+    </span>
+  );
+}
 
-        if (val >= 100) {
-          colorClass = "bg-emerald-500";
-          glowClass = "shadow-[0_0_12px_rgba(16,185,129,0.5)] ring-1 ring-emerald-400/30";
-        } else if (val > 0) {
-          colorClass = "bg-amber-400";
-          glowClass = "shadow-[0_0_12px_rgba(251,191,36,0.4)] ring-1 ring-amber-300/30";
-        } else if (val === 0) {
-          colorClass = "bg-rose-500";
-          glowClass = "shadow-[0_0_12px_rgba(244,63,94,0.5)] ring-1 ring-rose-400/30";
-        }
+function uptimeTone(pct: number): string {
+  if (pct < 80) return 'is-danger';
+  if (pct < 95) return 'is-warn';
+  return '';
+}
 
+/** Last 24 hours, one bar per hour: up, partly up, down, or no data. The % next to it carries the value. */
+function UptimeStatusGrid({ data }: { data: number[] }) {
+  const { t } = useTranslation();
+  const hours: (number | null)[] = data && data.length > 0 ? data : Array(24).fill(null);
+  return (
+    <span className="uptime-bars" aria-hidden="true">
+      {hours.map((val, i) => {
+        const tone = val === null || val < 0 ? '' : val >= 100 ? ' is-up' : val > 0 ? ' is-partial' : ' is-down';
         return (
-          <div 
-            key={i} 
-            className={`relative group/bar w-[7px] h-8 rounded-[3px] transition-all duration-300 hover:scale-135 hover:z-20 ${colorClass} ${glowClass} cursor-help`}
-          >
-            {/* Premium Tooltip */}
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 px-3 py-1.5 bg-slate-900/95 backdrop-blur-md border border-white/10 rounded-lg text-[10px] text-white font-black whitespace-nowrap opacity-0 group-hover/bar:opacity-100 pointer-events-none transition-all transform scale-90 group-hover/bar:scale-100 shadow-2xl z-50">
-              <div className="flex flex-col items-center gap-0.5">
-                <span className="text-slate-400 font-bold uppercase tracking-tighter">{23 - i}h ago</span>
-                <span className="text-sky-400">{val.toFixed(1)}%</span>
-              </div>
-              {/* Tooltip Arrow */}
-              <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-900/95"></div>
-            </div>
-          </div>
+          <span
+            key={i}
+            className={`uptime-bars__bar${tone}`}
+            title={val === null || val < 0 ? undefined : t('agent_detail.uptime_hour', { hours: hours.length - 1 - i, pct: val.toFixed(1) })}
+          />
         );
       })}
-    </div>
+    </span>
   );
 }
 
@@ -633,6 +549,8 @@ function MultiGraph({ series }: { series: { data: any[], color: string, label: s
 }
 
 function AgentDetailView({ deviceId, agent, onRefresh }: { deviceId: number; agent: AgentSummary; onRefresh: () => void }) {
+  const { t } = useTranslation();
+  const hasStoredCreds = !!sessionStorage.getItem(`agent_ssh_creds_${deviceId}`);
   const [activeTab, setActiveTab] = useState<'telemetry' | 'patching'>('telemetry');
   
   // SSH Credentials
@@ -814,467 +732,323 @@ function AgentDetailView({ deviceId, agent, onRefresh }: { deviceId: number; age
   const majorUpgradeTarget = majorUpgrade ?? agent.major_upgrade_available;
 
   return (
-    <div className="p-8 space-y-6">
-      {/* Tabs Header */}
-      <div className="flex border-b border-white/5 mb-6">
+    <div className="agent-detail">
+      <div className="inspector-tabs agent-detail__tabs" role="tablist" aria-label={t('agent_detail.tabs_label')}>
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'telemetry'}
+          className={`inspector-tab${activeTab === 'telemetry' ? ' active' : ''}`}
           onClick={() => setActiveTab('telemetry')}
-          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${
-            activeTab === 'telemetry'
-              ? 'border-sky-500 text-sky-400'
-              : 'border-transparent text-slate-400 hover:text-white'
-          }`}
         >
-          Hardware Telemetry
+          {t('agent_detail.tab_telemetry')}
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'patching'}
+          className={`inspector-tab${activeTab === 'patching' ? ' active' : ''}`}
           onClick={() => setActiveTab('patching')}
-          className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${
-            activeTab === 'patching'
-              ? 'border-sky-500 text-sky-400'
-              : 'border-transparent text-slate-400 hover:text-white'
-          }`}
         >
-          <span>Package Patching</span>
+          {t('agent_detail.tab_patching')}
           {agent.patch_available > 0 && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-              agent.patch_security > 0 ? 'bg-rose-500/20 text-rose-400' : 'bg-amber-500/20 text-amber-400'
-            }`}>
-              {agent.patch_available}
-            </span>
+            <span className={`agent-detail__count${agent.patch_security > 0 ? ' is-security' : ''}`}>{agent.patch_available}</span>
           )}
-          {agent.reboot_required && (
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
-          )}
+          {agent.reboot_required && <span className="agent-detail__dot" title={t('agent_detail.reboot_badge')} />}
         </button>
       </div>
 
       {activeTab === 'telemetry' ? (
-        <>
-          {loadingHistory ? (
-            <div className="p-12 flex flex-col items-center justify-center gap-4">
-              <RefreshCw size={32} className="text-sky-500 spinning" />
-              <span className="text-slate-400 font-medium">Analyzing historical telemetry...</span>
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {/* Dynamic Range Selector */}
-              <div className="flex justify-between items-center bg-white/[0.02] border border-white/5 p-4 rounded-xl">
-                <div>
-                  <h4 className="font-bold text-white text-xs uppercase tracking-widest">Metrics Timeframe</h4>
-                  <p className="text-[10px] text-slate-500 font-medium">
-                    Select history depth for hardware telemetry graphs
-                    {retentionDays !== null && ` (System retention: ${retentionDays}d)`}
-                  </p>
-                </div>
-                <div className="flex bg-slate-900/60 p-1 border border-white/5 rounded-lg gap-1">
-                  {availableRanges.map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => setSelectedRange(r)}
-                      className={`px-3 py-1 rounded text-[10px] font-bold transition-all uppercase ${
-                        selectedRange === r
-                          ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20'
-                          : 'text-slate-400 hover:text-white hover:bg-white/5'
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
+        loadingHistory ? (
+          <p className="agent-detail__loading" role="status">
+            <RefreshCw size={16} className="spinning" aria-hidden="true" /> {t('agent_detail.loading_history')}
+          </p>
+        ) : (
+          <div className="agent-detail__section">
+            <div className="agent-detail__panel agent-detail__panel-row">
+              <div>
+                <h4 className="agent-detail__title">{t('agent_detail.timeframe_title')}</h4>
+                <p className="field-hint">
+                  {t('agent_detail.timeframe_desc')}
+                  {retentionDays !== null && ` · ${t('agent_detail.retention', { days: retentionDays })}`}
+                </p>
               </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="glass-panel p-6 bg-white/[0.03] border-white/5">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2 bg-amber-500/20 text-amber-400 rounded-lg">
-                      <Cpu size={20} />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white uppercase text-xs tracking-widest">CPU History</h4>
-                      <p className="text-[10px] text-slate-500">Utilization Trend ({selectedRange})</p>
-                    </div>
-                  </div>
-                  <div className="h-48 w-full">
-                    <DetailGraph 
-                      data={history.map(h => ({ value: h.cpu_percent, timestamp: h.timestamp }))} 
-                      color="#f59e0b" 
-                      label="CPU" 
-                      suffix="%"
-                    />
-                  </div>
-                </div>
-
-                <div className="glass-panel p-6 bg-white/[0.03] border-white/5">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg">
-                      <Memory size={20} />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white uppercase text-xs tracking-widest">Memory History</h4>
-                      <p className="text-[10px] text-slate-500">RAM Usage Pattern ({selectedRange})</p>
-                    </div>
-                  </div>
-                  <div className="h-48 w-full">
-                    <DetailGraph 
-                      data={history.map(h => ({ value: h.ram.percent, timestamp: h.timestamp }))} 
-                      color="#10b981" 
-                      label="RAM" 
-                      suffix="%"
-                    />
-                  </div>
-                </div>
-
-                <div className="glass-panel p-6 bg-white/[0.03] border-white/5">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">
-                      <Thermometer size={20} />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white uppercase text-xs tracking-widest">Thermal Stats</h4>
-                      <p className="text-[10px] text-slate-500">Core Temperature ({selectedRange})</p>
-                    </div>
-                  </div>
-                  <div className="h-48 w-full">
-                    <DetailGraph 
-                      data={history.map(h => ({ value: h.temperature || 0, timestamp: h.timestamp }))} 
-                      color="#818cf8" 
-                      label="TEMP" 
-                      suffix="°C"
-                      max={100} 
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="glass-panel p-6 bg-white/[0.01] border-white/5">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 bg-sky-500/20 text-sky-400 rounded-lg">
-                    <HardDrive size={20} />
-                  </div>
-                  <h4 className="font-bold text-white uppercase text-xs tracking-widest">Monitored Storage</h4>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {latest?.disk?.map((disk: any) => (
-                    <div key={disk.path} className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/[0.08] transition-colors group">
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex flex-col cursor-pointer group/path" 
-                          title="Click to copy full path"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(disk.path);
-                            const target = e.currentTarget;
-                            const originalText = target.innerText;
-                            target.innerHTML = '<span class="text-sky-400 text-[10px] uppercase font-bold">Copied!</span>';
-                            setTimeout(() => { target.innerText = originalText; }, 1000);
-                          }}
-                        >
-                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Mount Point</span>
-                          <span className="text-white font-bold truncate" title={disk.path}>{disk.path}</span>
-                        </div>
-                        <div className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          disk.percent > 90 ? 'bg-rose-500/20 text-rose-400' : 
-                          disk.percent > 75 ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'
-                        }`}>
-                          {disk.percent.toFixed(0)}%
-                        </div>
-                      </div>
-                      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden mb-3">
-                        <div className="h-full bg-sky-500 rounded-full" style={{ width: `${disk.percent}%` }}></div>
-                      </div>
-                      <div className="flex justify-between text-[10px] text-slate-500 font-bold">
-                        <span>{disk.used_gb.toFixed(1)} GB USED</span>
-                        <span>{disk.total_gb.toFixed(1)} GB TOTAL</span>
-                      </div>
-                    </div>
-                  ))}
-                  {!latest?.disk?.length && (
-                     <div className="col-span-full py-8 text-center text-slate-600 text-sm">No disk usage reported by agent.</div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-4 mt-2">
-                 <div className="flex-1 min-w-[200px] bg-white/[0.02] border border-white/5 p-4 rounded-xl flex items-center justify-between">
-                   <div className="flex items-center gap-3">
-                     <Clock className="text-slate-500" size={18} />
-                     <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Interval</span>
-                   </div>
-                   <span className="text-lg font-bold text-white">30s</span>
-                 </div>
-                 <div className="flex-1 min-w-[200px] bg-white/[0.02] border border-white/5 p-4 rounded-xl flex items-center justify-between">
-                   <div className="flex items-center gap-3">
-                     <Zap className="text-amber-500" size={18} />
-                     <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Status</span>
-                   </div>
-                   <span className="text-lg font-bold text-emerald-400">OPTIMAL</span>
-                 </div>
-                 <div className="flex-1 min-w-[200px] bg-white/[0.02] border border-white/5 p-4 rounded-xl flex items-center justify-between">
-                   <div className="flex items-center gap-3">
-                     <Info className="text-sky-500" size={18} />
-                     <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">First Seen</span>
-                   </div>
-                   <span className="text-sm font-medium text-slate-300">
-                     {history.length > 0 ? new Date(history[0].timestamp).toLocaleString() : 'N/A'}
-                   </span>
-                 </div>
+              <div className="segmented" role="group" aria-label={t('agent_detail.timeframe_title')}>
+                {availableRanges.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    className="segmented__option"
+                    aria-pressed={selectedRange === r}
+                    onClick={() => setSelectedRange(r)}
+                  >
+                    {r}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
-        </>
+
+            <div className="agent-detail__graphs">
+              <GraphPanel icon={<Cpu size={16} />} title={t('agent_detail.cpu_title')} desc={t('agent_detail.cpu_desc', { range: selectedRange })}>
+                <DetailGraph
+                  data={history.map(h => ({ value: h.cpu_percent, timestamp: h.timestamp }))}
+                  color="#3DB8F5"
+                  label="CPU"
+                  suffix="%"
+                />
+              </GraphPanel>
+              <GraphPanel icon={<Memory size={16} />} title={t('agent_detail.ram_title')} desc={t('agent_detail.ram_desc', { range: selectedRange })}>
+                <DetailGraph
+                  data={history.map(h => ({ value: h.ram.percent, timestamp: h.timestamp }))}
+                  color="#4FB3A6"
+                  label="RAM"
+                  suffix="%"
+                />
+              </GraphPanel>
+              <GraphPanel icon={<Thermometer size={16} />} title={t('agent_detail.temp_title')} desc={t('agent_detail.temp_desc', { range: selectedRange })}>
+                <DetailGraph
+                  data={history.map(h => ({ value: h.temperature || 0, timestamp: h.timestamp }))}
+                  color="#C4A2F0"
+                  label="TEMP"
+                  suffix="°C"
+                  max={100}
+                />
+              </GraphPanel>
+            </div>
+
+            <section className="agent-detail__panel">
+              <h4 className="agent-detail__title"><HardDrive size={16} aria-hidden="true" /> {t('agent_detail.storage_title')}</h4>
+              <div className="agent-detail__disks">
+                {latest?.disk?.map((disk: any) => (
+                  <div key={disk.path} className="agent-disk">
+                    <div className="agent-disk__head">
+                      <span className="agent-disk__path" title={disk.path}>{disk.path}</span>
+                      <span className={`agent-disk__pct${disk.percent > 90 ? ' is-danger' : disk.percent > 75 ? ' is-warn' : ''}`}>
+                        {disk.percent.toFixed(0)} %
+                      </span>
+                    </div>
+                    <span className="agent-meter__track">
+                      <span className="agent-meter__fill" style={{ width: `${Math.min(100, disk.percent)}%` }} />
+                    </span>
+                    <span className="agent-disk__meta">
+                      {t('agent_detail.disk_used', { used: disk.used_gb.toFixed(1), total: disk.total_gb.toFixed(1) })}
+                    </span>
+                  </div>
+                ))}
+                {!latest?.disk?.length && <p className="settings-empty">{t('agent_detail.no_disks')}</p>}
+              </div>
+            </section>
+          </div>
+        )
       ) : (
-        /* Patching Tab Content */
-        <div className="space-y-6">
-          {/* General platform check */}
+        <div className="agent-detail__section">
           {!patchManagerName ? (
-            <div className="bg-slate-900/50 border border-white/5 p-8 rounded-xl text-center">
-              <Shield className="text-slate-500 mx-auto mb-3" size={32} />
-              <h4 className="font-bold text-white text-sm mb-1">Patching Not Supported</h4>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                This agent reported no compatible package manager. Patching is currently restricted to Debian/Ubuntu (apt) and Fedora/CentOS/RHEL (dnf/yum) hosts.
-              </p>
+            <div className="rack-state rack-state--empty agent-detail__unsupported">
+              <span className="setup-features__icon" aria-hidden="true"><Shield size={18} /></span>
+              <h2>{t('agent_detail.unsupported_title')}</h2>
+              <p>{t('agent_detail.unsupported_desc')}</p>
             </div>
           ) : (
-            <div className="space-y-6">
-              {/* Warnings and Status Banners */}
+            <>
               {agent.reboot_required && (
-                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl flex items-center gap-3 text-xs font-semibold animate-pulse">
-                  <span>🔄</span>
-                  <span>System reboot required to apply previous updates. Please run a manual reboot when convenient.</span>
+                <div className="callout callout--danger">
+                  <RotateCcw size={16} className="callout__icon" aria-hidden="true" />
+                  <p className="callout__body">{t('agent_detail.reboot_required')}</p>
                 </div>
               )}
               {majorUpgradeTarget && (
-                <div className="bg-sky-500/10 border border-sky-500/20 text-sky-400 p-4 rounded-xl flex items-center gap-3 text-xs font-semibold">
-                  <span>🚀</span>
-                  <span>Major release upgrade available: {majorUpgradeTarget}. Note: release upgrades cannot be run from GravityLAN and must be done manually via SSH.</span>
+                <div className="callout callout--info">
+                  <ArrowUpCircle size={16} className="callout__icon" aria-hidden="true" />
+                  <p className="callout__body">{t('agent_detail.major_upgrade', { target: majorUpgradeTarget })}</p>
                 </div>
               )}
 
-              {/* Action and credentials form panel */}
               {showCredForm && !patching && (
-                <div className="bg-white/[0.02] border border-white/5 p-6 rounded-xl space-y-4">
-                  <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                    <h4 className="text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                      <Lock size={14} className="text-sky-400" />
-                      SSH Credentials Required
-                    </h4>
-                    {sessionStorage.getItem(`agent_ssh_creds_${deviceId}`) && (
-                      <button 
-                        onClick={() => setShowCredForm(false)} 
-                        className="text-[10px] text-slate-400 hover:text-white uppercase font-bold"
-                      >
-                        Hide
+                <section className="agent-detail__panel">
+                  <div className="agent-detail__panel-row">
+                    <h4 className="agent-detail__title"><Lock size={14} aria-hidden="true" /> {t('agent_detail.ssh_title')}</h4>
+                    {hasStoredCreds && (
+                      <button type="button" className="manual-command__renew" onClick={() => setShowCredForm(false)}>
+                        {t('agent_detail.hide')}
                       </button>
                     )}
                   </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Username</label>
-                      <input 
-                        type="text" 
-                        className="input h-10 w-full bg-slate-900 border-white/5" 
-                        value={sshUser} 
-                        onChange={e => setSshUser(e.target.value)} 
+                  <div className="agent-detail__creds">
+                    <div className="settings-field">
+                      <label className="form-label" htmlFor={`ssh-user-${deviceId}`}>{t('agent_detail.username')}</label>
+                      <input
+                        id={`ssh-user-${deviceId}`}
+                        type="text"
+                        className="input"
+                        value={sshUser}
+                        onChange={e => setSshUser(e.target.value)}
+                        autoComplete="username"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Auth Method</label>
-                      <select 
-                        className="input h-10 w-full bg-slate-900 border-white/5 select" 
-                        value={authType} 
-                        onChange={e => setAuthType(e.target.value as any)}
+                    <div className="settings-field">
+                      <label className="form-label" htmlFor={`ssh-auth-${deviceId}`}>{t('agent_detail.auth_method')}</label>
+                      <select
+                        id={`ssh-auth-${deviceId}`}
+                        className="input"
+                        value={authType}
+                        onChange={e => setAuthType(e.target.value as 'password' | 'key')}
                       >
-                        <option value="password">Password</option>
-                        <option value="key">Private Key</option>
+                        <option value="password">{t('agent_detail.auth_password')}</option>
+                        <option value="key">{t('agent_detail.auth_key')}</option>
                       </select>
                     </div>
-                    <div className="space-y-1 md:col-span-2">
+                    <div className="settings-field agent-detail__secret">
                       {authType === 'password' ? (
                         <>
-                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Password</label>
-                          <input 
-                            type="password" 
-                            className="input h-10 w-full bg-slate-900 border-white/5" 
-                            placeholder="SSH Password"
-                            value={sshPassword} 
-                            onChange={e => setSshPassword(e.target.value)} 
+                          <label className="form-label" htmlFor={`ssh-pass-${deviceId}`}>{t('agent_detail.auth_password')}</label>
+                          <input
+                            id={`ssh-pass-${deviceId}`}
+                            type="password"
+                            className="input"
+                            placeholder={t('agent_detail.password_placeholder')}
+                            value={sshPassword}
+                            onChange={e => setSshPassword(e.target.value)}
+                            autoComplete="current-password"
                           />
                         </>
                       ) : (
                         <>
-                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Private Key</label>
-                          <textarea 
-                            className="input w-full bg-slate-900 border-white/5 text-xs font-mono" 
-                            style={{ height: '40px', minHeight: '40px', padding: '8px' }}
-                            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
-                            value={sshKey} 
-                            onChange={e => setSshKey(e.target.value)} 
+                          <label className="form-label" htmlFor={`ssh-key-${deviceId}`}>{t('agent_detail.auth_key')}</label>
+                          <textarea
+                            id={`ssh-key-${deviceId}`}
+                            className="input input--mono"
+                            rows={3}
+                            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                            value={sshKey}
+                            onChange={e => setSshKey(e.target.value)}
                           />
                         </>
                       )}
                     </div>
                   </div>
-
-                  <div className="flex justify-between items-center pt-2">
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        id="save-creds" 
-                        checked={saveCreds} 
-                        onChange={e => setSaveCreds(e.target.checked)} 
-                        className="rounded bg-slate-950 border-white/10 text-sky-500 focus:ring-sky-500/20"
-                      />
-                      <label htmlFor="save-creds" className="text-[10px] text-slate-400 font-bold uppercase tracking-wider cursor-pointer">
-                        Remember credentials for this tab session
-                      </label>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                      <button 
-                        onClick={queryUpdates}
-                        disabled={querying}
-                        className="btn btn-secondary h-10 px-5 text-xs font-bold"
-                      >
-                        {querying ? (
-                          <>
-                            <RefreshCw size={14} className="spinning" /> Loading updates list...
-                          </>
-                        ) : 'Query Updates List'}
-                      </button>
-                    </div>
+                  <div className="agent-detail__panel-row">
+                    <label className="agent-detail__check">
+                      <input type="checkbox" checked={saveCreds} onChange={e => setSaveCreds(e.target.checked)} />
+                      {t('agent_detail.remember')}
+                    </label>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={queryUpdates} disabled={querying}>
+                      {querying
+                        ? <><RefreshCw size={14} className="spinning" aria-hidden="true" /> {t('agent_detail.querying')}</>
+                        : t('agent_detail.query_list')}
+                    </button>
                   </div>
-                </div>
+                </section>
               )}
 
-              {/* SSH Credentials Toggle when form hidden */}
               {!showCredForm && !patching && (
-                <div className="flex justify-between items-center bg-white/[0.01] border border-white/5 px-4 py-3 rounded-xl">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                    SSH Connection Configured ({sshUser} on port {sshPort})
-                  </span>
-                  <button 
-                    onClick={() => setShowCredForm(true)}
-                    className="text-[10px] text-sky-400 hover:text-sky-300 font-bold uppercase tracking-wider"
-                  >
-                    Change Credentials
+                <div className="agent-detail__panel agent-detail__panel-row">
+                  <span className="field-hint">{t('agent_detail.ssh_configured', { user: sshUser, port: sshPort })}</span>
+                  <button type="button" className="manual-command__renew" onClick={() => setShowCredForm(true)}>
+                    {t('agent_detail.change_credentials')}
                   </button>
                 </div>
               )}
 
-              {/* Updates List Table & Fast Actions */}
               {!patching && (
-                <div className="space-y-4">
-                  {/* Action Buttons Row */}
-                  <div className="flex items-center gap-4 bg-white/[0.02] border border-white/5 p-4 rounded-xl justify-between">
+                <section className="agent-detail__panel">
+                  <div className="agent-detail__panel-row">
                     <div>
-                      <h4 className="font-bold text-white text-xs uppercase tracking-widest">Available Upgrades</h4>
-                      <p className="text-[10px] text-slate-500">
-                        Updates count: {agent.patch_available} ({agent.patch_security} security updates)
+                      <h4 className="agent-detail__title">{t('agent_detail.upgrades_title')}</h4>
+                      <p className="field-hint">
+                        {t('agent_detail.upgrades_count', { count: agent.patch_available, security: agent.patch_security })}
                       </p>
                     </div>
-                    
-                    <div className="flex gap-2">
+                    <div className="agent-detail__actions">
                       {packages.length === 0 && (
-                        <button 
-                          onClick={queryUpdates}
-                          disabled={querying}
-                          className="btn btn-secondary text-xs"
-                        >
-                          {querying ? <RefreshCw size={14} className="spinning" /> : 'Query Updates Details'}
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={queryUpdates} disabled={querying}>
+                          {querying && <RefreshCw size={14} className="spinning" aria-hidden="true" />}
+                          {t('agent_detail.query_details')}
                         </button>
                       )}
-                      
-                      <button 
+                      {agent.patch_security > 0 && (
+                        <button type="button" className="btn btn-danger btn-sm" onClick={() => startPatching('security-only')} disabled={patching || querying}>
+                          {t('agent_detail.security_only')}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
                         onClick={() => startPatching('upgrade')}
                         disabled={patching || querying || agent.patch_available === 0}
-                        className="btn btn-primary text-xs px-5"
                       >
-                        Upgrade All
+                        {t('agent_detail.upgrade_all')}
                       </button>
-                      
-                      {agent.patch_security > 0 && (
-                        <button 
-                          onClick={() => startPatching('security-only')}
-                          disabled={patching || querying}
-                          className="btn text-xs px-5 border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
-                        >
-                          Security Only
-                        </button>
-                      )}
                     </div>
                   </div>
 
-                  {/* List of upgradeable packages */}
                   {packages.length > 0 ? (
-                    <div className="bg-slate-950/40 border border-white/5 rounded-xl overflow-hidden">
-                      <div className="max-h-[300px] overflow-y-auto">
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-white/[0.03] text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-white/5">
-                              <th className="px-4 py-3">Package Name</th>
-                              <th className="px-4 py-3">Installed Version</th>
-                              <th className="px-4 py-3">Candidate Version</th>
-                              <th className="px-4 py-3">Repository</th>
+                    <div className="agent-packages">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th scope="col">{t('agent_detail.col_package')}</th>
+                            <th scope="col">{t('agent_detail.col_installed')}</th>
+                            <th scope="col">{t('agent_detail.col_candidate')}</th>
+                            <th scope="col">{t('agent_detail.col_repo')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {packages.map((pkg, i) => (
+                            <tr key={`${pkg.package}-${i}`}>
+                              <td className="is-name">{pkg.package}</td>
+                              <td>{pkg.current_version}</td>
+                              <td className="is-new">{pkg.new_version}</td>
+                              <td>{pkg.repo || t('common.unknown')}</td>
                             </tr>
-                          </thead>
-                          <tbody className="divide-y divide-white/5 font-mono text-slate-300">
-                            {packages.map((pkg, i) => (
-                              <tr key={i} className="hover:bg-white/[0.02]">
-                                <td className="px-4 py-2.5 font-bold text-white">{pkg.package}</td>
-                                <td className="px-4 py-2.5 text-slate-500">{pkg.current_version}</td>
-                                <td className="px-4 py-2.5 text-emerald-400 font-bold">{pkg.new_version}</td>
-                                <td className="px-4 py-2.5 text-slate-500">{pkg.repo || 'unknown'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   ) : (
                     agent.patch_available > 0 && !querying && (
-                      <div className="text-center py-6 text-slate-500 text-xs">
-                        Details not loaded. Click "Query Updates Details" to list packages before upgrading.
-                      </div>
+                      <p className="field-hint">{t('agent_detail.details_not_loaded')}</p>
                     )
                   )}
-                </div>
+                </section>
               )}
 
-              {/* Live WebSocket Terminal output */}
               {(terminalOutput.length > 0 || patching) && (
-                <div className="space-y-2">
-                  <h4 className="text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                    <Terminal size={14} />
-                    Live Upgrade Output
-                  </h4>
-                  <div 
-                    ref={terminalContainerRef}
-                    className="p-4 rounded-xl border border-white/10 font-mono text-xs overflow-y-auto max-h-[350px] bg-black text-[#10b981]"
-                    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
-                  >
+                <section className="agent-detail__panel">
+                  <h4 className="agent-detail__title"><Terminal size={14} aria-hidden="true" /> {t('agent_detail.live_output')}</h4>
+                  <div ref={terminalContainerRef} className="agent-terminal" role="log" aria-live="polite">
                     {terminalOutput.map((chunk, idx) => (
                       <span key={idx}>{chunk}</span>
                     ))}
                   </div>
                   {!patching && terminalOutput.length > 0 && (
-                    <div className="flex justify-end">
-                      <button 
-                        onClick={() => setTerminalOutput([])}
-                        className="btn btn-ghost btn-sm text-[10px] uppercase font-bold"
-                      >
-                        Clear terminal logs
+                    <div className="agent-detail__panel-row agent-detail__panel-row--end">
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setTerminalOutput([])}>
+                        {t('agent_detail.clear_output')}
                       </button>
                     </div>
                   )}
-                </div>
+                </section>
               )}
-            </div>
+            </>
           )}
         </div>
       )}
     </div>
+  );
+}
+
+function GraphPanel({ icon, title, desc, children }: { icon: React.ReactNode; title: string; desc: string; children: React.ReactNode }) {
+  return (
+    <section className="agent-detail__panel">
+      <div className="agent-detail__panel-head">
+        <span className="agent-detail__panel-icon" aria-hidden="true">{icon}</span>
+        <div>
+          <h4 className="agent-detail__title">{title}</h4>
+          <p className="field-hint">{desc}</p>
+        </div>
+      </div>
+      <div className="agent-detail__graph">{children}</div>
+    </section>
   );
 }
 

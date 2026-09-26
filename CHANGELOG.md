@@ -13,6 +13,10 @@ All notable changes to this project will be documented in this file.
 - **Agents, login, IP grid, topology**: restyled; agent KPIs show real values only (removed decorative fake trend lines); all texts translated — 41 missing translation keys added.
 - **Settings**: each section explains itself on the left with its controls on the right (stacked on phones); units sit inside the fields; one save bar appears only while there are unsaved changes (instead of two save buttons); language is a switch; the manual agent server URL is visible again; live logs open as a regular page; errors show as notifications instead of browser alerts.
 - **Setup wizard**: text logo, step indicator, back buttons and a language switch; no emojis or gradients; full-width buttons on phones.
+- **Agents page**: the 1000px table became a list that turns into cards on phones; the expanded view (telemetry, updates, SSH access, package list, live output) is restyled and translated; calm 24-hour availability bars; a decorative "Status: OPTIMAL" tile and a hard-coded interval were removed.
+- **Agent Update Center**: every device can show its one-line installer to update the agent by hand on the host (fresh single-use code, copy button); failed SSH updates show their reason in the row.
+- **Phones**: an edge-to-edge app bar with brand and page title, a compact IP map instead of screen-wide tiles, and the topology map (with its controls) fits above the tab bar.
+- **Device editor**: footer with delete on the left and Cancel/Save on the right.
 
 ### Added
 
