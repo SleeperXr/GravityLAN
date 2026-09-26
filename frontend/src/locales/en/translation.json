@@ -549,6 +549,19 @@
     "col_repo": "Source",
     "details_not_loaded": "Package list not loaded yet – \"Load package list\" shows it before you upgrade.",
     "live_output": "Live update output",
-    "clear_output": "Clear output"
+    "clear_output": "Clear output",
+    "no_history": "No samples in the selected timeframe yet."
+  },
+  "global_metrics": {
+    "title": "Global analytics",
+    "subtitle": "Average of all agents over the last 24 hours.",
+    "loading": "Aggregating values…",
+    "no_data": "No samples yet.",
+    "cpu": "CPU load",
+    "ram": "Memory",
+    "window": "24 hours",
+    "avg_cpu": "Avg. CPU",
+    "avg_ram": "Avg. RAM",
+    "peak": "Peak samples"
   }
 }

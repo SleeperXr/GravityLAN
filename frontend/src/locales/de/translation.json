@@ -546,6 +546,19 @@
     "col_repo": "Quelle",
     "details_not_loaded": "Paketliste noch nicht geladen – „Paketliste laden“ zeigt sie vor dem Update an.",
     "live_output": "Update-Ausgabe (live)",
-    "clear_output": "Ausgabe leeren"
+    "clear_output": "Ausgabe leeren",
+    "no_history": "Noch keine Messwerte im gewählten Zeitraum."
+  },
+  "global_metrics": {
+    "title": "Gesamtauswertung",
+    "subtitle": "Durchschnitt aller Agents über die letzten 24 Stunden.",
+    "loading": "Werte werden zusammengefasst …",
+    "no_data": "Noch keine Messwerte vorhanden.",
+    "cpu": "CPU-Auslastung",
+    "ram": "Arbeitsspeicher",
+    "window": "24 Stunden",
+    "avg_cpu": "Ø CPU",
+    "avg_ram": "Ø RAM",
+    "peak": "Meiste Messwerte"
   }
 }

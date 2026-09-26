@@ -10,7 +10,6 @@ import {
   MemoryStick as Memory, 
   RefreshCw,
   Search,
-  TrendingUp,
   Activity,
   ShieldCheck,
   ChevronDown,
@@ -28,7 +27,7 @@ import {
   RotateCcw,
   ArrowUpCircle
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 
 interface AgentSummary {
   device_id: number;
@@ -332,6 +331,7 @@ function UptimeStatusGrid({ data }: { data: number[] }) {
 }
 
 function GlobalMetricsOverlay({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -339,7 +339,7 @@ function GlobalMetricsOverlay({ onClose }: { onClose: () => void }) {
     const load = async () => {
       try {
         const res = await api.getGlobalMetrics();
-        setHistory(res.history);
+        setHistory(Array.isArray(res.history) ? res.history : []);
       } catch (err) {
         console.error('Failed to load global metrics:', err);
       } finally {
@@ -349,112 +349,78 @@ function GlobalMetricsOverlay({ onClose }: { onClose: () => void }) {
     load();
   }, []);
 
+  // Escape closes the dialog
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const average = (key: 'avg_cpu' | 'avg_ram') =>
+    history.reduce((sum, h) => sum + (h[key] || 0), 0) / (history.length || 1);
+  const peakSamples = history.reduce((max, h) => Math.max(max, h.data_points || 0), 0);
+
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xl"
-    >
-      <motion.div 
-        initial={{ scale: 0.95, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.95, y: 20 }}
-        className="glass-panel w-full max-w-6xl max-h-[90vh] overflow-hidden border-white/10 flex flex-col"
+    <div className="modal-overlay" role="presentation" onClick={onClose}>
+      <div
+        className="modal-content global-metrics"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="global-metrics-title"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-sky-500/20 text-sky-400 rounded-lg">
-              <LineChart size={24} />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-white tracking-tight">Infrastructure Global Analytics</h2>
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-0.5">Real-time aggregate performance (24H)</p>
-            </div>
-          </div>
-          <button className="btn-close" onClick={onClose}>
-            <X size={20} />
+        <div className="modal-header">
+          <h2 id="global-metrics-title"><LineChart size={18} aria-hidden="true" /> {t('global_metrics.title')}</h2>
+          <button type="button" className="btn-icon" onClick={onClose} aria-label={t('common.close')}>
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+        <div className="modal-body global-metrics__body">
+          <p className="field-hint global-metrics__subtitle">{t('global_metrics.subtitle')}</p>
           {loading ? (
-            <div className="h-96 flex flex-col items-center justify-center gap-6">
-              <RefreshCw size={48} className="text-sky-500 spinning" />
-              <div className="text-center">
-                <h3 className="text-lg font-bold text-white mb-1">Aggregating Global Telemetry</h3>
-                <p className="text-slate-500 text-sm">Processing snapshots from all active agents...</p>
-              </div>
-            </div>
+            <p className="agent-detail__loading" role="status">
+              <RefreshCw size={16} className="spinning" aria-hidden="true" /> {t('global_metrics.loading')}
+            </p>
+          ) : history.length === 0 ? (
+            <p className="settings-empty">{t('global_metrics.no_data')}</p>
           ) : (
-            <div className="space-y-10">
-              <div className="glass-panel p-8 bg-white/[0.01] border-white/5">
-                <div className="flex justify-between items-center mb-8">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-sky-500"></div>
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Network Load</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Global Memory</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-500">
-                     <History size={14} />
-                     <span className="text-[10px] font-black uppercase tracking-widest">24 Hour Window</span>
-                  </div>
+            <>
+              <section className="agent-detail__panel">
+                <div className="global-metrics__legend">
+                  <span><span className="global-metrics__swatch is-cpu" aria-hidden="true" /> {t('global_metrics.cpu')}</span>
+                  <span><span className="global-metrics__swatch is-ram" aria-hidden="true" /> {t('global_metrics.ram')}</span>
+                  <span className="global-metrics__window"><History size={14} aria-hidden="true" /> {t('global_metrics.window')}</span>
                 </div>
-                
-                <div className="h-80 w-full relative">
-                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
-                    <div className="border-b border-white/[0.03] w-full"></div>
-                    <div className="border-b border-white/[0.03] w-full"></div>
-                    <div className="border-b border-white/[0.03] w-full"></div>
-                    <div className="border-b border-white/[0.03] w-full"></div>
-                  </div>
-                  
-                  <div className="h-full w-full">
-                    <MultiGraph 
-                      series={[
-                        { data: history.map(h => ({ value: h.avg_cpu, timestamp: h.timestamp })), color: '#0ea5e9', label: 'CPU' },
-                        { data: history.map(h => ({ value: h.avg_ram, timestamp: h.timestamp })), color: '#10b981', label: 'RAM' }
-                      ]}
-                    />
-                  </div>
+                <div className="global-metrics__graph">
+                  <MultiGraph
+                    series={[
+                      { data: history.map(h => ({ value: h.avg_cpu, timestamp: h.timestamp })), color: '#3DB8F5', label: 'CPU' },
+                      { data: history.map(h => ({ value: h.avg_ram, timestamp: h.timestamp })), color: '#4FB3A6', label: 'RAM' },
+                    ]}
+                  />
                 </div>
-              </div>
+              </section>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="glass-panel p-6 bg-white/[0.03] border-white/5 flex flex-col gap-4">
-                  <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">Peak Ingestion</div>
-                  <div className="text-3xl font-black text-white">
-                    {Math.max(...history.map(h => h.data_points), 0)} <span className="text-sm text-slate-600">/ 15min</span>
-                  </div>
-                  <div className="text-[10px] text-sky-400 font-bold flex items-center gap-1">
-                    <TrendingUp size={12} /> HIGHEST THROUGHPUT REACHED
-                  </div>
+              <dl className="global-metrics__stats">
+                <div>
+                  <dt>{t('global_metrics.avg_cpu')}</dt>
+                  <dd>{average('avg_cpu').toFixed(1)} %</dd>
                 </div>
-                <div className="glass-panel p-6 bg-white/[0.03] border-white/5 flex flex-col gap-4">
-                  <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">Avg CPU Load</div>
-                  <div className="text-3xl font-black text-amber-400">
-                    {(history.reduce((a, b) => a + b.avg_cpu, 0) / (history.length || 1)).toFixed(1)}%
-                  </div>
-                  <div className="text-[10px] text-slate-500 font-bold">NETWORK-WIDE SYSTEM HEALTH</div>
+                <div>
+                  <dt>{t('global_metrics.avg_ram')}</dt>
+                  <dd>{average('avg_ram').toFixed(1)} %</dd>
                 </div>
-                <div className="glass-panel p-6 bg-white/[0.03] border-white/5 flex flex-col gap-4">
-                  <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">Aggregate Memory</div>
-                  <div className="text-3xl font-black text-emerald-400">
-                    {(history.reduce((a, b) => a + b.avg_ram, 0) / (history.length || 1)).toFixed(1)}%
-                  </div>
-                  <div className="text-[10px] text-slate-500 font-bold">TOTAL RAM CONSUMPTION</div>
+                <div>
+                  <dt>{t('global_metrics.peak')}</dt>
+                  <dd>{peakSamples} <span className="rack-side__of">/ 15 min</span></dd>
                 </div>
-              </div>
-            </div>
+              </dl>
+            </>
           )}
         </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   );
 }
 
@@ -497,9 +463,7 @@ function MultiGraph({ series }: { series: { data: any[], color: string, label: s
                 </linearGradient>
               </defs>
               <path d={`M 0,100 L ${points} L 100,100 Z`} fill={`url(#grad-global-${idx})`} />
-              <motion.path 
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
+              <path
                 d={`M ${points}`} 
                 fill="none" 
                 stroke={s.color} 
@@ -533,12 +497,12 @@ function MultiGraph({ series }: { series: { data: any[], color: string, label: s
             transform: 'translateY(-110%)'
           }}
         >
-          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2 border-b border-white/5 pb-1">
+          <div className="text-xs text-slate-400 mb-1.5 border-b border-white/5 pb-1">
             {new Date(series[0].data[hoverIdx].timestamp).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
           {series.map((s, i) => (
             <div key={i} className="flex justify-between gap-4 items-center">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{s.label}</span>
+              <span className="text-xs text-slate-400">{s.label}</span>
               <span className="text-sm font-black" style={{ color: s.color }}>{s.data[hoverIdx].value.toFixed(1)}%</span>
             </div>
           ))}
@@ -1059,20 +1023,35 @@ function DetailGraph({ data, color, label, suffix, max = 100 }: {
   suffix: string;
   max?: number;
 }) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // The SVG coordinate space follows the rendered size, so the curve fills its panel and
+  // labels stay at their real font size (a fixed 600x160 space shrank both in narrow panels)
+  const [size, setSize] = useState({ w: 600, h: 160 });
+  const hasData = data.length > 0;
 
-  if (data.length === 0) {
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) setSize({ w: Math.round(width), h: Math.round(height) });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasData]);
+
+  if (!hasData) {
     return (
-      <div className="h-full flex items-center justify-center text-slate-600 text-xs">
-        No history data
+      <div className="h-full flex items-center justify-center text-slate-500 text-xs">
+        {t('agent_detail.no_history')}
       </div>
     );
   }
 
-  // Fixed SVG coordinate space — prevents aspect-ratio distortion
-  const W = 600;
-  const H = 160;
+  const W = size.w;
+  const H = size.h;
   const PAD_L = 38; // space for Y-axis labels
   const PAD_R = 10;
   const PAD_T = 10;
@@ -1130,29 +1109,29 @@ function DetailGraph({ data, color, label, suffix, max = 100 }: {
   return (
     <div className="relative w-full h-full flex flex-col gap-2">
       {/* Stats pill row */}
-      <div className="flex gap-3 text-[10px] font-bold uppercase tracking-widest">
+      <div className="flex gap-2 text-xs font-medium">
         <span className="px-2 py-0.5 rounded" style={{ background: `${color}18`, color }}>
-          MIN {dataMin.toFixed(1)}{suffix}
+          Min {dataMin.toFixed(1)}{suffix}
         </span>
         <span className="px-2 py-0.5 rounded bg-white/5 text-slate-400">
-          AVG {dataAvg.toFixed(1)}{suffix}
+          Ø {dataAvg.toFixed(1)}{suffix}
         </span>
         <span className="px-2 py-0.5 rounded" style={{ background: `${color}18`, color }}>
-          MAX {dataMax.toFixed(1)}{suffix}
+          Max {dataMax.toFixed(1)}{suffix}
         </span>
       </div>
 
       {/* SVG chart — proper fixed coordinate viewport */}
       <div
         ref={containerRef}
-        className="relative flex-1 cursor-crosshair"
+        className="relative flex-1 min-h-0 cursor-crosshair"
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setHoverIdx(null)}
       >
         <svg
-          className="w-full h-full"
+          className="absolute inset-0 w-full h-full"
           viewBox={`0 0 ${W} ${H}`}
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="none"
         >
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -1178,7 +1157,7 @@ function DetailGraph({ data, color, label, suffix, max = 100 }: {
                 <text
                   x={PAD_L - 6} y={y + 4}
                   textAnchor="end"
-                  fontSize={9}
+                  fontSize={11}
                   fill="rgba(148,163,184,0.6)"
                   fontFamily="monospace"
                 >
@@ -1201,10 +1180,7 @@ function DetailGraph({ data, color, label, suffix, max = 100 }: {
           <path d={areaD} fill={`url(#${gradId})`} clipPath={`url(#${clipId})`} />
 
           {/* Line */}
-          <motion.path
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 0.8, ease: 'easeOut' }}
+          <path
             d={lineD}
             fill="none"
             stroke={color}
@@ -1215,10 +1191,10 @@ function DetailGraph({ data, color, label, suffix, max = 100 }: {
           />
 
           {/* X-axis labels: first and last timestamp */}
-          <text x={PAD_L} y={H - 6} fontSize={9} fill="rgba(100,116,139,0.7)" fontFamily="monospace">
+          <text x={PAD_L} y={H - 6} fontSize={11} fill="rgba(100,116,139,0.7)" fontFamily="monospace">
             {formatLabel(data[0].timestamp)}
           </text>
-          <text x={PAD_L + chartW} y={H - 6} fontSize={9} fill="rgba(100,116,139,0.7)" fontFamily="monospace" textAnchor="end">
+          <text x={PAD_L + chartW} y={H - 6} fontSize={11} fill="rgba(100,116,139,0.7)" fontFamily="monospace" textAnchor="end">
             {formatLabel(data[data.length - 1].timestamp)}
           </text>
 
