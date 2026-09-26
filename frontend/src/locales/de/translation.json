@@ -299,7 +299,9 @@
     "install_code_hint": "Einmal-Code: gültig bis {{time}} Uhr, nur einmal nutzbar.",
     "install_code_failed": "Installationsbefehl konnte nicht erstellt werden. Bitte erneut versuchen.",
     "install_code_retry": "Neuer Code",
-    "adopt_confirm": "Diesen neuen Agent-Schlüssel dauerhaft übernehmen?"
+    "adopt_confirm": "Diesen neuen Agent-Schlüssel dauerhaft übernehmen?",
+    "manual_update": "Manuell",
+    "manual_update_desc": "Auf dem Gerät als root ausführen: lädt den aktuellen Agenten, ersetzt den alten und startet ihn – ganz ohne SSH-Zugang von GravityLAN."
   },
   "settings": {
     "title": "GravityLAN Einstellungen",

@@ -302,7 +302,9 @@
     "install_code_hint": "One-time code: valid until {{time}}, usable once.",
     "install_code_failed": "Could not create an install command. Please try again.",
     "install_code_retry": "New code",
-    "adopt_confirm": "Permanently accept this new agent key?"
+    "adopt_confirm": "Permanently accept this new agent key?",
+    "manual_update": "Manually",
+    "manual_update_desc": "Run on the device as root: downloads the current agent, replaces the old one and starts it – no SSH access from GravityLAN needed."
   },
   "settings": {
     "title": "GravityLAN Settings",

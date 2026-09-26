@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { api } from '../../api/client';
 import type { Device } from '../../types';
-import { RefreshCw, Shield, ChevronRight, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { RefreshCw, Shield, ChevronDown, ChevronRight, CheckCircle2, AlertCircle, X, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { ManualInstallCommand } from '../Agents/ManualInstallCommand';
 
 interface AgentUpdateCenterProps {
   devices: Device[];
@@ -19,10 +20,10 @@ interface UpdateStatus {
 export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateCenterProps) {
   const { t } = useTranslation();
   // Filter only devices that need update
-  const devicesToUpdate = devices.filter(d => 
-    d.has_agent && 
-    d.agent_info?.agent_version && 
-    d.agent_info?.latest_version && 
+  const devicesToUpdate = devices.filter(d =>
+    d.has_agent &&
+    d.agent_info?.agent_version &&
+    d.agent_info?.latest_version &&
     d.agent_info.agent_version !== d.agent_info.latest_version
   );
 
@@ -30,6 +31,16 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
   const [sshPassword, setSshPassword] = useState('');
   const [statuses, setStatuses] = useState<Record<number, UpdateStatus>>({});
   const [isGlobalLoading, setIsGlobalLoading] = useState(false);
+  // Devices whose manual update command is shown (fetching it creates a single-use code)
+  const [manualOpen, setManualOpen] = useState<Set<number>>(new Set());
+
+  const toggleManual = (id: number) => {
+    setManualOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const handleUpdate = async (device: Device) => {
     const user = sshUser;
@@ -88,128 +99,125 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
 
   return (
     <div className="modal-overlay" style={{ zIndex: 1000 }}>
-      <div className="modal-content" style={{ maxWidth: '800px', width: '95%' }}>
+      <div className="modal-content update-center" role="dialog" aria-modal="true" aria-labelledby="update-center-title">
         <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-            <RefreshCw size={20} className={isGlobalLoading ? 'spinning' : ''} />
-            <h2>{t('agent.update_center_title', 'Agent Update Center')}</h2>
-          </div>
-          <button className="btn-close" onClick={onClose}><X size={18} /></button>
+          <h2 id="update-center-title">
+            <RefreshCw size={18} className={isGlobalLoading ? 'spinning' : ''} aria-hidden="true" />
+            {t('agent.update_center_title', 'Agent Update Center')}
+          </h2>
+          <button type="button" className="btn-icon" onClick={onClose} aria-label={t('common.close')}>
+            <X size={18} aria-hidden="true" />
+          </button>
         </div>
 
         <div className="modal-body">
-          {/* Global Credentials */}
-          <div style={{ 
-            background: 'rgba(56, 189, 248, 0.05)', 
-            padding: 'var(--space-md)', 
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid rgba(56, 189, 248, 0.1)',
-            marginBottom: 'var(--space-lg)'
-          }}>
-            <h3 style={{ fontSize: '0.9rem', marginBottom: 'var(--space-sm)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Shield size={14} /> {t('agent.global_credentials')}
-            </h3>
-            <div style={{ display: 'flex', gap: 'var(--space-md)' }}>
-              <div style={{ flex: 1 }}>
-                <label className="label">{t('agent.ssh_user')}</label>
-                <input 
-                  type="text" 
-                  className="input" 
-                  value={sshUser} 
+          {/* Credentials used for all SSH updates below */}
+          <section className="update-center__creds" aria-labelledby="update-center-creds">
+            <h3 id="update-center-creds"><Shield size={14} aria-hidden="true" /> {t('agent.global_credentials')}</h3>
+            <div className="update-center__creds-grid">
+              <div className="settings-field">
+                <label className="form-label" htmlFor="uc-ssh-user">{t('agent.ssh_user')}</label>
+                <input
+                  id="uc-ssh-user"
+                  type="text"
+                  className="input"
+                  value={sshUser}
                   onChange={e => setSshUser(e.target.value)}
                   placeholder={t('agent.ssh_user_placeholder', 'z.B. root')}
+                  autoComplete="username"
                 />
               </div>
-              <div style={{ flex: 1 }}>
-                <label className="label">{t('agent.ssh_password')}</label>
-                <input 
-                  type="password" 
-                  className="input" 
-                  value={sshPassword} 
+              <div className="settings-field">
+                <label className="form-label" htmlFor="uc-ssh-password">{t('agent.ssh_password')}</label>
+                <input
+                  id="uc-ssh-password"
+                  type="password"
+                  className="input"
+                  value={sshPassword}
                   onChange={e => setSshPassword(e.target.value)}
                   placeholder={t('agent.password_placeholder')}
+                  autoComplete="current-password"
                 />
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* Device List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-            {devicesToUpdate.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 'var(--space-xl)', color: 'var(--text-secondary)' }}>
-                {t('agent.all_up_to_date')} 🎉
-              </div>
-            ) : (
-              devicesToUpdate.map(device => {
+          {devicesToUpdate.length === 0 ? (
+            <p className="settings-empty update-center__empty">{t('agent.all_up_to_date')}</p>
+          ) : (
+            <ul className="update-center__list">
+              {devicesToUpdate.map(device => {
                 const status = statuses[device.id] || { status: 'idle' };
+                const isManualOpen = manualOpen.has(device.id);
                 return (
-                  <div key={device.id} style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: 'var(--space-md)',
-                    padding: 'var(--space-sm) var(--space-md)',
-                    background: 'var(--bg-elevated)',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-color)',
-                    transition: 'all 0.2s'
-                  }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600 }}>{device.display_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                        {device.ip} • <span style={{ color: '#f59e0b' }}>v{device.agent_info?.agent_version}</span> → <span style={{ color: 'var(--accent-success)' }}>v{device.agent_info?.latest_version}</span>
+                  <li key={device.id} className="update-row">
+                    <div className="update-row__main">
+                      <div className="update-row__info">
+                        <div className="update-row__name">{device.display_name || device.ip}</div>
+                        <div className="update-row__meta">
+                          {device.ip} · <span className="update-row__from">v{device.agent_info?.agent_version}</span>
+                          {' → '}<span className="update-row__to">v{device.agent_info?.latest_version}</span>
+                        </div>
+                      </div>
+
+                      <div className={`update-row__status is-${status.status}`} role="status">
+                        {status.status === 'idle' && t('common.ready', 'Ready')}
+                        {status.status === 'running' && <><RefreshCw size={12} className="spinning" aria-hidden="true" /> {t('agent.installing')}</>}
+                        {status.status === 'success' && <><CheckCircle2 size={12} aria-hidden="true" /> {t('common.done', 'Done')}</>}
+                        {status.status === 'failed' && <><AlertCircle size={12} aria-hidden="true" /> {t('common.error')}</>}
+                      </div>
+
+                      <div className="update-row__actions">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => toggleManual(device.id)}
+                          aria-expanded={isManualOpen}
+                          aria-controls={`manual-update-${device.id}`}
+                        >
+                          <Terminal size={14} aria-hidden="true" /> {t('agent.manual_update')}
+                          {isManualOpen ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${status.status === 'success' ? 'btn-secondary' : 'btn-primary'}`}
+                          onClick={() => handleUpdate(device)}
+                          disabled={status.status === 'running' || status.status === 'success'}
+                        >
+                          {status.status === 'failed' ? t('common.retry', 'Retry') : t('common.update', 'Update')}
+                        </button>
                       </div>
                     </div>
 
-                    <div style={{ width: '150px' }}>
-                      {status.status === 'idle' && (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <ChevronRight size={12} /> {t('common.ready', 'Ready')}
-                        </div>
-                      )}
-                      {status.status === 'running' && (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <RefreshCw size={12} className="spinning" /> {t('agent.installing')}
-                        </div>
-                      )}
-                      {status.status === 'success' && (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--accent-success)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={12} /> {t('common.done', 'Done')}
-                        </div>
-                      )}
-                      {status.status === 'failed' && (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--accent-danger)', display: 'flex', alignItems: 'center', gap: '4px' }} title={status.message}>
-                          <AlertCircle size={12} /> {t('common.error')}
-                        </div>
-                      )}
-                    </div>
+                    {status.status === 'failed' && status.message && (
+                      <p className="update-row__error">{status.message}</p>
+                    )}
 
-                    <button 
-                      className={`btn ${status.status === 'success' ? 'btn-secondary' : 'btn-primary'}`}
-                      style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-                      onClick={() => handleUpdate(device)}
-                      disabled={status.status === 'running' || status.status === 'success'}
-                    >
-                      {status.status === 'failed' ? t('common.retry', 'Retry') : t('common.update', 'Update')}
-                    </button>
-                  </div>
+                    {isManualOpen && (
+                      <div id={`manual-update-${device.id}`} className="update-row__manual">
+                        <ManualInstallCommand deviceId={device.id} />
+                      </div>
+                    )}
+                  </li>
                 );
-              })
-            )}
-          </div>
+              })}
+            </ul>
+          )}
         </div>
 
-        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
+        <div className="modal-footer update-center__footer">
+          <span className="update-center__count">
             {devicesToUpdate.length} {t('agent.updates_available')}
-          </div>
-          <div style={{ display: 'flex', gap: 'var(--space-md)' }}>
-            <button className="btn btn-secondary" onClick={onClose}>{t('common.close')}</button>
-            <button 
-              className="btn btn-primary" 
+          </span>
+          <div className="update-center__footer-actions">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>{t('common.close')}</button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
               onClick={handleUpdateAll}
               disabled={isGlobalLoading || devicesToUpdate.length === 0 || !sshPassword}
             >
-              <RefreshCw size={16} className={isGlobalLoading ? 'spinning' : ''} />
+              <RefreshCw size={14} className={isGlobalLoading ? 'spinning' : ''} aria-hidden="true" />
               {t('agent.update_remaining')}
             </button>
           </div>

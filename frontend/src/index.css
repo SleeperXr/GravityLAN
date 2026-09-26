@@ -2176,6 +2176,133 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
 
 .inspector-footer__actions { display: flex; gap: 8px; }
 
+/* Dialog header/body (used by several dialogs but never defined) */
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: var(--space-lg);
+}
+
+.modal-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.modal-body { min-width: 0; }
+
+.label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* --- Agent update center --- */
+.update-center {
+  display: flex;
+  flex-direction: column;
+  width: 95%;
+  max-width: 820px;
+  max-height: calc(100dvh - 32px);
+}
+
+.update-center .modal-body { flex: 1; overflow-y: auto; }
+
+.update-center__creds {
+  margin-bottom: var(--space-lg);
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.update-center__creds h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.update-center__creds-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.update-center__empty { padding: var(--space-xl) 0; text-align: center; }
+.update-center__list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+
+.update-row {
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.update-row__main { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.update-row__info { flex: 1 1 200px; min-width: 0; }
+.update-row__name { font-weight: 600; color: var(--text-primary); }
+.update-row__meta { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-secondary); }
+.update-row__from { color: var(--accent-warning); }
+.update-row__to { color: var(--accent-success); }
+
+.update-row__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 90px;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.update-row__status.is-running { color: var(--accent-primary); }
+.update-row__status.is-success { color: var(--accent-success); }
+.update-row__status.is-failed { color: var(--accent-danger); }
+
+.update-row__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.update-row__error { margin: 8px 0 0; font-size: 0.8125rem; color: var(--accent-danger); overflow-wrap: anywhere; }
+.update-row__manual { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+
+.modal-footer.update-center__footer { justify-content: space-between; }
+.update-center__count { font-size: 0.8125rem; color: var(--text-tertiary); }
+.update-center__footer-actions { display: flex; gap: 8px; }
+
+/* Copyable one-line installer */
+.manual-command { display: flex; flex-direction: column; gap: 8px; }
+.manual-command .field-hint { margin: 0; }
+.manual-command__box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 10px 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+}
+.manual-command__code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--accent-secondary);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.manual-command__meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.75rem; color: var(--text-tertiary); }
+.manual-command__renew { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-primary); font-size: 0.75rem; }
+
+@media (max-width: 600px) {
+  .update-center__creds-grid { grid-template-columns: minmax(0, 1fr); }
+  .update-row__actions { width: 100%; }
+  .update-row__actions .btn { flex: 1; justify-content: center; }
+  .manual-command__box { flex-direction: column; }
+  .manual-command__box .btn { width: 100%; justify-content: center; }
+}
+
 /* Dialog button row (was used by several dialogs but never defined) */
 .modal-footer {
   display: flex;
