@@ -15,6 +15,10 @@ export function buildInstallCommand(deviceId: number, code: string): string {
   return `curl -sSL "${serverOrigin()}/api/agent/download/install-sh/${deviceId}?code=${code}" | sudo bash`;
 }
 
+export function buildUninstallCommand(deviceId: number): string {
+  return `curl -sSL "${serverOrigin()}/api/agent/download/uninstall-sh/${deviceId}" | sudo bash`;
+}
+
 async function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard && window.isSecureContext) {
     try {
@@ -39,6 +43,33 @@ async function copyText(text: string): Promise<boolean> {
   }
   document.body.removeChild(textArea);
   return copied;
+}
+
+/** The one-line uninstaller for a device (needs no code: it only removes the agent). */
+export function ManualUninstallCommand({ deviceId }: { deviceId: number }) {
+  const { t } = useTranslation();
+  const { showToast } = useToast();
+  const command = buildUninstallCommand(deviceId);
+
+  const handleCopy = async () => {
+    if (await copyText(command)) {
+      showToast('success', t('notifications.copied'), t('notifications.copied_text'));
+    } else {
+      showToast('error', t('common.error'), t('settings.copy_failed'));
+    }
+  };
+
+  return (
+    <div className="manual-command">
+      <p className="field-hint">{t('agent.manual_uninstall_desc')}</p>
+      <div className="manual-command__box">
+        <code className="manual-command__code is-danger">{command}</code>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={handleCopy}>
+          <Copy size={14} aria-hidden="true" /> {t('common.copy')}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /**

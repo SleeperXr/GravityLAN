@@ -146,10 +146,10 @@
     "edit_finish": "Fertig",
     "edit_layout": "Layout anpassen",
     "refreshing": "Aktualisiere...",
-    "refresh_all": "Alle Aktualisieren",
+    "refresh_all": "Alle aktualisieren",
     "scanning": "Scanne...",
     "scan": "Scan",
-    "agent_updates": "Agent Updates",
+    "agent_updates": "Agent-Updates",
     "delete_selected": "{{count}} löschen",
     "bulk_delete_confirm": "Möchten Sie wirklich {{count}} Geräte dauerhaft löschen?",
     "ip_changed_hint": "IP-Adresse hat sich geändert. Klicken zum Ausblenden.",
@@ -197,7 +197,8 @@
     "dns_gateway": "DNS-Gateway",
     "remove_from_list": "Aus der Liste entfernen",
     "reserve": "IP als reserviert (fest) markieren",
-    "unreserve": "Reservierung aufheben"
+    "unreserve": "Reservierung aufheben",
+    "zoom": "Zoom"
   },
   "editor": {
     "title_edit": "Gerät bearbeiten",
@@ -301,7 +302,8 @@
     "install_code_retry": "Neuer Code",
     "adopt_confirm": "Diesen neuen Agent-Schlüssel dauerhaft übernehmen?",
     "manual_update": "Manuell",
-    "manual_update_desc": "Auf dem Gerät als root ausführen: lädt den aktuellen Agenten, ersetzt den alten und startet ihn – ganz ohne SSH-Zugang von GravityLAN."
+    "manual_update_desc": "Auf dem Gerät als root ausführen: lädt den aktuellen Agenten, ersetzt den alten und startet ihn – ganz ohne SSH-Zugang von GravityLAN.",
+    "manual_uninstall_desc": "Auf dem Gerät als root ausführen: stoppt den Agenten und entfernt ihn samt Autostart."
   },
   "settings": {
     "title": "GravityLAN Einstellungen",

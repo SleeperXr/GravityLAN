@@ -15,8 +15,9 @@ All notable changes to this project will be documented in this file.
 - **Setup wizard**: text logo, step indicator, back buttons and a language switch; no emojis or gradients; full-width buttons on phones.
 - **Agents page**: the 1000px table became a list that turns into cards on phones; the expanded view (telemetry, updates, SSH access, package list, live output) is restyled and translated; calm 24-hour availability bars; a decorative "Status: OPTIMAL" tile and a hard-coded interval were removed.
 - **Agent Update Center**: every device can show its one-line installer to update the agent by hand on the host (fresh single-use code, copy button); failed SSH updates show their reason in the row.
-- **Phones**: an edge-to-edge app bar with brand and page title, a compact IP map instead of screen-wide tiles, and the topology map (with its controls) fits above the tab bar.
+- **Phones**: an edge-to-edge app bar with brand and page title, a compact IP map instead of screen-wide tiles, subnet tabs that run edge to edge under the app bar, an icon-only overview toolbar, and the topology map (with smaller zoom buttons) fits above the tab bar.
 - **Device editor**: footer with delete on the left and Cancel/Save on the right.
+- **Device editor, Agent tab**: SSH access and the manual install/uninstall commands are restyled like the rest of the app; the install command is the same component as in the Update Center (fresh single-use code, copy button).
 
 ### Added
 
@@ -38,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - **Hosts behind a shared MAC failed to sync on every scan** ("Multiple rows were found when one or none was required"): with ipvlan containers several records share the host's MAC; the IP match is now kept in that case. The error log names the host.
 - **Rack view crashed** (`e.filter is not a function`): the topology page loaded devices without the API client's token and passed an error response on as the device list. The rack view also showed every device as offline (it read a field that doesn't exist).
 - **Settings page scrolled twice** (window and content area): hidden form labels stretched the page.
+- **Phone app bar scrolled away** and sat 16 px too low: the content area was a scroll container that never scrolled, so it captured the sticky bar. The bar now stays at the top on every page.
 - **Setup wizard**: clicking a network's checkbox itself did nothing (it toggled twice); a failed or cancelled scan left the wizard stuck on "Scanning…" with no way on; if saving the setup failed it still jumped to the dashboard. After finishing, the wizard now signs in with the new password, so it ends in the dashboard instead of the login screen — and the initial device refresh actually runs (it was always rejected before, without a session).
 - **Unstyled settings and delete buttons**: `.card`, `.btn-danger` and `.btn-sm` were used but never defined, so settings sections had no card surface and delete buttons had no style.
 - **Frontend typecheck**: fixed the 8 remaining TypeScript errors; CI now runs `npm run typecheck`. The agent patching tab shows the package manager and major-upgrade hint from the latest update check (they were fetched but never displayed).

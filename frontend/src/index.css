@@ -249,7 +249,8 @@ button {
 .subnet-container {
   max-width: 1400px;
   margin: 0 auto;
-  padding-top: var(--space-xl);
+  /* .app-main already pads the page; a second 32px left an empty band above the tabs */
+  padding-top: 0;
   animation: fadeIn 0.5s ease-out;
 }
 
@@ -257,7 +258,62 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-top: var(--space-lg);
   margin-bottom: var(--space-xl);
+}
+
+.subnet-tabs {
+  display: flex;
+  gap: 8px;
+  padding: var(--space-md) var(--space-xl) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.subnet-tab {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+  transition: background var(--transition-fast);
+}
+
+.subnet-tab.is-active { background: var(--bg-card); border-bottom-color: var(--accent-primary); }
+
+.subnet-tab__select { padding: 8px 12px 8px 16px; color: var(--text-secondary); }
+.subnet-tab__select:hover { color: var(--text-primary); }
+.subnet-tab.is-active .subnet-tab__select { color: var(--text-primary); font-weight: 600; }
+
+.subnet-tab__delete { padding: 8px 12px 8px 4px; color: var(--text-tertiary); opacity: 0.6; }
+.subnet-tab__delete:hover { color: var(--accent-danger); opacity: 1; }
+
+.subnet-tabs__add {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  color: var(--accent-primary);
+}
+
+.subnet-tab__select:focus-visible,
+.subnet-tab__delete:focus-visible,
+.subnet-tabs__add:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -2px; border-radius: 6px; }
+
+@media (max-width: 768px) {
+  /* Edge-to-edge scroll strip right under the app bar */
+  .subnet-tabs {
+    margin: calc(-1 * var(--space-md)) calc(-1 * var(--space-md)) 0;
+    padding: 0 var(--space-sm);
+    background: transparent;
+  }
+  .subnet-tab.is-active { background: transparent; }
+  .subnet-tab__select { padding: 12px 8px 10px 12px; }
+  .subnet-tabs__add { padding: 12px; }
 }
 
 .subnet-grid {
@@ -411,6 +467,9 @@ a.btn { text-decoration: none; }
 .btn-danger { background: transparent; color: var(--accent-danger); border: 1px solid rgba(244, 112, 103, 0.45); }
 .btn-danger:hover { background: rgba(244, 112, 103, 0.1); }
 .btn-danger.is-armed { background: var(--accent-danger); border-color: var(--accent-danger); color: #1A0806; }
+/* Pending work that needs attention (e.g. agent updates) */
+.btn-warning { background: rgba(227, 179, 65, 0.1); color: var(--accent-warning); border: 1px solid rgba(227, 179, 65, 0.35); }
+.btn-warning:hover { background: rgba(227, 179, 65, 0.16); }
 
 .visually-hidden {
   position: absolute;
@@ -1360,6 +1419,8 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
 @media (max-width: 768px) {
   /* Keep the map and its controls above the fixed bottom tab bar */
   .planner-main { padding: var(--space-md) var(--space-md) calc(80px + env(safe-area-inset-bottom)); }
+  /* The page never scrolls, and sticky would offset the bar by the page padding */
+  .planner-main > .mobile-header { position: relative; }
 }
 
 .planner-header {
@@ -1743,11 +1804,17 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
     z-index: 5000;
   }
 
+  /* The document scrolls on mobile; a non-scrolling overflow:auto box here
+     would capture the sticky app bar and let it scroll away. */
   .app-main {
     padding: var(--space-md);
     padding-bottom: calc(88px + env(safe-area-inset-bottom));
     max-height: none;
+    overflow-y: visible;
+    overflow-x: clip;
   }
+
+  .group-section { margin-bottom: var(--space-xl); }
 
   .mobile-tabbar {
     display: grid;
@@ -1920,31 +1987,25 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
 }
 
 /* --- Premium View Toggle --- */
+/* Segmented grid/list switch, 32px tall like the .btn-sm buttons next to it */
 .view-toggle {
   display: flex;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--bg-card);
   border: 1px solid var(--border-medium);
-  border-radius: var(--radius-lg);
-  padding: 4px;
-  gap: 4px;
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  gap: 2px;
 }
 
 .view-toggle__btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 34px;
-  border-radius: var(--radius-md);
-  border: none;
-  background: transparent;
+  width: 32px;
+  height: 26px;
+  border-radius: calc(var(--radius-md) - 2px);
   color: var(--text-tertiary);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .view-toggle__btn:hover {
@@ -1954,24 +2015,10 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
 
 .view-toggle__btn.active {
   color: var(--accent-primary);
-  background: var(--bg-surface);
-  box-shadow: 
-    0 4px 12px rgba(0, 0, 0, 0.4),
-    0 0 15px rgba(56, 189, 248, 0.2);
-  transform: translateY(-1px);
+  background: var(--bg-elevated);
 }
 
-.view-toggle__btn.active::after {
-  content: '';
-  position: absolute;
-  bottom: 4px;
-  left: 30%;
-  right: 30%;
-  height: 2px;
-  background: var(--accent-primary);
-  border-radius: 2px;
-  box-shadow: 0 0 8px var(--accent-primary);
-}
+.view-toggle__btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 1px; }
 
 /* --- Improved Logo --- */
 .logo__icon {
@@ -2027,9 +2074,10 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
 }
 
 /* --- Notification Center Improvements --- */
+/* Same height as the .btn-sm buttons it sits next to */
 .notification-bell {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2584,6 +2632,13 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
   overflow-wrap: anywhere;
   user-select: all;
 }
+.manual-command__code.is-danger { color: var(--accent-danger); }
+
+/* Device editor, agent tab */
+.editor-ssh__grid { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 12px; }
+.editor-ssh__wide { grid-column: 1 / -1; }
+.editor-manual { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+
 .manual-command__meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.75rem; color: var(--text-tertiary); }
 .manual-command__renew { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-primary); font-size: 0.75rem; }
 
@@ -2762,6 +2817,8 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
 }
 
 .react-flow .react-flow__controls-button {
+  /* React Flow uses content-box + 5px padding, which made 32px buttons 44px */
+  box-sizing: border-box;
   width: 32px;
   height: 32px;
   background: var(--bg-card);

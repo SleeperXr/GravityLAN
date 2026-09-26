@@ -263,21 +263,24 @@ export function SubnetView() {
         <MobileHeader title={t('sidebar.network_planner')} onMenuClick={() => setIsSidebarOpen(true)} />
         <div className="subnet-container">
           {/* Subnet Tabs */}
-          <div style={{ display: 'flex', gap: '8px', padding: 'var(--space-md) var(--space-xl) 0', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-surface)', overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none' }}>
+          <div className="subnet-tabs">
             {subnets.map(sub => {
               const prefixMatch = sub.cidr.match(/(\d+\.\d+\.\d+)/);
               const prefix = prefixMatch ? prefixMatch[1] : sub.cidr;
               return (
-                <div key={sub.id} style={{ display: 'flex', alignItems: 'center', background: subnetPrefix === prefix ? 'var(--bg-card)' : 'transparent', borderTopLeftRadius: '8px', borderTopRightRadius: '8px', borderBottom: subnetPrefix === prefix ? '2px solid var(--accent-primary)' : '2px solid transparent', transition: 'all 0.2s' }}>
-                  <button 
-                    style={{ padding: '8px 12px 8px 16px', background: 'transparent', border: 'none', color: subnetPrefix === prefix ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: subnetPrefix === prefix ? 600 : 400, cursor: 'pointer' }} 
+                <div key={sub.id} className={`subnet-tab ${subnetPrefix === prefix ? 'is-active' : ''}`}>
+                  <button
+                    type="button"
+                    className="subnet-tab__select"
+                    aria-pressed={subnetPrefix === prefix}
                     onClick={() => setSubnetPrefix(prefix)}
                   >
                     {sub.name}
                   </button>
                   {subnetPrefix === prefix && (
-                    <button 
-                      style={{ padding: '8px 12px 8px 4px', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', opacity: 0.6 }}
+                    <button
+                      type="button"
+                      className="subnet-tab__delete"
                       onClick={async (e) => {
                         e.stopPropagation();
                         if (confirm(`${t('common.delete')} ${sub.cidr}?`)) {
@@ -292,15 +295,16 @@ export function SubnetView() {
                         }
                       }}
                       title={t('common.delete')}
+                      aria-label={`${t('common.delete')} ${sub.cidr}`}
                     >
-                      <Trash2 size={12} />
+                      <Trash2 size={12} aria-hidden="true" />
                     </button>
                   )}
                 </div>
               );
             })}
-            <button style={{ padding: '8px 16px', background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={handleAddSubnet}>
-              <Plus size={14} /> {t('network.add_subnet')}
+            <button type="button" className="subnet-tabs__add" onClick={handleAddSubnet}>
+              <Plus size={14} aria-hidden="true" /> {t('network.add_subnet')}
             </button>
           </div>
 
@@ -319,8 +323,8 @@ export function SubnetView() {
               <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
                 {!isMobile && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', padding: 'var(--space-sm) var(--space-md)', background: 'var(--bg-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>ZOOM</span>
-                    <input type="range" min="0.5" max="2" step="0.1" value={zoom} onChange={e => setZoom(parseFloat(e.target.value))} />
+                    <label htmlFor="ip-zoom" style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>{t('network.zoom')}</label>
+                    <input id="ip-zoom" type="range" min="0.5" max="2" step="0.1" value={zoom} onChange={e => setZoom(parseFloat(e.target.value))} />
                   </div>
                 )}
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)}><Grid size={16} /> {!isMobile && t('network.manage_areas')}</button>

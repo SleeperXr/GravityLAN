@@ -5,6 +5,7 @@ import { X, Save, Trash2, Tag, Layout, Folder, Settings, RefreshCw, Cpu, Globe, 
 import { useToast } from '../../context/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { DeviceMetrics } from './DeviceMetrics';
+import { ManualInstallCommand, ManualUninstallCommand } from '../Agents/ManualInstallCommand';
 
 const PROTOCOL_ICON_MAP: Record<string, any> = {
   'ssh': Terminal,
@@ -87,31 +88,6 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
   const [newDiskPath, setNewDiskPath] = useState('');
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [showManual, setShowManual] = useState(false);
-  const [installCode, setInstallCode] = useState<{ code: string; expiresAt: Date } | null>(null);
-  const [installCodeFailed, setInstallCodeFailed] = useState(false);
-  const [installCodeRequest, setInstallCodeRequest] = useState(0);
-
-  // The manual install command must carry a fresh single-use enrollment code.
-  useEffect(() => {
-    if (!showManual) return;
-    let cancelled = false;
-    setInstallCode(null);
-    setInstallCodeFailed(false);
-    api.createAgentEnrollment(currentDevice.id)
-      .then(({ code, expires_in }) => {
-        if (cancelled) return;
-        // The code ends up in a root shell command: accept only the backend's token_urlsafe alphabet.
-        if (!/^[A-Za-z0-9_-]+$/.test(code)) throw new Error('Unexpected install code format');
-        setInstallCode({ code, expiresAt: new Date(Date.now() + expires_in * 1000) });
-      })
-      .catch((err) => {
-        console.error('Failed to create install code:', err);
-        if (cancelled) return;
-        setInstallCodeFailed(true);
-        showToast('error', t('common.error'), t('agent.install_code_failed'));
-      });
-    return () => { cancelled = true; };
-  }, [showManual, currentDevice.id, installCodeRequest, showToast, t]);
 
   // Parents from the outermost host down to this device (e.g. Proxmox › Docker VM), cycle-safe.
   const networkPath = useMemo(() => {
@@ -1035,48 +1011,40 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
 
               {/* Spalte 2: Management & Config */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-                {/* SSH Management Form (Compact) */}
-                <div style={{ padding: '12px', background: 'rgba(56, 189, 248, 0.03)', border: '1px dashed rgba(56, 189, 248, 0.2)', borderRadius: 'var(--radius-md)' }}>
-                  <h4 style={{ margin: '0 0 8px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Terminal size={14} /> {t('agent.ssh_management')}
-                  </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: 8 }}>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label style={{ fontSize: '0.65rem' }}>{t('agent.ssh_user')}</label>
-                      <input className="input" style={{ padding: '4px 8px', height: 32 }} value={sshForm.ssh_user} onChange={e => setSshForm(prev => ({ ...prev, ssh_user: e.target.value }))} />
+                {/* SSH management */}
+                <section className="agent-detail__panel">
+                  <h4 className="agent-detail__title"><Terminal size={14} aria-hidden="true" /> {t('agent.ssh_management')}</h4>
+                  <div className="editor-ssh__grid">
+                    <div className="settings-field">
+                      <label className="form-label" htmlFor="editor-ssh-user">{t('agent.ssh_user')}</label>
+                      <input id="editor-ssh-user" className="input" autoComplete="username" value={sshForm.ssh_user} onChange={e => setSshForm(prev => ({ ...prev, ssh_user: e.target.value }))} />
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label style={{ fontSize: '0.65rem' }}>{t('agent.ssh_port')}</label>
-                      <input className="input" type="number" style={{ padding: '4px 8px', height: 32 }} value={sshForm.ssh_port} onChange={e => setSshForm(prev => ({ ...prev, ssh_port: parseInt(e.target.value) || 22 }))} />
+                    <div className="settings-field">
+                      <label className="form-label" htmlFor="editor-ssh-port">{t('agent.ssh_port')}</label>
+                      <input id="editor-ssh-port" className="input" type="number" value={sshForm.ssh_port} onChange={e => setSshForm(prev => ({ ...prev, ssh_port: parseInt(e.target.value) || 22 }))} />
+                    </div>
+                    <div className="settings-field editor-ssh__wide">
+                      <label className="form-label" htmlFor="editor-ssh-password">{t('agent.ssh_password')}</label>
+                      <input id="editor-ssh-password" className="input" type="password" autoComplete="current-password" value={sshForm.ssh_password} onChange={e => setSshForm(prev => ({ ...prev, ssh_password: e.target.value }))} placeholder={t('agent.password_placeholder')} />
                     </div>
                   </div>
-                  <div className="form-group" style={{ marginBottom: 8 }}>
-                    <label style={{ fontSize: '0.65rem' }}>{t('agent.ssh_password')}</label>
-                    <input className="input" type="password" style={{ padding: '4px 8px', height: 32 }} value={sshForm.ssh_password} onChange={e => setSshForm(prev => ({ ...prev, ssh_password: e.target.value }))} placeholder={t('agent.password_placeholder')} />
-                  </div>
-                  
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div className="agent-detail__actions">
                     {!agentStatus?.is_installed ? (
-                      <button className="btn btn-primary" onClick={handleDeploy} disabled={isDeploying || (!sshForm.ssh_password && !sshForm.ssh_key)} style={{ flex: 1, padding: '4px 12px', fontSize: '0.75rem' }}>
-                        <Upload size={14} /> {isDeploying ? t('common.loading') : t('agent.install_via_ssh')}
+                      <button type="button" className="btn btn-primary btn-sm" onClick={handleDeploy} disabled={isDeploying || (!sshForm.ssh_password && !sshForm.ssh_key)}>
+                        <Upload size={14} aria-hidden="true" /> {isDeploying ? t('common.loading') : t('agent.install_via_ssh')}
                       </button>
                     ) : (
                       <>
-                        <button className="btn btn-primary" onClick={handleDeploy} disabled={isDeploying || (!sshForm.ssh_password && !sshForm.ssh_key)} 
-                          style={{ 
-                            flex: 1, padding: '4px 12px', fontSize: '0.75rem',
-                            background: agentStatus?.agent_version !== agentStatus?.latest_version ? 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)' : undefined,
-                          }}
-                        >
-                          <RefreshCw size={14} className={isDeploying ? 'spinning' : ''} /> {isDeploying ? t('common.loading') : t('agent.update_agent')}
+                        <button type="button" className="btn btn-primary btn-sm" onClick={handleDeploy} disabled={isDeploying || (!sshForm.ssh_password && !sshForm.ssh_key)}>
+                          <RefreshCw size={14} className={isDeploying ? 'spinning' : ''} aria-hidden="true" /> {isDeploying ? t('common.loading') : t('agent.update_agent')}
                         </button>
-                        <button className="btn btn-secondary" onClick={handleUninstall} disabled={isDeploying || (!sshForm.ssh_password && !sshForm.ssh_key)} style={{ flex: 1, borderColor: '#ef4444', color: '#ef4444', padding: '4px 12px', fontSize: '0.75rem' }}>
-                          <Trash2 size={14} /> {t('agent.uninstall')}
+                        <button type="button" className="btn btn-danger btn-sm" onClick={handleUninstall} disabled={isDeploying || (!sshForm.ssh_password && !sshForm.ssh_key)}>
+                          <Trash2 size={14} aria-hidden="true" /> {t('agent.uninstall')}
                         </button>
                       </>
                     )}
                   </div>
-                </div>
+                </section>
                 {/* Manual Installation Toggle */}
                 <div style={{ marginTop: 'var(--space-sm)' }}>
                   <button 
@@ -1092,109 +1060,15 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                   </button>
 
                   {showManual && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)', marginTop: 8, animation: 'fadeIn 0.2s ease-out' }}>
-                      {/* Manual Installation (Zero-SSH) */}
-                      <div style={{ padding: '12px', background: 'rgba(16, 185, 129, 0.05)', border: '1px dashed rgba(16, 185, 129, 0.3)', borderRadius: 'var(--radius-md)' }}>
-                        <h4 style={{ margin: '0 0 8px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <ExternalLink size={14} /> {t('agent.manual_install')}
-                        </h4>
-                        <div style={{ 
-                          padding: '8px', 
-                          background: 'var(--bg-dashboard)', 
-                          borderRadius: '4px', 
-                          fontSize: '0.65rem', 
-                          fontFamily: 'var(--font-mono)',
-                          color: 'var(--accent-primary)',
-                          border: '1px solid var(--border-subtle)',
-                          position: 'relative',
-                          wordBreak: 'break-all',
-                          cursor: 'pointer'
-                        }}
-                        onClick={() => {
-                          if (!installCode) return;
-                          const host = window.location.hostname;
-                          const port = window.location.port === '5173' ? ':8000' : (window.location.port ? `:${window.location.port}` : '');
-                          const protocol = window.location.protocol;
-                          const cmd = `curl -sSL "${protocol}//${host}${port}/api/agent/download/install-sh/${currentDevice.id}?code=${installCode.code}" | sudo bash`;
-                          
-                          if (navigator.clipboard && window.isSecureContext) {
-                            navigator.clipboard.writeText(cmd);
-                            showToast('success', t('notifications.copied'), t('notifications.copied_text'));
-                          } else {
-                            const textArea = document.createElement("textarea");
-                            textArea.value = cmd;
-                            document.body.appendChild(textArea);
-                            textArea.select();
-                            try {
-                              document.execCommand('copy');
-                              showToast('success', t('notifications.copied'), t('notifications.copied_text'));
-                            } catch (err) {
-                              console.error('Copy fallback failed', err);
-                            }
-                            document.body.removeChild(textArea);
-                          }
-                        }}>
-                          <code>{installCode ? `install-sh/${currentDevice.id}?code=… | sudo bash` : t(installCodeFailed ? 'agent.install_code_failed' : 'common.loading')}</code>
-                        </div>
-                        <div style={{ marginTop: 6, fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                          <span>
-                            {installCode && t('agent.install_code_hint', {
-                              time: installCode.expiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                            })}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setInstallCodeRequest(n => n + 1)}
-                            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent-primary)', cursor: 'pointer', fontSize: 'inherit' }}
-                          >
-                            {t('agent.install_code_retry')}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Manual Uninstall (Zero-SSH) */}
-                      <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.05)', border: '1px dashed rgba(239, 68, 68, 0.3)', borderRadius: 'var(--radius-md)' }}>
-                        <h4 style={{ margin: '0 0 8px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <Trash2 size={14} /> {t('agent.manual_uninstall')}
-                        </h4>
-                        <div style={{ 
-                          padding: '8px', 
-                          background: 'var(--bg-dashboard)', 
-                          borderRadius: '4px', 
-                          fontSize: '0.65rem', 
-                          fontFamily: 'var(--font-mono)',
-                          color: '#ef4444',
-                          border: '1px solid var(--border-subtle)',
-                          position: 'relative',
-                          wordBreak: 'break-all',
-                          cursor: 'pointer'
-                        }}
-                        onClick={() => {
-                          const host = window.location.hostname;
-                          const port = window.location.port === '5173' ? ':8000' : (window.location.port ? `:${window.location.port}` : '');
-                          const protocol = window.location.protocol;
-                          const cmd = `curl -sSL ${protocol}//${host}${port}/api/agent/download/uninstall-sh/${currentDevice.id} | sudo bash`;
-                          
-                          if (navigator.clipboard && window.isSecureContext) {
-                            navigator.clipboard.writeText(cmd);
-                            showToast('success', t('notifications.copied'), t('notifications.copied_text'));
-                          } else {
-                            const textArea = document.createElement("textarea");
-                            textArea.value = cmd;
-                            document.body.appendChild(textArea);
-                            textArea.select();
-                            try {
-                              document.execCommand('copy');
-                              showToast('success', t('notifications.copied'), t('notifications.copied_text'));
-                            } catch (err) {
-                              console.error('Copy fallback failed', err);
-                            }
-                            document.body.removeChild(textArea);
-                          }
-                        }}>
-                          <code>uninstall-sh/{currentDevice.id} | sudo bash</code>
-                        </div>
-                      </div>
+                    <div className="editor-manual">
+                      <section className="agent-detail__panel">
+                        <h4 className="agent-detail__title"><ExternalLink size={14} aria-hidden="true" /> {t('agent.manual_install')}</h4>
+                        <ManualInstallCommand deviceId={currentDevice.id} />
+                      </section>
+                      <section className="agent-detail__panel">
+                        <h4 className="agent-detail__title"><Trash2 size={14} aria-hidden="true" /> {t('agent.manual_uninstall')}</h4>
+                        <ManualUninstallCommand deviceId={currentDevice.id} />
+                      </section>
                     </div>
                   )}
                 </div>

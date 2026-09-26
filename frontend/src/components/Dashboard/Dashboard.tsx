@@ -499,6 +499,8 @@ export function Dashboard() {
     );
   };
 
+  const outdatedAgents = devices.filter(d => d.has_agent && d.agent_info?.agent_version !== d.agent_info?.latest_version).length;
+
   return (
     <div className="app-layout">
       <Sidebar active="dashboard" isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
@@ -580,16 +582,20 @@ export function Dashboard() {
             <button
               className={`btn btn-sm ${isEditMode ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setIsEditMode(!isEditMode)}
+              aria-label={isMobile ? t(isEditMode ? 'dashboard.edit_finish' : 'dashboard.edit_layout') : undefined}
             >
-              {isEditMode ? <><Save size={16} /> {t('dashboard.edit_finish')}</> : <><Edit3 size={16} /> {t('dashboard.edit_layout')}</>}
+              {isEditMode
+                ? <><Save size={16} /> {t('dashboard.edit_finish')}</>
+                : <><Edit3 size={16} /> {!isMobile && t('dashboard.edit_layout')}</>}
             </button>
-            
+
             {!isEditMode && (
               <>
                 <button
                   className="btn btn-secondary btn-sm"
                   onClick={handleRefreshAll}
                   disabled={isRefreshingAll || isScanning}
+                  aria-label={isMobile ? t('dashboard.refresh_all') : undefined}
                 >
                   <RefreshCw size={16} className={isRefreshingAll ? 'spinning' : ''} />
                   {!isMobile && (isRefreshingAll ? t('dashboard.refreshing') : t('dashboard.refresh_all'))}
@@ -614,18 +620,14 @@ export function Dashboard() {
                   )}
                 </button>
 
-                {devices.some(d => d.has_agent && d.agent_info?.agent_version !== d.agent_info?.latest_version) && (
+                {outdatedAgents > 0 && (
                   <button
-                    className="btn btn-sm"
-                    style={{ 
-                      background: 'rgba(245, 158, 11, 0.1)', 
-                      color: '#f59e0b', 
-                      border: '1px solid rgba(245, 158, 11, 0.2)' 
-                    }}
+                    className="btn btn-warning btn-sm"
                     onClick={() => setShowUpdateCenter(true)}
+                    aria-label={isMobile ? `${outdatedAgents} ${t('dashboard.agent_updates')}` : undefined}
                   >
                     <RefreshCw size={16} className="pulse" />
-                    {devices.filter(d => d.has_agent && d.agent_info?.agent_version !== d.agent_info?.latest_version).length} {!isMobile && t('dashboard.agent_updates')}
+                    {outdatedAgents} {!isMobile && t('dashboard.agent_updates')}
                   </button>
                 )}
               </>

@@ -197,7 +197,8 @@
     "dns_gateway": "DNS gateway",
     "remove_from_list": "Remove from list",
     "reserve": "Mark IP as reserved (fixed)",
-    "unreserve": "Remove reservation"
+    "unreserve": "Remove reservation",
+    "zoom": "Zoom"
   },
   "editor": {
     "title_edit": "Edit Device",
@@ -304,7 +305,8 @@
     "install_code_retry": "New code",
     "adopt_confirm": "Permanently accept this new agent key?",
     "manual_update": "Manually",
-    "manual_update_desc": "Run on the device as root: downloads the current agent, replaces the old one and starts it – no SSH access from GravityLAN needed."
+    "manual_update_desc": "Run on the device as root: downloads the current agent, replaces the old one and starts it – no SSH access from GravityLAN needed.",
+    "manual_uninstall_desc": "Run on the device as root: stops the agent and removes it including its autostart."
   },
   "settings": {
     "title": "GravityLAN Settings",
