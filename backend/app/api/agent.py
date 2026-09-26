@@ -998,6 +998,21 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# Check prerequisites before anything of the current installation is touched.
+PYTHON_BIN="$(command -v python3 || command -v python || true)"
+if [ -z "$PYTHON_BIN" ]; then
+  echo "Error: Python 3 was not found on this host. Install it first (on Unraid e.g. via a Python 3 plugin) and run the command again." >&2
+  exit 1
+fi
+if [ -d /run/systemd/system ]; then
+  START_MODE="systemd"
+elif [ -f /etc/synoinfo.conf ] && [ -d /usr/local/etc/rc.d ]; then
+  START_MODE="synology"
+else
+  # e.g. Unraid (Slackware, no systemd) or OpenRC distributions
+  START_MODE="background"
+fi
+
 # Download first, so an expired install code never leaves the host without its current agent.
 echo "1. Downloading agent and config..."
 TMP_DIR="$(mktemp -d)"
@@ -1013,14 +1028,16 @@ curl -fsSL "$SERVER_URL/api/agent/download/config/$DEVICE_ID?code=$ENROLL_CODE" 
 }}
 
 echo "2. Cleaning up old versions..."
-systemctl stop gravitylan-agent.service 2>/dev/null || true
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl stop gravitylan-agent.service 2>/dev/null || true
+fi
 pkill -9 -f '[g]ravitylan-agent\\.py' 2>/dev/null || true
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 mv "$TMP_DIR/gravitylan-agent.py" "$TMP_DIR/agent.conf" "$INSTALL_DIR/"
 
-echo "3. Setting up systemd service..."
-PYTHON_BIN=$(which python3 || which python)
+echo "3. Starting the agent ($START_MODE)..."
+if [ "$START_MODE" = "systemd" ]; then
 cat > /etc/systemd/system/gravitylan-agent.service <<EOF
 [Unit]
 Description=GravityLAN System Monitor Agent
@@ -1036,13 +1053,59 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 EOF
+  systemctl daemon-reload
+  systemctl enable gravitylan-agent
+  systemctl restart gravitylan-agent
+elif [ "$START_MODE" = "synology" ]; then
+  cat > /usr/local/etc/rc.d/S99gravitylan-agent.sh <<EOF
+#!/bin/sh
+# GravityLAN Agent start script for Synology
+case "\\$1" in
+  start) cd $INSTALL_DIR && $PYTHON_BIN $INSTALL_DIR/gravitylan-agent.py > $INSTALL_DIR/gravitylan-agent.log 2>&1 < /dev/null & ;;
+  stop) pkill -f '[g]ravitylan-agent\\.py' ;;
+  restart) "\\$0" stop; sleep 2; "\\$0" start ;;
+esac
+exit 0
+EOF
+  chmod +x /usr/local/etc/rc.d/S99gravitylan-agent.sh
+  /usr/local/etc/rc.d/S99gravitylan-agent.sh start
+else
+  # stdin from /dev/null: under `curl ... | bash` stdin is the script itself. No subshell,
+  # so nothing keeps waiting on the agent or holding the terminal/pipe open.
+  cd "$INSTALL_DIR"
+  nohup "$PYTHON_BIN" "$INSTALL_DIR/gravitylan-agent.py" > "$INSTALL_DIR/gravitylan-agent.log" 2>&1 < /dev/null &
+  cd - > /dev/null
+fi
 
-systemctl daemon-reload
-systemctl enable gravitylan-agent
-systemctl restart gravitylan-agent
+if [ -f /etc/unraid-version ]; then
+  # Unraid runs from RAM (/opt is empty after a reboot): keep a copy on the flash drive
+  # and start it from /boot/config/go. The marked block is replaced on every install.
+  PERSIST_DIR="/boot/config/gravitylan-agent"
+  mkdir -p "$PERSIST_DIR"
+  cp "$INSTALL_DIR/gravitylan-agent.py" "$INSTALL_DIR/agent.conf" "$PERSIST_DIR/"
+  touch /boot/config/go
+  sed -i '/^# >>> gravitylan-agent/,/^# <<< gravitylan-agent/d' /boot/config/go
+  cat >> /boot/config/go <<'GOEOF'
+# >>> gravitylan-agent (added by the GravityLAN installer; delete this block to disable)
+( for i in $(seq 1 60); do command -v python3 >/dev/null 2>&1 && break; sleep 5; done
+  mkdir -p /opt/gravitylan-agent && cp /boot/config/gravitylan-agent/* /opt/gravitylan-agent/
+  cd /opt/gravitylan-agent && exec nohup python3 gravitylan-agent.py > gravitylan-agent.log 2>&1 ) < /dev/null > /dev/null 2>&1 &
+# <<< gravitylan-agent
+GOEOF
+  echo "   Unraid: a copy is kept on the flash drive and starts from /boot/config/go after a reboot."
+elif [ "$START_MODE" = "background" ]; then
+  echo "   Note: no systemd found - the agent runs in the background but will not start again by itself after a reboot."
+fi
 
-echo "--- Installation Complete ---"
-systemctl status gravitylan-agent --no-pager
+sleep 2
+if pgrep -f '[g]ravitylan-agent\\.py' >/dev/null 2>&1; then
+  echo "--- Installation Complete: the agent is running ---"
+else
+  echo "Warning: the agent does not seem to be running. See $INSTALL_DIR/gravitylan-agent.log or the service status." >&2
+fi
+if [ "$START_MODE" = "systemd" ]; then
+  systemctl status gravitylan-agent --no-pager || true
+fi
 """
     return PlainTextResponse(script)
 
@@ -1186,16 +1249,29 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-echo "1. Stopping and disabling service..."
-systemctl stop gravitylan-agent.service 2>/dev/null || true
-systemctl disable gravitylan-agent.service 2>/dev/null || true
+echo "1. Stopping the agent..."
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl stop gravitylan-agent.service 2>/dev/null || true
+  systemctl disable gravitylan-agent.service 2>/dev/null || true
+fi
+if [ -x /usr/local/etc/rc.d/S99gravitylan-agent.sh ]; then
+  /usr/local/etc/rc.d/S99gravitylan-agent.sh stop 2>/dev/null || true
+fi
+pkill -9 -f '[g]ravitylan-agent\\.py' 2>/dev/null || true
 
 echo "2. Removing files..."
-rm -f /etc/systemd/system/gravitylan-agent.service
+rm -f /etc/systemd/system/gravitylan-agent.service /usr/local/etc/rc.d/S99gravitylan-agent.sh
 rm -rf "$INSTALL_DIR"
+# Unraid: the boot hook in /boot/config/go and the copy on the flash drive
+if [ -f /boot/config/go ]; then
+  sed -i '/^# >>> gravitylan-agent/,/^# <<< gravitylan-agent/d' /boot/config/go
+fi
+rm -rf /boot/config/gravitylan-agent
 
-echo "3. Reloading systemd..."
-systemctl daemon-reload
+if command -v systemctl >/dev/null 2>&1; then
+  echo "3. Reloading systemd..."
+  systemctl daemon-reload 2>/dev/null || true
+fi
 
 echo "--- Uninstallation Complete ---"
 """

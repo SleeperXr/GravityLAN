@@ -204,6 +204,46 @@ async def test_download_install_script_contains_url_id_and_code(client, db, admi
     assert config.status_code == 200
 
 
+async def _install_script_text(client, db, monkeypatch) -> str:
+    device = await _seed_device(db)
+    await _seed_server_url(db, monkeypatch)
+    code = await _enroll(client, device.id)
+    response = await client.get(f"/api/agent/download/install-sh/{device.id}", params={"code": code})
+    assert response.status_code == 200
+    return response.text
+
+
+@pytest.mark.asyncio
+async def test_install_script_supports_hosts_without_systemd(client, db, admin_token, monkeypatch):
+    """Unraid has no systemd: writing /etc/systemd/system/... failed after the old agent was removed."""
+    script = await _install_script_text(client, db, monkeypatch)
+
+    # The unit is only written when systemd is actually running
+    assert "[ -d /run/systemd/system ]" in script
+    assert script.index("[ -d /run/systemd/system ]") < script.index("cat > /etc/systemd/system/gravitylan-agent.service")
+    # Without systemd the agent is started in the background instead
+    assert "nohup" in script
+    # Unraid runs from RAM: persist a copy on the flash drive and start it from /boot/config/go
+    assert "/etc/unraid-version" in script
+    assert "/boot/config/go" in script
+    assert "# >>> gravitylan-agent" in script and "# <<< gravitylan-agent" in script
+    # Python is checked before anything of the old installation is touched
+    assert script.index("command -v python3") < script.index("Cleaning up old versions")
+
+
+@pytest.mark.asyncio
+async def test_install_script_is_valid_bash(client, db, admin_token, monkeypatch):
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("bash not available")
+    script = await _install_script_text(client, db, monkeypatch)
+    result = subprocess.run([bash, "-n"], input=script.encode(), capture_output=True)
+    assert result.returncode == 0, result.stderr.decode()
+
+
 @pytest.mark.asyncio
 async def test_download_install_script_without_code_is_rejected(client, db, admin_token):
     device = await _seed_device(db)
@@ -243,6 +283,9 @@ async def test_download_uninstall_script(client, db):
     assert response.status_code == 200
     assert "systemctl stop gravitylan-agent.service" in response.text
     assert "rm -rf" in response.text
+    # Also undoes the Unraid boot hook and the copy on the flash drive
+    assert "/boot/config/go" in response.text
+    assert "/boot/config/gravitylan-agent" in response.text
 
 
 # --- deploy / uninstall -----------------------------------------------------

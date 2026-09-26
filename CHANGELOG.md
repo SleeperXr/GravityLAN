@@ -26,6 +26,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Manual agent install failed on Unraid** (and other hosts without systemd): the installer always wrote a systemd unit, so on Unraid it stopped after removing the old agent (`/etc/systemd/system/...: No such file or directory`). It now checks Python and the init system before touching the old installation, uses systemd, Synology rc.d or a background start, and on Unraid keeps a copy on the flash drive that starts from `/boot/config/go` after a reboot (Unraid runs from RAM). The uninstaller removes all of it again.
+- **Hosts behind a shared MAC failed to sync on every scan** ("Multiple rows were found when one or none was required"): with ipvlan containers several records share the host's MAC; the IP match is now kept in that case. The error log names the host.
+- **Rack view crashed** (`e.filter is not a function`): the topology page loaded devices without the API client's token and passed an error response on as the device list. The rack view also showed every device as offline (it read a field that doesn't exist).
+- **Settings page scrolled twice** (window and content area): hidden form labels stretched the page.
 - **Setup wizard**: clicking a network's checkbox itself did nothing (it toggled twice); a failed or cancelled scan left the wizard stuck on "Scanning…" with no way on; if saving the setup failed it still jumped to the dashboard. After finishing, the wizard now signs in with the new password, so it ends in the dashboard instead of the login screen — and the initial device refresh actually runs (it was always rejected before, without a session).
 - **Unstyled settings and delete buttons**: `.card`, `.btn-danger` and `.btn-sm` were used but never defined, so settings sections had no card surface and delete buttons had no style.
 - **Frontend typecheck**: fixed the 8 remaining TypeScript errors; CI now runs `npm run typecheck`. The agent patching tab shows the package manager and major-upgrade hint from the latest update check (they were fetched but never displayed).
