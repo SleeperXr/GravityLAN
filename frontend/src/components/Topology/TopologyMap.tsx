@@ -550,7 +550,8 @@ const TopologySidebar = ({
             </div>
           </div>
 
-          <div className="settings-section">
+          {/* Own class name: "settings-section" is the two-column layout of the settings page */}
+          <div className="topology-sidebar__section">
             <label className="section-label">{t('topology.device_mode', 'Device Mode')}</label>
             <div className="toggle-group">
               <label className="toggle-item">
@@ -1281,34 +1282,40 @@ const TopologyMap: React.FC = () => {
         .react-flow--dragging .react-flow__edge-path.animated {
           animation-play-state: paused;
         }
+        .topology-sidebar__section { margin-bottom: 20px; }
         .toggle-group {
           display: flex;
-          gap: 10px;
-          margin-bottom: 15px;
+          gap: 8px;
         }
         .toggle-item {
+          position: relative;
           flex: 1;
+          min-width: 0;
           cursor: pointer;
         }
-        .toggle-item input { display: none; }
+        /* Visually hidden but still keyboard-focusable (display:none removed it from the tab order) */
+        .toggle-item input { position: absolute; width: 1px; height: 1px; opacity: 0; }
         .toggle-content {
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 6px;
+          min-height: 36px;
           padding: 8px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 8px;
-          font-size: 0.75rem;
-          color: #94a3b8;
-          transition: all 0.2s;
+          background: var(--bg-input);
+          border: 1px solid var(--border-medium);
+          border-radius: var(--radius-md);
+          font-size: 0.8125rem;
+          color: var(--text-secondary);
+          transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
         }
+        .toggle-item:hover .toggle-content { color: var(--text-primary); }
         .toggle-item input:checked + .toggle-content {
-          background: rgba(56, 189, 248, 0.1);
-          border-color: #38bdf8;
-          color: #38bdf8;
+          background: rgba(61, 184, 245, 0.1);
+          border-color: var(--accent-primary);
+          color: var(--text-primary);
         }
+        .toggle-item input:focus-visible + .toggle-content { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
         .section-label {
           display: block;
           font-size: 0.7rem;

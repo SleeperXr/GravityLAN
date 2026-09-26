@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import shlex
 import time
 import paramiko
 from typing import Any, Callable
@@ -16,6 +17,9 @@ from app.config import settings
 from app.services.ssh_utils import CustomWarningPolicy, _load_ssh_key
 
 logger = logging.getLogger(__name__)
+
+# Fixed sudo prompt (sudo -p) so it can be recognised regardless of the host's language
+_SUDO_PROMPT = "SUDOPROMPT:"
 
 
 def _build_client() -> paramiko.SSHClient:
@@ -97,40 +101,33 @@ async def run_ssh_command_stream(
         channel = transport.open_session()
         channel.get_pty()  # request pty to get combined output and avoid buffering issues
         
-        # Check sudo usage
         needs_sudo = ssh_user != "root"
-        if needs_sudo:
-            # We want to run command as sudo. Since we have a PTY, sudo will prompt for password
-            # if required.
-            run_cmd = f"sudo -S {command}"
-        else:
+        if not needs_sudo:
             run_cmd = command
+        elif ssh_password:
+            # The whole command runs as root in one shell (a plain "sudo <cmd>" left env
+            # assignments and $(...) of the update command outside sudo). The fixed prompt
+            # marker is answered whenever it shows up in the stream, however late or localised.
+            run_cmd = f"sudo -S -p '{_SUDO_PROMPT}' sh -c {shlex.quote(command)}"
+        else:
+            # No password: fail fast (passwordless sudo only) instead of waiting for input
+            run_cmd = f"sudo -n sh -c {shlex.quote(command)}"
 
         channel.exec_command(run_cmd)
 
-        # Buffer to read output line by line
-        loop = asyncio.get_running_loop()
-        
-        # Wait for pwd prompt if sudo and password is provided
-        if needs_sudo and ssh_password:
-            # Sudo password input handler
-            await asyncio.sleep(0.5)
-            if channel.send_ready():
-                # Check if it asks for password
-                if channel.recv_ready():
-                    buf = channel.recv(1024).decode("utf-8", errors="replace")
-                    if "password" in buf.lower() or "[sudo]" in buf.lower():
-                        channel.send(f"{ssh_password}\n")
-        
+        password_sent = False
         while True:
             # Check if there is data to read
             if channel.recv_ready():
-                # Read chunks
                 chunk = channel.recv(4096).decode("utf-8", errors="replace")
                 if not chunk:
                     break
-                # Stream the output
-                output_callback(chunk)
+                if needs_sudo and ssh_password and not password_sent and _SUDO_PROMPT in chunk:
+                    channel.send(f"{ssh_password}\n")
+                    password_sent = True
+                    chunk = chunk.replace(_SUDO_PROMPT, "")
+                if chunk:
+                    output_callback(chunk)
             elif channel.exit_status_ready():
                 # Exit once finished and no data remains
                 if not channel.recv_ready():

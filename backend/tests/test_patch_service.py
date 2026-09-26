@@ -35,9 +35,9 @@ async def test_list_device_updates_apt(mock_ssh_client):
     mock_chan_which = MagicMock()
     mock_chan_which.read.return_value = b"/usr/bin/apt-get"
     
-    # 2. apt-get update channel
-    mock_chan_update = MagicMock()
-    mock_chan_update.exit_status_ready.return_value = True
+    # 2. apt-get update channel (finished, no pending output; a bare MagicMock reported
+    #    data forever and the test sat out the 90 s refresh deadline)
+    mock_chan_update = _real_channel_mock(0)
     
     # 3. apt list --upgradable output
     mock_chan_list = MagicMock()
@@ -211,3 +211,41 @@ async def test_apt_update_exit_code_uses_paramiko_api(mock_ssh_client):
     assert "error" not in res, res.get("error")
     assert res["patch_manager"] == "apt"
     assert len(res["packages"]) == 2
+
+
+@pytest.mark.asyncio
+@patch("paramiko.SSHClient")
+async def test_run_ssh_command_stream_sends_sudo_password_on_late_prompt(mock_ssh_client):
+    """Non-root upgrades: the password went out only if sudo prompted within 0.5 s, and a plain
+    'sudo <cmd>' left env assignments and $(...) of the update command outside sudo."""
+    client_instance = MagicMock()
+    mock_ssh_client.return_value = client_instance
+    chan = _real_channel_mock(0)
+    chunks = [b"", b"", b"", b"", b"", b"", b"", b"SUDOPROMPT:", b"Reading package lists... Done\r\n"]
+
+    def recv_ready():
+        # b"" entries are ticks where nothing has arrived yet (the prompt comes well after 0.5 s)
+        if chunks and chunks[0] == b"":
+            chunks.pop(0)
+            return False
+        return bool(chunks)
+
+    chan.recv_ready.side_effect = recv_ready
+    chan.recv.side_effect = lambda _n: chunks.pop(0)
+    chan.exit_status_ready.side_effect = lambda: not chunks
+    client_instance.get_transport.return_value.open_session.return_value = chan
+    output: list[str] = []
+
+    ok, _msg = await run_ssh_command_stream(
+        host_ip="192.168.1.100", ssh_user="oliver", ssh_password="pw",
+        command="DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y $(echo x)",
+        output_callback=output.append,
+    )
+
+    assert ok is True
+    sent_cmd = chan.exec_command.call_args.args[0]
+    assert sent_cmd.startswith("sudo -S -p 'SUDOPROMPT:' sh -c ")
+    assert "'DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y $(echo x)'" in sent_cmd
+    chan.send.assert_called_once_with("pw\n")
+    assert "SUDOPROMPT" not in "".join(output)
+    assert "Reading package lists" in "".join(output)
