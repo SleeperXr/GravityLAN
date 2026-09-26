@@ -99,7 +99,7 @@ async def sync_hosts_batch(hosts: list[dict], is_planner_scan: bool = True, shou
                 res = await _sync_host_internal(db, host)
                 results.append(res)
             except Exception as e:
-                logger.error(f"Sync: Failed to process host: {e}")
+                logger.error(f"Sync: Failed to process host {host.get('ip')} ({host.get('mac')}): {e}")
 
         await _commit_with_retry(db)
 
@@ -120,11 +120,6 @@ async def _query_by_mac_and_ip(db, model, mac: str, ip: str):
 
 async def _query_by_ip(db, model, ip: str):
     res = await db.execute(select(model).where(model.ip == ip))
-    return res.scalar_one_or_none()
-
-
-async def _query_by_mac_one(db, model, mac: str):
-    res = await db.execute(select(model).where(model.mac == mac))
     return res.scalar_one_or_none()
 
 
@@ -160,9 +155,16 @@ async def _match_ip_with_mac_conflict(db, model, mac: str, ip: str, is_valid_mac
     if not (is_valid_mac and _mac_is_valid(cand.mac) and cand.mac.lower() != mac.lower()):
         return cand
 
-    mac_owner = await _query_by_mac_one(db, model, mac)
-    if not mac_owner or mac_owner.id == cand.id:
+    mac_owners = [owner for owner in await _query_by_mac_all(db, model, mac) if owner.id != cand.id]
+    if not mac_owners:
         return cand
+    if len(mac_owners) > 1:
+        # Several records behind one MAC is the ipvlan pattern (containers share the
+        # host's MAC): the MAC can't tell them apart, so the IP match stands. Asking for
+        # a single owner here raised MultipleResultsFound and skipped the host every scan.
+        return cand
+
+    mac_owner = mac_owners[0]
 
     owner_name = (
         getattr(mac_owner, "display_name", None)

@@ -235,3 +235,41 @@ async def test_docker_sync_restores_placeholder_ip_by_container_name(db):
     assert updated.is_online is True
 
 
+
+
+@pytest.mark.asyncio
+async def test_ip_match_survives_mac_shared_by_several_records(db, caplog):
+    """
+    Regression: 'Multiple rows were found when one or none was required'.
+    1. Unraid host and an ipvlan container share MAC M (two Devices, two DiscoveredHosts).
+    2. Another device sits at '192.168.1.60' with its own (older) MAC.
+    3. A scan reports '192.168.1.60' with MAC M. Looking up "the" owner of M used to
+       raise, so the host was skipped on every scan. With several owners the MAC can't
+       identify anyone (ipvlan), so the IP match must be kept.
+    """
+    shared_mac = "02:42:ac:11:00:01"
+    db.add_all([
+        Device(ip="192.168.1.10", mac=shared_mac, display_name="Unraid Host", is_online=True),
+        Device(ip="192.168.1.50", mac=shared_mac, display_name="Nextcloud Container", is_online=True),
+        Device(ip="192.168.1.60", mac="02:42:ac:11:00:99", display_name="Paperless Container", is_online=True),
+        DiscoveredHost(ip="192.168.1.10", mac=shared_mac, hostname="unraid"),
+        DiscoveredHost(ip="192.168.1.50", mac=shared_mac, hostname="nextcloud"),
+        DiscoveredHost(ip="192.168.1.60", mac="02:42:ac:11:00:99", hostname="paperless"),
+    ])
+    await db.commit()
+
+    scan_hosts = [{"ip": "192.168.1.60", "mac": shared_mac, "hostname": "paperless"}]
+
+    session_ctx = DBSessionContextMock(db)
+    with patch("app.scanner.sync.async_session", return_value=session_ctx):
+        results = await sync_hosts_batch(scan_hosts, is_planner_scan=True)
+
+    assert "Failed to process host" not in caplog.text
+    assert len(results) == 1
+
+    res = await db.execute(select(Device).where(Device.ip == "192.168.1.60"))
+    assert res.scalar_one().display_name == "Paperless Container"
+    res = await db.execute(select(Device).where(Device.ip == "192.168.1.10"))
+    assert res.scalar_one().display_name == "Unraid Host"
+    res = await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.168.1.60"))
+    assert res.scalar_one().hostname == "paperless"
