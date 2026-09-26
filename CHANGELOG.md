@@ -11,10 +11,12 @@ All notable changes to this project will be documented in this file.
 - **Overview**: device cards show status, IP, role (Host/VM/Docker) and labeled CPU/RAM/disk/temperature meters; services are neutral chips, all of them clickable (the chip row wraps, and scrolls if a card is too short); phones always use the list view.
 - **Device editor**: opens as a side panel with the device's network path (e.g. Proxmox › Docker VM), keyboard- and screen-reader-friendly (focus handling, Escape, arrow keys for tabs); full screen on phones.
 - **Agents, login, IP grid, topology**: restyled; agent KPIs show real values only (removed decorative fake trend lines); all texts translated — 41 missing translation keys added.
+- **Settings**: each section explains itself on the left with its controls on the right (stacked on phones); units sit inside the fields; one save bar appears only while there are unsaved changes (instead of two save buttons); language is a switch; the manual agent server URL is visible again; live logs open as a regular page; errors show as notifications instead of browser alerts.
+- **Setup wizard**: text logo, step indicator, back buttons and a language switch; no emojis or gradients; full-width buttons on phones.
 
 ### Added
 
-- **Demo backend for UI work** (`scripts/dev_demo.py`): demo data and simulated agents, no scans, no SSH, separate database.
+- **Demo backend for UI work** (`scripts/dev_demo.py`): demo data and simulated agents, no scans, no SSH, separate database. `--fresh` starts like a new install (empty throw-away database) to work on the setup wizard.
 
 ### Security
 
@@ -24,6 +26,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Setup wizard**: clicking a network's checkbox itself did nothing (it toggled twice); a failed or cancelled scan left the wizard stuck on "Scanning…" with no way on; if saving the setup failed it still jumped to the dashboard. After finishing, the wizard now signs in with the new password, so it ends in the dashboard instead of the login screen — and the initial device refresh actually runs (it was always rejected before, without a session).
+- **Unstyled settings and delete buttons**: `.card`, `.btn-danger` and `.btn-sm` were used but never defined, so settings sections had no card surface and delete buttons had no style.
+- **Frontend typecheck**: fixed the 8 remaining TypeScript errors; CI now runs `npm run typecheck`. The agent patching tab shows the package manager and major-upgrade hint from the latest update check (they were fetched but never displayed).
 - **Agent deployment froze the whole server**: SSH deploy/uninstall ran blocking paramiko calls on the event loop, so API, WebSockets and the scan scheduler stalled for the whole deployment. They now run in a worker thread.
 - **Agent cleanup hit unrelated software on target hosts**: The pre-install/uninstall cleanup stopped and disabled any `agent.service` and killed every process whose command line contained `agent.py`. It now only touches GravityLAN's own agents, and its `pkill` pattern no longer kills the invoking shell (which could abort deployments as `root`).
 - **Manual installer wiped the old agent before downloading**: The install script now downloads the agent and config first and only replaces the existing installation once both succeeded.

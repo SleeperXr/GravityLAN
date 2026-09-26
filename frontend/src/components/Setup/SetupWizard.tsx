@@ -1,12 +1,60 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, type FormEvent, type ReactNode } from 'react';
 import { api, createScanSocket } from '../../api/client';
 import type { SubnetInfo, ScanProgress } from '../../types';
-import { Network, Wifi, Zap, ChevronRight, Check, Search } from 'lucide-react';
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Info, Loader2, Network, Search, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { LanguageToggle } from '../LanguageToggle';
 
 interface SetupWizardProps {
   onComplete: () => void;
+}
+
+const STEP_KEYS = ['step_welcome', 'step_networks', 'step_scan', 'step_security'] as const;
+const SCAN_STEP = 2;
+const SECURITY_STEP = 3;
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Page frame: text logo and language switch above a centered panel. */
+function SetupShell({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <div className="setup-shell">
+      <header className="setup-shell__header">
+        <div className="sidebar-brand setup-shell__brand">
+          <span className="sidebar-brand__name">{t('app.title')}</span>
+          <span className="setup-shell__tag">{t('setup.first_run')}</span>
+        </div>
+        <LanguageToggle />
+      </header>
+      <main className="setup-panel">{children}</main>
+    </div>
+  );
+}
+
+/** `skipped`: a passed step that did not complete (scan skipped or failed), shown without a check. */
+function Stepper({ current, skipped }: { current: number; skipped?: number }) {
+  const { t } = useTranslation();
+  return (
+    <ol className="setup-stepper" aria-label={t('setup.steps_label')}>
+      {STEP_KEYS.map((key, index) => {
+        const state = index === skipped && index < current ? 'skipped'
+          : index < current ? 'done'
+          : index === current ? 'current'
+          : 'todo';
+        return (
+          <li key={key} className={`setup-stepper__item is-${state}`} aria-current={state === 'current' ? 'step' : undefined}>
+            <span className="setup-stepper__dot" aria-hidden="true">
+              {state === 'done' ? <Check size={12} strokeWidth={3} /> : state === 'skipped' ? '–' : index + 1}
+            </span>
+            <span className="setup-stepper__label">{t(`setup.${key}`)}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 export function SetupWizard({ onComplete }: SetupWizardProps) {
@@ -14,26 +62,44 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [subnets, setSubnets] = useState<SubnetInfo[]>([]);
+  const [subnetsLoading, setSubnetsLoading] = useState(true);
+  const [subnetError, setSubnetError] = useState<string | null>(null);
   const [selectedSubnets, setSelectedSubnets] = useState<string[]>([]);
-  const [dnsServer, setDnsServer] = useState<string>('');
-  const scanMode = 'fast' as const;
+  const [dnsServer, setDnsServer] = useState('');
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishProgress, setFinishProgress] = useState(0);
   const [finishStatus, setFinishStatus] = useState('');
-  const [adminPassword, setAdminPassword] = useState<string>('');
-  const [confirmPassword, setConfirmPassword] = useState<string>('');
-  const [error, setError] = useState<string | null>(null);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [finishError, setFinishError] = useState<string | null>(null);
+
+  const scanSocketRef = useRef<WebSocket | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const isFirstStep = useRef(true);
 
   useEffect(() => {
     api.getSubnets()
       .then((data) => {
         setSubnets(data);
-        // Auto-select all subnets
+        // Auto-select all detected subnets
         setSelectedSubnets(data.map((s) => s.subnet));
       })
-      .catch((err) => setError(`Failed to detect networks: ${err.message}`));
+      .catch((err) => setSubnetError(errorText(err)))
+      .finally(() => setSubnetsLoading(false));
   }, []);
+
+  // Close the progress socket if the wizard unmounts mid-scan
+  useEffect(() => () => scanSocketRef.current?.close(), []);
+
+  // Move focus to the new step's heading so keyboard and screen-reader users follow along
+  useEffect(() => {
+    if (isFirstStep.current) {
+      isFirstStep.current = false;
+      return;
+    }
+    headingRef.current?.focus();
+  }, [step]);
 
   const toggleSubnet = useCallback((subnet: string) => {
     setSelectedSubnets((prev) =>
@@ -44,39 +110,53 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const startScan = useCallback(async () => {
     if (selectedSubnets.length === 0) return;
 
-    setStep(2);
+    setStep(SCAN_STEP);
     setScanProgress({
       status: 'running',
       current_subnet: '',
       hosts_scanned: 0,
       hosts_total: 0,
       devices_found: 0,
-      message: t('setup.initializing_scan'),
+      message: '',
       timestamp: new Date().toISOString(),
     });
 
-    // Connect WebSocket for live updates
+    // Live progress over WebSocket
+    scanSocketRef.current?.close();
     const ws = createScanSocket((progress) => {
       setScanProgress(progress);
-      if (progress.status === 'completed' || progress.status === 'failed') {
+      if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
         ws.close();
       }
     });
+    scanSocketRef.current = ws;
 
     try {
-      await api.startScan({ subnets: selectedSubnets, mode: scanMode, dns_server: dnsServer || undefined });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      setError(message);
+      await api.startScan({ subnets: selectedSubnets, mode: 'fast', dns_server: dnsServer || undefined });
+    } catch (err) {
+      ws.close();
+      setScanProgress((prev) => prev && { ...prev, status: 'failed', message: errorText(err) });
     }
-  }, [selectedSubnets, scanMode, dnsServer]);
+  }, [selectedSubnets, dnsServer]);
 
-  const finishSetup = useCallback(async () => {
-    if (adminPassword && adminPassword !== confirmPassword) {
-      setError(t('setup.passwords_dont_match', "Passwords don't match!"));
-      return;
+  const abortScan = async () => {
+    try {
+      await api.stopScan();
+    } catch (err) {
+      console.warn('Stopping the scan failed:', err);
     }
+    scanSocketRef.current?.close();
+    setScanProgress((prev) => (prev && prev.status === 'running' ? { ...prev, status: 'cancelled' } : prev));
+  };
 
+  const passwordsMismatch = adminPassword !== '' && confirmPassword !== '' && adminPassword !== confirmPassword;
+  const canFinish = adminPassword !== '' && adminPassword === confirmPassword;
+
+  const finishSetup = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!canFinish) return;
+
+    setFinishError(null);
     setIsFinishing(true);
     setFinishProgress(10);
     setFinishStatus(t('setup.saving_configuration'));
@@ -84,331 +164,312 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     try {
       await api.completeSetup({
         dns_server: dnsServer || undefined,
-        admin_password: adminPassword || undefined,
+        admin_password: adminPassword,
       });
-
-      setFinishProgress(40);
-      setFinishStatus(t('setup.stabilizing_backend'));
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      setFinishProgress(65);
-      setFinishStatus(t('setup.scanning_network'));
-      try {
-        await api.refreshAllDevices();
-      } catch (e) {
-        console.warn('Initial refresh trigger failed, but setup is complete:', e);
-      }
-
-      setFinishProgress(90);
-      setFinishStatus(t('setup.almost_done'));
-      await new Promise(resolve => setTimeout(resolve, 600));
-
-      setFinishProgress(100);
-      setFinishStatus(t('setup.welcome_done'));
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      onComplete();
-      navigate('/', { replace: true });
     } catch (err) {
       console.error('Final setup step failed:', err);
-      onComplete();
-      navigate('/', { replace: true });
+      // Stay in the wizard: without the saved password the dashboard can't be used
+      setIsFinishing(false);
+      setFinishError(errorText(err));
+      return;
     }
-  }, [onComplete, dnsServer, adminPassword, confirmPassword]);
 
-  const steps = [
-    // Step 0: Welcome
-    <div key="welcome" className="setup-wizard__step">
-      <div style={{ textAlign: 'center', marginBottom: 'var(--space-xl)' }}>
-        <div style={{
-          width: 80, height: 80, borderRadius: 'var(--radius-xl)',
-          background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          margin: '0 auto var(--space-lg)', fontSize: '2rem',
-        }}>
-          🏠
-        </div>
-        <h1 className="setup-wizard__title">{t('setup.welcome_title')}</h1>
-        <p className="setup-wizard__subtitle">
-          {t('setup.welcome_description')}
-        </p>
-      </div>
+    // Completing setup opens no session: sign in with the new password so the wizard ends in
+    // the dashboard (not the login screen) and the initial refresh below is authorised
+    try {
+      await api.login(adminPassword);
+    } catch (err) {
+      console.warn('Automatic sign-in after setup failed, the login screen will ask:', err);
+    }
 
-      <div className="card" style={{ marginBottom: 'var(--space-md)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-          <Search size={24} color="var(--accent-primary)" />
+    setFinishProgress(40);
+    setFinishStatus(t('setup.stabilizing_backend'));
+    await wait(1500);
+
+    setFinishProgress(65);
+    setFinishStatus(t('setup.scanning_network'));
+    try {
+      await api.refreshAllDevices();
+    } catch (err) {
+      console.warn('Initial refresh trigger failed, but setup is complete:', err);
+    }
+
+    setFinishProgress(90);
+    setFinishStatus(t('setup.almost_done'));
+    await wait(600);
+
+    setFinishProgress(100);
+    setFinishStatus(t('setup.welcome_done'));
+    await wait(500);
+
+    onComplete();
+    navigate('/', { replace: true });
+  };
+
+  const heading = (text: string) => (
+    <h1 className="setup-step__title" id="setup-step-title" ref={headingRef} tabIndex={-1}>{text}</h1>
+  );
+
+  const renderWelcome = () => (
+    <div className="setup-step">
+      {heading(t('setup.welcome_title'))}
+      <p className="setup-step__lead">{t('setup.welcome_description')}</p>
+
+      <ul className="setup-features">
+        <li>
+          <span className="setup-features__icon" aria-hidden="true"><Search size={18} /></span>
           <div>
             <strong>{t('setup.auto_detection')}</strong>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: 4 }}>
-              {t('setup.auto_detection_desc')}
-            </p>
+            <p>{t('setup.auto_detection_desc')}</p>
           </div>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-          <Wifi size={24} color="var(--accent-secondary)" />
+        </li>
+        <li>
+          <span className="setup-features__icon" aria-hidden="true"><Zap size={18} /></span>
           <div>
             <strong>{t('setup.direct_access')}</strong>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: 4 }}>
-              {t('setup.direct_access_desc')}
-            </p>
+            <p>{t('setup.direct_access_desc')}</p>
           </div>
-        </div>
+        </li>
+      </ul>
+
+      <div className="setup-actions">
+        <button type="button" className="btn btn-primary" onClick={() => setStep(1)}>
+          {t('common.next')} <ChevronRight size={18} aria-hidden="true" />
+        </button>
       </div>
+    </div>
+  );
 
-      <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={() => setStep(1)}>
-        {t('common.next')} <ChevronRight size={18} />
-      </button>
-    </div>,
+  const renderNetworks = () => (
+    <div className="setup-step">
+      {heading(t('setup.select_networks_title'))}
+      <p className="setup-step__lead">{t('setup.select_networks_desc')}</p>
 
-    // Step 1: Subnet Selection
-    <div key="subnets" className="setup-wizard__step">
-      <h2 className="setup-wizard__title">{t('setup.select_networks_title')}</h2>
-      <p className="setup-wizard__subtitle">
-        {t('setup.select_networks_desc')}
-      </p>
-
-      {error && (
-        <div style={{
-          padding: 'var(--space-md)', background: 'rgba(252, 92, 101, 0.1)',
-          border: '1px solid var(--accent-danger)', borderRadius: 'var(--radius-md)',
-          color: 'var(--accent-danger)', marginBottom: 'var(--space-md)',
-        }}>
-          {error}
+      {subnetError && (
+        <div className="callout callout--danger" role="alert">
+          <AlertTriangle size={16} className="callout__icon" aria-hidden="true" />
+          <p className="callout__body">{t('setup.networks_failed', { error: subnetError })}</p>
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginBottom: 'var(--space-xl)' }}>
-        {subnets.map((subnet) => (
-          <div
-            key={subnet.subnet}
-            className={`checkbox-card ${selectedSubnets.includes(subnet.subnet) ? 'selected' : ''}`}
-            onClick={() => toggleSubnet(subnet.subnet)}
-          >
-            <input
-              type="checkbox"
-              checked={selectedSubnets.includes(subnet.subnet)}
-              onChange={() => toggleSubnet(subnet.subnet)}
-              style={{ accentColor: 'var(--accent-primary)' }}
-            />
-            <Network size={20} color="var(--accent-primary)" />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600 }}>{subnet.subnet}</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                {subnet.interface_name} — {subnet.ip_address}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="card" style={{ marginBottom: 'var(--space-xl)', border: '1px solid var(--border-subtle)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
-          <Search size={20} color="var(--accent-primary)" />
-          <div style={{ fontWeight: 600 }}>{t('setup.dns_title')}</div>
-        </div>
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
-          {t('setup.dns_desc')}
+      {subnetsLoading ? (
+        <p className="setup-loading" role="status">
+          <Loader2 size={16} className="animate-spin" aria-hidden="true" /> {t('setup.detecting_networks')}
         </p>
-        <input 
-          type="text" 
-          className="input" 
-          placeholder="z.B. 192.168.100.2" 
-          value={dnsServer} 
+      ) : subnets.length === 0 ? (
+        !subnetError && <p className="settings-empty">{t('setup.no_networks')}</p>
+      ) : (
+        <div className="setup-choices" role="group" aria-labelledby="setup-step-title">
+          {subnets.map((subnet) => {
+            const checked = selectedSubnets.includes(subnet.subnet);
+            return (
+              <label key={subnet.subnet} className={`setup-choice${checked ? ' is-selected' : ''}`}>
+                <input type="checkbox" checked={checked} onChange={() => toggleSubnet(subnet.subnet)} />
+                <Network size={18} className="setup-choice__icon" aria-hidden="true" />
+                <span className="setup-choice__text">
+                  <span className="setup-choice__title">{subnet.subnet}</span>
+                  <span className="setup-choice__meta">{subnet.interface_name} · {subnet.ip_address}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="settings-field">
+        <label className="form-label" htmlFor="setup-dns">{t('setup.dns_label')}</label>
+        <input
+          id="setup-dns"
+          className="input input--mono"
+          placeholder="192.168.1.1"
+          value={dnsServer}
           onChange={(e) => setDnsServer(e.target.value)}
-          style={{ width: '100%' }}
+          aria-describedby="setup-dns-hint"
         />
+        <p className="field-hint" id="setup-dns-hint">{t('setup.dns_desc')}</p>
       </div>
 
-      <button
-        className="btn btn-primary btn-lg"
-        style={{ width: '100%' }}
-        onClick={startScan}
-        disabled={selectedSubnets.length === 0}
-      >
-        {t('dashboard.start_scan')} <ChevronRight size={18} />
-      </button>
-    </div>,
-
-    // Step 2: Scan Progress
-    <div key="scanning" className="setup-wizard__step">
-      <h2 className="setup-wizard__title">
-        {scanProgress?.status === 'completed' ? `✅ ${t('setup.scan_completed')}` : `🔍 ${t('setup.scan_in_progress')}`}
-      </h2>
-      <p className="setup-wizard__subtitle">
-        {scanProgress?.message || t('common.loading')}
-      </p>
-
-      {/* Progress Bar */}
-      {scanProgress && scanProgress.hosts_total > 0 && (
-        <div style={{ marginBottom: 'var(--space-xl)' }}>
-          <div className="progress-bar">
-            <div
-              className="progress-bar__fill"
-              style={{
-                width: `${Math.round((scanProgress.hosts_scanned / scanProgress.hosts_total) * 100)}%`,
-              }}
-            />
-          </div>
-          <div style={{
-            display: 'flex', justifyContent: 'space-between',
-            marginTop: 'var(--space-sm)', fontSize: '0.8rem', color: 'var(--text-secondary)',
-          }}>
-            <span>{scanProgress.hosts_scanned} / {scanProgress.hosts_total} Hosts</span>
-            <span>{t('setup.devices_found', { count: scanProgress.devices_found })}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Devices Found Counter */}
-      <div className="card" style={{ textAlign: 'center', marginBottom: 'var(--space-xl)' }}>
-        <div style={{ fontSize: '3rem', fontWeight: 700, color: 'var(--accent-primary)' }}>
-          {scanProgress?.devices_found || 0}
-        </div>
-        <div style={{ color: 'var(--text-secondary)' }}>{t('setup.devices_found', { count: scanProgress?.devices_found || 0 })}</div>
+      <div className="setup-actions">
+        <button type="button" className="btn btn-secondary" onClick={() => setStep(0)}>
+          <ChevronLeft size={18} aria-hidden="true" /> {t('common.back')}
+        </button>
+        {!subnetsLoading && selectedSubnets.length === 0 ? (
+          <button type="button" className="btn btn-primary" onClick={() => setStep(SECURITY_STEP)}>
+            {t('setup.skip_scan')} <ChevronRight size={18} aria-hidden="true" />
+          </button>
+        ) : (
+          <button type="button" className="btn btn-primary" onClick={startScan} disabled={subnetsLoading}>
+            {t('dashboard.start_scan')} <ChevronRight size={18} aria-hidden="true" />
+          </button>
+        )}
       </div>
+    </div>
+  );
 
-      {scanProgress?.status === 'completed' && (
-        <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={() => setStep(3)}>
-          {t('common.next')} <ChevronRight size={18} />
-        </button>
-      )}
+  const renderScan = () => {
+    const status = scanProgress?.status ?? 'running';
+    const isRunning = status === 'running' || status === 'idle';
+    const scanned = scanProgress?.hosts_scanned ?? 0;
+    const total = scanProgress?.hosts_total ?? 0;
+    const percent = total > 0 ? Math.round((scanned / total) * 100) : null;
+    // A scan that failed before checking any host has no numbers worth showing
+    const showProgress = isRunning || status === 'completed' || scanned > 0;
+    const title =
+      status === 'completed' ? t('setup.scan_completed')
+      : status === 'failed' ? t('setup.scan_failed')
+      : status === 'cancelled' ? t('setup.scan_cancelled')
+      : t('setup.scan_in_progress');
 
-      {scanProgress?.status === 'running' && (
-        <button className="btn btn-secondary" style={{ width: '100%' }} onClick={() => api.stopScan()}>
-          {t('setup.abort_scan')}
-        </button>
-      )}
-    </div>,
+    return (
+      <div className="setup-step">
+        {heading(title)}
+        <p className="setup-step__lead" role="status">
+          {scanProgress?.message || (isRunning ? t('setup.initializing_scan') : '')}
+        </p>
 
-    // Step 3: Security Setup
-    <div key="security" className="setup-wizard__step">
-      <h2 className="setup-wizard__title">{t('setup.security_title')}</h2>
-      <p className="setup-wizard__subtitle">
-        {t('setup.security_desc')}
-      </p>
+        {showProgress && <div className="setup-scan">
+          <div
+            className={`progress-bar${percent === null && isRunning ? ' is-indeterminate' : ''}`}
+            role="progressbar"
+            aria-label={t('setup.scan_progress_label')}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent ?? undefined}
+          >
+            <div className="progress-bar__fill" style={percent !== null ? { width: `${percent}%` } : undefined} />
+          </div>
+          <dl className="setup-scan__stats">
+            <div>
+              <dt>{t('setup.hosts_checked')}</dt>
+              <dd>{scanned} / {total}</dd>
+            </div>
+            <div>
+              <dt>{t('setup.devices_label')}</dt>
+              <dd className="is-accent">{scanProgress?.devices_found ?? 0}</dd>
+            </div>
+          </dl>
+        </div>}
 
-      {error && (
-        <div style={{
-          padding: 'var(--space-md)', background: 'rgba(252, 92, 101, 0.1)',
-          border: '1px solid var(--accent-danger)', borderRadius: 'var(--radius-md)',
-          color: 'var(--accent-danger)', marginBottom: 'var(--space-md)',
-        }} onClick={() => setError(null)}>
-          {error}
-        </div>
-      )}
+        {(status === 'failed' || status === 'cancelled') && (
+          <div className="callout callout--info">
+            <Info size={16} className="callout__icon" aria-hidden="true" />
+            <p className="callout__body">{t('setup.scan_later_hint')}</p>
+          </div>
+        )}
 
-      <div className="card" style={{ marginBottom: 'var(--space-xl)', border: '1px solid var(--border-subtle)' }}>
-        <div style={{ marginBottom: 'var(--space-md)' }}>
-          <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontSize: '0.875rem', fontWeight: 600 }}>
-            {t('setup.admin_password')}
-          </label>
-          <input 
-            type="password" 
-            className={`input ${adminPassword && confirmPassword && adminPassword !== confirmPassword ? 'input--error' : ''}`}
-            placeholder={t('setup.password_placeholder')} 
-            value={adminPassword} 
-            onChange={(e) => setAdminPassword(e.target.value)}
-            style={{ 
-              width: '100%',
-              borderColor: adminPassword && confirmPassword && adminPassword !== confirmPassword ? 'var(--accent-danger)' : undefined
-            }}
-          />
-        </div>
-        <div>
-          <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontSize: '0.875rem', fontWeight: 600 }}>
-            {t('setup.confirm_password')}
-          </label>
-          <input 
-            type="password" 
-            className={`input ${adminPassword && confirmPassword && adminPassword !== confirmPassword ? 'input--error' : ''}`}
-            placeholder={t('setup.password_confirm_placeholder')} 
-            value={confirmPassword} 
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            style={{ 
-              width: '100%',
-              borderColor: adminPassword && confirmPassword && adminPassword !== confirmPassword ? 'var(--accent-danger)' : undefined
-            }}
-          />
-          {adminPassword && confirmPassword && adminPassword !== confirmPassword && (
-            <p style={{ color: 'var(--accent-danger)', fontSize: '0.75rem', marginTop: 'var(--space-xs)' }}>
-              ⚠️ {t('setup.passwords_dont_match')}
-            </p>
+        <div className="setup-actions">
+          {isRunning ? (
+            <button type="button" className="btn btn-secondary" onClick={abortScan}>
+              {t('setup.abort_scan')}
+            </button>
+          ) : status === 'completed' ? (
+            <button type="button" className="btn btn-primary" onClick={() => setStep(SECURITY_STEP)}>
+              {t('common.next')} <ChevronRight size={18} aria-hidden="true" />
+            </button>
+          ) : (
+            <>
+              <button type="button" className="btn btn-secondary" onClick={() => setStep(1)}>
+                <ChevronLeft size={18} aria-hidden="true" /> {t('common.back')}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => setStep(SECURITY_STEP)}>
+                {t('setup.continue_without_scan')} <ChevronRight size={18} aria-hidden="true" />
+              </button>
+            </>
           )}
         </div>
       </div>
+    );
+  };
 
-      <div style={{ 
-        padding: 'var(--space-md)', 
-        background: 'rgba(245, 158, 11, 0.1)', 
-        borderRadius: 'var(--radius-md)', 
-        color: '#f59e0b',
-        fontSize: '0.8rem',
-        marginBottom: 'var(--space-xl)',
-        display: 'flex',
-        gap: 'var(--space-sm)'
-      }}>
-        <Zap size={16} style={{ flexShrink: 0 }} />
-        <p>{t('setup.password_hint')}</p>
+  const renderSecurity = () => (
+    <form className="setup-step" onSubmit={finishSetup} noValidate>
+      {heading(t('setup.security_title'))}
+      <p className="setup-step__lead">{t('setup.security_desc')}</p>
+
+      <div className="settings-field">
+        <label className="form-label" htmlFor="setup-password">{t('setup.admin_password')}</label>
+        <input
+          id="setup-password"
+          type="password"
+          className="input"
+          autoComplete="new-password"
+          placeholder={t('setup.password_placeholder')}
+          value={adminPassword}
+          onChange={(e) => setAdminPassword(e.target.value)}
+        />
+      </div>
+      <div className="settings-field">
+        <label className="form-label" htmlFor="setup-password-confirm">{t('setup.confirm_password')}</label>
+        <input
+          id="setup-password-confirm"
+          type="password"
+          className={`input${passwordsMismatch ? ' input--error' : ''}`}
+          autoComplete="new-password"
+          placeholder={t('setup.password_confirm_placeholder')}
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          aria-invalid={passwordsMismatch}
+          aria-describedby={passwordsMismatch ? 'setup-password-error' : undefined}
+        />
+        {passwordsMismatch && (
+          <p className="field-error" id="setup-password-error" role="alert">{t('setup.passwords_dont_match')}</p>
+        )}
       </div>
 
-      <button 
-        className="btn btn-primary btn-lg" 
-        style={{ width: '100%' }} 
-        onClick={finishSetup}
-        disabled={!adminPassword || adminPassword !== confirmPassword}
-      >
-        <Check size={18} /> {t('common.finish')}
-      </button>
-    </div>,
-  ];
+      <div className="callout callout--info">
+        <Info size={16} className="callout__icon" aria-hidden="true" />
+        <p className="callout__body">{t('setup.password_hint')}</p>
+      </div>
+
+      {finishError && (
+        <div className="callout callout--danger" role="alert">
+          <AlertTriangle size={16} className="callout__icon" aria-hidden="true" />
+          <p className="callout__body">{t('setup.finish_failed', { error: finishError })}</p>
+        </div>
+      )}
+
+      <div className="setup-actions">
+        <button type="button" className="btn btn-secondary" onClick={() => setStep(scanProgress ? SCAN_STEP : 1)}>
+          <ChevronLeft size={18} aria-hidden="true" /> {t('common.back')}
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={!canFinish}>
+          <Check size={18} aria-hidden="true" /> {t('common.finish')}
+        </button>
+      </div>
+    </form>
+  );
 
   if (isFinishing) {
     return (
-      <div className="setup-wizard" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="setup-wizard__step" style={{ textAlign: 'center' }}>
-          <div style={{
-            width: 80, height: 80, borderRadius: 'var(--radius-xl)',
-            background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto var(--space-lg)', fontSize: '2rem',
-            animation: 'pulse 1.5s ease-in-out infinite',
-          }}>
-            🚀
+      <SetupShell>
+        <div className="setup-step setup-step--center">
+          <span className="setup-finish__icon" aria-hidden="true">
+            {finishProgress >= 100 ? <Check size={22} /> : <Loader2 size={22} className="animate-spin" />}
+          </span>
+          <h1 className="setup-step__title">{t('setup.welcome_title')}</h1>
+          <p className="setup-step__lead" role="status">{finishStatus}</p>
+          <div
+            className="progress-bar"
+            role="progressbar"
+            aria-label={t('setup.finish_progress_label')}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={finishProgress}
+          >
+            <div className="progress-bar__fill" style={{ width: `${finishProgress}%` }} />
           </div>
-          <h2 className="setup-wizard__title">{t('setup.welcome_title')}</h2>
-          <p className="setup-wizard__subtitle" style={{ minHeight: '1.5rem' }}>
-            {finishStatus}
-          </p>
-
-          {/* Progress Bar */}
-          <div style={{
-            width: '100%', height: 8, background: 'var(--bg-input)',
-            borderRadius: 'var(--radius-full)', overflow: 'hidden',
-            margin: 'var(--space-xl) 0 var(--space-md)',
-          }}>
-            <div style={{
-              height: '100%',
-              width: `${finishProgress}%`,
-              background: 'linear-gradient(90deg, var(--accent-primary), var(--accent-secondary))',
-              borderRadius: 'var(--radius-full)',
-              transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
-              boxShadow: '0 0 12px var(--accent-primary)',
-            }} />
-          </div>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}>
-            {finishProgress}%
-          </p>
+          <p className="setup-finish__percent">{finishProgress}%</p>
         </div>
-      </div>
+      </SetupShell>
     );
   }
 
+  const renderers = [renderWelcome, renderNetworks, renderScan, renderSecurity];
+
   return (
-    <div className="setup-wizard">
-      {steps[step]}
-    </div>
+    <SetupShell>
+      <Stepper current={step} skipped={scanProgress?.status === 'completed' ? undefined : SCAN_STEP} />
+      {renderers[step]()}
+    </SetupShell>
   );
 }

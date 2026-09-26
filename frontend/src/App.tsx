@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { api } from './api/client';
 import { useTranslation } from 'react-i18next';
+import { Loader2 } from 'lucide-react';
 import { SetupWizard } from './components/Setup/SetupWizard';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { SubnetView } from './components/Network/SubnetView';
@@ -46,20 +47,12 @@ function App() {
 
   if (isSetupComplete === null) {
     return (
-      <div style={{ 
-        height: '100vh', 
-        display: 'flex', 
-        flexDirection: 'column',
-        alignItems: 'center', 
-        justifyContent: 'center',
-        background: '#0f172a',
-        color: 'white',
-        fontFamily: 'sans-serif'
-      }}>
-        <div style={{ marginBottom: '20px', fontSize: '1.2rem', fontWeight: 'bold' }}>GravityLAN</div>
-        <div className="spinning" style={{ marginBottom: '10px' }}>⏳</div>
-        <div>{t('app_status.initializing')}</div>
-        <div style={{ marginTop: '20px', fontSize: '0.7rem', color: '#475569' }}>
+      <div className="app-boot" role="status">
+        <span className="sidebar-brand__name">{t('app.title')}</span>
+        <div className="app-boot__status">
+          <Loader2 size={16} className="animate-spin" aria-hidden="true" /> {t('app_status.initializing')}
+        </div>
+        <div className="app-boot__hint">
           {t('app_status.checking_setup', { origin: window.location.origin })}
         </div>
       </div>

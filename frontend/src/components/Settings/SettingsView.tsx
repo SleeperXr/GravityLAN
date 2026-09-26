@@ -1,175 +1,298 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
-import type { DeviceGroup } from '../../types';
-import { 
-  Palette, Grid, Trash2, Plus, Save, AlertTriangle, Database, Activity, Globe, Check, Download, Upload, Key
+import type { ApiTokenResponse, DeviceGroup } from '../../types';
+import {
+  AlertTriangle, Check, Copy, Database, Download, FileText, Loader2, Plus, Trash2, Upload
 } from 'lucide-react';
 
 import { Sidebar } from '../Sidebar';
 import { useTranslation } from 'react-i18next';
 import { MobileHeader } from '../MobileHeader';
+import { LanguageToggle } from '../LanguageToggle';
+import { useToast } from '../../context/ToastContext';
 
-const copyToClipboard = (text: string, onSuccess: () => void) => {
+async function copyToClipboard(text: string): Promise<boolean> {
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text)
-      .then(onSuccess)
-      .catch((err) => {
-        console.error('Failed to copy text: ', err);
-        fallbackCopyToClipboard(text, onSuccess);
-      });
-  } else {
-    fallbackCopyToClipboard(text, onSuccess);
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
   }
-};
+  return fallbackCopyToClipboard(text);
+}
 
-const fallbackCopyToClipboard = (text: string, onSuccess: () => void) => {
-  const textArea = document.createElement("textarea");
+// Plain-HTTP installs have no Clipboard API, so fall back to execCommand
+function fallbackCopyToClipboard(text: string): boolean {
+  const textArea = document.createElement('textarea');
   textArea.value = text;
-  textArea.style.top = "0";
-  textArea.style.left = "0";
-  textArea.style.position = "fixed";
-  textArea.style.opacity = "0";
+  textArea.style.top = '0';
+  textArea.style.left = '0';
+  textArea.style.position = 'fixed';
+  textArea.style.opacity = '0';
   document.body.appendChild(textArea);
   textArea.focus();
   textArea.select();
+  let copied = false;
   try {
-    const successful = document.execCommand('copy');
-    if (successful) {
-      onSuccess();
-    } else {
-      console.error('Fallback copy failed');
-      alert('Failed to copy to clipboard');
-    }
+    copied = document.execCommand('copy');
   } catch (err) {
-    console.error('Fallback: Oops, unable to copy', err);
-    alert('Failed to copy to clipboard');
+    console.error('Fallback: unable to copy', err);
   }
   document.body.removeChild(textArea);
+  return copied;
+}
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** Settings saved together through the save bar, keyed as the backend stores them. */
+type SettingsForm = {
+  scan_interval: string;
+  quick_scan_interval: string;
+  scan_subnets: string;
+  scan_timeout: string;
+  'dns.server': string;
+  history_retention_days: string;
+  server_url_override: string;
+  'system.log_level': string;
 };
+
+const DEFAULT_FORM: SettingsForm = {
+  scan_interval: '0',
+  quick_scan_interval: '300',
+  scan_subnets: '',
+  scan_timeout: '1.5',
+  'dns.server': '',
+  history_retention_days: '7',
+  server_url_override: '',
+  'system.log_level': 'info',
+};
+
+const FORM_KEYS = Object.keys(DEFAULT_FORM) as (keyof SettingsForm)[];
+
+function toForm(settings: Record<string, string>): SettingsForm {
+  const form = { ...DEFAULT_FORM };
+  for (const key of FORM_KEYS) {
+    if (settings[key]) form[key] = settings[key];
+  }
+  return form;
+}
+
+/** One settings block: title and explanation on the left, controls on the right (stacked on phones). */
+function SettingsSection({ id, title, description, tone, children }: {
+  id: string;
+  title: string;
+  description?: string;
+  tone?: 'danger';
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className={`settings-section${tone === 'danger' ? ' settings-section--danger' : ''}`}
+      aria-labelledby={`${id}-title`}
+    >
+      <div className="settings-section__intro">
+        <h2 id={`${id}-title`}>{title}</h2>
+        {description && <p>{description}</p>}
+      </div>
+      <div className="settings-section__body">{children}</div>
+    </section>
+  );
+}
+
+function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="settings-field">
+      <label className="form-label" htmlFor={id}>{label}</label>
+      {children}
+      {hint && <p className="field-hint" id={`${id}-hint`}>{hint}</p>}
+    </div>
+  );
+}
+
+function UnitField({ id, label, hint, unit, value, onChange, step }: {
+  id: string;
+  label: string;
+  hint: string;
+  unit: string;
+  value: string;
+  onChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  step?: number;
+}) {
+  return (
+    <Field id={id} label={label} hint={hint}>
+      <div className="input-affix">
+        <input
+          id={id}
+          type="number"
+          inputMode={step && step < 1 ? 'decimal' : 'numeric'}
+          className="input"
+          value={value}
+          onChange={onChange}
+          min={0}
+          step={step}
+          aria-describedby={`${id}-unit ${id}-hint`}
+        />
+        <span className="input-affix__suffix" id={`${id}-unit`}>{unit}</span>
+      </div>
+    </Field>
+  );
+}
+
+function ActionRow({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+  return (
+    <div className="settings-action-row">
+      <div className="settings-action-row__text">
+        <div className="settings-action-row__title">{title}</div>
+        <p className="field-hint">{description}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 export function SettingsView() {
   const { t, i18n } = useTranslation();
+  const { showToast } = useToast();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const [form, setForm] = useState<SettingsForm>(DEFAULT_FORM);
+  const [savedForm, setSavedForm] = useState<SettingsForm>(DEFAULT_FORM);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
-  const [tokens, setTokens] = useState<any[]>([]);
+
+  const [tokens, setTokens] = useState<ApiTokenResponse[]>([]);
   const [newTokenName, setNewTokenName] = useState('');
   const [createdToken, setCreatedToken] = useState('');
   const [isCreatingToken, setIsCreatingToken] = useState(false);
 
-  useEffect(() => {
-    loadGroups();
-    loadSettings();
-    loadTokens();
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState(false);
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const loaded = toForm(await api.getSettings());
+      setForm(loaded);
+      setSavedForm(loaded);
+    } catch (err) {
+      console.error('Failed to load settings:', err);
+    }
   }, []);
 
-  const loadTokens = async () => {
+  const loadGroups = useCallback(async () => {
     try {
-      const data = await api.getApiTokens();
-      setTokens(data);
+      setGroups(await api.getGroups());
+    } catch (err) {
+      console.error('Failed to load groups:', err);
+    }
+  }, []);
+
+  const loadTokens = useCallback(async () => {
+    try {
+      setTokens(await api.getApiTokens());
     } catch (err) {
       console.error('Failed to load API tokens:', err);
     }
+  }, []);
+
+  useEffect(() => {
+    loadSettings();
+    loadGroups();
+    loadTokens();
+  }, [loadSettings, loadGroups, loadTokens]);
+
+  const isDirty = FORM_KEYS.some((key) => form[key] !== savedForm[key]);
+
+  const setField = (key: keyof SettingsForm) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { value } = e.target;
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setSaveStatus((status) => (status === 'saving' ? status : 'idle'));
   };
 
-  const handleCreateToken = async () => {
-    if (!newTokenName.trim()) return;
+  const handleSaveSettings = async () => {
+    setSaveStatus('saving');
+    try {
+      await api.updateSettings(form);
+      await loadSettings();
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus((status) => (status === 'saved' ? 'idle' : status)), 3000);
+    } catch (err) {
+      console.error('Save failed:', err);
+      setSaveStatus('error');
+    }
+  };
+
+  const handleDiscard = () => {
+    setForm(savedForm);
+    setSaveStatus('idle');
+  };
+
+  const handleCreateGroup = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = newGroupName.trim();
+    if (!name) return;
+    try {
+      await api.createGroup({ name, icon: 'folder' });
+      setNewGroupName('');
+      loadGroups();
+    } catch (err) {
+      showToast('error', t('common.error'), `${t('settings.group_failed')} ${errorText(err)}`);
+    }
+  };
+
+  const handleDeleteGroup = async (id: number) => {
+    if (!confirm(t('settings.delete_group_confirm'))) return;
+    try {
+      await api.deleteGroup(id);
+      loadGroups();
+    } catch (err) {
+      showToast('error', t('common.error'), `${t('settings.group_failed')} ${errorText(err)}`);
+    }
+  };
+
+  const handleCreateToken = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = newTokenName.trim();
+    if (!name) return;
     setIsCreatingToken(true);
     setCreatedToken('');
     try {
-      const res = await api.createApiToken(newTokenName);
+      const res = await api.createApiToken(name);
       setCreatedToken(res.token);
       setNewTokenName('');
       loadTokens();
     } catch (err) {
       console.error('Failed to create token:', err);
-      alert('Failed to generate token: ' + err);
+      showToast('error', t('common.error'), `${t('settings.token_create_failed')} ${errorText(err)}`);
     } finally {
       setIsCreatingToken(false);
     }
   };
 
-  const handleDeleteToken = async (id: number) => {
+  const handleCopyToken = async () => {
+    if (await copyToClipboard(createdToken)) {
+      showToast('success', t('common.success'), t('notifications.copied'));
+    } else {
+      showToast('error', t('common.error'), t('settings.copy_failed'));
+    }
+  };
+
+  const handleDeleteToken = async (token: ApiTokenResponse) => {
     if (!confirm(t('settings.delete_token_confirm'))) return;
     try {
-      await api.deleteApiToken(id);
+      await api.deleteApiToken(token.id);
+      showToast('success', t('common.success'), t('settings.token_revoked'));
       loadTokens();
     } catch (err) {
       console.error('Failed to delete token:', err);
-      alert('Failed to revoke token: ' + err);
+      showToast('error', t('common.error'), `${t('settings.token_revoke_failed')} ${errorText(err)}`);
     }
   };
-
-  const [scanInterval, setScanInterval] = useState('0');
-  const [quickScanInterval, setQuickScanInterval] = useState('300');
-  const [scanSubnets, setScanSubnets] = useState('');
-  const [retentionDays, setRetentionDays] = useState('7');
-  const [dnsServer, setDnsServer] = useState('');
-  const [serverUrlOverride, setServerUrlOverride] = useState('');
-  const [logLevel, setLogLevel] = useState('info');
-  const [scanTimeout, setScanTimeout] = useState('1.5');
-
-  const loadSettings = async () => {
-    try {
-      const settings = await api.getSettings();
-      if (settings.scan_interval) setScanInterval(settings.scan_interval);
-      if (settings.quick_scan_interval) setQuickScanInterval(settings.quick_scan_interval);
-      if (settings.scan_subnets) setScanSubnets(settings.scan_subnets);
-      if (settings.history_retention_days) setRetentionDays(settings.history_retention_days);
-      if (settings['dns.server']) setDnsServer(settings['dns.server']);
-      if (settings['server_url_override']) setServerUrlOverride(settings['server_url_override']);
-      if (settings['system.log_level']) setLogLevel(settings['system.log_level']);
-      if (settings['scan_timeout']) setScanTimeout(settings['scan_timeout']);
-    } catch (err) {
-      console.error('Failed to load settings:', err);
-    }
-  };
-
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-
-  const handleSaveSettings = async () => {
-    setSaveStatus('saving');
-    try {
-      await api.updateSettings({
-        scan_interval: scanInterval,
-        quick_scan_interval: quickScanInterval,
-        scan_subnets: scanSubnets,
-        history_retention_days: retentionDays,
-        'dns.server': dnsServer,
-        'server_url_override': serverUrlOverride,
-        'system.log_level': logLevel,
-        'scan_timeout': scanTimeout
-      });
-      setSaveStatus('saved');
-      await loadSettings();
-      setTimeout(() => setSaveStatus('idle'), 3000);
-    } catch (err) {
-      console.error('Save failed:', err);
-      setSaveStatus('error');
-      setTimeout(() => setSaveStatus('idle'), 5000);
-    }
-  };
-
-  const loadGroups = async () => {
-    const data = await api.getGroups();
-    setGroups(data);
-  };
-
-  const handleCreateGroup = async () => {
-    if (!newGroupName.trim()) return;
-    await api.createGroup({ name: newGroupName, icon: 'folder' });
-    setNewGroupName('');
-    loadGroups();
-  };
-
-  const handleDeleteGroup = async (id: number) => {
-    if (!confirm(t('settings.delete_group_confirm'))) return;
-    await api.deleteGroup(id);
-    loadGroups();
-  };
-
-  const [isExporting, setIsExporting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -186,13 +309,13 @@ export function SettingsView() {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Export failed:', err);
-      alert(t('settings.export_failed') + err);
+      showToast('error', t('common.error'), t('settings.export_failed') + errorText(err));
     } finally {
       setIsExporting(false);
     }
   };
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -204,439 +327,319 @@ export function SettingsView() {
     setIsImporting(true);
     try {
       await api.importBackup(file);
+      // The page reloads right away, so a toast would not be seen
       alert(t('settings.import_success'));
       window.location.reload();
     } catch (err) {
       console.error('Import failed:', err);
-      alert(t('settings.import_failed') + err);
+      showToast('error', t('common.error'), t('settings.import_failed') + errorText(err));
     } finally {
       setIsImporting(false);
       e.target.value = '';
     }
   };
 
-  const [resetConfirm, setResetConfirm] = useState(false);
   const handleResetDB = async () => {
-    console.log('Reset DB triggered. Current confirm state:', resetConfirm);
-    
+    // Two-step: the first click arms the button for 5 s
     if (!resetConfirm) {
       setResetConfirm(true);
-      setTimeout(() => setResetConfirm(false), 5000); // Reset after 5s
+      setTimeout(() => setResetConfirm(false), 5000);
       return;
     }
 
     try {
-      console.log('Sending reset request to backend...');
       await api.resetDatabase();
       alert(t('settings.reset_success'));
       window.location.reload();
     } catch (err) {
       console.error('Reset failed:', err);
-      alert(t('settings.reset_failed') + ': ' + err);
+      showToast('error', t('common.error'), `${t('settings.reset_failed')}: ${errorText(err)}`);
     }
   };
+
+  const formatDate = (iso: string) => new Date(iso).toLocaleDateString(i18n.resolvedLanguage);
+  const formatDateTime = (iso: string) => new Date(iso).toLocaleString(i18n.resolvedLanguage);
 
   return (
     <div className="app-layout">
       <Sidebar active="settings" isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <main className="app-main">
-        <MobileHeader title={t('settings.title')} onMenuClick={() => setIsSidebarOpen(true)} />
-        <div style={{ maxWidth: 800, margin: '0 auto', width: '100%' }}>
-          <h1 style={{ marginBottom: 'var(--space-xl)' }}>{t('settings.title')}</h1>
+        <MobileHeader title={t('sidebar.settings')} onMenuClick={() => setIsSidebarOpen(true)} />
+        <div className="settings-page">
+          <header className="page-header visually-hidden-mobile">
+            <h1 className="page-header__title">{t('sidebar.settings')}</h1>
+            <p className="page-header__subtitle">{t('settings.page_subtitle')}</p>
+          </header>
 
-        {/* Group Management */}
-        <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' }}>
-            <Grid size={24} className="text-accent" />
-            <h2 style={{ margin: 0 }}>{t('settings.manage_groups')}</h2>
-          </div>
-
-          <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-lg)' }}>
-            <input
-              className="input"
-              value={newGroupName}
-              onChange={(e) => setNewGroupName(e.target.value)}
-              placeholder={t('settings.new_group_name')}
-            />
-            <button className="btn btn-primary" onClick={handleCreateGroup}>
-              <Plus size={16} /> {t('settings.create')}
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-            {groups.map(group => (
-              <div key={group.id} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: 'var(--space-sm) var(--space-md)', background: 'var(--bg-input)',
-                borderRadius: 'var(--radius-md)'
-              }}>
-                <span>{group.name}</span>
-                {!group.is_default && (
-                  <button className="btn-icon" onClick={() => handleDeleteGroup(group.id)}>
-                    <Trash2 size={16} color="var(--accent-danger)" />
-                  </button>
-                )}
-                {group.is_default && <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{t('settings.standard')}</span>}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Scan Settings */}
-        <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-              <Activity size={24} className="text-accent" />
-              <h2 style={{ margin: 0 }}>{t('settings.auto_scan')}</h2>
-            </div>
-            <button 
-              className={`btn ${saveStatus === 'saved' ? 'btn-success' : 'btn-primary'}`} 
-              onClick={handleSaveSettings} 
-              disabled={saveStatus === 'saving'}
-            >
-              {saveStatus === 'saving' ? <Activity size={16} className="animate-spin" /> : 
-               saveStatus === 'saved' ? <Check size={16} /> : 
-               <Save size={16} />}
-              {saveStatus === 'saving' ? ` ${t('common.saving')}` : 
-               saveStatus === 'saved' ? ` ${t('settings.save_success')}` : 
-               saveStatus === 'error' ? ` ${t('settings.save_error')}` : ` ${t('common.save')}`}
-            </button>
-          </div>
-
-          <div className="form-group" style={{ marginBottom: 'var(--space-lg)' }}>
-            <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontWeight: 600 }}>
-              {t('settings.scan_interval')}
-            </label>
-            <input
-              type="number"
-              className="input"
-              value={scanInterval}
-              onChange={(e) => setScanInterval(e.target.value)}
-              placeholder="e.g. 15 (0 to disable)"
-            />
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-xs)' }}>
-              {t('settings.scan_interval_hint')}
-            </p>
-          </div>
-          
-          <div className="form-group" style={{ marginBottom: 'var(--space-lg)' }}>
-            <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontWeight: 600 }}>
-              {t('settings.quick_scan')}
-            </label>
-            <input
-              type="number"
-              className="input"
-              value={quickScanInterval}
-              onChange={(e) => setQuickScanInterval(e.target.value)}
-              placeholder="e.g. 300 (0 to disable)"
-            />
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-xs)' }}>
-              {t('settings.quick_scan_hint')}
-            </p>
-          </div>
-
-          <div className="form-group">
-            <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontWeight: 600 }}>
-              {t('settings.subnets')}
-            </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-              <Globe size={18} color="var(--text-tertiary)" />
-              <input
-                className="input"
-                value={scanSubnets}
-                onChange={(e) => setScanSubnets(e.target.value)}
-                placeholder="e.g. 192.168.1.0/24, 10.0.0.0/24"
+          <SettingsSection id="scan" title={t('settings.section_scan')} description={t('settings.section_scan_desc')}>
+            <div className="settings-grid">
+              <UnitField
+                id="set-scan-interval"
+                label={t('settings.scan_interval_label')}
+                hint={t('settings.scan_interval_hint')}
+                unit={t('settings.unit_minutes')}
+                value={form.scan_interval}
+                onChange={setField('scan_interval')}
               />
+              <UnitField
+                id="set-quick-scan"
+                label={t('settings.quick_scan_label')}
+                hint={t('settings.quick_scan_hint')}
+                unit={t('settings.unit_seconds')}
+                value={form.quick_scan_interval}
+                onChange={setField('quick_scan_interval')}
+              />
+              <UnitField
+                id="set-scan-timeout"
+                label={t('settings.scan_timeout_label')}
+                hint={t('settings.scan_timeout_desc')}
+                unit={t('settings.unit_seconds')}
+                value={form.scan_timeout}
+                onChange={setField('scan_timeout')}
+                step={0.1}
+              />
+              <Field id="set-dns" label={t('settings.dns_custom_title')} hint={t('settings.dns_custom_desc')}>
+                <input
+                  id="set-dns"
+                  className="input input--mono"
+                  value={form['dns.server']}
+                  onChange={setField('dns.server')}
+                  placeholder="192.168.1.1"
+                  aria-describedby="set-dns-hint"
+                />
+              </Field>
             </div>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-xs)' }}>
-              {t('settings.subnets_hint')}
-            </p>
-          </div>
+            <Field id="set-subnets" label={t('settings.subnets')} hint={t('settings.subnets_hint')}>
+              <input
+                id="set-subnets"
+                className="input input--mono"
+                value={form.scan_subnets}
+                onChange={setField('scan_subnets')}
+                placeholder="192.168.1.0/24, 10.0.0.0/24"
+                aria-describedby="set-subnets-hint"
+              />
+            </Field>
+          </SettingsSection>
 
-          <div className="form-group" style={{ marginTop: 'var(--space-lg)' }}>
-            <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontWeight: 600 }}>
-              {t('settings.retention')}
-            </label>
-            <input
-              type="number"
-              className="input"
-              value={retentionDays}
-              onChange={(e) => setRetentionDays(e.target.value)}
-              placeholder="e.g. 7 (0 for unlimited)"
-            />
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-xs)' }}>
-              {t('settings.retention_hint')}
-            </p>
-          </div>
-
-          <div className="form-group" style={{ marginTop: 'var(--space-lg)' }}>
-            <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontWeight: 600 }}>
-              {t('settings.dns_custom_title', 'Custom DNS Server')}
-            </label>
-            <input
-              type="text"
-              className="input"
-              value={dnsServer}
-              onChange={(e) => setDnsServer(e.target.value)}
-              placeholder="e.g. 192.168.100.1"
-            />
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-xs)' }}>
-              {t('settings.dns_custom_desc')}
-            </p>
-          </div>
-
-          <div className="form-group" style={{ marginTop: 'var(--space-lg)' }}>
-            <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontWeight: 600 }}>
-              {t('settings.scan_timeout')}
-            </label>
-            <input
-              type="number"
-              step="0.1"
-              className="input"
-              value={scanTimeout}
-              onChange={(e) => setScanTimeout(e.target.value)}
-              placeholder={t('settings.scan_timeout_placeholder', 'e.g. 1.5')}
-            />
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-xs)' }}>
-              {t('settings.scan_timeout_desc')}
-            </p>
-          </div>
-        </section>
-
-        {/* System Logs */}
-        <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-              <Activity size={24} className="text-accent" />
-              <h2 style={{ margin: 0 }}>{t('settings.system_logging')}</h2>
+          <SettingsSection id="system" title={t('settings.section_system')} description={t('settings.section_system_desc')}>
+            <div className="settings-grid">
+              <UnitField
+                id="set-retention"
+                label={t('settings.retention_label')}
+                hint={t('settings.retention_hint')}
+                unit={t('settings.unit_days')}
+                value={form.history_retention_days}
+                onChange={setField('history_retention_days')}
+              />
+              <Field id="set-log-level" label={t('settings.log_level')} hint={t('settings.log_level_desc')}>
+                <select
+                  id="set-log-level"
+                  className="input"
+                  value={form['system.log_level']}
+                  onChange={setField('system.log_level')}
+                  aria-describedby="set-log-level-hint"
+                >
+                  <option value="info">{t('settings.log_level_info')}</option>
+                  <option value="warning">{t('settings.log_level_warning')}</option>
+                  <option value="debug">{t('settings.log_level_debug')}</option>
+                  <option value="debug_sql">{t('settings.log_level_sql')}</option>
+                </select>
+              </Field>
             </div>
-            <button className="btn btn-primary" onClick={handleSaveSettings}>
-              <Save size={16} /> {t('common.save')}
-            </button>
-          </div>
-          
-          <div className="form-group">
-            <label style={{ display: 'block', marginBottom: 'var(--space-xs)', fontWeight: 600 }}>
-              {t('settings.log_level')}
-            </label>
-            <select 
-              className="input" 
-              value={logLevel} 
-              onChange={(e) => setLogLevel(e.target.value)}
-              style={{ maxWidth: '300px' }}
-            >
-              <option value="info">{t('settings.log_level_info')}</option>
-              <option value="warning">{t('settings.log_level_warning')}</option>
-              <option value="debug">{t('settings.log_level_debug')}</option>
-              <option value="debug_sql">{t('settings.log_level_sql')}</option>
-            </select>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 'var(--space-xs)' }}>
-              {t('settings.log_level_desc')}
-            </p>
-          </div>
-        </section>
+            <Field id="set-server-url" label={t('settings.server_url_override')} hint={t('settings.server_url_override_hint')}>
+              <input
+                id="set-server-url"
+                type="url"
+                className="input input--mono"
+                value={form.server_url_override}
+                onChange={setField('server_url_override')}
+                placeholder="http://192.168.1.10:8000"
+                aria-describedby="set-server-url-hint"
+              />
+            </Field>
+            <ActionRow title={t('settings.system_livelogs')} description={t('settings.system_livelogs_desc')}>
+              <Link to="/logs" className="btn btn-secondary btn-sm">
+                <FileText size={14} aria-hidden="true" /> {t('settings.system_livelogs_open')}
+              </Link>
+            </ActionRow>
+          </SettingsSection>
 
-        {/* Live Logs Button */}
-        <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-              <Activity size={24} className="text-secondary" />
-              <div>
-                <h2 style={{ margin: 0 }}>{t('settings.system_livelogs')}</h2>
-                <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-tertiary)' }}>
-                  {t('settings.system_livelogs_desc')}
-                </p>
-              </div>
-            </div>
-            <button 
-              className="btn btn-secondary" 
-              onClick={() => window.open('/logs', 'GravityLogs', 'width=1000,height=700')}
-            >
-              <Plus size={16} /> {t('settings.system_livelogs_open')}
-            </button>
-          </div>
-        </section>
-
-        {/* Appearance (Language) */}
-        <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' }}>
-            <Palette size={24} className="text-accent" />
-            <h2 style={{ margin: 0 }}>{t('settings.language')}</h2>
-          </div>
-          
-          <div className="form-group">
-            <select 
-              className="input" 
-              value={i18n.resolvedLanguage || 'en'} 
-              onChange={(e) => i18n.changeLanguage(e.target.value)}
-              style={{ maxWidth: '300px' }}
-            >
-              <option value="de">{t('settings.language_de')}</option>
-              <option value="en">{t('settings.language_en')}</option>
-            </select>
-          </div>
-        </section>
-
-        {/* Backup & Restore */}
-        <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' }}>
-            <Database size={24} className="text-accent" />
-            <h2 style={{ margin: 0 }}>{t('settings.backup_restore')}</h2>
-          </div>
-
-          <div style={{ 
-            display: 'flex', gap: 'var(--space-md)', padding: 'var(--space-md)', 
-            background: 'rgba(234, 179, 8, 0.1)', borderRadius: 'var(--radius-md)',
-            border: '1px solid rgba(234, 179, 8, 0.2)', marginBottom: 'var(--space-lg)'
-          }}>
-            <AlertTriangle size={20} style={{ color: '#eab308', flexShrink: 0 }} />
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
-              <strong style={{ color: '#eab308' }}>{t('settings.security_notice_title')}:</strong> {t('settings.security_notice_desc')}
-            </p>
-          </div>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-lg)' }}>
-            <div className="form-group">
-              <h4 style={{ marginBottom: 'var(--space-xs)' }}>{t('settings.backup_export')}</h4>
-              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
-                {t('settings.backup_export_desc')}
-              </p>
-              <button className="btn btn-secondary" onClick={handleExport} disabled={isExporting}>
-                <Download size={16} /> {isExporting ? t('settings.backup_exporting') : t('settings.backup_download')}
+          <SettingsSection id="groups" title={t('settings.manage_groups')} description={t('settings.section_groups_desc')}>
+            <form className="inline-form" onSubmit={handleCreateGroup}>
+              <label htmlFor="set-new-group" className="visually-hidden">{t('settings.new_group_name')}</label>
+              <input
+                id="set-new-group"
+                className="input"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                placeholder={t('settings.new_group_name')}
+              />
+              <button type="submit" className="btn btn-secondary" disabled={!newGroupName.trim()}>
+                <Plus size={16} aria-hidden="true" /> {t('settings.create')}
               </button>
-            </div>
-            
-            <div className="form-group">
-              <h4 style={{ marginBottom: 'var(--space-xs)' }}>{t('settings.backup_import')}</h4>
-              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
-                {t('settings.backup_import_desc')}
+            </form>
+            <ul className="settings-list">
+              {groups.map((group) => (
+                <li key={group.id} className="settings-list__row">
+                  <span className="settings-list__name">{group.name}</span>
+                  {group.is_default ? (
+                    <span className="device-tag">{t('settings.standard')}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-icon btn-icon--danger"
+                      onClick={() => handleDeleteGroup(group.id)}
+                      aria-label={t('settings.delete_group', { name: group.name })}
+                      title={t('settings.delete_group', { name: group.name })}
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </SettingsSection>
+
+          <SettingsSection id="language" title={t('settings.language')} description={t('settings.section_language_desc')}>
+            <LanguageToggle />
+          </SettingsSection>
+
+          <SettingsSection id="tokens" title={t('settings.api_tokens')} description={t('settings.api_tokens_desc')}>
+            <form className="inline-form" onSubmit={handleCreateToken}>
+              <label htmlFor="set-token-name" className="visually-hidden">{t('settings.new_token_placeholder')}</label>
+              <input
+                id="set-token-name"
+                className="input"
+                value={newTokenName}
+                onChange={(e) => setNewTokenName(e.target.value)}
+                placeholder={t('settings.new_token_placeholder')}
+                disabled={isCreatingToken}
+              />
+              <button type="submit" className="btn btn-secondary" disabled={isCreatingToken || !newTokenName.trim()}>
+                {isCreatingToken
+                  ? <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                  : <Plus size={16} aria-hidden="true" />}
+                {t('settings.token_create')}
+              </button>
+            </form>
+
+            {createdToken && (
+              <div className="callout callout--success" role="status">
+                <Check size={16} className="callout__icon" aria-hidden="true" />
+                <div className="callout__body">
+                  <p>{t('settings.token_created_title')}</p>
+                  <div className="inline-form">
+                    <input
+                      type="text"
+                      readOnly
+                      className="input input--mono"
+                      value={createdToken}
+                      aria-label={t('settings.api_tokens')}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                    <button type="button" className="btn btn-secondary" onClick={handleCopyToken}>
+                      <Copy size={16} aria-hidden="true" /> {t('settings.token_copy')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {tokens.length === 0 ? (
+              <p className="settings-empty">{t('settings.no_tokens')}</p>
+            ) : (
+              <ul className="settings-list">
+                {tokens.map((token) => (
+                  <li key={token.id} className="settings-list__row">
+                    <div className="settings-list__main">
+                      <span className="settings-list__name">{token.name}</span>
+                      <span className="settings-list__meta">
+                        <code>{token.prefix}</code>
+                        {' · '}{t('settings.token_created')}: {formatDate(token.created_at)}
+                        {token.last_used_at && <>{' · '}{t('settings.token_used')}: {formatDateTime(token.last_used_at)}</>}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-icon btn-icon--danger"
+                      onClick={() => handleDeleteToken(token)}
+                      aria-label={t('settings.revoke_token', { name: token.name })}
+                      title={t('settings.revoke_token', { name: token.name })}
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SettingsSection>
+
+          <SettingsSection id="backup" title={t('settings.backup_restore')} description={t('settings.section_backup_desc')}>
+            <div className="callout callout--warning">
+              <AlertTriangle size={16} className="callout__icon" aria-hidden="true" />
+              <p className="callout__body">
+                <strong>{t('settings.security_notice_title')}:</strong> {t('settings.security_notice_desc')}
               </p>
-              <label className="btn btn-outline" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                <Upload size={16} /> 
+            </div>
+            <ActionRow title={t('settings.backup_export')} description={t('settings.backup_export_desc')}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={handleExport} disabled={isExporting}>
+                <Download size={14} aria-hidden="true" /> {isExporting ? t('settings.backup_exporting') : t('settings.backup_download')}
+              </button>
+            </ActionRow>
+            <ActionRow title={t('settings.backup_import')} description={t('settings.backup_import_desc')}>
+              <label className={`btn btn-secondary btn-sm btn-file${isImporting ? ' is-disabled' : ''}`}>
+                <Upload size={14} aria-hidden="true" />
                 {isImporting ? t('settings.backup_importing') : t('settings.backup_select_file')}
-                <input 
-                  type="file" 
-                  accept=".json" 
-                  style={{ display: 'none' }} 
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="visually-hidden"
                   onChange={handleImport}
                   disabled={isImporting}
                 />
               </label>
-            </div>
-          </div>
-        </section>
+            </ActionRow>
+          </SettingsSection>
 
-        {/* API Tokens */}
-        <section className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' }}>
-            <Key size={24} className="text-accent" />
-            <h2 style={{ margin: 0 }}>{t('settings.api_tokens')}</h2>
-          </div>
-          
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
-            {t('settings.api_tokens_desc')}
-          </p>
+          <SettingsSection id="danger" tone="danger" title={t('settings.danger_zone')} description={t('settings.section_danger_desc')}>
+            <ActionRow title={t('settings.reset_db')} description={t('settings.reset_warning')}>
+              <button
+                type="button"
+                className={`btn btn-danger btn-sm${resetConfirm ? ' is-armed' : ''}`}
+                onClick={handleResetDB}
+              >
+                <Database size={14} aria-hidden="true" />
+                {resetConfirm ? t('settings.reset_really') : t('settings.confirm_reset')}
+              </button>
+            </ActionRow>
+          </SettingsSection>
 
-          <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-lg)' }}>
-            <input
-              className="input"
-              value={newTokenName}
-              onChange={(e) => setNewTokenName(e.target.value)}
-              placeholder={t('settings.new_token_placeholder')}
-              disabled={isCreatingToken}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreateToken();
-              }}
-            />
-            <button className="btn btn-primary" onClick={handleCreateToken} disabled={isCreatingToken || !newTokenName.trim()}>
-              <Plus size={16} /> {t('settings.token_create')}
-            </button>
-          </div>
-
-          {createdToken && (
-            <div style={{
-              padding: 'var(--space-md)',
-              background: 'rgba(34, 197, 94, 0.1)',
-              border: '1px solid rgba(34, 197, 94, 0.3)',
-              borderRadius: 'var(--radius-md)',
-              marginBottom: 'var(--space-lg)'
-            }}>
-              <p style={{ margin: '0 0 var(--space-xs) 0', fontSize: '0.875rem', color: '#4ade80', fontWeight: 600 }}>
-                {t('settings.token_created_title')}
-              </p>
-              <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-                <input
-                  type="text"
-                  readOnly
-                  className="input"
-                  value={createdToken}
-                  style={{ fontFamily: 'monospace', flexGrow: 1 }}
-                  onClick={(e) => (e.target as HTMLInputElement).select()}
-                />
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    copyToClipboard(createdToken, () => alert(t('notifications.copied')));
-                  }}
-                >
-                  {t('settings.token_copy')}
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-            {tokens.length === 0 ? (
-              <p style={{ fontSize: '0.875rem', color: 'var(--text-tertiary)', margin: 0 }}>
-                {t('settings.no_tokens')}
-              </p>
-            ) : (
-              tokens.map(token => (
-                <div key={token.id} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: 'var(--space-sm) var(--space-md)', background: 'var(--bg-input)',
-                  borderRadius: 'var(--radius-md)'
-                }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span style={{ fontWeight: 600 }}>{token.name}</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
-                      {token.prefix} • {t('settings.token_created')}: {new Date(token.created_at).toLocaleDateString()}
-                      {token.last_used_at && ` • ${t('settings.token_used')}: ${new Date(token.last_used_at).toLocaleString()}`}
-                    </span>
-                  </div>
-                  <button className="btn-icon" onClick={() => handleDeleteToken(token.id)}>
-                    <Trash2 size={16} color="var(--accent-danger)" />
+          {(isDirty || saveStatus !== 'idle') && (
+            <div className="save-bar" role="region" aria-label={t('settings.unsaved_changes')}>
+              <span className="save-bar__status" role="status">
+                {saveStatus === 'saved' ? (
+                  <><Check size={16} className="save-bar__icon save-bar__icon--ok" aria-hidden="true" /> {t('settings.save_success')}</>
+                ) : saveStatus === 'error' ? (
+                  <><AlertTriangle size={16} className="save-bar__icon save-bar__icon--error" aria-hidden="true" /> {t('settings.save_error')}</>
+                ) : (
+                  t('settings.unsaved_changes')
+                )}
+              </span>
+              {isDirty && (
+                <div className="save-bar__actions">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={handleDiscard} disabled={saveStatus === 'saving'}>
+                    {t('settings.discard')}
+                  </button>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveSettings} disabled={saveStatus === 'saving'}>
+                    {saveStatus === 'saving'
+                      ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                      : <Check size={14} aria-hidden="true" />}
+                    {saveStatus === 'saving' ? t('common.saving') : t('common.save')}
                   </button>
                 </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        {/* Danger Zone */}
-        <section className="card" style={{ borderColor: 'var(--accent-danger)', background: 'rgba(239, 68, 68, 0.02)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)', color: 'var(--accent-danger)' }}>
-            <AlertTriangle size={24} />
-            <h2 style={{ margin: 0 }}>{t('settings.danger_zone')}</h2>
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <h4 style={{ marginBottom: 4 }}>{t('settings.reset_db')}</h4>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                {t('settings.reset_warning')}
-              </p>
+              )}
             </div>
-            <button 
-              className={`btn ${resetConfirm ? 'btn-danger animate-pulse' : 'btn-danger'}`} 
-              onClick={handleResetDB}
-              style={resetConfirm ? { background: '#ef4444', color: 'white' } : {}}
-            >
-              <Database size={16} /> 
-              {resetConfirm ? t('settings.reset_really') : t('settings.confirm_reset')}
-            </button>
-          </div>
-        </section>
+          )}
         </div>
       </main>
     </div>

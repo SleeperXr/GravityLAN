@@ -16,6 +16,7 @@ Usage (repository root, backend virtualenv):
     backend/.venv/Scripts/python scripts/dev_demo.py        # Windows
     backend/.venv/bin/python scripts/dev_demo.py            # Linux/macOS
     ... --reset    wipe the demo database and seed it again
+    ... --fresh    start like a new install (separate empty database, setup wizard)
 
 Then start the frontend (``cd frontend && npm run dev``), open
 http://localhost:5173 and log in with the password ``demo``.
@@ -82,14 +83,17 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
 
 
-def _prepare_environment(reset: bool) -> None:
-    if reset and DEMO_DIR.exists():
-        shutil.rmtree(DEMO_DIR)
-    DEMO_DIR.mkdir(exist_ok=True)
+def _prepare_environment(reset: bool, fresh: bool) -> Path:
+    # --fresh uses its own throw-away database that starts empty every run
+    data_dir = DEMO_DIR / "fresh" if fresh else DEMO_DIR
+    if (reset or fresh) and data_dir.exists():
+        shutil.rmtree(data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
     # Must be set before app.config is imported; the explicit URL also wins over any .env file.
-    os.environ["GRAVITYLAN_DATA_DIR"] = str(DEMO_DIR)
-    os.environ["GRAVITYLAN_DATABASE_URL"] = f"sqlite+aiosqlite:///{(DEMO_DIR / 'gravitylan-demo.db').as_posix()}"
+    os.environ["GRAVITYLAN_DATA_DIR"] = str(data_dir)
+    os.environ["GRAVITYLAN_DATABASE_URL"] = f"sqlite+aiosqlite:///{(data_dir / 'gravitylan-demo.db').as_posix()}"
     sys.path.insert(0, str(ROOT / "backend"))
+    return data_dir
 
 
 def _metrics_sample(profile: tuple, t: float) -> dict:
@@ -231,8 +235,8 @@ async def _simulate_agents(server, agents: dict[str, tuple[int, str, tuple]]) ->
             await asyncio.sleep(REPORT_INTERVAL_S)
 
 
-async def main(reset: bool) -> None:
-    _prepare_environment(reset)
+async def main(reset: bool, fresh: bool) -> None:
+    data_dir = _prepare_environment(reset, fresh)
 
     import uvicorn
     from fastapi.responses import JSONResponse
@@ -252,15 +256,27 @@ async def main(reset: bool) -> None:
             return JSONResponse({"detail": "Disabled in demo mode (no LAN scans, no SSH)."}, status_code=403)
         return await call_next(request)
 
-    agents = await _seed()
-    print(f"[demo] {len(agents)} simulated agents, database: {DEMO_DIR}")
-    print(f"[demo] API on http://{HOST}:{PORT} - start the UI with `cd frontend && npm run dev`, password: {DEMO_PASSWORD}")
-
     server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=PORT, log_level="warning"))
+
+    if fresh:
+        # Like a new install: no data and no completed setup, so the UI opens the setup wizard
+        from app.database import init_db
+
+        await init_db()
+        print(f"[demo] fresh install, database: {data_dir} - the setup wizard sets the password")
+        print(f"[demo] API on http://{HOST}:{PORT} - start the UI with `cd frontend && npm run dev`")
+        await server.serve()
+        return
+
+    agents = await _seed()
+    print(f"[demo] {len(agents)} simulated agents, database: {data_dir}")
+    print(f"[demo] API on http://{HOST}:{PORT} - start the UI with `cd frontend && npm run dev`, password: {DEMO_PASSWORD}")
     await asyncio.gather(server.serve(), _simulate_agents(server, agents))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--reset", action="store_true", help="wipe the demo database and seed it again")
-    asyncio.run(main(parser.parse_args().reset))
+    parser.add_argument("--fresh", action="store_true", help="start like a new install (empty database, setup wizard)")
+    args = parser.parse_args()
+    asyncio.run(main(args.reset, args.fresh))
