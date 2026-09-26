@@ -897,25 +897,35 @@ const TopologyMap: React.FC = () => {
         style={{ 
           height: '100%', 
           width: '100%', 
-          minHeight: isFullscreen ? '100vh' : '750px', 
-          position: 'relative', 
-          background: '#0f172a', 
-          display: 'flex' 
+          // Fill the page's content area; a fixed 750px minimum pushed the controls under
+          // the phone's tab bar. Only full screen needs an explicit height.
+          minHeight: isFullscreen ? '100vh' : 0,
+          position: 'relative',
+          background: 'var(--bg-surface)',
+          display: 'flex'
         }}
       >
-      
+
       {/* Main Flow Area */}
-      <div style={{ flex: 1, position: 'relative' }}>
-        <div style={{ position: 'absolute', top: '24px', left: '24px', zIndex: 10, display: 'flex', gap: '12px' }}>
-          <div className="topology-header">
-            <Share2 size={16} className="text-sky-400" />
-            Topology Designer
-          </div>
-          <button className={`refresh-btn ${isRefreshing ? 'spinning' : ''}`} onClick={() => fetchData()} title="Refresh Data">
-            <RefreshCw size={16} />
+      <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+        <div className="topology-toolbar">
+          <button
+            type="button"
+            className={`refresh-btn ${isRefreshing ? 'spinning' : ''}`}
+            onClick={() => fetchData()}
+            aria-label={t('topology.refresh')}
+            title={t('topology.refresh')}
+          >
+            <RefreshCw size={15} aria-hidden="true" />
           </button>
-          <button className="refresh-btn" onClick={toggleFullscreen} title="Fullscreen Toggle">
-            {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+          <button
+            type="button"
+            className="refresh-btn"
+            onClick={toggleFullscreen}
+            aria-label={isFullscreen ? t('topology.exit_fullscreen') : t('topology.fullscreen')}
+            title={isFullscreen ? t('topology.exit_fullscreen') : t('topology.fullscreen')}
+          >
+            {isFullscreen ? <Minimize size={15} aria-hidden="true" /> : <Maximize size={15} aria-hidden="true" />}
           </button>
         </div>
 
@@ -966,8 +976,8 @@ const TopologyMap: React.FC = () => {
         <div className={`flow-controls ${!isFlowExpanded ? 'collapsed' : ''}`}>
           <div className="flow-controls__header" onClick={() => setIsFlowExpanded(!isFlowExpanded)} style={{ cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-              <Sliders size={14} />
-              <span>Flow Engine</span>
+              <Sliders size={14} aria-hidden="true" />
+              <span>{t('topology.flow_title')}</span>
             </div>
             {isFlowExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </div>
@@ -1058,26 +1068,19 @@ const TopologyMap: React.FC = () => {
       )}
 
       <style>{`
-        .topology-header {
-          background: rgba(30, 41, 59, 0.8);
-          backdrop-filter: blur(20px);
-          padding: 10px 20px;
-          border-radius: 20px;
-          border: 1px solid rgba(255,255,255,0.1);
+        .topology-toolbar {
+          position: absolute;
+          top: 12px;
+          left: 12px;
+          z-index: 10;
           display: flex;
-          align-items: center;
-          gap: 10px;
-          font-size: 0.875rem;
-          font-weight: 800;
-          color: #f8fafc;
-          box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
-          text-transform: uppercase;
+          gap: 6px;
         }
 
         .topology-sidebar {
           width: 320px;
-          background: #0f172a;
-          border-left: 1px solid rgba(255,255,255,0.1);
+          background: var(--bg-surface);
+          border-left: 1px solid var(--border-subtle);
           display: flex;
           flex-direction: column;
           animation: slideIn 0.3s ease-out;
@@ -1211,17 +1214,19 @@ const TopologyMap: React.FC = () => {
         .node-handle.source { background: #38bdf8 !important; }
         
         .refresh-btn {
-          background: rgba(30, 41, 59, 0.8);
-          width: 44px;
-          height: 44px;
-          border-radius: 50%;
-          border: 1px solid rgba(255,255,255,0.1);
+          background: var(--bg-elevated);
+          width: 34px;
+          height: 34px;
+          border-radius: var(--radius-md);
+          border: 1px solid var(--border-medium);
           display: flex;
           align-items: center;
           justify-content: center;
-          color: #38bdf8;
+          color: var(--text-secondary);
           cursor: pointer;
         }
+        .refresh-btn:hover { color: var(--text-primary); }
+        .refresh-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
         .refresh-btn.spinning svg { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pulse {
@@ -1314,12 +1319,11 @@ const TopologyMap: React.FC = () => {
         }
         .flow-controls {
           position: absolute;
-          top: 20px;
-          right: 20px;
-          background: rgba(15, 23, 42, 0.85);
-          backdrop-filter: blur(12px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 12px;
+          top: 12px;
+          right: 12px;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border-medium);
+          border-radius: var(--radius-lg);
           padding: 12px;
           width: 180px;
           z-index: 1000;
@@ -1338,12 +1342,10 @@ const TopologyMap: React.FC = () => {
           display: flex;
           align-items: center;
           gap: 8px;
-          font-size: 0.75rem;
-          font-weight: 800;
-          color: #38bdf8;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          font-size: 0.8125rem;
+          font-weight: 600;
+          color: var(--text-primary);
+          border-bottom: 1px solid var(--border-subtle);
           padding-bottom: 8px;
         }
         .collapsed .flow-controls__header {
@@ -1383,11 +1385,19 @@ const TopologyMap: React.FC = () => {
         @media (max-width: 768px) {
           .flow-controls {
             top: auto;
-            bottom: 20px;
-            right: 10px;
-            background: rgba(15, 23, 42, 0.95);
+            bottom: 12px;
+            right: 12px;
+          }
+          /* The settings panel overlays the map instead of squeezing it next to it */
+          .topology-sidebar {
+            position: absolute;
+            inset: 0;
+            width: auto;
+            border-left: 0;
           }
         }
+        .input-field label { text-transform: none; font-weight: 500; color: var(--text-secondary); }
+        .section-label { text-transform: none; font-weight: 500; color: var(--text-secondary); }
         
         /* --- Styled React Flow Controls --- */
         .react-flow__controls {

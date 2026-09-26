@@ -6,16 +6,19 @@ interface MobileHeaderProps {
   onMenuClick: () => void;
 }
 
+/** Phone app bar: brand and page title on the left, the menu within thumb reach on the right. */
 export function MobileHeader({ title, onMenuClick }: MobileHeaderProps) {
   const { t } = useTranslation();
-  
+
   return (
     <header className="mobile-header mobile-only">
+      <div className="mobile-header__text">
+        <span className="mobile-header__brand">{t('app.title')}</span>
+        <span className="mobile-header__title">{title}</span>
+      </div>
       <button type="button" className="mobile-menu-btn" onClick={onMenuClick} aria-label={t('sidebar.open_menu')}>
-        <Menu size={24} />
+        <Menu size={20} aria-hidden="true" />
       </button>
-      <div className="mobile-header__title">{title}</div>
-      <div style={{ width: 44 }} /> {/* Spacer for balance */}
     </header>
   );
 }

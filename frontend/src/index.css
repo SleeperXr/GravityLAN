@@ -1346,6 +1346,22 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
 }
 
 /* --- Topology page: header, view switch and rack view --- */
+.planner-main {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  min-width: 0;
+  overflow: hidden;
+  padding: 24px;
+  background: var(--bg-app);
+}
+
+@media (max-width: 768px) {
+  /* Keep the map and its controls above the fixed bottom tab bar */
+  .planner-main { padding: var(--space-md) var(--space-md) calc(80px + env(safe-area-inset-bottom)); }
+}
+
 .planner-header {
   display: flex;
   flex-wrap: wrap;
@@ -1797,6 +1813,15 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
     font-size: 0.7rem;
   }
 
+  /* Group labels sit on the tile's top edge: leave room between rows and keep them inside the tile */
+  .subnet-grid { row-gap: 14px !important; }
+  .ip-tile__group {
+    max-width: calc(100% - 8px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .device-card {
     padding: var(--space-md);
   }
@@ -1841,37 +1866,57 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
     display: none;
   }
 
+  /* Edge-to-edge app bar: cancels the page padding it sits in */
   .mobile-header {
-    height: 60px;
-    background: var(--bg-surface);
-    border-bottom: 1px solid var(--border-medium);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 var(--space-md);
+    gap: 12px;
+    margin: calc(-1 * var(--space-md)) calc(-1 * var(--space-md)) var(--space-md);
+    padding: calc(10px + env(safe-area-inset-top)) var(--space-md) 10px;
+    background: rgba(14, 17, 22, 0.92);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-subtle);
     position: sticky;
     top: 0;
     z-index: 1000;
   }
 
-  .mobile-header__title {
+  .mobile-header__text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+
+  .mobile-header__brand {
+    font-size: 0.75rem;
     font-weight: 600;
-    font-size: 1.05rem;
+    letter-spacing: -0.01em;
+    color: var(--text-tertiary);
+  }
+
+  .mobile-header__title {
+    overflow: hidden;
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .mobile-menu-btn {
-    width: 44px;
-    height: 44px;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: transparent;
-    border: none;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-medium);
     color: var(--text-primary);
     cursor: pointer;
     border-radius: var(--radius-md);
   }
+
+  .mobile-menu-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 }
 
 /* --- Premium View Toggle --- */
@@ -2115,6 +2160,32 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
 
 .inspector-panel.is-wide {
   width: min(1040px, 100vw);
+}
+
+/* Footer: delete on the left, Cancel / Save on the right, clear of the phone's home bar */
+.inspector-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.inspector-footer__actions { display: flex; gap: 8px; }
+
+/* Dialog button row (was used by several dialogs but never defined) */
+.modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-subtle);
 }
 
 @keyframes inspector-in {

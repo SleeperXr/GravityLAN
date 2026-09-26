@@ -474,7 +474,11 @@
     "page_subtitle": "Verbindungen und Rack-Belegung deiner Infrastruktur",
     "view_label": "Ansicht",
     "tab_map": "Topologie",
-    "tab_rack": "Rack-Ansicht"
+    "tab_rack": "Rack-Ansicht",
+    "refresh": "Aktualisieren",
+    "fullscreen": "Vollbild",
+    "exit_fullscreen": "Vollbild beenden",
+    "flow_title": "Datenfluss"
   },
   "rack": {
     "loading": "Racks werden geladen …",

@@ -1287,25 +1287,9 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
           ) : null}
         </div>
 
-        <div className="modal-footer" style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-          <button className="btn btn-secondary" onClick={onClose}>{t('common.cancel')}</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={isSaving}>
-            <Save size={16} /> {isSaving ? t('common.saving') : t('common.save')}
-          </button>
-          
-          <button className="btn" style={{ 
-            marginLeft: 'auto',
-            background: 'rgba(239, 68, 68, 0.1)',
-            color: '#ef4444',
-            border: '1px solid rgba(239, 68, 68, 0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '8px 16px',
-            borderRadius: 'var(--radius-md)',
-            fontWeight: 600,
-            cursor: 'pointer'
-          }} onClick={() => {
+        {/* Destructive action on the left, the usual Cancel / Save pair on the right */}
+        <div className="inspector-footer">
+          <button type="button" className="btn btn-danger btn-sm inspector-footer__delete" onClick={() => {
             if (confirm(t('editor.delete_device_confirm', 'Do you really want to permanently delete this device?'))) {
               api.deleteDevice(currentDevice.id)
                 .then(() => {
@@ -1319,8 +1303,14 @@ export function DeviceEditor({ device, devices = [], onClose, onSave }: DeviceEd
                 });
             }
           }}>
-            <Trash2 size={16} /> {t('common.delete')}
+            <Trash2 size={14} aria-hidden="true" /> {t('common.delete')}
           </button>
+          <div className="inspector-footer__actions">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>{t('common.cancel')}</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={isSaving}>
+              <Save size={14} aria-hidden="true" /> {isSaving ? t('common.saving') : t('common.save')}
+            </button>
+          </div>
         </div>
       </aside>
     </div>

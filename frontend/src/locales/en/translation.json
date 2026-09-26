@@ -477,7 +477,11 @@
     "page_subtitle": "Connections and rack layout of your infrastructure",
     "view_label": "View",
     "tab_map": "Topology map",
-    "tab_rack": "Rack view"
+    "tab_rack": "Rack view",
+    "refresh": "Refresh",
+    "fullscreen": "Full screen",
+    "exit_fullscreen": "Exit full screen",
+    "flow_title": "Data flow"
   },
   "rack": {
     "loading": "Loading racks…",

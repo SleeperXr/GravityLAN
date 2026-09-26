@@ -28,14 +28,7 @@ const NetworkPlanner: React.FC = () => {
       <Sidebar active="topology" isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       {/* app-main already has padding + overflow-y:auto — we override those here */}
-      <main style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        overflow: 'hidden',
-        padding: '24px',
-        background: 'var(--bg-app)',
-      }}>
+      <main className="planner-main">
         <MobileHeader title={t('sidebar.topology')} onMenuClick={() => setIsSidebarOpen(true)} />
 
         {/* Header with the view switch */}

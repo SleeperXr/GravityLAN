@@ -308,7 +308,7 @@ export function SubnetView() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', width: '100%', flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: '200px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: '4px', flexWrap: 'wrap' }}>
-                  <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.01em' }}>{t('sidebar.network_planner')}</h1>
+                  <h1 className="visually-hidden-mobile" style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.01em' }}>{t('sidebar.network_planner')}</h1>
                   <div className="status-badge known" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(34, 197, 94, 0.05)', color: '#4ade80', border: '1px solid rgba(34, 197, 94, 0.2)', padding: '6px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
                     <Activity size={14} />
                     <span>{dashboardOnlineCount + discoveredOnlyCount} {t('network.online')}</span>
@@ -332,7 +332,8 @@ export function SubnetView() {
             </div>
           </header>
 
-          <div className={isMobile ? "mobile-device-list" : "subnet-grid"} style={!isMobile ? { gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: `${Math.floor(12 * safeZoom)}px` } : { padding: 'var(--space-sm)' }}>
+          {/* Phones get the same IP map as a compact auto-fill grid (a list made every square tile screen-wide) */}
+          <div className="subnet-grid" style={!isMobile ? { gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: `${Math.floor(12 * safeZoom)}px` } : undefined}>
             {tiles
               .filter(tile => !isMobile || tile.status !== 'empty')
               .map(tile => (

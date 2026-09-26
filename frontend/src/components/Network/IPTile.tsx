@@ -93,7 +93,7 @@ export const IPTile = memo(({
         <span style={{ fontWeight: isResponding ? 'bold' : 'normal', opacity: (device || discovered) ? 1 : 0.4 }}>{i}</span>
       )}
       {group && (
-        <div style={{ 
+        <div className="ip-tile__group" style={{
           position: 'absolute', top: '-8px', left: '4px', fontSize: '0.5rem', 
           background: group.color, color: 'black', padding: '0 4px', 
           borderRadius: '2px', fontWeight: 'bold', zIndex: 2 
