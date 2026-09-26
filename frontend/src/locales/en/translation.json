@@ -473,6 +473,24 @@
     "max_ports": "Max. ports",
     "port_limit_reached": "Port limit reached: {{name}} already uses {{current}} of {{max}} ports.",
     "remove_device": "Remove device",
-    "speed": "Speed"
+    "speed": "Speed",
+    "page_subtitle": "Connections and rack layout of your infrastructure",
+    "view_label": "View",
+    "tab_map": "Topology map",
+    "tab_rack": "Rack view"
+  },
+  "rack": {
+    "loading": "Loading racks…",
+    "empty_title": "No rack yet",
+    "empty_desc": "Create a rack and place your devices in it.",
+    "create_default": "Create default rack (42U)",
+    "meta": "{{width}}″ rack · {{units}}U",
+    "select_rack": "Select rack",
+    "units": "{{count}}U",
+    "position": "U{{unit}} · {{count}}U",
+    "occupied": "Occupied units",
+    "devices": "Devices in rack",
+    "inventory": "Inventory",
+    "inventory_empty": "No devices in this rack yet. Set the rack and position in the device editor."
   }
 }

@@ -5,17 +5,20 @@ import TopologyMap from './TopologyMap';
 import RackVisualizer from './RackVisualizer';
 import { Network, Layout } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { api } from '../../api/client';
+import type { Device } from '../../types';
 
 const NetworkPlanner: React.FC = () => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'topology' | 'rack'>('topology');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [devices, setDevices] = useState([]);
+  const [devices, setDevices] = useState<Device[]>([]);
 
   useEffect(() => {
-    fetch('/api/devices')
-      .then(r => r.json())
-      .then(setDevices)
+    // Through the API client (sends the bearer token, rejects error responses): a bare
+    // fetch without it got {"detail": ...} back and the rack view crashed on devices.filter
+    api.getDevices()
+      .then((data) => setDevices(Array.isArray(data) ? data : []))
       .catch(err => console.error('Failed to fetch devices', err));
   }, []);
 
@@ -35,55 +38,41 @@ const NetworkPlanner: React.FC = () => {
       }}>
         <MobileHeader title={t('sidebar.topology')} onMenuClick={() => setIsSidebarOpen(true)} />
 
-        {/* Header */}
-        <div style={{ marginBottom: '24px', flexShrink: 0 }}>
-          <h1 className="text-4xl font-extrabold text-white tracking-tight mb-1">
-            {t('sidebar.topology')}
-          </h1>
-          <p className="text-slate-400 text-base">
-            Design and visualize your infrastructure topology
-          </p>
-        </div>
-
-        {/* Tab Switcher */}
-        <div
-          className="flex gap-2 bg-slate-800/50 border border-white/5 rounded-2xl p-1.5 w-fit"
-          style={{ marginBottom: '20px', flexShrink: 0 }}
-        >
-          <button
-            onClick={() => setActiveTab('topology')}
-            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
-              activeTab === 'topology'
-                ? 'bg-sky-500 text-black shadow-lg shadow-sky-500/30 scale-105'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Network size={16} />
-            Topology Map
-          </button>
-          <button
-            onClick={() => setActiveTab('rack')}
-            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
-              activeTab === 'rack'
-                ? 'bg-sky-500 text-black shadow-lg shadow-sky-500/30 scale-105'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Layout size={16} />
-            Rack View
-          </button>
-        </div>
+        {/* Header with the view switch */}
+        <header className="planner-header">
+          <div className="visually-hidden-mobile">
+            <h1 className="page-header__title">{t('sidebar.topology')}</h1>
+            <p className="page-header__subtitle">{t('topology.page_subtitle')}</p>
+          </div>
+          <div className="segmented" role="group" aria-label={t('topology.view_label')}>
+            <button
+              type="button"
+              className="segmented__option segmented__option--icon"
+              aria-pressed={activeTab === 'topology'}
+              onClick={() => setActiveTab('topology')}
+            >
+              <Network size={15} aria-hidden="true" /> {t('topology.tab_map')}
+            </button>
+            <button
+              type="button"
+              className="segmented__option segmented__option--icon"
+              aria-pressed={activeTab === 'rack'}
+              onClick={() => setActiveTab('rack')}
+            >
+              <Layout size={15} aria-hidden="true" /> {t('topology.tab_rack')}
+            </button>
+          </div>
+        </header>
 
         {/* Content Area — explicit pixel height so ReactFlow gets a non-zero container */}
         <div
           style={{
             flex: 1,
             minHeight: 0,
-            borderRadius: '20px',
-            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border-subtle)',
             overflow: 'hidden',
-            background: 'rgba(15,23,42,0.6)',
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+            background: 'var(--bg-surface)',
           }}
         >
           {activeTab === 'topology' ? (

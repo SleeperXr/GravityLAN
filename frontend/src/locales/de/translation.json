@@ -470,6 +470,24 @@
     "max_ports": "Max. Ports",
     "port_limit_reached": "Port-Limit erreicht: {{name}} belegt bereits {{current}} von {{max}} Ports.",
     "remove_device": "Gerät entfernen",
-    "speed": "Geschwindigkeit"
+    "speed": "Geschwindigkeit",
+    "page_subtitle": "Verbindungen und Rack-Belegung deiner Infrastruktur",
+    "view_label": "Ansicht",
+    "tab_map": "Topologie",
+    "tab_rack": "Rack-Ansicht"
+  },
+  "rack": {
+    "loading": "Racks werden geladen …",
+    "empty_title": "Noch kein Rack",
+    "empty_desc": "Lege ein Rack an und platziere deine Geräte darin.",
+    "create_default": "Standard-Rack anlegen (42 HE)",
+    "meta": "{{width}}″-Rack · {{units}} HE",
+    "select_rack": "Rack auswählen",
+    "units": "{{count}} HE",
+    "position": "HE {{unit}} · {{count}} HE",
+    "occupied": "Belegte Höheneinheiten",
+    "devices": "Geräte im Rack",
+    "inventory": "Inventar",
+    "inventory_empty": "Noch keine Geräte in diesem Rack. Rack und Position legst du im Geräte-Editor fest."
   }
 }
