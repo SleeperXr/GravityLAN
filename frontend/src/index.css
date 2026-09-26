@@ -89,6 +89,17 @@ input, textarea, select, [contenteditable], [contenteditable="true"] {
   caret-color: auto;
 }
 
+/* Tailwind's preflight isn't loaded, so a button that only sets text/border classes got the
+   browser's light grey face, outset border and black text on the dark UI. Classes such as
+   .btn still override this. */
+button {
+  background-color: transparent;
+  border: 0 solid;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 /* --- Layout --- */
 .app-layout {
   display: grid;
