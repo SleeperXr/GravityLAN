@@ -27,6 +27,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - **Manual agent install failed on Unraid** (and other hosts without systemd): the installer always wrote a systemd unit, so on Unraid it stopped after removing the old agent (`/etc/systemd/system/...: No such file or directory`). It now checks Python and the init system before touching the old installation, uses systemd, Synology rc.d or a background start, and on Unraid keeps a copy on the flash drive that starts from `/boot/config/go` after a reboot (Unraid runs from RAM). The uninstaller removes all of it again.
+- **Package updates aborted right away** ("'Channel' object has no attribute 'get_exit_status'"): the SSH exit code was read with a method paramiko doesn't have, so every upgrade run and every apt cache refresh failed. The tests' mocks accepted any attribute; they now use paramiko's real channel API.
 - **Hosts behind a shared MAC failed to sync on every scan** ("Multiple rows were found when one or none was required"): with ipvlan containers several records share the host's MAC; the IP match is now kept in that case. The error log names the host.
 - **Rack view crashed** (`e.filter is not a function`): the topology page loaded devices without the API client's token and passed an error response on as the device list. The rack view also showed every device as offline (it read a field that doesn't exist).
 - **Settings page scrolled twice** (window and content area): hidden form labels stretched the page.

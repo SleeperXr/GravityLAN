@@ -137,7 +137,8 @@ async def run_ssh_command_stream(
                     break
             await asyncio.sleep(0.1)
 
-        exit_code = channel.get_exit_status()
+        # paramiko has no Channel.get_exit_status(); recv_exit_status() returns at once here
+        exit_code = channel.recv_exit_status()
         if exit_code == 0:
             return True, "Success"
         else:
@@ -245,7 +246,7 @@ async def _query_apt_updates(client, result: dict[str, Any], host_ip: str, ssh_u
             break
         await asyncio.sleep(0.1)
 
-    update_exit = chan.get_exit_status() if chan.exit_status_ready() else None
+    update_exit = chan.recv_exit_status() if chan.exit_status_ready() else None
     if update_exit != 0:
         logger.warning(
             "apt-get update on %s failed (exit %s): %s",

@@ -153,3 +153,61 @@ async def test_prepare_patch_action_endpoint_authorized(client, db, admin_token)
     data = response.json()
     assert "patch_token" in data
     assert data["patch_token"].startswith("patch_tok_")
+
+
+def _real_channel_mock(exit_code: int = 0) -> MagicMock:
+    """A channel mock limited to paramiko.Channel's real API (a bare MagicMock accepts any
+    attribute, which hid calls to the non-existent Channel.get_exit_status)."""
+    import paramiko
+
+    chan = MagicMock(spec=paramiko.Channel)
+    chan.recv_ready.return_value = False
+    chan.send_ready.return_value = True
+    chan.exit_status_ready.return_value = True
+    chan.recv_exit_status.return_value = exit_code
+    return chan
+
+
+@pytest.mark.asyncio
+@patch("paramiko.SSHClient")
+async def test_run_ssh_command_stream_reads_exit_code_with_paramiko_api(mock_ssh_client):
+    """Regression: patching aborted with "'Channel' object has no attribute 'get_exit_status'"."""
+    client_instance = MagicMock()
+    mock_ssh_client.return_value = client_instance
+    client_instance.get_transport.return_value.open_session.return_value = _real_channel_mock(0)
+
+    ok, message = await run_ssh_command_stream(
+        host_ip="192.168.1.100", ssh_user="root", ssh_password="pw",
+        command="true", output_callback=lambda _chunk: None,
+    )
+    assert (ok, message) == (True, "Success")
+
+    client_instance.get_transport.return_value.open_session.return_value = _real_channel_mock(3)
+    ok, message = await run_ssh_command_stream(
+        host_ip="192.168.1.100", ssh_user="root", ssh_password="pw",
+        command="false", output_callback=lambda _chunk: None,
+    )
+    assert ok is False and "3" in message
+
+
+@pytest.mark.asyncio
+@patch("paramiko.SSHClient")
+async def test_apt_update_exit_code_uses_paramiko_api(mock_ssh_client):
+    client_instance = MagicMock()
+    mock_ssh_client.return_value = client_instance
+    which = MagicMock()
+    which.read.return_value = b"/usr/bin/apt-get"
+    listing = MagicMock()
+    listing.read.return_value = APT_UPGRADABLE_MOCK.encode("utf-8")
+    no_release = MagicMock()
+    no_release.read.return_value = b""
+    client_instance.exec_command.side_effect = [
+        (None, which, None), (None, listing, None), (None, no_release, None), (None, no_release, None),
+    ]
+    client_instance.get_transport.return_value.open_session.return_value = _real_channel_mock(0)
+
+    res = await list_device_updates(host_ip="192.168.1.100", ssh_user="root", ssh_password="pw", ssh_port=22)
+
+    assert "error" not in res, res.get("error")
+    assert res["patch_manager"] == "apt"
+    assert len(res["packages"]) == 2
