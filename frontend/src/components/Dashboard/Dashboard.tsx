@@ -510,7 +510,7 @@ export function Dashboard() {
           gap: 'var(--space-md)'
         }}>
           <div>
-            <h1 style={{ marginBottom: 4, fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.01em' }}>{t('sidebar.dashboard')}</h1>
+            <h1 className="visually-hidden-mobile" style={{ marginBottom: 4, fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.01em' }}>{t('sidebar.dashboard')}</h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
               {t('dashboard.devices_sections', { devices: devices.length, groups: groups.length })}
             </p>

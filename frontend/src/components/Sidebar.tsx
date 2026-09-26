@@ -21,16 +21,6 @@ const NAV_ITEMS: NavItem[] = [
 // Bottom bar on phones: five destinations; logs stay reachable via the menu drawer.
 const TAB_ITEMS = NAV_ITEMS.filter((item) => item.id !== 'logs');
 
-function BrandMark() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
-      <rect x="1" y="1" width="26" height="26" rx="8" stroke="var(--accent-primary)" strokeWidth="2" />
-      <circle cx="14" cy="14" r="8.5" stroke="var(--accent-primary)" strokeOpacity="0.45" strokeWidth="1.5" />
-      <circle cx="14" cy="14" r="4" fill="var(--accent-primary)" />
-    </svg>
-  );
-}
-
 export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: boolean, onClose?: () => void }) {
   const { t } = useTranslation();
   const version = (window as any).APP_VERSION as string | undefined;
@@ -38,9 +28,10 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
   return (
     <>
       <aside className={`app-sidebar ${isOpen ? 'mobile-open' : ''}`}>
+        {/* Text logo with the version beside it (kept from the original design) */}
         <div className="sidebar-brand">
-          <BrandMark />
           <span className="sidebar-brand__name">{t('app.title')}</span>
+          {version && <span className="sidebar-brand__version">v{version}</span>}
           {isOpen && (
             <button type="button" className="btn-close mobile-only" onClick={onClose} aria-label={t('common.close')} style={{ marginLeft: 'auto' }}>
               <X size={20} />
@@ -61,8 +52,6 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
             </Link>
           ))}
         </nav>
-
-        {version && <div className="sidebar-footer">GravityLAN v{version}</div>}
       </aside>
 
       <nav className="mobile-tabbar" aria-label={t('sidebar.navigation')}>

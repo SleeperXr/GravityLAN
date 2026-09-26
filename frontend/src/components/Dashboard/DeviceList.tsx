@@ -1,6 +1,6 @@
 import { Device } from '../../types';
 import { ServiceBadge } from './ServiceBadge';
-import { Edit3, Cpu, Database, Activity } from 'lucide-react';
+import { Edit3, Cpu, Database } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface DeviceListProps {
@@ -53,8 +53,10 @@ export function DeviceList({ devices, onEdit }: DeviceListProps) {
             </div>
 
             <div className="device-list-item__actions">
-              <button 
-                className="btn btn-ghost btn-sm" 
+              <button
+                type="button"
+                className="device-card__icon-btn"
+                aria-label={`${t('dashboard.edit_device')}: ${device.display_name || device.ip}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onEdit(device);
@@ -72,17 +74,18 @@ export function DeviceList({ devices, onEdit }: DeviceListProps) {
           padding: 0 var(--space-sm);
         }
         .device-list-container {
-          background: var(--bg-secondary);
+          background: var(--bg-card);
           border-radius: var(--radius-lg);
           overflow: hidden;
-          border: 1px solid var(--border-color);
+          border: 1px solid var(--border-subtle);
         }
         .device-list-item {
           display: flex;
           align-items: center;
+          min-height: 64px;
           padding: var(--space-sm) var(--space-md);
           gap: var(--space-md);
-          border-bottom: 1px solid var(--border-color);
+          border-bottom: 1px solid var(--border-subtle);
           cursor: pointer;
           transition: background 0.2s ease;
         }
@@ -90,7 +93,7 @@ export function DeviceList({ devices, onEdit }: DeviceListProps) {
           border-bottom: none;
         }
         .device-list-item:hover {
-          background: var(--bg-tertiary);
+          background: var(--bg-elevated);
         }
         .device-list-item__status {
           flex-shrink: 0;
@@ -101,13 +104,12 @@ export function DeviceList({ devices, onEdit }: DeviceListProps) {
           height: 10px;
           border-radius: 50%;
         }
-        .status-dot.online { 
-          background: var(--accent-success); 
-          box-shadow: 0 0 10px var(--accent-success), 0 0 20px rgba(16, 185, 129, 0.2); 
+        .status-dot.online {
+          background: var(--accent-success);
         }
-        .status-dot.offline { 
-          background: var(--accent-danger); 
-          opacity: 0.5;
+        .status-dot.offline {
+          background: transparent;
+          box-shadow: inset 0 0 0 2px var(--accent-danger);
         }
         
         .device-list-item__info {

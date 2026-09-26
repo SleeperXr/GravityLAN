@@ -64,6 +64,10 @@ GravityLAN scans your home network, keeps an inventory of every device it finds,
 |:---:|:---:|
 | <img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Device details & services" width="420"> | <img src="./docs/screenshots/GravityLanDeviceEditorAgent.png" alt="Agent deployment from the device editor" width="420"> |
 
+| On a phone |
+|:---:|
+| <img src="./docs/screenshots/GravityLanMobile.png" alt="Overview on a phone with the bottom tab bar" width="300"> |
+
 ### Quick start (Docker)
 
 ```bash
@@ -191,6 +195,8 @@ npm run dev
 
 For a single-process setup like the release image, run `npm run build` in `frontend/`; FastAPI then serves `frontend/dist`.
 
+**UI work without touching your network:** `python scripts/dev_demo.py` (with the backend virtualenv) starts the API on `127.0.0.1:8000` with a throw-away demo database, simulated agents, no scans and no SSH. Start the frontend as above and log in with `demo`.
+
 **Tests & checks:**
 
 ```bash
@@ -252,6 +258,10 @@ GravityLAN scannt dein Heimnetz, führt ein Inventar aller gefundenen Geräte, l
 | Geräte-Editor | Geräte-Editor — Agent-Tab |
 |:---:|:---:|
 | <img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Gerätedetails & Dienste" width="420"> | <img src="./docs/screenshots/GravityLanDeviceEditorAgent.png" alt="Agent-Installation aus dem Geräte-Editor" width="420"> |
+
+| Auf dem Handy |
+|:---:|
+| <img src="./docs/screenshots/GravityLanMobile.png" alt="Übersicht auf dem Handy mit Tab-Leiste" width="300"> |
 
 ### Schnellstart (Docker)
 
@@ -379,6 +389,8 @@ npm run dev
 ```
 
 Für den Ein-Prozess-Betrieb wie im Release-Image in `frontend/` `npm run build` ausführen; FastAPI liefert dann `frontend/dist` aus.
+
+**UI-Arbeit ohne dein Netzwerk:** `python scripts/dev_demo.py` (mit der Backend-venv) startet die API auf `127.0.0.1:8000` mit einer Wegwerf-Demo-Datenbank und simulierten Agents – ohne Scans und ohne SSH. Frontend wie oben starten, Passwort `demo`.
 
 **Tests & Checks:**
 
