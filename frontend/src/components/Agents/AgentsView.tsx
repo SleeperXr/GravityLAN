@@ -633,7 +633,6 @@ function MultiGraph({ series }: { series: { data: any[], color: string, label: s
 }
 
 function AgentDetailView({ deviceId, agent, onRefresh }: { deviceId: number; agent: AgentSummary; onRefresh: () => void }) {
-  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'telemetry' | 'patching'>('telemetry');
   
   // SSH Credentials
@@ -798,7 +797,7 @@ function AgentDetailView({ deviceId, agent, onRefresh }: { deviceId: number; age
         onRefresh();
       };
       
-      ws.onerror = (err) => {
+      ws.onerror = () => {
         setTerminalOutput(prev => [...prev, `\r\n[Local] Connection error.\r\n`]);
         setPatching(false);
       };
@@ -810,6 +809,9 @@ function AgentDetailView({ deviceId, agent, onRefresh }: { deviceId: number; age
   };
 
   const latest = history[history.length - 1];
+  // A fresh update check wins over the (possibly older) agent report
+  const patchManagerName = patchManager ?? agent.patch_manager;
+  const majorUpgradeTarget = majorUpgrade ?? agent.major_upgrade_available;
 
   return (
     <div className="p-8 space-y-6">
@@ -1025,7 +1027,7 @@ function AgentDetailView({ deviceId, agent, onRefresh }: { deviceId: number; age
         /* Patching Tab Content */
         <div className="space-y-6">
           {/* General platform check */}
-          {!agent.patch_manager ? (
+          {!patchManagerName ? (
             <div className="bg-slate-900/50 border border-white/5 p-8 rounded-xl text-center">
               <Shield className="text-slate-500 mx-auto mb-3" size={32} />
               <h4 className="font-bold text-white text-sm mb-1">Patching Not Supported</h4>
@@ -1042,10 +1044,10 @@ function AgentDetailView({ deviceId, agent, onRefresh }: { deviceId: number; age
                   <span>System reboot required to apply previous updates. Please run a manual reboot when convenient.</span>
                 </div>
               )}
-              {agent.major_upgrade_available && (
+              {majorUpgradeTarget && (
                 <div className="bg-sky-500/10 border border-sky-500/20 text-sky-400 p-4 rounded-xl flex items-center gap-3 text-xs font-semibold">
                   <span>🚀</span>
-                  <span>Major release upgrade available: {agent.major_upgrade_available}. Note: release upgrades cannot be run from GravityLAN and must be done manually via SSH.</span>
+                  <span>Major release upgrade available: {majorUpgradeTarget}. Note: release upgrades cannot be run from GravityLAN and must be done manually via SSH.</span>
                 </div>
               )}
 

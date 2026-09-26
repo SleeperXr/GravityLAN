@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { api } from '../../api/client';
 import type { Device } from '../../types';
-import { RefreshCw, Shield, ChevronRight, CheckCircle2, AlertCircle, X, Terminal } from 'lucide-react';
+import { RefreshCw, Shield, ChevronRight, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface AgentUpdateCenterProps {
@@ -31,12 +31,9 @@ export function AgentUpdateCenter({ devices, onComplete, onClose }: AgentUpdateC
   const [statuses, setStatuses] = useState<Record<number, UpdateStatus>>({});
   const [isGlobalLoading, setIsGlobalLoading] = useState(false);
 
-  // Individual overrides for credentials (optional)
-  const [overrides, setOverrides] = useState<Record<number, { user?: string; pass?: string }>>({});
-
   const handleUpdate = async (device: Device) => {
-    const user = overrides[device.id]?.user || sshUser;
-    const pass = overrides[device.id]?.pass || sshPassword;
+    const user = sshUser;
+    const pass = sshPassword;
 
     if (!user || !pass) {
       setStatuses(prev => ({
