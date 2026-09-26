@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 
 - **Agent tokens were downloadable without login**: `GET /api/agent/download/config/{id}` now requires admin auth or a single-use enrollment code. Previously anyone on the LAN could enumerate device ids and collect every agent token (and create new ones). The manual install command in the Agent tab now carries a one-time code (valid 30 minutes, usable once); commands copied before this update no longer work — copy a fresh one.
 - **Setup mode opened every admin route**: Until the first-run setup is completed (fresh install or after a factory reset), only the routes the setup wizard needs are reachable. Backup export/import, settings, device management and agent deployment are closed (403) instead of being open to anyone.
+- **Docker image shipped local development files**: `.dockerignore` patterns only matched the repository root, so `COPY backend/ .` also copied SQLite WAL/SHM files from a local development database (device inventory), a Windows virtualenv, tool caches, tests and scratch scripts into the image. Patterns now apply to nested paths and all database side files are excluded; the image shrinks from 536 MB to 295 MB.
 
 ### Fixed
 

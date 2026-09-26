@@ -1,22 +1,51 @@
+# Patterns are matched from the build-context root, so nested paths need **/
+# (a bare ".venv" only excluded ./.venv, not backend/.venv).
+
 # Local development files
-.venv
-venv
-node_modules
+**/.venv
+**/venv
+**/node_modules
 dist
 build
-.DS_Store
+**/.DS_Store
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
 
 # Docker specific
 docker
 
 # Backend artifacts
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.db
-homelan.db
-backend/data/*.db
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+backend/tests
+
+# Local databases incl. SQLite WAL/SHM side files - never ship them
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.db-journal
+backend/data
+.demo-data
+
+# Scratch diagnostics and local tooling (see .gitignore)
+backend/check_*.py
+backend/fix_agent_deployer.py
+backend/health.json
+.claude
+.codex
+.repowise
+.vscode
+.mcp.json
+
+# Keys and secrets
+antigravity_key*
+**/*.pem
+**/.env
+**/.env.*
 
 # Frontend artifacts
 frontend/dist
