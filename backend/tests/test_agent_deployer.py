@@ -152,3 +152,72 @@ def test_pkill_pattern_for_agent_path_skips_own_shell():
 
     assert re.search(pattern, f"/usr/bin/python3 {agent_deployer.REMOTE_AGENT_PATH}")
     assert not re.search(pattern, own_shell)
+
+
+# --- hosts without systemd (Unraid): nohup fallback ---------------------------
+
+@pytest.fixture
+def fake_remote(monkeypatch):
+    """Deployment against a mocked host where only the nohup fallback starts the agent."""
+    runner = MagicMock()
+    monkeypatch.setattr(agent_deployer, "build_ssh_client", lambda: MagicMock())
+    monkeypatch.setattr(agent_deployer, "build_connect_kwargs", lambda *a, **k: ({}, None))
+    monkeypatch.setattr(agent_deployer, "connect_with_gateway_fallback", lambda *a, **k: None)
+    monkeypatch.setattr(agent_deployer, "_check_sudo", lambda client: True)
+    monkeypatch.setattr(agent_deployer, "RemoteRunner", lambda *a, **k: runner)
+    monkeypatch.setattr(agent_deployer, "_probe_platform", lambda client, ip: (False, False))
+    monkeypatch.setattr(agent_deployer, "_stage_file", lambda *a, **k: None)
+    monkeypatch.setattr(agent_deployer, "_probe_python", lambda client: "python3")
+    monkeypatch.setattr(agent_deployer, "_is_agent_running", lambda client, path: False)
+    monkeypatch.setattr(agent_deployer, "_nohup_fallback", lambda *a, **k: (True, "Agent started (Nohup fallback)"))
+    monkeypatch.setattr(agent_deployer.time, "sleep", lambda _s: None)
+    return runner
+
+
+@pytest.mark.asyncio
+async def test_deploy_via_nohup_fallback_returns_token(fake_remote, monkeypatch):
+    """Regression: the fallback returned (ok, msg) where (ok, msg, token) was expected, so
+    /api/agent/deploy crashed with 'not enough values to unpack' and the new token was never
+    stored (the running agent then showed up as a token mismatch)."""
+    monkeypatch.setattr(agent_deployer, "_is_unraid", lambda client: False)
+
+    result = await agent_deployer.deploy_agent(
+        host_ip="192.168.1.50", ssh_user="root", ssh_password="pw",
+        server_url="http://gravity:8000", device_id=29,
+    )
+
+    assert len(result) == 3
+    ok, message, token = result
+    assert ok is True and "Nohup" in message
+    assert re.fullmatch(r"[0-9a-f]{32}", token)
+
+
+@pytest.mark.asyncio
+async def test_deploy_on_unraid_installs_boot_hook(fake_remote, monkeypatch):
+    """Unraid runs from RAM: the agent must be kept on the flash drive and started from /boot/config/go."""
+    monkeypatch.setattr(agent_deployer, "_is_unraid", lambda client: True)
+
+    ok, _message, _token = await agent_deployer.deploy_agent(
+        host_ip="192.168.1.50", ssh_user="root", ssh_password="pw",
+        server_url="http://gravity:8000", device_id=29,
+    )
+
+    assert ok is True
+    commands = [cmd for call in fake_remote.run_sudo_batch.call_args_list for cmd in call.args[0]]
+    joined = "\n".join(commands)
+    assert "/boot/config/gravitylan-agent" in joined
+    assert "sed -i '/^# >>> gravitylan-agent/,/^# <<< gravitylan-agent/d' /boot/config/go" in joined
+    assert ">> /boot/config/go" in joined
+
+
+def test_unraid_go_block_waits_for_python_and_detaches():
+    block = agent_deployer._UNRAID_GO_BLOCK
+    assert block.startswith("# >>> gravitylan-agent") and block.rstrip().endswith("# <<< gravitylan-agent")
+    assert "command -v python3" in block
+    assert "< /dev/null" in block
+
+
+def test_cleanup_removes_unraid_boot_hook():
+    joined = "\n".join(agent_deployer._build_cleanup_script(has_systemd=False, has_syno_rc=False))
+    assert "/boot/config/gravitylan-agent" in joined
+    assert "/boot/config/go" in joined

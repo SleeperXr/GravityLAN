@@ -96,6 +96,18 @@ REMOTE_AGENT_PATH = f"{REMOTE_BASE_DIR}/gravitylan-agent.py"
 REMOTE_CONFIG_PATH = f"{REMOTE_BASE_DIR}/agent.conf"
 REMOTE_SERVICE_PATH = "/etc/systemd/system/gravitylan-agent.service"
 
+# Unraid runs from RAM (/opt is empty after a reboot); only the flash drive under /boot persists.
+# Same layout and go block as the manual install script, so both paths replace each other cleanly.
+UNRAID_PERSIST_DIR = "/boot/config/gravitylan-agent"
+UNRAID_GO_FILE = "/boot/config/go"
+_UNRAID_GO_BLOCK_SED = "sed -i '/^# >>> gravitylan-agent/,/^# <<< gravitylan-agent/d' /boot/config/go"
+_UNRAID_GO_BLOCK = """# >>> gravitylan-agent (added by GravityLAN; delete this block to disable)
+( for i in $(seq 1 60); do command -v python3 >/dev/null 2>&1 && break; sleep 5; done
+  mkdir -p /opt/gravitylan-agent && cp /boot/config/gravitylan-agent/* /opt/gravitylan-agent/
+  cd /opt/gravitylan-agent && exec nohup python3 gravitylan-agent.py > gravitylan-agent.log 2>&1 ) < /dev/null > /dev/null 2>&1 &
+# <<< gravitylan-agent
+"""
+
 
 def _probe_python(client) -> str:
     """Detect available python3 binary on remote host."""
@@ -147,6 +159,9 @@ def _build_cleanup_script(has_systemd: bool, has_syno_rc: bool) -> list[str]:
         f"pkill -9 -f '{_AGENT_PKILL_PATTERN}' || true",
         "rm -rf /opt/homelan /opt/gravitylan /opt/gravitylan-agent /root/gravitylan-agent /usr/local/homelan /usr/local/gravitylan-agent",
         "rm -f /etc/systemd/system/gravitylan-agent.service /etc/systemd/system/homelan-agent.service",
+        # Unraid boot hook and flash copy (paths don't exist elsewhere)
+        f"if [ -f {UNRAID_GO_FILE} ]; then {_UNRAID_GO_BLOCK_SED}; fi",
+        f"rm -rf {UNRAID_PERSIST_DIR}",
     ]
     if has_systemd:
         cmds.append("systemctl daemon-reload || true")
@@ -311,11 +326,7 @@ def _nohup_fallback(
     time.sleep(3)
 
     if _is_agent_running(client, remote_agent_path):
-        msg = f"Agent started (Nohup fallback, URL: {server_url})"
-        _, stdout, _ = client.exec_command("test -f /etc/unraid-version && echo 'unraid'")
-        if stdout.read().decode().strip() == "unraid":
-            msg += ". NOTE: On Unraid, add the command to /boot/config/go for persistence."
-        return True, msg
+        return True, f"Agent started (Nohup fallback, URL: {server_url})"
 
     _, stdout, _ = client.exec_command(f"tail -n 20 {base_dir}/gravitylan-agent.log")
     log_content = stdout.read().decode().strip()
@@ -326,6 +337,29 @@ def _nohup_fallback(
         error_msg += " Check the server log or the agent's local log file for details."
 
     return False, error_msg
+
+
+def _is_unraid(client) -> bool:
+    _, stdout, _ = client.exec_command("test -f /etc/unraid-version && echo 'unraid'", timeout=5)
+    return stdout.read().decode().strip() == "unraid"
+
+
+def _install_unraid_boot_hook(runner: RemoteRunner, client, device_id: int) -> None:
+    """Keep the agent on the flash drive and start it from /boot/config/go after a reboot.
+
+    The marked block is removed before it is appended again, so repeated deploys stay idempotent.
+    """
+    tmp_block = f"/tmp/gravitylan_go_{device_id}"
+    _stage_file(client, tmp_block, _UNRAID_GO_BLOCK)
+    runner.run_sudo_batch([
+        f"mkdir -p {UNRAID_PERSIST_DIR}",
+        f"cp {REMOTE_AGENT_PATH} {REMOTE_CONFIG_PATH} {UNRAID_PERSIST_DIR}/",
+        f"touch {UNRAID_GO_FILE}",
+        _UNRAID_GO_BLOCK_SED,
+        f"cat {tmp_block} >> {UNRAID_GO_FILE}",
+        f"rm -f {tmp_block}",
+    ])
+    logger.info("Unraid boot hook installed (%s, %s)", UNRAID_PERSIST_DIR, UNRAID_GO_FILE)
 
 
 async def deploy_agent(
@@ -427,8 +461,15 @@ def _deploy_agent_blocking(
         if _is_agent_running(client, REMOTE_AGENT_PATH):
             return True, f"Agent started successfully{cleanup_msg} (Directory: {base_dir}, URL: {server_url})", token
 
-        # Nohup fallback
-        return _nohup_fallback(client, host_ip, base_dir, python_path, REMOTE_AGENT_PATH, server_url, token)
+        # Nohup fallback (hosts without systemd/rc.d, e.g. Unraid). It reports (ok, message);
+        # returning that pair as-is crashed the deploy endpoint and the new token was never stored.
+        ok, message = _nohup_fallback(client, host_ip, base_dir, python_path, REMOTE_AGENT_PATH, server_url, token)
+        if not ok:
+            return False, message, ""
+        if _is_unraid(client):
+            _install_unraid_boot_hook(runner, client, device_id)
+            message += "; Unraid: kept on the flash drive, starts again from /boot/config/go after a reboot"
+        return True, message, token
 
     except Exception as exc:
         mapped = _map_ssh_error(exc, host_ip)

@@ -218,9 +218,14 @@ async def _query_apt_updates(client, result: dict[str, Any], host_ip: str, ssh_u
     # (previously this hung forever), and only send the password when
     # sudo actually asks for it (SUDOPROMPT).
     needs_sudo = ssh_user != "root"
-    update_cmd = (
-        "sudo -n -S -p 'SUDOPROMPT:' apt-get update" if needs_sudo else "apt-get update"
-    )
+    # -n (never prompt) only without a password: combined with -S it made sudo refuse
+    # ("a password is required") before the password below could be sent.
+    if not needs_sudo:
+        update_cmd = "apt-get update"
+    elif ssh_password:
+        update_cmd = "sudo -S -p 'SUDOPROMPT:' apt-get update"
+    else:
+        update_cmd = "sudo -n apt-get update"
 
     chan = client.get_transport().open_session()
     chan.get_pty()
