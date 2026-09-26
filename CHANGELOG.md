@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - **Calmer, clearer interface**: graphite surfaces with a single blue accent; green/amber/red only for state; text contrast raised to WCAG AA; IBM Plex Sans/Mono bundled locally (no Google Fonts request).
 - **Navigation**: clear names (Overview, IP addresses, Topology, Agents, Logs, Settings), the text logo with the version next to it, a bottom tab bar on phones; the logs page is a regular page in the menu.
-- **Overview**: device cards show status, IP, role (Host/VM/Docker) and labeled CPU/RAM/disk/temperature meters; services are neutral chips (max. four plus "+N"); phones always use the list view.
+- **Overview**: device cards show status, IP, role (Host/VM/Docker) and labeled CPU/RAM/disk/temperature meters; services are neutral chips, all of them clickable (the chip row wraps, and scrolls if a card is too short); phones always use the list view.
 - **Device editor**: opens as a side panel with the device's network path (e.g. Proxmox › Docker VM), keyboard- and screen-reader-friendly (focus handling, Escape, arrow keys for tabs); full screen on phones.
 - **Agents, login, IP grid, topology**: restyled; agent KPIs show real values only (removed decorative fake trend lines); all texts translated — 41 missing translation keys added.
 

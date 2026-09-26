@@ -15,9 +15,6 @@ interface DeviceCardProps {
   onSelect?: (selected: boolean) => void;
 }
 
-// More chips than this crowd the card; the rest is listed in the device editor.
-const MAX_VISIBLE_SERVICES = 4;
-
 /** Short role label: physical host, VM or container. */
 function roleLabel(device: Device): string | null {
   if (device.virtual_type === 'docker') return 'Docker';
@@ -32,8 +29,6 @@ export const DeviceCard = memo(({ device, isEditMode, onEdit, onRefresh, isSelec
   const displayName = device.display_name || device.hostname || device.ip;
   const role = roleLabel(device);
   const services = [...device.services].sort((a, b) => a.sort_order - b.sort_order);
-  const visibleServices = services.slice(0, MAX_VISIBLE_SERVICES);
-  const hiddenServices = services.slice(MAX_VISIBLE_SERVICES);
   const agent = device.agent_info;
   const hasAgentUpdate = !isEditMode && !!agent?.agent_version && !!agent?.latest_version && agent.agent_version !== agent.latest_version;
   const hasPendingKey = !isEditMode && !!device.has_pending_token;
@@ -157,16 +152,12 @@ export const DeviceCard = memo(({ device, isEditMode, onEdit, onRefresh, isSelec
 
       {!isEditMode && <DeviceMetrics deviceId={device.id} compact={true} />}
 
+      {/* Every service stays one click away; the row wraps (and scrolls if the card is too short) */}
       {services.length > 0 && (
         <div className="device-card__services">
-          {visibleServices.map((service) => (
+          {services.map((service) => (
             <ServiceBadge key={service.id} service={service} ip={device.ip} disabled={isEditMode} />
           ))}
-          {hiddenServices.length > 0 && (
-            <span className="service-badge service-badge--more" title={hiddenServices.map((s) => s.name).join(', ')}>
-              +{hiddenServices.length}
-            </span>
-          )}
         </div>
       )}
     </article>

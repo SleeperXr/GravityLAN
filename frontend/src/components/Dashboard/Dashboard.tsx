@@ -444,8 +444,10 @@ export function Dashboard() {
                       defaultH = 5;
                     }
 
-                    // Many services: one more row for the chips
-                    if ((device.services?.length || 0) > 2 && !device.has_agent) defaultH = 4;
+                    // All service chips are shown and wrap: one more grid row per extra chip row
+                    const chipsPerRow = device.has_agent ? 3 : 2;
+                    const chipRows = Math.ceil((device.services?.length || 0) / chipsPerRow);
+                    if (chipRows > 1) defaultH += chipRows - 1;
                     
                     const initialH = (device.h !== null && device.h !== undefined) ? device.h : defaultH;
                     const initialW = (device.w !== null && device.w !== undefined) ? device.w : defaultW;

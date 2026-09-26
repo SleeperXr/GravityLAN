@@ -39,17 +39,14 @@ export function DeviceList({ devices, onEdit }: DeviceListProps) {
             )}
 
             <div className="device-list-item__services">
-              {device.services?.slice(0, 4).map((service) => (
-                <ServiceBadge 
-                  key={service.id} 
-                  service={service} 
+              {/* Named chips: icons alone don't tell two web UIs apart on a phone */}
+              {device.services?.map((service) => (
+                <ServiceBadge
+                  key={service.id}
+                  service={service}
                   ip={device.ip}
-                  isMini={true} 
                 />
               ))}
-              {(device.services?.length || 0) > 4 && (
-                <span className="service-badge-more">+{device.services!.length - 4}</span>
-              )}
             </div>
 
             <div className="device-list-item__actions">
@@ -155,14 +152,6 @@ export function DeviceList({ devices, onEdit }: DeviceListProps) {
           justify-content: flex-end;
           flex-wrap: wrap;
           max-width: 300px;
-        }
-        .service-badge-more {
-          font-size: 0.7rem;
-          color: var(--text-tertiary);
-          font-weight: 700;
-          padding: 2px 6px;
-          background: rgba(255,255,255,0.05);
-          border-radius: 4px;
         }
         
         .device-list-item__actions {
