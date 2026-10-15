@@ -36,7 +36,7 @@ Everything runs in **one container** with **one SQLite file**: a FastAPI backend
 
 ## Features
 
-| | |
+| Area | What you get |
 |---|---|
 | **Discovery** | Scheduled Nmap and ARP scans of your subnets, plus a lighter presence check in between: hosts, open ports, services, hostnames (DNS, mDNS) and vendors. Containers with their own LAN address are found too, also `ipvlan` setups where several of them share the host's MAC. A device only counts as offline after several failed checks in a row (ping, ARP and TCP; 3 by default), so busy hosts don't flap. |
 | **Overview** | Your devices in your own sections, as tiles or a list, with live agent metrics and service links that open the web UI (or copy the SMB path). IP changes, issues and a notification feed; tiles can be arranged freely. |
@@ -54,16 +54,16 @@ Everything runs in **one container** with **one SQLite file**: a FastAPI backend
 
 <table>
   <tr>
-    <td width="50%"><img src="./docs/screenshots/GravityLanSsh.png" alt="SSH terminal with saved connections, recent connections and an open shell"><br><sub><b>SSH terminal</b>: saved and recent connections, tabs, an "Agent update" button when the host's agent is outdated</sub></td>
-    <td width="50%"><img src="./docs/screenshots/GravityLanTopology.png" alt="Topology map: gateway, core switch and connected devices with link speeds"><br><sub><b>Topology</b>: devices, links and their speeds; a rack view sits next to it</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLanSsh.png" alt="SSH terminal with saved connections, recent connections and an open shell"><br><sub><b>SSH terminal</b>: tabs, saved connections, agent update</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLanTopology.png" alt="Topology map: gateway, core switch and connected devices with link speeds"><br><sub><b>Topology</b>: devices, links and link speeds</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="./docs/screenshots/GravityLANAgents.png" alt="Agents page with 24-hour availability and CPU, memory and temperature graphs"><br><sub><b>Agents</b>: live load, 24 h availability and history graphs per host</sub></td>
-    <td width="50%"><img src="./docs/screenshots/GravityLanNetwork-Planer.png" alt="IP address map of a /24 subnet with used and free addresses"><br><sub><b>IP addresses</b>: every address of a subnet at a glance</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLANAgents.png" alt="Agents page with 24-hour availability and CPU, memory and temperature graphs"><br><sub><b>Agents</b>: live load, availability, history</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLanNetwork-Planer.png" alt="IP address map of a /24 subnet with used and free addresses"><br><sub><b>IP addresses</b>: every address of a subnet</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Device editor side panel with group, physical host and rack position"><br><sub><b>Device editor</b>: group, host, rack position and tile size</sub></td>
-    <td width="50%"><img src="./docs/screenshots/GravityLanDeviceEditorAgent.png" alt="Agent tab of the device editor, updating the agent through a saved SSH key connection"><br><sub><b>Agent tab</b>: install or update with a saved key connection</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Device editor side panel with group, physical host and rack position"><br><sub><b>Device editor</b>: group, host, rack position</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLanDeviceEditorAgent.png" alt="Agent tab of the device editor, updating the agent through a saved SSH key connection"><br><sub><b>Agent tab</b>: update over a saved key connection</sub></td>
   </tr>
 </table>
 
@@ -91,12 +91,10 @@ Open `http://<your-host>:8000` and go through the setup wizard: it detects your 
 
 **Docker Compose.** The repository has four variants; start one with `docker compose -f <file> up -d`:
 
-| File | Network | Use it when |
-|---|---|---|
-| [`docker-compose.yml`](docker-compose.yml) | Bridge, port 8000 | You want the simplest start. ARP and MAC detection only see what the bridge passes through. |
-| [`docker-compose.hostnet.yml`](docker-compose.hostnet.yml) | Host network | You want the best view of the LAN (ARP, MAC addresses, multicast) and accept less isolation. |
-| [`docker-compose.macvlan.yml`](docker-compose.macvlan.yml) | Macvlan, own LAN IP | The container should get its own address in your LAN. Set `GRAVITYLAN_IP`, `GRAVITYLAN_SUBNET`, `GRAVITYLAN_GATEWAY` and `GRAVITYLAN_INTERFACE` for your network. |
-| [`docker-compose.unraid.yml`](docker-compose.unraid.yml) | Host network | You run Unraid and want to build the image from a checkout of this repository. |
+- [`docker-compose.yml`](docker-compose.yml): bridge network on port 8000. The simplest start; ARP and MAC detection only see what the bridge passes through.
+- [`docker-compose.hostnet.yml`](docker-compose.hostnet.yml): host network. The best view of the LAN (ARP, MAC addresses, multicast), with less isolation.
+- [`docker-compose.macvlan.yml`](docker-compose.macvlan.yml): macvlan, so the container gets its own address in your LAN. Set `GRAVITYLAN_IP`, `GRAVITYLAN_SUBNET`, `GRAVITYLAN_GATEWAY` and `GRAVITYLAN_INTERFACE` for your network.
+- [`docker-compose.unraid.yml`](docker-compose.unraid.yml): host network for Unraid; builds the image from a checkout of this repository.
 
 The image is multi-stage (Vite build, then a slim Python runtime) and runs as a non-root user; Nmap gets only the capabilities it needs. To build it yourself: `docker build -t gravitylan:local .`
 
@@ -219,6 +217,8 @@ cd frontend && npm test                 # frontend (Vitest)
 cd frontend && npm run typecheck        # TypeScript
 ```
 
+**Repository layout:**
+
 ```
 agent/            Linux agent (gravitylan-agent.py) and systemd unit
 backend/app/      FastAPI app: api/, models/, schemas/, scanner/, services/, database/
@@ -237,8 +237,6 @@ Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). What changed 
 
 ---
 
-<a id="deutsch"></a>
-
 ## Deutsch
 
 ### Worum es geht
@@ -249,7 +247,7 @@ Alles läuft in **einem Container** mit **einer SQLite-Datei**: ein FastAPI-Back
 
 ### Funktionen
 
-| | |
+| Bereich | Was du bekommst |
 |---|---|
 | **Erkennung** | Geplante Nmap- und ARP-Scans deiner Subnetze, dazwischen ein leichterer Anwesenheits-Check: Hosts, offene Ports, Dienste, Hostnamen (DNS, mDNS) und Hersteller. Auch Container mit eigener LAN-Adresse werden gefunden, ebenso `ipvlan`-Setups, in denen sich mehrere die MAC des Hosts teilen. Offline gilt ein Gerät erst nach mehreren Fehlversuchen in Folge (Ping, ARP und TCP; standardmäßig 3), damit ausgelastete Hosts nicht flackern. |
 | **Übersicht** | Deine Geräte in eigenen Bereichen, als Kacheln oder Liste, mit Live-Werten vom Agenten und Dienst-Links, die die Weboberfläche öffnen (oder den SMB-Pfad kopieren). IP-Wechsel, Probleme und ein Benachrichtigungs-Feed; die Kacheln lassen sich frei anordnen. |
@@ -267,16 +265,16 @@ Alles läuft in **einem Container** mit **einer SQLite-Datei**: ein FastAPI-Back
 
 <table>
   <tr>
-    <td width="50%"><img src="./docs/screenshots/GravityLanSsh.png" alt="SSH-Terminal mit gespeicherten und zuletzt genutzten Verbindungen und einer offenen Shell"><br><sub><b>SSH-Terminal</b>: gespeicherte und letzte Verbindungen, Tabs, Schaltfläche „Agent-Update“, wenn der Agent des Hosts veraltet ist</sub></td>
-    <td width="50%"><img src="./docs/screenshots/GravityLanTopology.png" alt="Topologie-Karte: Gateway, Core-Switch und angeschlossene Geräte mit Link-Geschwindigkeiten"><br><sub><b>Topologie</b>: Geräte, Verbindungen und ihre Geschwindigkeit; daneben die Rack-Ansicht</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLanSsh.png" alt="SSH-Terminal mit gespeicherten und zuletzt genutzten Verbindungen und einer offenen Shell"><br><sub><b>SSH-Terminal</b>: Tabs, Verbindungen, Agent-Update</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLanTopology.png" alt="Topologie-Karte: Gateway, Core-Switch und angeschlossene Geräte mit Link-Geschwindigkeiten"><br><sub><b>Topologie</b>: Geräte, Verbindungen, Geschwindigkeiten</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="./docs/screenshots/GravityLANAgents.png" alt="Agents-Seite mit 24-Stunden-Verfügbarkeit und Verläufen für CPU, Speicher und Temperatur"><br><sub><b>Agents</b>: Live-Last, Verfügbarkeit über 24 h und Verläufe pro Host</sub></td>
-    <td width="50%"><img src="./docs/screenshots/GravityLanNetwork-Planer.png" alt="IP-Adresskarte eines /24-Subnetzes mit belegten und freien Adressen"><br><sub><b>IP-Adressen</b>: jede Adresse eines Subnetzes auf einen Blick</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLANAgents.png" alt="Agents-Seite mit 24-Stunden-Verfügbarkeit und Verläufen für CPU, Speicher und Temperatur"><br><sub><b>Agents</b>: Live-Last, Verfügbarkeit, Verlauf</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLanNetwork-Planer.png" alt="IP-Adresskarte eines /24-Subnetzes mit belegten und freien Adressen"><br><sub><b>IP-Adressen</b>: jede Adresse eines Subnetzes</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Geräte-Editor als Seitenleiste mit Gruppe, physischem Host und Rack-Position"><br><sub><b>Geräte-Editor</b>: Gruppe, Host, Rack-Position und Kachelgröße</sub></td>
-    <td width="50%"><img src="./docs/screenshots/GravityLanDeviceEditorAgent.png" alt="Agent-Tab des Geräte-Editors, Agent-Update über eine gespeicherte SSH-Key-Verbindung"><br><sub><b>Agent-Tab</b>: installieren oder aktualisieren mit gespeicherter Key-Verbindung</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLanDeviceEditor.png" alt="Geräte-Editor als Seitenleiste mit Gruppe, physischem Host und Rack-Position"><br><sub><b>Geräte-Editor</b>: Gruppe, Host, Rack-Position</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/GravityLanDeviceEditorAgent.png" alt="Agent-Tab des Geräte-Editors, Agent-Update über eine gespeicherte SSH-Key-Verbindung"><br><sub><b>Agent-Tab</b>: Update über gespeicherte Key-Verbindung</sub></td>
   </tr>
 </table>
 
@@ -298,12 +296,10 @@ docker run -d --name gravitylan \
 
 **Docker Compose.** Im Repository liegen vier Varianten; starten mit `docker compose -f <datei> up -d`:
 
-| Datei | Netzwerk | Sinnvoll, wenn |
-|---|---|---|
-| [`docker-compose.yml`](docker-compose.yml) | Bridge, Port 8000 | du den einfachsten Start willst. ARP- und MAC-Erkennung sehen nur, was die Bridge durchreicht. |
-| [`docker-compose.hostnet.yml`](docker-compose.hostnet.yml) | Host-Netzwerk | du die beste Sicht aufs LAN willst (ARP, MAC-Adressen, Multicast) und weniger Isolation in Kauf nimmst. |
-| [`docker-compose.macvlan.yml`](docker-compose.macvlan.yml) | Macvlan, eigene LAN-IP | der Container eine eigene Adresse im LAN bekommen soll. `GRAVITYLAN_IP`, `GRAVITYLAN_SUBNET`, `GRAVITYLAN_GATEWAY` und `GRAVITYLAN_INTERFACE` an dein Netz anpassen. |
-| [`docker-compose.unraid.yml`](docker-compose.unraid.yml) | Host-Netzwerk | du Unraid nutzt und das Image aus einem Checkout dieses Repositorys bauen willst. |
+- [`docker-compose.yml`](docker-compose.yml): Bridge-Netzwerk auf Port 8000. Der einfachste Start; ARP- und MAC-Erkennung sehen nur, was die Bridge durchreicht.
+- [`docker-compose.hostnet.yml`](docker-compose.hostnet.yml): Host-Netzwerk. Die beste Sicht aufs LAN (ARP, MAC-Adressen, Multicast), dafür weniger Isolation.
+- [`docker-compose.macvlan.yml`](docker-compose.macvlan.yml): Macvlan, der Container bekommt eine eigene Adresse im LAN. `GRAVITYLAN_IP`, `GRAVITYLAN_SUBNET`, `GRAVITYLAN_GATEWAY` und `GRAVITYLAN_INTERFACE` an dein Netz anpassen.
+- [`docker-compose.unraid.yml`](docker-compose.unraid.yml): Host-Netzwerk für Unraid; baut das Image aus einem Checkout dieses Repositorys.
 
 Das Image ist mehrstufig gebaut (Vite-Build, dann eine schlanke Python-Laufzeit) und läuft als Nicht-root-Benutzer; Nmap bekommt nur die Capabilities, die es braucht. Selbst bauen: `docker build -t gravitylan:local .`
 
@@ -424,6 +420,18 @@ cd backend && python -m pytest          # Backend
 python -m pytest gravitylan_api/tests   # Python-Client, aus dem Repo-Root
 cd frontend && npm test                 # Frontend (Vitest)
 cd frontend && npm run typecheck        # TypeScript
+```
+
+**Repo-Übersicht:**
+
+```
+agent/            Linux-Agent (gravitylan-agent.py) und systemd-Unit
+backend/app/      FastAPI-App: api/, models/, schemas/, scanner/, services/, database/
+backend/tests/    Backend-Tests (pytest)
+frontend/         React-Oberfläche (Vite, TypeScript, Tailwind)
+gravitylan_api/   Python-Client
+docs/             Sicherheits- und Design-Doku, ADRs, Screenshots
+scripts/          Demo-Backend und Wartungsskripte
 ```
 
 Beiträge sind willkommen: siehe [CONTRIBUTING.md](CONTRIBUTING.md). Was sich pro Version geändert hat: [CHANGELOG.md](CHANGELOG.md).
