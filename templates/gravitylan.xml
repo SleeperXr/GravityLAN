@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>GravityLAN</Name>
+  <Repository>sleeperxr/gravitylan:latest</Repository>
+  <Registry>https://hub.docker.com/r/sleeperxr/gravitylan</Registry>
+  <Network>host</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/SleeperXr/GravityLAN/issues</Support>
+  <Project>https://github.com/SleeperXr/GravityLAN</Project>
+  <Overview>GravityLAN is a self-hosted network radar and homelab inventory dashboard: sweeps subnets, tracks devices and IP history, draws network topology and racks, and monitors Linux hosts via an optional lightweight agent.</Overview>
+  <Description>GravityLAN is a self-hosted dashboard and network radar for your homelab or home network.
+
+Features:
+- Discovery: Scheduled Nmap and ARP network scans (hostnames, open ports, services, vendors, VLANs).
+- Network Inventory: Real-time SLA radar, latency telemetry, IP change logs, and offline flap detection.
+- Topology &amp; Racks: Visual interactive network map with link speeds and rack unit placement.
+- In-Browser SSH Terminal: Fast multi-tab web terminal with saved credentials and encrypted vault.
+- Linux Agent (optional): Single-script monitoring for CPU, RAM, disks, temperatures, and pending package updates.
+
+Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
+  <Category>Network:Management Network:Scanner Tools:Utilities Status:Operation</Category>
+  <WebUI>http://[IP]:[PORT:8000]</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/assets/logo-mark.png</Icon>
+  <ExtraParams>--cap-add=NET_RAW --cap-add=NET_ADMIN</ExtraParams>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLanDashboard.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLanTopology.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLanSsh.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLANAgents.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLanNetwork-Planer.png</Screenshot>
+
+  <!-- WebUI Port / Reference -->
+  <Config Name="WebUI Port" Target="8000" Default="8000" Mode="tcp" Description="The HTTP port on which the GravityLAN WebUI and REST API are served." Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+
+  <!-- App Data Path -->
+  <Config Name="Data Storage" Target="/app/data" Default="/mnt/user/appdata/gravitylan" Mode="rw" Description="Directory to store persistent data (SQLite database, SSH key vault, backups)." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/gravitylan</Config>
+
+  <!-- Environment Variables -->
+  <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Description="Container timezone (e.g. Europe/Berlin, UTC, America/New_York)." Type="Variable" Display="advanced" Required="false" Mask="false">Europe/Berlin</Config>
+  <Config Name="Internal Port" Target="GRAVITYLAN_PORT" Default="8000" Description="Container internal listening port (matches WebUI port)." Type="Variable" Display="advanced" Required="false" Mask="false">8000</Config>
+  <Config Name="Debug Mode" Target="GRAVITYLAN_DEBUG" Default="false" Description="Enable detailed logging for debugging scanner and backend issues." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+</Container>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommunityApplications>
+  <Profile>
+    Official Unraid Community Applications repository for GravityLAN.
+    GravityLAN is a self-hosted network radar, topology mapper, and homelab inventory dashboard.
+  </Profile>
+  <Icon>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/assets/logo-mark.png</Icon>
+  <WebPage>https://github.com/SleeperXr/GravityLAN</WebPage>
+  <Support>https://github.com/SleeperXr/GravityLAN/issues</Support>
+</CommunityApplications>
