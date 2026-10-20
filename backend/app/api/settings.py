@@ -195,7 +195,7 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
                 "telemetry.device_metrics", "telemetry.device_health_samples",
                 "telemetry.device_health_rollups", "telemetry.device_metrics_rollups",
                 "device_history", "services", "devices", "racks", "discovered_hosts",
-                "subnets", "app_settings"
+                "subnets", "router_import_sources", "app_settings"
             ]
             
             for table in tables:

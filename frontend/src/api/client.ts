@@ -226,6 +226,15 @@ export const api = {
   updateSubnet: (id: number, data: Partial<import('../types').Subnet>) => request<import('../types').Subnet>(`/api/network/subnets/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteSubnet: (id: number) => request<void>(`/api/network/subnets/${id}`, { method: 'DELETE' }),
 
+  // Import subnets/VLANs from a router
+  getRouterSources: () => request<import('../types').RouterSource[]>('/api/network/router-import/sources'),
+  deleteRouterSource: (provider: import('../types').RouterImportProvider) =>
+    request<{ status: string }>(`/api/network/router-import/sources/${provider}`, { method: 'DELETE' }),
+  previewRouterImport: (data: import('../types').RouterImportRequest) =>
+    request<import('../types').RouterImportPreview>('/api/network/router-import/preview', { method: 'POST', body: JSON.stringify(data) }),
+  applyRouterImport: (networks: import('../types').RouterImportApplyItem[]) =>
+    request<import('../types').RouterImportApplyResult>('/api/network/router-import/apply', { method: 'POST', body: JSON.stringify({ networks }) }),
+
   // Topology
   getRacks: () => request<import('../types').Rack[]>('/api/topology/racks'),
   createRack: (data: Partial<import('../types').Rack>) => request<import('../types').Rack>('/api/topology/racks', { method: 'POST', body: JSON.stringify(data) }),

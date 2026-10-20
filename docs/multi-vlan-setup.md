@@ -106,9 +106,46 @@ In the device editor's **Agent** tab, under **Agent Configuration**, set **L2 Su
 - An unknown IP address becomes a discovered host with MAC address and vendor. It shows up on the **IP addresses** page, in the address map and under **Recent Findings**; its address tile can add it to the dashboard.
 - On the **IP addresses** page the VLAN's tab shows **L2 Probe (&lt;device&gt;)**: it contains the probe's address and is not directly attached to GravityLAN.
 
+### Import subnets and VLANs from the router
+
+Instead of typing every VLAN in by hand, GravityLAN can ask the router which networks it routes: **Settings → Scan subnets → Import from router → Ask router**. The router answers with its own address in each network, which gives the subnet, the gateway and, where the router names it, the VLAN.
+
+- **Fetch** only shows a preview. Nothing is written until you pick networks and press **Apply**.
+- New networks become scan subnets with gateway and VLAN. For networks you already have, only an empty gateway or VLAN is filled in. Names and values you set are never overwritten.
+- Only private networks are listed. The WAN address, loopback and link-local addresses are skipped. Networks larger than a /16 are shown but cannot be imported, just like when you enter them by hand.
+
+#### Via SNMP (most routers)
+
+Enable read-only SNMP (v1, v2c or v3) on the router and enter its address and the community, or the v3 user and passwords. GravityLAN reads:
+
+- the router's interface addresses and masks (IP-MIB `ipAddrTable`, or `ipAddressTable` on newer agents), which give subnet and gateway,
+- the interface names (IF-MIB `ifName`, `ifAlias`), which give the network's name,
+- the VLAN ID from interface names such as `br10`, `eth0.10`, `switch0.10`, `vlan10` or `igb1_vlan10`, and a VLAN's name from Q-BRIDGE-MIB where the router offers it.
+
+This works with OPNsense and pfSense (SNMP service), OpenWrt (`snmpd` package), MikroTik, Sophos, most business routers and firewalls, and consumer routers whose firmware offers SNMP. A FRITZ!Box has no SNMP; dedicated connectors for FRITZ!Box, OPNsense/pfSense, OpenWrt and others are planned on top of the same interface. If a router names its interfaces differently, the VLAN stays empty and you can set it on the subnet by hand.
+
+#### Via the UniFi console (Cloud Gateway, UDM, UXG)
+
+UniFi consoles offer an official local API. GravityLAN reads the networks with their names, VLAN IDs and gateway addresses from the network configuration:
+
+1. In UniFi Network, create an API key under **Settings → Control Plane → Integrations**.
+2. Choose **UniFi console (API key)**, enter the console's address and the key, and press **Fetch**. The site is optional; with a single site, or one called `default`, it is found automatically.
+3. The console uses a self-signed certificate. On the first fetch GravityLAN shows its SHA-256 fingerprint and stops **before** sending the key. Compare the fingerprint with the one your browser shows for the console, then press **Trust fingerprint and fetch**. GravityLAN stores the fingerprint and from then on only talks to a console that presents this certificate. If the certificate changes (renewal, or someone intercepting), you are asked again.
+
+The calls used are `GET /proxy/network/integration/v1/sites`, `…/sites/{siteId}/networks` and `…/sites/{siteId}/networks/{networkId}` (`ipv4Configuration.hostIpAddress` and `prefixLength`), as documented on developer.ui.com (Network API). Older UniFi Network versions without the networks endpoint report "does not offer this part of the UniFi Network Integration API"; update UniFi Network, or use SNMP.
+
+UniFi Network can also switch on SNMP (v1/v2c with a community, v3 with SHA and AES-128), so the SNMP way works too. UniFi gateways are reported to name their VLAN networks `br<VLAN-ID>` (`br0` is the default network). This has not been checked against a UCG Ultra yet. The API is the better choice for UniFi anyway, because names and VLAN IDs come straight from the configuration.
+
+#### Credentials and safety
+
+- Community, SNMPv3 passwords and the UniFi API key are stored encrypted with the same key as the SSH key store, and only after a successful fetch. They are never sent back to the browser, never logged and not part of the JSON backup. **Delete stored credentials** removes them; a factory reset does too.
+- A stored secret is only used for the router it was entered for. Pointing the import at another address requires entering it again.
+- The import only contacts private LAN addresses (10/8, 172.16/12, 192.168/16, IPv6 ULA). A host name must resolve to such addresses only. Loopback, link-local, cloud metadata, carrier-grade NAT and public addresses are refused.
+- API tokens need `network:read` to see the saved connection and `network:write` to fetch and apply.
+
 ### Option C: the router's ARP table (outlook)
 
-**Not available yet.** In many homelabs one firewall or router (OPNsense, pfSense, UniFi, MikroTik and others) is the gateway of every VLAN, so its ARP table and DHCP leases already hold every active IP and MAC pair. A connector that reads them regularly over SNMP or the router's API is planned for 0.4.0. Until then, use option A or B.
+**Not available yet.** In many homelabs one firewall or router (OPNsense, pfSense, UniFi, MikroTik and others) is the gateway of every VLAN, so its ARP table and DHCP leases already hold every active IP and MAC pair. A connector that reads them regularly over SNMP or the router's API is planned; it will build on the router connection of the subnet import above. Until then, use option A or B.
 
 ## Deutsch
 
@@ -214,6 +251,43 @@ Im Tab **Agent** des Geräte-Editors unter **Agent-Konfiguration** **L2 Subnetz-
 - Eine unbekannte IP-Adresse wird zu einem gefundenen Host mit MAC-Adresse und Hersteller. Er erscheint auf der Seite **IP-Adressen**, in der Adresskarte und unter **Aktuelle Funde**; über seine Adresskachel lässt er sich ins Dashboard übernehmen.
 - Auf der Seite **IP-Adressen** zeigt der Tab des VLANs **L2 Probe (&lt;Gerät&gt;)**: Er enthält die Adresse der Probe und hängt nicht direkt an GravityLAN.
 
+### Subnetze und VLANs vom Router importieren
+
+Statt jedes VLAN von Hand einzutragen, kann GravityLAN den Router fragen, welche Netze er routet: **Einstellungen → Scan-Subnetze → Vom Router importieren → Router abfragen**. Der Router meldet seine eigene Adresse in jedem Netz. Daraus ergeben sich Subnetz, Gateway und, wenn der Router es benennt, das VLAN.
+
+- **Abrufen** zeigt nur eine Vorschau. Geschrieben wird erst, wenn du Netze auswählst und **Übernehmen** drückst.
+- Neue Netze werden als Scan-Subnetze mit Gateway und VLAN angelegt. Bei vorhandenen Netzen wird nur ein leeres Gateway oder VLAN ergänzt. Namen und Werte, die du gesetzt hast, werden nie überschrieben.
+- Aufgeführt werden nur private Netze. WAN-Adresse, Loopback- und Link-Local-Adressen fallen weg. Netze größer als /16 werden angezeigt, lassen sich aber wie bei der Eingabe von Hand nicht übernehmen.
+
+#### Per SNMP (die meisten Router)
+
+Am Router lesendes SNMP (v1, v2c oder v3) einschalten und Adresse sowie Community bzw. v3-Benutzer und -Passwörter eintragen. GravityLAN liest:
+
+- die Adressen und Masken der Router-Schnittstellen (IP-MIB `ipAddrTable`, bei neueren Agenten `ipAddressTable`), daraus Subnetz und Gateway,
+- die Schnittstellennamen (IF-MIB `ifName`, `ifAlias`), daraus den Namen des Netzes,
+- die VLAN-ID aus Schnittstellennamen wie `br10`, `eth0.10`, `switch0.10`, `vlan10` oder `igb1_vlan10`, und den Namen eines VLANs aus der Q-BRIDGE-MIB, wenn der Router sie anbietet.
+
+Das funktioniert mit OPNsense und pfSense (SNMP-Dienst), OpenWrt (Paket `snmpd`), MikroTik, Sophos, den meisten Business-Routern und Firewalls sowie mit Consumer-Routern, deren Firmware SNMP anbietet. Eine FRITZ!Box hat kein SNMP. Eigene Konnektoren für FRITZ!Box, OPNsense/pfSense, OpenWrt und weitere sind auf derselben Schnittstelle geplant. Benennt ein Router seine Schnittstellen anders, bleibt das VLAN leer und lässt sich am Subnetz von Hand eintragen.
+
+#### Per UniFi-Konsole (Cloud Gateway, UDM, UXG)
+
+UniFi-Konsolen bieten eine offizielle lokale API. GravityLAN liest daraus die Netze mit Namen, VLAN-IDs und Gateway-Adressen aus der Netzwerkkonfiguration:
+
+1. In UniFi Network unter **Einstellungen → Control Plane → Integrationen** einen API-Key erstellen.
+2. **UniFi-Konsole (API-Key)** wählen, Adresse der Konsole und Key eintragen, **Abrufen** drücken. Die Site ist optional; bei nur einer Site oder einer namens `default` wird sie automatisch gefunden.
+3. Die Konsole nutzt ein selbstsigniertes Zertifikat. Beim ersten Abruf zeigt GravityLAN dessen SHA-256-Fingerabdruck und bricht ab, **bevor** der Key gesendet wird. Fingerabdruck mit dem vergleichen, den dein Browser für die Konsole anzeigt, dann **Fingerabdruck vertrauen und abrufen** drücken. GravityLAN speichert den Fingerabdruck und spricht danach nur noch mit einer Konsole, die genau dieses Zertifikat zeigt. Ändert sich das Zertifikat (Erneuerung oder jemand fängt die Verbindung ab), wird erneut gefragt.
+
+Verwendet werden `GET /proxy/network/integration/v1/sites`, `…/sites/{siteId}/networks` und `…/sites/{siteId}/networks/{networkId}` (`ipv4Configuration.hostIpAddress` und `prefixLength`), wie auf developer.ui.com (Network API) dokumentiert. Ältere UniFi-Network-Versionen ohne den Netzwerk-Endpunkt melden „does not offer this part of the UniFi Network Integration API“; dann UniFi Network aktualisieren oder SNMP nutzen.
+
+UniFi Network kann auch SNMP einschalten (v1/v2c mit Community, v3 mit SHA und AES-128), der SNMP-Weg geht also ebenfalls. UniFi-Gateways benennen ihre VLAN-Netze nach Berichten aus der Community `br<VLAN-ID>` (`br0` ist das Standardnetz). An einem UCG Ultra ist das noch nicht geprüft. Für UniFi ist die API ohnehin die bessere Wahl, weil Namen und VLAN-IDs direkt aus der Konfiguration kommen.
+
+#### Zugangsdaten und Sicherheit
+
+- Community, SNMPv3-Passwörter und der UniFi-API-Key werden mit demselben Schlüssel wie der SSH-Key-Store verschlüsselt gespeichert, und zwar erst nach einem erfolgreichen Abruf. Sie gehen nie an den Browser zurück, landen nicht in Logs und sind nicht Teil des JSON-Backups. **Gespeicherte Zugangsdaten löschen** entfernt sie, ein Werksreset ebenfalls.
+- Ein gespeichertes Geheimnis wird nur für den Router benutzt, für den es eingegeben wurde. Für eine andere Adresse muss es neu eingegeben werden.
+- Der Import kontaktiert nur private LAN-Adressen (10/8, 172.16/12, 192.168/16, IPv6-ULA). Ein Hostname muss ausschließlich auf solche Adressen auflösen. Loopback, Link-Local, Cloud-Metadaten, Carrier-Grade-NAT und öffentliche Adressen werden abgelehnt.
+- API-Tokens brauchen `network:read`, um die gespeicherte Verbindung zu sehen, und `network:write` zum Abrufen und Übernehmen.
+
 ### Weg C: ARP-Tabelle des Routers (Ausblick)
 
-**Noch nicht verfügbar.** In vielen Homelabs ist eine Firewall bzw. ein Router (OPNsense, pfSense, UniFi, MikroTik u. a.) das Gateway aller VLANs; ihre ARP-Tabelle und DHCP-Leases enthalten deshalb schon jedes aktive IP-MAC-Paar. Ein Konnektor, der sie regelmäßig per SNMP oder über die API des Routers ausliest, ist für 0.4.0 geplant. Bis dahin Weg A oder B nutzen.
+**Noch nicht verfügbar.** In vielen Homelabs ist eine Firewall bzw. ein Router (OPNsense, pfSense, UniFi, MikroTik u. a.) das Gateway aller VLANs; ihre ARP-Tabelle und DHCP-Leases enthalten deshalb schon jedes aktive IP-MAC-Paar. Ein Konnektor, der sie regelmäßig per SNMP oder über die API des Routers ausliest, ist geplant; er baut auf der Router-Verbindung des Subnetz-Imports oben auf. Bis dahin Weg A oder B nutzen.
