@@ -148,5 +148,21 @@ class Settings(BaseSettings):
         db_path = self.data_dir / "gravitylan.db"
         return f"sqlite+aiosqlite:///{db_path}"
 
+    @property
+    def telemetry_database_path(self) -> str:
+        """SQLite file for measurement data (health probes, agent metrics, rollups).
+
+        Lives next to the inventory database and is attached to every connection as
+        schema ``telemetry``; an in-memory inventory gets an in-memory telemetry DB.
+        Empty for non-SQLite databases, where the telemetry tables share the main schema.
+        """
+        url = self.effective_database_url
+        if "sqlite" not in url:
+            return ""
+        main_path = url.split(":///", 1)[1] if ":///" in url else ""
+        if not main_path or main_path == ":memory:":
+            return ":memory:"
+        return str(Path(main_path).with_name("telemetry.db"))
+
 
 settings = Settings()

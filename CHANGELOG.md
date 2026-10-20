@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Measurement data moved into a separate `telemetry.db` next to the inventory database (attached as schema `telemetry`): health probes, agent metrics and their rollups no longer bloat the inventory, backups or exports, and can be cleared on their own. Existing data is moved on the first start (repeatable), then the inventory file is vacuumed.
+- Rollups: raw probes and agent reports are kept 48 h by default, then folded into hourly values (30 days) and daily values (365 days) with uptime, latency min/avg/max/jitter, CPU/RAM/temperature/disk/network avg/max. Runs hourly and once at startup, also for existing data.
+- Health API and agent history pick raw, hourly or daily values per time window automatically and stitch them without double counting.
+- Settings > Measurement data: database sizes, retention per tier, delete older than N days / for one device / everything (two-step confirmation), freed space is returned to the file system (`/api/settings/telemetry`, scope `settings:write`).
+
+### Changed
+- `history_retention_days` now only applies to the event history; deleting a device also deletes its measurement data in `telemetry.db`.
+
+### Fixed
+- Two tests left the temporary test database open, so pytest on Windows ended with a `PermissionError` while removing the temp directory.
+
+
 ## [0.4.0] - 2026-10-19
 
 ### Added

@@ -402,6 +402,17 @@ async def main(reset: bool, fresh: bool) -> None:
         return
 
     agents = await _seed()
+
+    # The scheduler does not run here: fold the seeded metrics into hourly/daily rollups once.
+    # This runs before the app's lifespan, so move the metrics of an older demo database first.
+    from app.database import async_session
+    from app.services.telemetry_rollups import run_telemetry_maintenance
+    from app.services.telemetry_store import migrate_legacy_telemetry
+
+    async with async_session() as db:
+        await migrate_legacy_telemetry(db)
+        await run_telemetry_maintenance(db)
+
     print(f"[demo] {len(agents)} simulated agents, database: {data_dir}")
     print(f"[demo] API on http://{HOST}:{PORT} - start the UI with `cd frontend && npm run dev`, log in with the demo password (see README)")
     await asyncio.gather(server.serve(), _simulate_agents(server, agents))

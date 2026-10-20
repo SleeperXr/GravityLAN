@@ -30,7 +30,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
-from app.config import settings
+from app.config import settings  # noqa: F401 - patched as agent_module.settings in tests
 from app.database import async_session, get_db
 from app.models.agent import AgentConfig, DeviceMetrics, AgentToken
 from app.models.device import Device
@@ -56,6 +56,8 @@ from app.schemas.agent import (
 from app.services.agent_deployer import deploy_agent, remove_agent, LATEST_AGENT_VERSION
 from app.services.agent_tokens import hash_agent_token, new_agent_token, pending_storage_form
 from app.services.enrollment_service import enrollment_store
+from app.services.telemetry_query import load_metric_points
+from app.services.telemetry_store import get_retention
 from app.services.session_service import has_browser_session
 from app.services.ssh_credentials import StoredLoginError, resolve_key_profile, resolve_stored_key
 
@@ -380,35 +382,23 @@ async def get_metrics_history(
     db: AsyncSession = Depends(get_db),
     current_admin: str = Depends(get_current_admin)
 ) -> MetricsHistoryResponse:
-    """Get the recent metrics history for a specific device, supporting dynamic ranges and downsampling."""
+    """Get the recent metrics history for a specific device, supporting dynamic ranges and downsampling.
+
+    6h/24h come from the raw reports, 7d/30d from the hourly rollups of the telemetry
+    database (stitched with raw rows for the newest hour), so long ranges stay cheap.
+    """
+    retention = await get_retention(db)
     if range is not None:
-        valid_ranges = {"6h", "24h", "7d", "30d"}
-        if range not in valid_ranges:
+        windows = {"6h": timedelta(hours=6), "24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30)}
+        if range not in windows:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"Invalid range '{range}'. Valid ranges are: 6h, 24h, 7d, 30d."
             )
-        
-        now = datetime.now(timezone.utc)
-        if range == "6h":
-            cutoff = now - timedelta(hours=6)
-        elif range == "24h":
-            cutoff = now - timedelta(hours=24)
-        elif range == "7d":
-            cutoff = now - timedelta(days=7)
-        else: # 30d
-            cutoff = now - timedelta(days=30)
-            
-        result = await db.execute(
-            select(DeviceMetrics)
-            .where(
-                DeviceMetrics.device_id == device_id,
-                DeviceMetrics.timestamp >= cutoff.replace(tzinfo=None)
-            )
-            .order_by(DeviceMetrics.timestamp.asc())
-        )
-        metrics = result.scalars().all()
-        snapshots = downsample_metrics(list(metrics), range)
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        points = await load_metric_points(db, device_id, now - windows[range], now, retention)
+        snapshots = downsample_metrics(points, range)
     else:
         # Legacy fallback logic: latest limit metrics in chronological order
         result = await db.execute(
@@ -419,16 +409,9 @@ async def get_metrics_history(
         )
         metrics = result.scalars().all()
         snapshots = [m.to_dict() for m in reversed(list(metrics))]
-        
-    from app.models.setting import Setting
-    result_setting = await db.execute(select(Setting).where(Setting.key == "history_retention_days"))
-    setting_record = result_setting.scalar_one_or_none()
-    
-    try:
-        retention_days = int(setting_record.value) if setting_record and setting_record.value is not None else settings.history_retention_days
-    except (TypeError, ValueError):
-        retention_days = settings.history_retention_days
-    
+
+    # The longest span any telemetry tier still covers bounds the offered ranges
+    retention_days = retention.history_days
     available_ranges = ["6h"]
     if retention_days >= 1:
         available_ranges.append("24h")
@@ -436,7 +419,7 @@ async def get_metrics_history(
         available_ranges.append("7d")
     if retention_days >= 30:
         available_ranges.append("30d")
-        
+
     return MetricsHistoryResponse(
         device_id=device_id,
         snapshots=snapshots,

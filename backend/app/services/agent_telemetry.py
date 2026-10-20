@@ -18,6 +18,7 @@ from app.models.device import Device
 from app.models.setting import Setting
 from app.scanner.utils import ensure_utc
 from app.schemas.agent import AgentSummary, GlobalMetricPoint
+from app.services.telemetry_query import MetricPoint, metric_point_from_row
 
 logger = logging.getLogger(__name__)
 
@@ -276,8 +277,13 @@ async def _broadcast_metrics(payload: Any, device_id: int) -> None:
     _ws_subscribers[device_id] -= dead_links
 
 
-def downsample_metrics(metrics: list[DeviceMetrics], range_str: str) -> list[dict]:
-    """Aggregates and downsamples metrics into buckets to optimize transmission and chart performance."""
+def downsample_metrics(metrics: list, range_str: str) -> list[dict]:
+    """Aggregates and downsamples metrics into buckets to optimize transmission and chart performance.
+
+    ``metrics`` are raw DeviceMetrics rows or MetricPoints (raw rows and hourly/daily
+    rollups, see app.services.telemetry_query); averages are weighted by the number
+    of agent reports behind each point.
+    """
     if not metrics:
         return []
 
@@ -289,64 +295,41 @@ def downsample_metrics(metrics: list[DeviceMetrics], range_str: str) -> list[dic
         "30d": 21600     # 6 hours
     }.get(range_str, 900)
 
-    buckets: dict[int, dict[str, Any]] = {}
+    buckets: dict[int, list[MetricPoint]] = {}
     for m in metrics:
-        ts = ensure_utc(m.timestamp)
+        point = m if isinstance(m, MetricPoint) else metric_point_from_row(m)
+        ts = ensure_utc(point.timestamp)
         if not ts:
             continue
-        ts_epoch = int(ts.timestamp())
-        bucket_epoch = (ts_epoch // bucket_seconds) * bucket_seconds
-
-        if bucket_epoch not in buckets:
-            buckets[bucket_epoch] = {
-                "cpu_percent": [],
-                "ram_percent": [],
-                "ram_used_mb": [],
-                "ram_total_mb": [],
-                "temperature": [],
-                "disk_json": None,
-                "net_json": None
-            }
-
-        b = buckets[bucket_epoch]
-        b["cpu_percent"].append(m.cpu_percent)
-        b["ram_percent"].append(m.ram_percent)
-        b["ram_used_mb"].append(m.ram_used_mb)
-        b["ram_total_mb"].append(m.ram_total_mb)
-        if m.temperature is not None:
-            b["temperature"].append(m.temperature)
-
-        if m.disk_json:
-            b["disk_json"] = m.disk_json
-        if m.net_json:
-            b["net_json"] = m.net_json
+        bucket_epoch = (int(ts.timestamp()) // bucket_seconds) * bucket_seconds
+        buckets.setdefault(bucket_epoch, []).append(point)
 
     snapshots = []
     for epoch in sorted(buckets.keys()):
-        b = buckets[epoch]
+        points = buckets[epoch]
+        weight = sum(p.samples for p in points) or 1
 
-        avg_cpu = sum(b["cpu_percent"]) / len(b["cpu_percent"]) if b["cpu_percent"] else 0.0
-        avg_ram = sum(b["ram_percent"]) / len(b["ram_percent"]) if b["ram_percent"] else 0.0
-        avg_ram_used = int(sum(b["ram_used_mb"]) / len(b["ram_used_mb"])) if b["ram_used_mb"] else 0
-        avg_ram_total = int(sum(b["ram_total_mb"]) / len(b["ram_total_mb"])) if b["ram_total_mb"] else 0
+        def avg(attr: str) -> float:
+            return sum(getattr(p, attr) * p.samples for p in points) / weight
 
+        temp_weight = sum(p.temp_count for p in points)
         avg_temp = None
-        if b["temperature"]:
-            avg_temp = sum(b["temperature"]) / len(b["temperature"])
+        if temp_weight:
+            avg_temp = sum(p.temp_avg * p.temp_count for p in points if p.temp_avg is not None) / temp_weight
 
-        disk = json.loads(b["disk_json"]) if b["disk_json"] else []
-        network = json.loads(b["net_json"]) if b["net_json"] else {}
+        disk_json = next((p.disk_json for p in reversed(points) if p.disk_json), None)
+        net_json = next((p.net_json for p in reversed(points) if p.net_json), None)
 
         snapshots.append({
-            "cpu_percent": avg_cpu,
+            "cpu_percent": avg("cpu_avg"),
             "ram": {
-                "used_mb": avg_ram_used,
-                "total_mb": avg_ram_total,
-                "percent": avg_ram
+                "used_mb": int(avg("ram_used_mb_avg")),
+                "total_mb": int(avg("ram_total_mb")),
+                "percent": avg("ram_percent_avg")
             },
-            "disk": disk,
+            "disk": json.loads(disk_json) if disk_json else [],
             "temperature": avg_temp,
-            "network": network,
+            "network": json.loads(net_json) if net_json else {},
             "timestamp": datetime.fromtimestamp(epoch, tz=timezone.utc)
         })
 

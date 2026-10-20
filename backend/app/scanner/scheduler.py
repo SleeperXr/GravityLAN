@@ -195,7 +195,21 @@ class ScanScheduler:
         while self._running:
             if await self._is_setup_complete():
                 await self._clean_old_history()  # catches its own errors, rate-limited to 12 h
+                await self._telemetry_maintenance()  # hourly: rollups + per-tier retention
             await asyncio.sleep(RETENTION_CHECK_SECONDS)
+
+    async def _telemetry_maintenance(self) -> None:
+        """Fold raw measurements into hourly/daily rollups and prune each tier (telemetry.db)."""
+        try:
+            from app.services.telemetry_rollups import run_telemetry_maintenance
+            async with async_session() as db:
+                stats = await run_telemetry_maintenance(db)
+            if any(stats.values()):
+                logger.info("Telemetry maintenance: %s", {k: v for k, v in stats.items() if v})
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Telemetry maintenance failed: {e}", exc_info=True)
 
     async def _health_probe_loop(self) -> None:
         """High-precision latency and service health probe loop (default 60s)."""
@@ -222,7 +236,11 @@ class ScanScheduler:
                 await asyncio.sleep(60)
 
     async def _clean_old_history(self, force: bool = False):
-        """Delete history and metrics records older than the configured retention period."""
+        """Delete device history events older than history_retention_days.
+
+        Health samples and agent metrics have their own per-tier retention in the
+        telemetry database (see _telemetry_maintenance).
+        """
         try:
             # Enforce 12-hour rate limit on cleanup unless forced (e.g. in tests)
             now = datetime.now(timezone.utc)
@@ -231,8 +249,6 @@ class ScanScheduler:
 
             self._last_cleanup_time = now
 
-            from app.models.agent import DeviceMetrics
-            
             async with async_session() as db:
                 # Get retention period (in days)
                 days = await _get_retention_days(db)
@@ -241,15 +257,12 @@ class ScanScheduler:
                 if 1 <= days <= 365:
                     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
                     cutoff_naive = cutoff.replace(tzinfo=None)
-                    
-                    from app.models.device import DeviceHealthSample
+
                     await db.execute(delete(DeviceHistory).where(DeviceHistory.timestamp < cutoff_naive))
-                    await db.execute(delete(DeviceMetrics).where(DeviceMetrics.timestamp < cutoff_naive))
-                    await db.execute(delete(DeviceHealthSample).where(DeviceHealthSample.timestamp < cutoff_naive))
                     await db.commit()
-                    logger.info(f"Cleaned up history, metrics and health samples older than {days} days")
+                    logger.info(f"Cleaned up device history older than {days} days")
         except Exception as e:
-            logger.error(f"Failed to clean up old history/metrics: {e}", exc_info=True)
+            logger.error(f"Failed to clean up old history: {e}", exc_info=True)
 
 # Global instance
 scheduler = ScanScheduler()

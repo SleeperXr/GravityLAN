@@ -208,9 +208,12 @@ async def test_is_setup_complete_false(patch_async_session):
 
 
 async def test_is_setup_complete_db_error(monkeypatch):
-    async def boom():
+    def boom():
         raise RuntimeError("db down")
-    monkeypatch.setattr(scheduler_module.async_session, "__call__", lambda: boom())
+    # Replace the factory itself: patching __call__ on the instance has no effect (dunder
+    # lookup goes to the type), so the test used to open the real database and leave the
+    # file locked, which broke the temp-dir cleanup on Windows
+    monkeypatch.setattr(scheduler_module, "async_session", boom)
     s = scheduler_module.ScanScheduler()
     assert await s._is_setup_complete() is False
 
@@ -230,7 +233,8 @@ async def test_clean_old_history_deletes_expired(patch_async_session, monkeypatc
     await s._clean_old_history(force=True)
 
     assert (await db.execute(select(DeviceHistory))).scalars().all() == []
-    assert (await db.execute(select(DeviceMetrics))).scalars().all() == []
+    # Metrics have their own per-tier retention (app.services.telemetry_rollups)
+    assert len((await db.execute(select(DeviceMetrics))).scalars().all()) == 1
 
 
 async def test_clean_old_history_keeps_recent(patch_async_session):

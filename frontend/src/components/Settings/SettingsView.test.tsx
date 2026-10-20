@@ -16,6 +16,7 @@ vi.mock('../../api/client', () => ({
     exportBackup: vi.fn(), importBackup: vi.fn(), resetDatabase: vi.fn(),
     getSubnetsList: vi.fn(), createSubnet: vi.fn(), updateSubnet: vi.fn(), deleteSubnet: vi.fn(),
     getSubnets: vi.fn(),
+    getTelemetryStatus: vi.fn(), updateTelemetryRetention: vi.fn(), purgeTelemetry: vi.fn(), getDevices: vi.fn(),
   },
 }));
 vi.mock('../../context/ToastContext', () => ({ useToast: () => ({ showToast }) }));
@@ -72,6 +73,9 @@ beforeEach(() => {
   m.createSubnet.mockImplementation(async (data) => ({ id: 9, dns_server: null, is_enabled: true, name: '', ...data }) as Subnet);
   m.updateSubnet.mockResolvedValue({} as never);
   m.deleteSubnet.mockResolvedValue(undefined);
+  // Measurement data section (covered in detail by TelemetrySection.test.tsx)
+  m.getTelemetryStatus.mockReturnValue(new Promise(() => {}));
+  m.getDevices.mockResolvedValue([]);
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   vi.spyOn(window, 'alert').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
