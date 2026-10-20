@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-20
+
 ### Added
 - **Import scan subnets and VLANs from the router**: Settings → Scan subnets → Import from router asks the router which networks it routes and lists them with gateway, name and VLAN in a preview. Only the networks you pick are added. For subnets you already have, only an empty gateway or VLAN is filled in; names and values you set are never overwritten. Two ways that work for most setups: read-only **SNMP** (v1/v2c/v3; IP-MIB for addresses and masks, IF-MIB for names, VLAN IDs from interface names such as `br10`, `eth0.10` or `vlan10`, Q-BRIDGE-MIB VLAN names), which covers OPNsense, pfSense, OpenWrt, MikroTik, Sophos and most business routers, and the official **UniFi Network API** of UniFi consoles (Cloud Gateway, UDM, UXG) with an API key. The UniFi console's self-signed certificate is pinned by its SHA-256 fingerprint, which you confirm on the first fetch; the API key is only sent after the certificate check. Community, SNMPv3 passwords and API key are stored encrypted like the SSH keys, never returned or logged, and only used for the router they were entered for. The import only contacts private LAN addresses. Guide: `docs/multi-vlan-setup.md`.
 - Measurement data moved into a separate `telemetry.db` next to the inventory database (attached as schema `telemetry`): health probes, agent metrics and their rollups no longer bloat the inventory, backups or exports, and can be cleared on their own. Existing data is moved on the first start (repeatable), then the inventory file is vacuumed.
