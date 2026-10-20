@@ -141,6 +141,8 @@ class HealthSamplePoint(BaseModel):
     probe_type: str | None = None
     ports_up: int = 0
     ports_total: int = 0
+    # Share of probes online in this point (100/0 for a raw probe, any value for a rollup bucket)
+    uptime_pct: float | None = None
 
 
 class DeviceHealthDetailResponse(BaseModel):

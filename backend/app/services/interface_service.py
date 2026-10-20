@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.agent import AgentConfig, AgentToken, DeviceMetrics
+from app.models.agent import AgentConfig, AgentToken
 from app.models.device import Device, DeviceHistory, DeviceInterface, DiscoveredHost, Service
 from app.models.network import Subnet
 from app.models.setting import Setting
@@ -22,6 +22,7 @@ from app.models.ssh import SshHistory, SshKnownHost, SshProfile
 from app.models.topology import TopologyLink
 from app.scanner.gateways import detect_default_gateways, effective_gateway
 from app.scanner.hostname import is_ip_like
+from app.services.telemetry_store import delete_device_telemetry
 from app.scanner.sync import _mac_is_valid, load_sync_context
 
 logger = logging.getLogger(__name__)
@@ -320,7 +321,7 @@ async def _repoint_references(db, source: Device, target: Device) -> None:
     await db.execute(update(SshProfile).where(SshProfile.device_id == source.id).values(device_id=target.id))
     await db.execute(update(SshHistory).where(SshHistory.device_id == source.id).values(device_id=target.id))
     await db.execute(update(DeviceInterface).where(DeviceInterface.device_id == source.id).values(device_id=target.id))
-    await db.execute(delete(DeviceMetrics).where(DeviceMetrics.device_id == source.id))
+    await delete_device_telemetry(db, [source.id])
     await db.execute(delete(AgentConfig).where(AgentConfig.device_id == source.id))
 
 

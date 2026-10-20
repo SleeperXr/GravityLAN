@@ -1,7 +1,6 @@
 """Health summary and historical telemetry API endpoints for GravityLAN."""
 
 import logging
-from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,7 +12,7 @@ from app.api.auth import get_current_admin
 from app.api.summary import get_summary
 from app.database import get_db
 from app.models.agent import AgentToken, DeviceMetrics
-from app.models.device import Device, DeviceHealthSample, DeviceHistory
+from app.models.device import Device, DeviceHistory
 from app.scanner.utils import ensure_utc
 from app.schemas.health import (
     AgentHealthAlerts,
@@ -28,6 +27,7 @@ from app.schemas.health import (
     ServiceHealthItem,
     UptimeStats,
 )
+from app.services.telemetry_query import HealthPoint, health_point_from_sample, load_health_points
 from app.version import VERSION
 
 logger = logging.getLogger(__name__)
@@ -152,48 +152,48 @@ def _parse_period_window(period: str, now: datetime) -> tuple[datetime, int]:
     return now - timedelta(hours=24), 24  # 1-hour buckets
 
 
-def _compute_uptime_and_latency(
-    dev: Device,
-    samples: list,
-    now: datetime,
-    window_start: datetime,
-    bucket_count: int
-) -> tuple[UptimeStats, LatencyStats]:
-    """Calculate availability SLA and latency metrics from time-series samples."""
-    # 1. Latency calculations
-    valid_latencies = [s.latency_ms for s in samples if s.latency_ms is not None]
+def _as_points(samples: list) -> list[HealthPoint]:
+    """Accept HealthPoints or raw DeviceHealthSample-like rows."""
+    return [s if isinstance(s, HealthPoint) else health_point_from_sample(s) for s in samples]
+
+
+def _latency_stats(points: list[HealthPoint]) -> LatencyStats:
+    """Latency min/avg/max/jitter over raw probes and rollup buckets alike."""
     current_ms = None
-    min_ms = None
-    avg_ms = None
-    max_ms = None
-    jitter_ms = None
     probe_type = None
+    min_ms = avg_ms = max_ms = jitter_ms = None
 
-    if valid_latencies:
-        min_ms = round(min(valid_latencies), 1)
-        max_ms = round(max(valid_latencies), 1)
-        avg_ms = round(sum(valid_latencies) / len(valid_latencies), 1)
-        if len(valid_latencies) > 1:
-            diffs = [abs(valid_latencies[i] - valid_latencies[i - 1]) for i in range(1, len(valid_latencies))]
-            jitter_ms = round(sum(diffs) / len(diffs), 1)
-        else:
-            jitter_ms = 0.0
+    measured = [p for p in points if p.latency_count]
+    if measured:
+        min_ms = round(min(p.latency_min for p in measured if p.latency_min is not None), 1)
+        max_ms = round(max(p.latency_max for p in measured if p.latency_max is not None), 1)
+        total = sum(p.latency_count for p in measured)
+        avg_ms = round(sum(p.latency_avg * p.latency_count for p in measured) / total, 1)
 
-    if samples:
-        last_sample = samples[-1]
-        current_ms = last_sample.latency_ms
-        probe_type = last_sample.probe_type
+        # Rollups carry their own jitter sums; raw probes add consecutive differences
+        jitter_sum = sum(p.jitter_sum for p in measured if not p.is_raw)
+        jitter_count = sum(p.jitter_count for p in measured if not p.is_raw)
+        raw_latencies = [p.latency_avg for p in measured if p.is_raw]
+        for i in range(1, len(raw_latencies)):
+            jitter_sum += abs(raw_latencies[i] - raw_latencies[i - 1])
+            jitter_count += 1
+        jitter_ms = round(jitter_sum / jitter_count, 1) if jitter_count else 0.0
+
+    if points:
+        last = points[-1]
+        current_ms = last.latency_ms
+        probe_type = last.probe_type
 
     # Sparkline: downsample up to 20 representative values across the window
     sparkline: list[float | None] = []
-    if samples:
-        step = max(1, len(samples) // 20)
-        for i in range(0, len(samples), step):
-            sparkline.append(samples[i].latency_ms)
+    if points:
+        step = max(1, len(points) // 20)
+        for i in range(0, len(points), step):
+            sparkline.append(points[i].latency_ms)
         if len(sparkline) > 20:
             sparkline = sparkline[-20:]
 
-    latency_stats = LatencyStats(
+    return LatencyStats(
         current_ms=current_ms,
         min_ms=min_ms,
         avg_ms=avg_ms,
@@ -203,40 +203,56 @@ def _compute_uptime_and_latency(
         probe_type=probe_type,
     )
 
-    # 2. Uptime & Heartbeat Bars
+
+def _uptime_pct(online: int, samples: int) -> float:
+    return round(online / samples * 100.0, 1)
+
+
+def _compute_uptime_and_latency(
+    dev: Device,
+    samples: list,
+    now: datetime,
+    window_start: datetime,
+    bucket_count: int
+) -> tuple[UptimeStats, LatencyStats]:
+    """Calculate availability SLA and latency metrics from time-series points.
+
+    ``samples`` are HealthPoints (raw probes and hourly/daily rollups, see
+    app.services.telemetry_query) or raw DeviceHealthSample rows; every value is
+    weighted by the number of probes behind it.
+    """
+    points = _as_points(samples)
+    latency_stats = _latency_stats(points)
+
+    # Uptime & Heartbeat Bars
     total_seconds = (now - window_start).total_seconds()
     bucket_sec = total_seconds / bucket_count
     bars: list[float | None] = [None] * bucket_count
-    bucket_samples: list[list[bool]] = [[] for _ in range(bucket_count)]
+    bucket_online = [0] * bucket_count
+    bucket_samples = [0] * bucket_count
 
     cutoff_24h = now - timedelta(hours=24)
     cutoff_7d = now - timedelta(days=7)
-    online_24h = 0
-    total_24h = 0
-    online_7d = 0
-    total_7d = 0
+    online_24h = total_24h = online_7d = total_7d = 0
 
-    for s in samples:
-        s_time = ensure_utc(s.timestamp)
-        if not s_time:
+    for p in points:
+        p_time = ensure_utc(p.timestamp)
+        if not p_time:
             continue
-        if s_time >= cutoff_24h:
-            total_24h += 1
-            if s.is_online:
-                online_24h += 1
-        if s_time >= cutoff_7d:
-            total_7d += 1
-            if s.is_online:
-                online_7d += 1
-        offset = (s_time - window_start).total_seconds()
-        idx = int(offset // bucket_sec)
+        if p_time >= cutoff_24h:
+            total_24h += p.samples
+            online_24h += p.online
+        if p_time >= cutoff_7d:
+            total_7d += p.samples
+            online_7d += p.online
+        idx = int((p_time - window_start).total_seconds() // bucket_sec)
         if 0 <= idx < bucket_count:
-            bucket_samples[idx].append(s.is_online)
+            bucket_online[idx] += p.online
+            bucket_samples[idx] += p.samples
 
     for i in range(bucket_count):
-        b_list = bucket_samples[i]
-        if b_list:
-            bars[i] = round((sum(1 for x in b_list if x) / len(b_list)) * 100.0, 1)
+        if bucket_samples[i]:
+            bars[i] = _uptime_pct(bucket_online[i], bucket_samples[i])
         else:
             # If no probe happened in bucket yet, fallback based on current device status
             b_end = window_start + timedelta(seconds=(i + 1) * bucket_sec)
@@ -245,13 +261,14 @@ def _compute_uptime_and_latency(
                 bars[i] = 100.0 if dev.is_online else 0.0
 
     # Overall uptime percentage in window
-    if samples:
-        uptime_pct = round((sum(1 for s in samples if s.is_online) / len(samples)) * 100.0, 1)
+    total_samples = sum(p.samples for p in points)
+    if total_samples:
+        uptime_pct = _uptime_pct(sum(p.online for p in points), total_samples)
     else:
         uptime_pct = 100.0 if dev.is_online else 0.0
 
-    uptime_24h = round((online_24h / total_24h) * 100.0, 1) if total_24h else uptime_pct
-    uptime_7d = round((online_7d / total_7d) * 100.0, 1) if total_7d else uptime_pct
+    uptime_24h = _uptime_pct(online_24h, total_24h) if total_24h else uptime_pct
+    uptime_7d = _uptime_pct(online_7d, total_7d) if total_7d else uptime_pct
 
     uptime_stats = UptimeStats(
         uptime_pct=uptime_pct,
@@ -404,24 +421,10 @@ async def get_health_overview(
     )
     metrics_by_dev = {m.device_id: m for m in res_metrics.scalars().all()}
 
-    # 3. Fetch time-series health samples in the requested window in bulk (lightweight column projection)
-    res_samples = await db.execute(
-        select(
-            DeviceHealthSample.device_id,
-            DeviceHealthSample.timestamp,
-            DeviceHealthSample.is_online,
-            DeviceHealthSample.latency_ms,
-            DeviceHealthSample.probe_type,
-        )
-        .where(
-            DeviceHealthSample.device_id.in_(device_ids),
-            DeviceHealthSample.timestamp >= window_start.replace(tzinfo=None)
-        )
-        .order_by(DeviceHealthSample.device_id, DeviceHealthSample.timestamp.asc())
+    # 3. Health history of the window in bulk: raw probes, or hourly/daily rollups for long windows
+    samples_by_dev = await load_health_points(
+        db, device_ids, window_start.replace(tzinfo=None), now.replace(tzinfo=None)
     )
-    samples_by_dev: dict[int, list] = defaultdict(list)
-    for row in res_samples.all():
-        samples_by_dev[row.device_id].append(row)
 
     # 4. Fetch recent incidents (last 7 days of DeviceHistory for visible devices)
     cutoff_incidents = now.replace(tzinfo=None) - timedelta(days=7)
@@ -610,16 +613,11 @@ async def get_device_health_detail(
     )
     latest_metric = m_res.scalar_one_or_none()
 
-    # 3. Health samples
-    res_samples = await db.execute(
-        select(DeviceHealthSample)
-        .where(
-            DeviceHealthSample.device_id == device_id,
-            DeviceHealthSample.timestamp >= window_start.replace(tzinfo=None)
-        )
-        .order_by(DeviceHealthSample.timestamp.asc())
+    # 3. Health history (raw probes, or hourly/daily rollups for long windows)
+    points_by_dev = await load_health_points(
+        db, [device_id], window_start.replace(tzinfo=None), now.replace(tzinfo=None)
     )
-    samples = res_samples.scalars().all()
+    samples = points_by_dev.get(device_id, [])
 
     # 4. Device incidents
     cutoff_incidents = now.replace(tzinfo=None) - timedelta(days=30)
@@ -715,10 +713,11 @@ async def get_device_health_detail(
         HealthSamplePoint(
             timestamp=ensure_utc(s.timestamp) or now,
             is_online=s.is_online,
-            latency_ms=s.latency_ms,
+            latency_ms=round(s.latency_ms, 2) if s.latency_ms is not None else None,
             probe_type=s.probe_type,
-            ports_up=s.ports_up,
-            ports_total=s.ports_total
+            ports_up=round(s.ports_up),
+            ports_total=s.ports_total,
+            uptime_pct=s.uptime_pct,
         )
         for s in selected_samples
     ]

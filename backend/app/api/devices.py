@@ -285,8 +285,9 @@ async def _delete_device_dependencies(db: AsyncSession, device_ids: list[int]) -
     """Safely delete all database rows referencing the given device IDs to prevent foreign key errors."""
     from sqlalchemy import delete, update
     from app.models.topology import TopologyLink
-    from app.models.agent import DeviceMetrics, AgentToken, AgentConfig
+    from app.models.agent import AgentToken, AgentConfig
     from app.models.device import Device, Service, DeviceHistory, DeviceInterface
+    from app.services.telemetry_store import delete_device_telemetry
 
     if not device_ids:
         return
@@ -298,8 +299,8 @@ async def _delete_device_dependencies(db: AsyncSession, device_ids: list[int]) -
         )
     )
 
-    # 2. Agent data
-    await db.execute(delete(DeviceMetrics).where(DeviceMetrics.device_id.in_(device_ids)))
+    # 2. Measurement data (telemetry.db has no foreign key that could cascade) and agent data
+    await delete_device_telemetry(db, device_ids)
     await db.execute(delete(AgentToken).where(AgentToken.device_id.in_(device_ids)))
     await db.execute(delete(AgentConfig).where(AgentConfig.device_id.in_(device_ids)))
 

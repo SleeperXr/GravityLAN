@@ -10,6 +10,7 @@ import { SaveBar, ScanSection, SystemSection } from './sections/FormSections';
 import { GroupsSection } from './sections/GroupsSection';
 import { SubnetsSection } from './sections/SubnetsSection';
 import { TokensSection } from './sections/TokensSection';
+import { TelemetrySection } from './sections/TelemetrySection';
 import { BackupSection, DangerSection } from './sections/DataSections';
 
 export function SettingsView() {
@@ -31,6 +32,7 @@ export function SettingsView() {
           <ScanSection form={settings.form} setField={settings.setField} />
           <SubnetsSection />
           <SystemSection form={settings.form} setField={settings.setField} />
+          <TelemetrySection />
           <GroupsSection />
 
           <SettingsSection id="language" title={t('settings.language')} description={t('settings.section_language_desc')}>
