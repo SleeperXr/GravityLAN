@@ -1,281 +1,629 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
-  DialogRoot,
-  DialogPortal,
-  DialogOverlay,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-  DialogClose,
-  TabsRoot,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from 'reka-ui';
-import { X, ExternalLink, RefreshCw, Save, Server, ShieldCheck } from 'lucide-vue-next';
-import type { Device, DeviceGroup } from '@/types';
+  Activity,
+  Check,
+  Copy,
+  Globe,
+  Layers,
+  Plus,
+  RefreshCw,
+  Server,
+  Settings2,
+  Star,
+  Terminal,
+  Trash2,
+  X,
+} from 'lucide-vue-next';
+import StatusIndicator from '@/components/8starlabs-ui/StatusIndicator.vue';
+import RelativeTime from '@/components/8starlabs-ui/RelativeTime.vue';
+import DeviceMetricsBar from '@/components/dashboard/DeviceMetricsBar.vue';
+import ServiceBadge from '@/components/dashboard/ServiceBadge.vue';
+import { useNetworkStore } from '@/stores/network';
 import { api } from '@/api/client';
-import { useI18n } from '@/composables/useI18n';
-import Button from '@/components/ui/button/Button.vue';
-import Badge from '@/components/ui/badge/Badge.vue';
-import Input from '@/components/ui/input/Input.vue';
+import type { Device } from '@/types';
 
 const props = defineProps<{
   device: Device | null;
-  groups: DeviceGroup[];
   open: boolean;
 }>();
 
 const emit = defineEmits<{
-  (e: 'update:open', value: boolean): void;
-  (e: 'saved'): void;
+  (e: 'close'): void;
+  (e: 'updated'): void;
 }>();
 
-const { t } = useI18n();
-const displayName = ref('');
-const selectedGroupId = ref<number | null>(null);
-const notes = ref('');
+const store = useNetworkStore();
+const activeTab = ref<'general' | 'services' | 'agent' | 'interfaces'>('general');
+
+// Form fields
+const editName = ref('');
+const editGroupId = ref<number | null>(null);
+const editIcon = ref('server');
+const editRole = ref<'standalone' | 'host' | 'vm' | 'lxc' | 'docker'>('standalone');
+const editParentId = ref<number | null>(null);
+const editNotes = ref('');
+const isPinned = ref(false);
 const saving = ref(false);
-const rescanning = ref(false);
+const refreshing = ref(false);
+
+// Services form
+const newSvcName = ref('');
+const newSvcPort = ref<number | ''>('');
+const newSvcProtocol = ref<'tcp' | 'udp'>('tcp');
+const newSvcUrl = ref('');
+const addingService = ref(false);
+
+// Interfaces form
+const newIfaceIp = ref('');
+const newIfaceLabel = ref('');
+const newIfaceVlan = ref<number | ''>('');
+
+// Agent enrollment
+const enrollCode = ref<string | null>(null);
+const enrolling = ref(false);
+const copiedCmd = ref(false);
+
+const ICON_OPTIONS = [
+  { id: 'server', label: 'Server' },
+  { id: 'router', label: 'Router / Switch' },
+  { id: 'monitor', label: 'Workstation / PC' },
+  { id: 'nas', label: 'NAS / Storage' },
+  { id: 'docker', label: 'Container / Docker' },
+  { id: 'shield', label: 'Firewall / Security' },
+  { id: 'cpu', label: 'Raspberry / IoT' },
+  { id: 'wifi', label: 'Access Point' },
+  { id: 'phone', label: 'Mobile' },
+];
 
 watch(
   () => props.device,
-  (dev) => {
-    if (dev) {
-      displayName.value = dev.display_name;
-      selectedGroupId.value = dev.group_id;
-      notes.value = dev.notes ?? '';
+  (d) => {
+    if (d) {
+      editName.value = d.display_name || d.name || '';
+      editGroupId.value = d.group_id ?? null;
+      editIcon.value = d.icon || 'server';
+      editRole.value = d.virtual_type || d.device_role || (d.is_host ? 'host' : 'standalone');
+      editParentId.value = d.parent_id ?? null;
+      editNotes.value = d.notes || '';
+      isPinned.value = Boolean(d.is_pinned);
+      enrollCode.value = null;
     }
   },
   { immediate: true }
 );
 
-async function saveChanges() {
+const potentialParents = computed(() =>
+  store.devices.filter((d) => d.id !== props.device?.id && (d.device_role === 'host' || !d.parent_id))
+);
+
+const agentInstallCommand = computed(() => {
+  if (!enrollCode.value) return '';
+  const origin = window.location.origin;
+  return `curl -fsSL ${origin}/api/agent/install.sh | sudo bash -s -- --url ${origin} --code ${enrollCode.value}`;
+});
+
+async function saveGeneral() {
   if (!props.device) return;
   saving.value = true;
   try {
-    await api.updateDevice(props.device.id, {
-      display_name: displayName.value,
-      group_id: selectedGroupId.value,
-      notes: notes.value,
+    await store.updateDevice(props.device.id, {
+      display_name: editName.value,
+      group_id: editGroupId.value,
+      icon: editIcon.value,
+      virtual_type: editRole.value === 'docker' || editRole.value === 'vm' || editRole.value === 'lxc' ? editRole.value : null,
+      is_host: editRole.value === 'host',
+      parent_id: editParentId.value,
+      notes: editNotes.value,
+      is_pinned: isPinned.value,
     });
-    emit('saved');
-    emit('update:open', false);
+    emit('updated');
+    emit('close');
   } finally {
     saving.value = false;
   }
 }
 
-async function rescanPorts() {
+async function handleRefreshHost() {
   if (!props.device) return;
-  rescanning.value = true;
+  refreshing.value = true;
   try {
+    await api.refreshDeviceInfo(props.device.id);
     await api.refreshServices(props.device.id);
-    emit('saved');
+    await store.fetchDashboardData();
+    emit('updated');
   } finally {
-    rescanning.value = false;
+    refreshing.value = false;
   }
+}
+
+async function handleAddService() {
+  if (!props.device || !newSvcName.value || !newSvcPort.value) return;
+  addingService.value = true;
+  try {
+    await api.addService(props.device.id, {
+      name: newSvcName.value,
+      port: Number(newSvcPort.value),
+      protocol: newSvcProtocol.value,
+      url: newSvcUrl.value || undefined,
+    });
+    newSvcName.value = '';
+    newSvcPort.value = '';
+    newSvcUrl.value = '';
+    await store.fetchDashboardData();
+    emit('updated');
+  } finally {
+    addingService.value = false;
+  }
+}
+
+async function handleDeleteService(serviceId: number) {
+  await api.deleteService(serviceId);
+  await store.fetchDashboardData();
+  emit('updated');
+}
+
+async function handleAddInterface() {
+  if (!props.device || !newIfaceIp.value.trim()) return;
+  await api.addDeviceInterface(props.device.id, {
+    ip: newIfaceIp.value.trim(),
+    label: newIfaceLabel.value.trim() || null,
+    vlan_id: newIfaceVlan.value !== '' ? Number(newIfaceVlan.value) : null,
+  });
+  newIfaceIp.value = '';
+  newIfaceLabel.value = '';
+  newIfaceVlan.value = '';
+  await store.fetchDashboardData();
+  emit('updated');
+}
+
+async function handleRemoveInterface(ifaceId: number) {
+  if (!props.device) return;
+  await api.removeDeviceInterface(props.device.id, ifaceId);
+  await store.fetchDashboardData();
+  emit('updated');
+}
+
+async function generateEnrollmentCode() {
+  if (!props.device) return;
+  enrolling.value = true;
+  try {
+    const res = await api.createAgentEnrollment(props.device.id);
+    enrollCode.value = res.code;
+  } finally {
+    enrolling.value = false;
+  }
+}
+
+function copyInstallCommand() {
+  if (!agentInstallCommand.value) return;
+  navigator.clipboard?.writeText(agentInstallCommand.value).then(() => {
+    copiedCmd.value = true;
+    setTimeout(() => {
+      copiedCmd.value = false;
+    }, 2000);
+  });
+}
+
+async function handleDeleteDevice() {
+  if (!props.device) return;
+  if (!confirm(`Delete device "${props.device.name || props.device.ip}"?`)) return;
+  await store.deleteDevice(props.device.id);
+  emit('close');
 }
 </script>
 
 <template>
-  <DialogRoot :open="props.open" @update:open="emit('update:open', $event)">
-    <DialogPortal>
-      <DialogOverlay class="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs" />
-      <DialogContent
-        v-if="props.device"
-        class="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col border-l border-[#2A3340] bg-[#151A21] p-6 text-[#E6EAF0] shadow-2xl focus:outline-none"
-      >
-        <div class="flex items-start justify-between border-b border-[#1F2732] pb-4">
-          <div class="space-y-1">
-            <div class="flex items-center gap-2">
-              <DialogTitle class="text-base font-semibold text-[#E6EAF0]">
-                {{ props.device.display_name }}
-              </DialogTitle>
-              <Badge :variant="props.device.is_online ? 'success' : 'destructive'">
-                {{ props.device.is_online ? 'Online' : 'Offline' }}
-              </Badge>
+  <Teleport to="body">
+    <div v-if="open && device" class="fixed inset-0 z-50 flex justify-end">
+      <div class="fixed inset-0 bg-black/75 backdrop-blur-xs transition-opacity" @click="emit('close')" />
+
+      <aside class="relative z-10 w-full max-w-xl bg-[#111114] border-l border-zinc-800/90 h-full flex flex-col shadow-2xl">
+        <!-- Header -->
+        <div class="p-5 border-b border-zinc-800/80 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3.5 min-w-0">
+            <div class="w-11 h-11 rounded-xl bg-[#1b1b20] border border-zinc-800 flex items-center justify-center relative shrink-0">
+              <Server class="w-5 h-5 text-emerald-400" />
+              <div class="absolute -bottom-1 -right-1 bg-[#111114] p-0.5 rounded-full">
+                <StatusIndicator :state="device.is_online ? 'active' : 'down'" size="sm" />
+              </div>
             </div>
-            <DialogDescription class="font-mono text-xs text-[#9AA5B4]">
-              {{ props.device.ip }}
-              <span v-if="props.device.mac"> · {{ props.device.mac }}</span>
-              <span v-if="props.device.vendor"> · {{ props.device.vendor }}</span>
-            </DialogDescription>
+            <div class="min-w-0">
+              <h3 class="text-base font-bold text-zinc-100 truncate">
+                {{ device.display_name || device.name || device.hostname || device.ip }}
+              </h3>
+              <div class="flex items-center gap-2 text-xs text-zinc-400 font-mono mt-0.5">
+                <span>{{ device.ip }}</span>
+                <span v-if="device.mac" class="text-zinc-600">· {{ device.mac }}</span>
+                <RelativeTime v-if="device.last_seen" :date="device.last_seen" />
+              </div>
+            </div>
           </div>
-          <DialogClose
-            class="rounded-md p-1.5 text-[#9AA5B4] hover:bg-[#1F2732] hover:text-[#E6EAF0] cursor-pointer"
-          >
-            <X class="h-4 w-4" />
-          </DialogClose>
+
+          <div class="flex items-center gap-1.5">
+            <button
+              type="button"
+              title="Rescan device & services"
+              class="sh-pill-btn px-2.5 py-1.5 text-xs inline-flex items-center gap-1.5 cursor-pointer"
+              :disabled="refreshing"
+              @click="handleRefreshHost"
+            >
+              <RefreshCw :class="['w-3.5 h-3.5', refreshing && 'animate-spin text-emerald-400']" />
+              <span>Rescan</span>
+            </button>
+            <button
+              type="button"
+              class="p-2 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition-colors cursor-pointer"
+              @click="emit('close')"
+            >
+              <X class="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        <TabsRoot default-value="overview" class="mt-4 flex flex-1 flex-col overflow-hidden">
-          <TabsList class="grid w-full grid-cols-3 rounded-md bg-[#0E1116] p-1 border border-[#1F2732]">
-            <TabsTrigger
-              value="overview"
-              class="rounded-xs py-1.5 text-xs font-medium text-[#9AA5B4] data-[state=active]:bg-[#1F2732] data-[state=active]:text-[#E6EAF0] cursor-pointer"
-            >
-              {{ t('sheet.overview') }}
-            </TabsTrigger>
-            <TabsTrigger
-              value="services"
-              class="rounded-xs py-1.5 text-xs font-medium text-[#9AA5B4] data-[state=active]:bg-[#1F2732] data-[state=active]:text-[#E6EAF0] cursor-pointer"
-            >
-              {{ t('sheet.services') }} ({{ props.device.services?.length ?? 0 }})
-            </TabsTrigger>
-            <TabsTrigger
-              value="agent"
-              class="rounded-xs py-1.5 text-xs font-medium text-[#9AA5B4] data-[state=active]:bg-[#1F2732] data-[state=active]:text-[#E6EAF0] cursor-pointer"
-            >
-              {{ t('sheet.agent') }}
-            </TabsTrigger>
-          </TabsList>
+        <!-- Segmented Tab Bar (Shadcn Style) -->
+        <div class="px-5 pt-3 border-b border-zinc-800/80 flex items-center gap-1 bg-[#131316]">
+          <button
+            v-for="tab in [
+              { id: 'general', label: 'Settings', icon: Settings2 },
+              { id: 'services', label: `Services (${device.services?.length || 0})`, icon: Globe },
+              { id: 'agent', label: 'Agent & Telemetry', icon: Activity },
+              { id: 'interfaces', label: `Interfaces (${(device.interfaces?.length || 0) + 1})`, icon: Layers },
+            ] as const"
+            :key="tab.id"
+            type="button"
+            :class="[
+              'flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold border-b-2 transition-colors cursor-pointer -mb-px',
+              activeTab === tab.id
+                ? 'border-emerald-500 text-zinc-100'
+                : 'border-transparent text-zinc-500 hover:text-zinc-300',
+            ]"
+            @click="activeTab = tab.id"
+          >
+            <component :is="tab.icon" class="w-3.5 h-3.5" />
+            <span>{{ tab.label }}</span>
+          </button>
+        </div>
 
-          <!-- Tab 1: Overview -->
-          <TabsContent value="overview" class="mt-4 flex-1 space-y-4 overflow-y-auto pr-1">
-            <div class="space-y-1.5">
-              <label class="text-xs font-medium text-[#9AA5B4]">Anzeigename</label>
-              <Input v-model="displayName" />
-            </div>
-
-            <div class="space-y-1.5">
-              <label class="text-xs font-medium text-[#9AA5B4]">Gruppe</label>
-              <select
-                v-model="selectedGroupId"
-                class="flex h-8 w-full rounded-md border border-[#2A3340] bg-[#0B0E13] px-3 text-xs text-[#E6EAF0] focus:border-[#3DB8F5] focus:outline-none"
-              >
-                <option :value="null">Keine Gruppe</option>
-                <option v-for="g in props.groups" :key="g.id" :value="g.id">
-                  {{ g.name }}
-                </option>
-              </select>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3 rounded-md border border-[#1F2732] bg-[#0E1116] p-3 text-xs">
-              <div>
-                <span class="text-[#8390A0] block">Hostname</span>
-                <span class="font-mono text-[#E6EAF0]">{{ props.device.hostname || '—' }}</span>
-              </div>
-              <div>
-                <span class="text-[#8390A0] block">Gerätetyp</span>
-                <span class="font-mono text-[#E6EAF0]">{{ props.device.device_type || 'generic' }}</span>
-              </div>
-              <div>
-                <span class="text-[#8390A0] block">Subnetz</span>
-                <span class="font-mono text-[#E6EAF0]">{{ props.device.subnet_name || 'Standard' }}</span>
-              </div>
-              <div>
-                <span class="text-[#8390A0] block">Zuletzt gesehen</span>
-                <span class="font-mono text-[#E6EAF0]">{{ props.device.last_seen || '—' }}</span>
-              </div>
-            </div>
-
-            <div class="space-y-1.5">
-              <label class="text-xs font-medium text-[#9AA5B4]">Notizen</label>
-              <textarea
-                v-model="notes"
-                rows="3"
-                class="w-full rounded-md border border-[#2A3340] bg-[#0B0E13] p-2.5 text-xs text-[#E6EAF0] focus:border-[#3DB8F5] focus:outline-none"
-              />
-            </div>
-
-            <Button class="w-full" :disabled="saving" @click="saveChanges">
-              <Save class="h-3.5 w-3.5" />
-              {{ t('sheet.save') }}
-            </Button>
-          </TabsContent>
-
-          <!-- Tab 2: Services -->
-          <TabsContent value="services" class="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
-            <div class="flex items-center justify-between">
-              <span class="text-xs text-[#9AA5B4]">Erkannte Ports & Web-Oberflächen</span>
-              <Button variant="outline" size="sm" :disabled="rescanning" @click="rescanPorts">
-                <RefreshCw class="h-3 w-3" :class="rescanning ? 'animate-spin' : ''" />
-                {{ t('sheet.refresh_services') }}
-              </Button>
-            </div>
-
-            <div v-if="!props.device.services?.length" class="rounded-md border border-[#1F2732] bg-[#0E1116] p-6 text-center text-xs text-[#8390A0]">
-              Keine Dienste für dieses Gerät hinterlegt.
-            </div>
-
-            <div
-              v-for="svc in props.device.services"
-              :key="svc.id"
-              class="flex items-center justify-between rounded-md border border-[#1F2732] bg-[#0E1116] px-3 py-2.5"
-            >
-              <div class="space-y-0.5">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs font-medium text-[#E6EAF0]">{{ svc.name }}</span>
-                  <Badge :variant="svc.is_up ? 'success' : 'secondary'" class="font-mono text-[10px]">
-                    :{{ svc.port }}/{{ svc.protocol }}
-                  </Badge>
+        <!-- Tab Body -->
+        <div class="p-5 flex-1 overflow-y-auto space-y-5">
+          <!-- TAB 1: GENERAL SETTINGS -->
+          <template v-if="activeTab === 'general'">
+            <!-- Hardware Summary Nested Subcards -->
+            <div class="grid grid-cols-2 gap-3">
+              <div class="sh-subcard p-3">
+                <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Vendor / Hardware</div>
+                <div class="text-xs font-medium text-zinc-200 mt-1 truncate">
+                  {{ device.vendor || 'Unknown Vendor' }}
                 </div>
-                <p v-if="svc.ssl_expiry_days !== null && svc.ssl_expiry_days !== undefined" class="text-[11px] text-[#8390A0]">
-                  SSL gültig für {{ svc.ssl_expiry_days }} Tage
-                </p>
               </div>
-              <a
-                v-if="svc.protocol === 'http' || svc.protocol === 'https'"
-                :href="`${svc.protocol}://${props.device.ip}:${svc.port}`"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-flex items-center gap-1 rounded-md border border-[#2A3340] bg-[#151A21] px-2.5 py-1 text-xs text-[#3DB8F5] hover:bg-[#1F2732]"
-              >
-                Öffnen
-                <ExternalLink class="h-3 w-3" />
-              </a>
+              <div class="sh-subcard p-3">
+                <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">OS / Fingerprint</div>
+                <div class="text-xs font-medium text-zinc-200 mt-1 truncate">
+                  {{ device.os_info || device.hostname || 'Generic Host' }}
+                </div>
+              </div>
             </div>
-          </TabsContent>
 
-          <!-- Tab 3: Agent -->
-          <TabsContent value="agent" class="mt-4 flex-1 space-y-4 overflow-y-auto pr-1">
-            <div v-if="props.device.has_agent && props.device.agent_info" class="space-y-3">
-              <div class="flex items-center justify-between rounded-md border border-[#2EA043]/30 bg-[#2EA043]/10 p-3">
+            <div class="space-y-4">
+              <div>
+                <label class="block text-xs font-medium text-zinc-400 mb-1.5">Display Name</label>
+                <input
+                  v-model="editName"
+                  type="text"
+                  placeholder="e.g. proxmox-ve-01"
+                  class="w-full h-9 rounded-xl bg-[#1b1b20] border border-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500/60"
+                />
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-zinc-400 mb-1.5">Group Assignment</label>
+                  <select
+                    v-model="editGroupId"
+                    class="w-full h-9 rounded-xl bg-[#1b1b20] border border-zinc-800 px-3 text-xs text-zinc-100 focus:outline-none focus:border-emerald-500/60"
+                  >
+                    <option :value="null">Unassigned</option>
+                    <option v-for="g in store.groups" :key="g.id" :value="g.id">{{ g.name }}</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-medium text-zinc-400 mb-1.5">Device Icon</label>
+                  <select
+                    v-model="editIcon"
+                    class="w-full h-9 rounded-xl bg-[#1b1b20] border border-zinc-800 px-3 text-xs text-zinc-100 focus:outline-none focus:border-emerald-500/60"
+                  >
+                    <option v-for="ico in ICON_OPTIONS" :key="ico.id" :value="ico.id">{{ ico.label }}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-zinc-400 mb-1.5">Architecture Role</label>
+                  <select
+                    v-model="editRole"
+                    class="w-full h-9 rounded-xl bg-[#1b1b20] border border-zinc-800 px-3 text-xs text-zinc-100 focus:outline-none focus:border-emerald-500/60"
+                  >
+                    <option value="standalone">Standalone Hardware</option>
+                    <option value="host">Hypervisor / Docker Host</option>
+                    <option value="vm">Virtual Machine (VM)</option>
+                    <option value="lxc">LXC Container</option>
+                    <option value="docker">Docker Container</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-medium text-zinc-400 mb-1.5">Parent Host</label>
+                  <select
+                    v-model="editParentId"
+                    class="w-full h-9 rounded-xl bg-[#1b1b20] border border-zinc-800 px-3 text-xs text-zinc-100 focus:outline-none focus:border-emerald-500/60"
+                  >
+                    <option :value="null">None (Top-Level)</option>
+                    <option v-for="p in potentialParents" :key="p.id" :value="p.id">
+                      {{ p.name || p.ip }} ({{ p.ip }})
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <label class="sh-subcard p-3 flex items-center justify-between cursor-pointer">
                 <div class="flex items-center gap-2.5">
-                  <ShieldCheck class="h-4 w-4 text-[#4AC26B]" />
+                  <Star class="w-4 h-4 text-amber-400" :fill="isPinned ? 'currentColor' : 'none'" />
                   <div>
-                    <p class="text-xs font-semibold text-[#E6EAF0]">Linux-Agent aktiv</p>
-                    <p class="font-mono text-[11px] text-[#9AA5B4]">
-                      Version {{ props.device.agent_info.agent_version || 'unbekannt' }}
-                    </p>
+                    <div class="text-xs font-semibold text-zinc-200">Pin to Priority Bar</div>
+                    <div class="text-[11px] text-zinc-500">Always keep this device highlighted at the top of its group</div>
                   </div>
                 </div>
-              </div>
+                <input v-model="isPinned" type="checkbox" class="accent-emerald-500 w-4 h-4" />
+              </label>
 
-              <div v-if="props.device.agent_info.metrics" class="grid grid-cols-3 gap-2.5">
-                <div class="rounded-md border border-[#1F2732] bg-[#0E1116] p-3">
-                  <span class="text-[11px] text-[#8390A0] block">CPU-Last</span>
-                  <span class="font-mono text-sm font-semibold text-[#3DB8F5]">
-                    {{ props.device.agent_info.metrics.cpu_usage.toFixed(1) }}%
-                  </span>
-                </div>
-                <div class="rounded-md border border-[#1F2732] bg-[#0E1116] p-3">
-                  <span class="text-[11px] text-[#8390A0] block">RAM</span>
-                  <span class="font-mono text-sm font-semibold text-[#E6EAF0]">
-                    {{ props.device.agent_info.metrics.memory_usage.toFixed(1) }}%
-                  </span>
-                </div>
-                <div class="rounded-md border border-[#1F2732] bg-[#0E1116] p-3">
-                  <span class="text-[11px] text-[#8390A0] block">Disk</span>
-                  <span class="font-mono text-sm font-semibold text-[#E6EAF0]">
-                    {{ props.device.agent_info.metrics.disk_usage.toFixed(1) }}%
-                  </span>
-                </div>
+              <div>
+                <label class="block text-xs font-medium text-zinc-400 mb-1.5">Operator Notes</label>
+                <textarea
+                  v-model="editNotes"
+                  rows="3"
+                  placeholder="Rack slot, credentials hint, VLAN notes..."
+                  class="w-full rounded-xl bg-[#1b1b20] border border-zinc-800 p-3 text-xs text-zinc-100 focus:outline-none focus:border-emerald-500/60"
+                />
+              </div>
+            </div>
+          </template>
+
+          <!-- TAB 2: SERVICES -->
+          <template v-else-if="activeTab === 'services'">
+            <div class="sh-subcard p-3.5 space-y-3">
+              <div class="text-xs font-semibold text-zinc-200">Add Custom Service / Port</div>
+              <div class="grid grid-cols-3 gap-2">
+                <input
+                  v-model="newSvcName"
+                  placeholder="Name (e.g. WebUI)"
+                  class="h-8 rounded-lg bg-[#131316] border border-zinc-800 px-2.5 text-xs text-zinc-100"
+                />
+                <input
+                  v-model="newSvcPort"
+                  type="number"
+                  placeholder="Port (e.g. 8080)"
+                  class="h-8 rounded-lg bg-[#131316] border border-zinc-800 px-2.5 text-xs font-mono text-zinc-100"
+                />
+                <select
+                  v-model="newSvcProtocol"
+                  class="h-8 rounded-lg bg-[#131316] border border-zinc-800 px-2.5 text-xs text-zinc-100"
+                >
+                  <option value="tcp">TCP</option>
+                  <option value="udp">UDP</option>
+                </select>
+              </div>
+              <div class="flex gap-2">
+                <input
+                  v-model="newSvcUrl"
+                  placeholder="Optional custom URL (e.g. https://proxmox.local:8006)"
+                  class="flex-1 h-8 rounded-lg bg-[#131316] border border-zinc-800 px-2.5 text-xs text-zinc-100"
+                />
+                <button
+                  type="button"
+                  class="px-3 h-8 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-xs inline-flex items-center gap-1 cursor-pointer"
+                  :disabled="addingService"
+                  @click="handleAddService"
+                >
+                  <Plus class="w-3.5 h-3.5" />
+                  Add
+                </button>
               </div>
             </div>
 
-            <div v-else class="rounded-md border border-[#1F2732] bg-[#0E1116] p-5 text-center space-y-2">
-              <Server class="mx-auto h-6 w-6 text-[#8390A0]" />
-              <p class="text-xs font-medium text-[#E6EAF0]">Kein aktiver Agent verbunden</p>
-              <p class="text-[11px] text-[#8390A0]">
-                Für SSH-Rollout oder Einmal-Installationscode kannst du jederzeit mit einem Klick ins Legacy-UI wechseln.
-              </p>
+            <div class="space-y-2">
+              <div class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                Discovered & Configured Services ({{ device.services?.length || 0 }})
+              </div>
+              <div v-if="!device.services?.length" class="sh-subcard p-6 text-center text-xs text-zinc-500">
+                No open ports detected yet. Click "Rescan" above or add a port manually.
+              </div>
+              <div
+                v-for="svc in device.services"
+                :key="svc.id"
+                class="sh-subcard p-3 flex items-center justify-between gap-3"
+              >
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <ServiceBadge :service="svc" :ip="device.ip" />
+                  <span class="text-[11px] font-mono text-zinc-500 uppercase">{{ svc.protocol }}</span>
+                </div>
+                <button
+                  type="button"
+                  class="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                  @click="handleDeleteService(svc.id)"
+                >
+                  <Trash2 class="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
-          </TabsContent>
-        </TabsRoot>
-      </DialogContent>
-    </DialogPortal>
-  </DialogRoot>
+          </template>
+
+          <!-- TAB 3: AGENT & TELEMETRY -->
+          <template v-else-if="activeTab === 'agent'">
+            <div v-if="device.has_agent" class="space-y-4">
+              <div class="sh-subcard p-3.5 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <StatusIndicator state="active" size="md" />
+                  <div>
+                    <div class="text-xs font-semibold text-zinc-100">GravityLAN Telemetry Agent Connected</div>
+                    <div class="text-[11px] text-zinc-400">Streaming live WebSocket metrics</div>
+                  </div>
+                </div>
+                <span class="px-2 py-0.5 rounded-md text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  ACTIVE
+                </span>
+              </div>
+
+              <DeviceMetricsBar :device-id="device.id" />
+            </div>
+
+            <div class="sh-subcard p-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h4 class="text-xs font-semibold text-zinc-100">One-Liner Linux Agent Enrollment</h4>
+                  <p class="text-[11px] text-zinc-400 mt-0.5">
+                    Generate a temporary enrollment code to install or re-enroll the telemetry agent on this Linux host.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="sh-pill-btn px-3 py-1.5 text-xs font-semibold cursor-pointer shrink-0"
+                  :disabled="enrolling"
+                  @click="generateEnrollmentCode"
+                >
+                  <Terminal class="w-3.5 h-3.5 inline mr-1" />
+                  {{ enrolling ? 'Generating...' : 'Generate Code' }}
+                </button>
+              </div>
+
+              <div v-if="enrollCode" class="space-y-2 pt-2 border-t border-zinc-800">
+                <div class="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>Run this on <strong class="text-zinc-200">{{ device.ip }}</strong>:</span>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 text-emerald-400 hover:underline cursor-pointer"
+                    @click="copyInstallCommand"
+                  >
+                    <Check v-if="copiedCmd" class="w-3 h-3" />
+                    <Copy v-else class="w-3 h-3" />
+                    {{ copiedCmd ? 'Copied!' : 'Copy command' }}
+                  </button>
+                </div>
+                <pre class="p-3 rounded-xl bg-[#0d0d10] border border-zinc-800 text-[11px] font-mono text-emerald-300 overflow-x-auto whitespace-pre-wrap break-all">{{ agentInstallCommand }}</pre>
+              </div>
+            </div>
+          </template>
+
+          <!-- TAB 4: NETWORK INTERFACES -->
+          <template v-else-if="activeTab === 'interfaces'">
+            <div class="space-y-2">
+              <div class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Primary Address</div>
+              <div class="sh-subcard p-3 flex items-center justify-between">
+                <div>
+                  <div class="font-mono text-xs font-semibold text-zinc-100">{{ device.ip }}</div>
+                  <div class="text-[11px] text-zinc-500 font-mono">{{ device.mac || 'No MAC recorded' }}</div>
+                </div>
+                <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  Primary
+                </span>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                Additional VLAN / Multi-Homed Interfaces ({{ device.interfaces?.length || 0 }})
+              </div>
+              <div
+                v-for="iface in device.interfaces || []"
+                :key="iface.id"
+                class="sh-subcard p-3 flex items-center justify-between"
+              >
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono text-xs font-semibold text-zinc-100">{{ iface.ip }}</span>
+                    <span v-if="iface.label" class="text-xs text-zinc-400">({{ iface.label }})</span>
+                    <span
+                      v-if="iface.vlan_id != null"
+                      class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-400 border border-sky-500/20"
+                    >
+                      VLAN {{ iface.vlan_id }}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 cursor-pointer"
+                  @click="handleRemoveInterface(iface.id)"
+                >
+                  <Trash2 class="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div class="sh-subcard p-3.5 space-y-2.5">
+              <div class="text-xs font-semibold text-zinc-200">Attach Secondary IP / VLAN Interface</div>
+              <div class="grid grid-cols-3 gap-2">
+                <input
+                  v-model="newIfaceIp"
+                  placeholder="IP (e.g. 10.0.20.5)"
+                  class="h-8 rounded-lg bg-[#131316] border border-zinc-800 px-2.5 text-xs font-mono text-zinc-100"
+                />
+                <input
+                  v-model="newIfaceLabel"
+                  placeholder="Label (e.g. eth1)"
+                  class="h-8 rounded-lg bg-[#131316] border border-zinc-800 px-2.5 text-xs text-zinc-100"
+                />
+                <input
+                  v-model="newIfaceVlan"
+                  type="number"
+                  placeholder="VLAN ID"
+                  class="h-8 rounded-lg bg-[#131316] border border-zinc-800 px-2.5 text-xs font-mono text-zinc-100"
+                />
+              </div>
+              <button
+                type="button"
+                class="w-full h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-100 cursor-pointer"
+                @click="handleAddInterface"
+              >
+                + Attach Interface
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <!-- Footer -->
+        <div class="p-4 border-t border-zinc-800/80 bg-[#131316] flex items-center justify-between gap-2">
+          <button
+            type="button"
+            class="px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 inline-flex items-center gap-1.5 cursor-pointer"
+            @click="handleDeleteDevice"
+          >
+            <Trash2 class="w-3.5 h-3.5" />
+            Delete Host
+          </button>
+
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="sh-pill-btn px-3.5 py-2 text-xs font-semibold cursor-pointer"
+              @click="emit('close')"
+            >
+              Cancel
+            </button>
+            <button
+              v-if="activeTab === 'general'"
+              type="button"
+              class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-xs transition-colors cursor-pointer"
+              :disabled="saving"
+              @click="saveGeneral"
+            >
+              {{ saving ? 'Saving...' : 'Save Changes' }}
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </Teleport>
 </template>

@@ -116,8 +116,8 @@ export function useI18n() {
     setLocale(currentLocale.value === 'de' ? 'en' : 'de');
   }
 
-  function t(key: string): string {
-    return messages[currentLocale.value][key] ?? key;
+  function t(key: string, fallback?: string): string {
+    return messages[currentLocale.value][key] ?? fallback ?? key;
   }
 
   return {

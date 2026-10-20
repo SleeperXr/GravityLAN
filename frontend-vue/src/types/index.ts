@@ -5,12 +5,13 @@ export interface Service {
   name: string;
   protocol: string;
   port: number;
-  url_template: string;
-  color: string | null;
-  is_auto_detected: boolean;
-  sort_order: number;
+  url_template?: string;
+  url?: string;
+  color?: string | null;
+  is_auto_detected?: boolean;
+  sort_order?: number;
   is_up: boolean;
-  last_checked: string | null;
+  last_checked?: string | null;
   ssl_expiry_days?: number | null;
   ignore_ssl?: boolean;
 }
@@ -21,9 +22,12 @@ export interface Device {
   mac: string | null;
   hostname: string | null;
   display_name: string;
+  name?: string;
   device_type: string;
   device_subtype: string;
+  device_role?: 'standalone' | 'host' | 'vm' | 'lxc' | 'docker';
   vendor?: string;
+  os_info?: string;
   group_id: number | null;
   icon: string | null;
   sort_order: number;
@@ -43,6 +47,7 @@ export interface Device {
   virtual_type: 'docker' | 'lxc' | 'vm' | null;
   has_agent: boolean;
   has_pending_token?: boolean;
+  agent_status?: string;
   agent_info?: {
     agent_version: string | null;
     latest_version: string | null;
@@ -88,6 +93,75 @@ export interface DeviceInterface {
   first_seen: string | null;
 }
 
+export interface GatewayEntry {
+  subnet_id: number;
+  subnet_name: string;
+  cidr: string;
+  vlan_id: number | null;
+  gateway_ip: string | null;
+  gateway_source: 'detected' | 'suggested' | null;
+  device_id: number | null;
+  interface_id: number | null;
+  device_name: string | null;
+  is_online: boolean | null;
+}
+
+export interface MergeSuggestion {
+  target_id: number;
+  target_name: string;
+  target_ip: string;
+  candidate_id: number;
+  candidate_name: string;
+  candidate_ip: string;
+  kind: 'device' | 'discovered';
+  reason: string;
+}
+
+export interface DeviceHistoryResponse {
+  id: number;
+  device_id: number;
+  event_type: string;
+  old_value: string | null;
+  new_value: string | null;
+  timestamp: string;
+}
+
+export interface AgentSnapshot {
+  id?: number;
+  device_id?: number;
+  timestamp: string;
+  cpu_percent: number;
+  ram_total_mb?: number;
+  ram_used_mb?: number;
+  ram_percent?: number;
+  ram?: { total_mb: number; used_mb: number; percent: number };
+  disk_json?: Array<{ path: string; total_gb: number; used_gb: number; percent: number }>;
+  disk?: Array<{ path: string; total_gb: number; used_gb: number; percent: number }>;
+  temperature?: number | null;
+}
+
+export interface GlobalMetricPoint {
+  timestamp: string;
+  avg_cpu: number;
+  avg_ram: number;
+  active_agents: number;
+}
+
+export interface Rack {
+  id: number;
+  name: string;
+  height_u: number;
+  location?: string | null;
+}
+
+export interface TopologyLink {
+  id: number;
+  source_id: number;
+  target_id: number;
+  link_type?: string;
+  speed_mbps?: number | null;
+}
+
 export interface DeviceGroup {
   id: number;
   name: string;
@@ -111,6 +185,7 @@ export interface Subnet {
   id: number;
   cidr: string;
   name: string;
+  color?: string | null;
   dns_server: string | null;
   is_enabled: boolean;
   is_direct_l2?: boolean;
@@ -126,6 +201,7 @@ export interface Subnet {
 
 export interface ScanProgress {
   status: 'idle' | 'running' | 'discovering' | 'identifying' | 'devices_updated' | 'completed' | 'failed' | 'cancelled';
+  is_scanning?: boolean;
   current_subnet: string;
   hosts_scanned: number;
   hosts_total: number;
@@ -160,11 +236,13 @@ export interface AgentSummary {
   hostname: string;
   ip: string;
   is_online: boolean;
+  is_active?: boolean;
   has_pending_token?: boolean;
   agent_version: string | null;
   last_seen: string | null;
   cpu_usage: number;
   ram_usage: number;
+  disk_max_usage?: number;
   temp: number | null;
   uptime_pct: number;
   uptime_history: number[];

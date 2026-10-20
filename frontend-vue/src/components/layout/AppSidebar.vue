@@ -1,25 +1,27 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router';
 import {
-  LayoutDashboard,
   Activity,
+  ArrowLeftRight,
+  ExternalLink,
   Grid3x3,
+  LayoutDashboard,
+  Network,
+  ScrollText,
   Server,
   Settings,
-  ArrowLeftRight,
-  Network,
   SquareTerminal,
-  ScrollText,
-  ExternalLink,
 } from 'lucide-vue-next';
+import StatusIndicator from '@/components/8starlabs-ui/StatusIndicator.vue';
 import { useI18n } from '@/composables/useI18n';
-import Badge from '@/components/ui/badge/Badge.vue';
+import { useNetworkStore } from '@/stores/network';
 
 const props = defineProps<{
   version?: string;
 }>();
 
 const route = useRoute();
+const store = useNetworkStore();
 const { t } = useI18n();
 
 const navItems = [
@@ -38,21 +40,51 @@ const legacyDeepLinks = [
 </script>
 
 <template>
-  <aside class="flex h-screen w-64 shrink-0 flex-col border-r border-[#1F2732] bg-[#12161C] select-none">
+  <aside class="flex h-screen w-64 shrink-0 flex-col border-r border-zinc-800/80 bg-[#0e0e11] select-none">
     <!-- Brand Header -->
-    <div class="flex h-14 items-center justify-between border-b border-[#1F2732] px-4">
-      <div class="flex items-center gap-2.5">
-        <div class="flex h-7 w-7 items-center justify-center rounded-md bg-[#3DB8F5] text-[#07121A] font-bold text-xs shadow-xs">
+    <div class="flex h-15 items-center justify-between border-b border-zinc-800/80 px-4">
+      <div class="flex items-center gap-3">
+        <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500 text-zinc-950 font-extrabold text-xs shadow-sm">
           GL
         </div>
         <div>
-          <div class="flex items-center gap-1.5">
-            <span class="text-sm font-bold tracking-tight text-[#E6EAF0]">GravityUI</span>
-            <Badge variant="default" class="px-1.5 py-0 text-[10px]">Vue</Badge>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-bold tracking-tight text-zinc-100">GravityUI</span>
+            <span class="px-1.5 py-0.5 rounded-md text-[10px] font-mono font-semibold bg-emerald-500/12 text-emerald-400 border border-emerald-500/25">
+              Vue 3
+            </span>
           </div>
-          <p class="text-[10px] text-[#8390A0] font-mono">
-            {{ props.version ? `v${props.version}` : 'shadcn-vue' }}
+          <p class="text-[10px] text-zinc-500 font-mono">
+            {{ props.version ? `v${props.version} · 8starlabs` : 'shadcn-vue · 8starlabs' }}
           </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Fleet Mini Summary Card inside Sidebar -->
+    <div class="px-3 pt-4">
+      <div class="sh-subcard p-3 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Radar Status</span>
+          <StatusIndicator
+            :state="store.isScanning ? 'fixing' : store.onlineCount > 0 ? 'active' : 'idle'"
+            :label="store.isScanning ? 'Scanning' : 'Online'"
+            size="sm"
+          />
+        </div>
+        <div class="grid grid-cols-3 gap-1.5 pt-1 text-center">
+          <div class="rounded-lg bg-[#131316] border border-zinc-800/80 py-1.5">
+            <div class="font-mono text-xs font-bold text-emerald-400">{{ store.onlineCount }}</div>
+            <div class="text-[9px] text-zinc-500 uppercase">Online</div>
+          </div>
+          <div class="rounded-lg bg-[#131316] border border-zinc-800/80 py-1.5">
+            <div class="font-mono text-xs font-bold text-zinc-300">{{ store.totalCount }}</div>
+            <div class="text-[9px] text-zinc-500 uppercase">Total</div>
+          </div>
+          <div class="rounded-lg bg-[#131316] border border-zinc-800/80 py-1.5">
+            <div class="font-mono text-xs font-bold text-sky-400">{{ store.agentCount }}</div>
+            <div class="text-[9px] text-zinc-500 uppercase">Agents</div>
+          </div>
         </div>
       </div>
     </div>
@@ -60,62 +92,76 @@ const legacyDeepLinks = [
     <!-- Primary Standard Dashboard Navigation -->
     <div class="flex-1 overflow-y-auto px-3 py-4 space-y-6">
       <div class="space-y-1">
-        <p class="px-2.5 pb-1 text-[10px] font-mono uppercase tracking-wider text-[#8390A0]">
+        <p class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
           Standard Dashboards
         </p>
         <RouterLink
           v-for="item in navItems"
           :key="item.name"
           :to="item.to"
-          class="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-xs font-medium transition-colors"
+          class="flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition-all"
           :class="
             route.path === item.to
-              ? 'bg-[#1F2732] text-[#E6EAF0] border border-[#2A3340]'
-              : 'text-[#9AA5B4] hover:bg-[#151A21] hover:text-[#E6EAF0]'
+              ? 'bg-[#1b1b20] text-zinc-100 border border-zinc-700/80 shadow-xs'
+              : 'text-zinc-400 hover:bg-[#151519] hover:text-zinc-200 border border-transparent'
           "
         >
-          <component
-            :is="item.icon"
-            class="h-4 w-4 shrink-0"
-            :class="route.path === item.to ? 'text-[#3DB8F5]' : 'text-[#8390A0]'"
-          />
-          <span>{{ t(item.labelKey) }}</span>
+          <span class="flex items-center gap-2.5">
+            <component
+              :is="item.icon"
+              class="h-4 w-4 shrink-0"
+              :class="route.path === item.to ? 'text-emerald-400' : 'text-zinc-500'"
+            />
+            <span>{{ t(item.labelKey) }}</span>
+          </span>
+          <span
+            v-if="item.name === 'dashboard' && store.totalCount > 0"
+            class="font-mono text-[10px] px-1.5 py-0.5 rounded-md bg-zinc-900 text-zinc-400"
+          >
+            {{ store.totalCount }}
+          </span>
+          <span
+            v-else-if="item.name === 'agents' && store.agentCount > 0"
+            class="font-mono text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400"
+          >
+            {{ store.agentCount }}
+          </span>
         </RouterLink>
       </div>
 
       <!-- Direct Deep-Links for specialized canvases in Legacy UI -->
       <div class="space-y-1">
-        <p class="px-2.5 pb-1 text-[10px] font-mono uppercase tracking-wider text-[#8390A0]">
+        <p class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
           Spezial-Werkzeuge (Legacy)
         </p>
         <a
           v-for="link in legacyDeepLinks"
           :key="link.href"
           :href="link.href"
-          class="flex items-center justify-between rounded-md px-2.5 py-1.5 text-xs text-[#9AA5B4] hover:bg-[#151A21] hover:text-[#E6EAF0] transition-colors"
+          class="flex items-center justify-between rounded-xl px-3 py-2 text-xs text-zinc-400 hover:bg-[#151519] hover:text-zinc-200 transition-colors"
         >
           <span class="flex items-center gap-2.5">
-            <component :is="link.icon" class="h-3.5 w-3.5 text-[#8390A0]" />
+            <component :is="link.icon" class="h-3.5 w-3.5 text-zinc-500" />
             <span>{{ link.label }}</span>
           </span>
-          <ExternalLink class="h-3 w-3 text-[#8390A0]" />
+          <ExternalLink class="h-3 w-3 text-zinc-600" />
         </a>
       </div>
     </div>
 
     <!-- 1-Click Switcher Footer back to Legacy UI -->
-    <div class="border-t border-[#1F2732] p-3">
+    <div class="border-t border-zinc-800/80 p-3">
       <a
         href="/"
-        class="flex w-full items-center justify-between rounded-md border border-[#2A3340] bg-[#151A21] px-3 py-2 text-xs font-medium text-[#E6EAF0] hover:border-[#3DB8F5]/50 hover:bg-[#1F2732] transition-colors"
+        class="sh-subcard flex w-full items-center justify-between px-3 py-2.5 text-xs font-medium text-zinc-200 hover:border-emerald-500/40 hover:bg-[#222228] transition-all"
       >
         <span class="flex items-center gap-2">
-          <ArrowLeftRight class="h-3.5 w-3.5 text-[#3DB8F5]" />
+          <ArrowLeftRight class="h-3.5 w-3.5 text-emerald-400" />
           <span>{{ t('nav.legacy_switch') }}</span>
         </span>
-        <Badge variant="secondary" class="font-mono text-[10px]">
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-zinc-900 text-zinc-400 border border-zinc-800">
           {{ t('nav.legacy_badge') }}
-        </Badge>
+        </span>
       </a>
     </div>
   </aside>

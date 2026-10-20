@@ -5,8 +5,9 @@
   "tailwind": {
     "config": "",
     "css": "src/index.css",
-    "baseColor": "slate",
-    "cssVariables": true
+    "baseColor": "zinc",
+    "cssVariables": true,
+    "prefix": ""
   },
   "aliases": {
     "components": "@/components",
@@ -15,5 +16,8 @@
     "ui": "@/components/ui",
     "lib": "@/lib"
   },
-  "iconLibrary": "lucide"
+  "iconLibrary": "lucide",
+  "registries": {
+    "@8starlabs-ui": "https://ui.8starlabs.com/r/{name}.json"
+  }
 }
