@@ -182,7 +182,7 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
             tables = [
                 "topology_links", "device_metrics", "agent_tokens", "agent_configs",
                 "device_history", "services", "devices", "racks", "discovered_hosts",
-                "subnets", "app_settings"
+                "subnets", "router_import_sources", "app_settings"
             ]
             
             for table in tables:

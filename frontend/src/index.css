@@ -1394,6 +1394,52 @@ div.callout__body { display: flex; flex-direction: column; gap: 10px; }
 .settings-list__meta code { font-family: var(--font-mono); color: var(--text-secondary); }
 .settings-empty { margin: 0; font-size: 0.875rem; color: var(--text-tertiary); }
 
+/* Settings > Scan subnets > Import from router */
+.router-import {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+}
+.router-import__form { display: flex; flex-direction: column; gap: 10px; }
+.router-import__grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.router-import__field { display: flex; flex: 1 1 200px; flex-direction: column; gap: 4px; min-width: 0; }
+.router-import__field--narrow { flex: 0 1 140px; }
+.router-import__field--wide { flex-basis: 100%; }
+.router-import__field .form-label { margin: 0; }
+.router-import__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.router-import__actions .field-hint { flex: 1 1 240px; margin: 0; }
+.router-import__error { margin: 0; font-size: 0.8125rem; color: var(--accent-danger); }
+.router-import__cert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(227, 179, 65, 0.35);
+  border-radius: var(--radius-md);
+  background: rgba(227, 179, 65, 0.06);
+}
+.router-import__cert .form-label, .router-import__cert .field-hint { margin: 0; }
+.router-import__fingerprint {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.router-import__pick { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; cursor: pointer; }
+.router-import__status { flex-shrink: 0; max-width: 45%; font-size: 0.75rem; color: var(--text-tertiary); text-align: right; }
+.router-import__status--new { color: var(--accent-success); }
+.router-import__status--update { color: var(--accent-primary); }
+.router-import__status--too_large { color: var(--accent-warning); }
+@media (max-width: 600px) {
+  .router-import__field--narrow { flex: 1 1 120px; }
+  .router-import .settings-list__row { flex-wrap: wrap; }
+  .router-import__status { max-width: none; text-align: left; }
+}
+
 /* Appears only with unsaved changes; sticks to the bottom of the viewport */
 .save-bar {
   position: sticky;

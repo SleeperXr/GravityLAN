@@ -190,6 +190,7 @@ async def lifespan(app: FastAPI):
     from app.models.api_token import ApiToken
     from app.models.webhook import WebhookSubscription
     from app.models.ssh import SshKey, SshProfile, SshKnownHost
+    from app.models.router_import import RouterImportSource
 
     # Initialize database tables
     await init_db()
@@ -340,12 +341,14 @@ from app.api.notifications import router as notifications_router  # noqa: E402
 from app.api.health import router as health_router  # noqa: E402
 from app.api.ssh import router as ssh_router, ws_router as ssh_ws_router  # noqa: E402
 from app.api.interfaces import router as interfaces_router  # noqa: E402
+from app.api.router_import import router as router_import_router  # noqa: E402
 
 from app.api.auth import get_current_admin
 
 app.include_router(auth_router)
 app.include_router(backup_router, dependencies=[Depends(get_current_admin)])
 app.include_router(network_router, dependencies=[Depends(get_current_admin)])
+app.include_router(router_import_router, dependencies=[Depends(get_current_admin)])
 app.include_router(topology_router, dependencies=[Depends(get_current_admin)])
 app.include_router(devices_router, dependencies=[Depends(get_current_admin)])
 app.include_router(interfaces_router, dependencies=[Depends(get_current_admin)])

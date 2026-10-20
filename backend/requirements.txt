@@ -15,5 +15,6 @@ python-multipart
 docker>=7.1.0
 passlib[bcrypt]
 argon2-cffi
+pysnmp>=7.1,<8
 
 

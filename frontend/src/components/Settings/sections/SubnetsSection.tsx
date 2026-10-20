@@ -9,6 +9,7 @@ import { useToast } from '../../../context/ToastContext';
 import { normalizeCidr } from '../../Network/subnet/model';
 import { GatewayFields, type GatewayPatch } from '../../Network/subnet/GatewayFields';
 import { ActionRow, SettingsSection, errorText } from './SettingsParts';
+import { RouterImportPanel } from './RouterImportPanel';
 
 /** How the container reaches a subnet, as shown next to it. */
 function reachLabel(sub: Subnet, t: TFunction): string {
@@ -95,7 +96,7 @@ export function useScanSubnets() {
   const configured = new Set(subnets.map((s) => normalizeCidr(s.cidr)));
   const suggestions = detected.filter((s) => !configured.has(normalizeCidr(s.subnet)));
 
-  return { subnets, detected, suggestions, loaded, add, setEnabled, updateGateway, remove };
+  return { subnets, detected, suggestions, loaded, add, setEnabled, updateGateway, remove, reload: load };
 }
 
 /** "Gateway 192.168.110.1 · VLAN 110", or the automatic gateway when none is entered. */
@@ -108,8 +109,9 @@ function gatewayLabel(sub: Subnet, t: TFunction): string {
 
 export function SubnetsSection() {
   const { t } = useTranslation();
-  const { subnets, detected, suggestions, loaded, add, setEnabled, updateGateway, remove } = useScanSubnets();
+  const { subnets, detected, suggestions, loaded, add, setEnabled, updateGateway, remove, reload } = useScanSubnets();
   const [editing, setEditing] = useState<number | null>(null);
+  const [importing, setImporting] = useState(false);
   const [cidr, setCidr] = useState('');
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
@@ -228,6 +230,23 @@ export function SubnetsSection() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      <ActionRow title={t('router_import.title')} description={t('router_import.desc')}>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => setImporting((open) => !open)}
+          aria-expanded={importing}
+          aria-controls="router-import-panel"
+        >
+          <Router size={14} aria-hidden="true" /> {importing ? t('router_import.close') : t('router_import.open')}
+        </button>
+      </ActionRow>
+      {importing && (
+        <div id="router-import-panel">
+          <RouterImportPanel onApplied={reload} />
         </div>
       )}
 

@@ -161,6 +161,64 @@ export interface Subnet {
   gateway_source?: 'detected' | 'suggested' | null;
 }
 
+/** How a router is asked for its networks: read-only SNMP (most routers) or the UniFi console API. */
+export type RouterImportProvider = 'snmp' | 'unifi';
+
+/** A saved router connection; secrets are never sent back, only which ones are stored. */
+export interface RouterSource {
+  provider: RouterImportProvider;
+  host: string;
+  port: number | null;
+  options: Record<string, string | null>;
+  stored_secrets: string[];
+}
+
+export interface RouterImportRequest {
+  provider: RouterImportProvider;
+  host: string;
+  port?: number | null;
+  options?: Record<string, string | null>;
+  /** Empty values fall back to the stored secrets of the same router */
+  secrets?: Record<string, string>;
+  remember?: boolean;
+}
+
+export interface RouterNetworkPreview {
+  cidr: string;
+  name: string | null;
+  gateway_ip: string | null;
+  vlan_id: number | null;
+  interface: string | null;
+  /** new: not configured; update: configured, empty gateway/VLAN gets filled; exists: nothing to add; too_large: bigger than a /16 */
+  status: 'new' | 'update' | 'exists' | 'too_large';
+  fills: ('gateway_ip' | 'vlan_id')[];
+  existing_name: string | null;
+}
+
+export interface RouterImportPreview {
+  /** confirm_certificate: the console's TLS certificate fingerprint must be confirmed first */
+  status: 'ok' | 'confirm_certificate';
+  provider: RouterImportProvider;
+  host: string;
+  networks: RouterNetworkPreview[];
+  fingerprint?: string | null;
+  reason?: 'untrusted_certificate' | 'certificate_mismatch' | null;
+  message?: string | null;
+}
+
+export interface RouterImportApplyItem {
+  cidr: string;
+  name?: string | null;
+  gateway_ip?: string | null;
+  vlan_id?: number | null;
+}
+
+export interface RouterImportApplyResult {
+  added: string[];
+  updated: string[];
+  unchanged: string[];
+}
+
 export interface ScanProgress {
   status: 'idle' | 'running' | 'discovering' | 'identifying' | 'devices_updated' | 'completed' | 'failed' | 'cancelled';
   current_subnet: string;
