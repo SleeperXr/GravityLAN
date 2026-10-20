@@ -58,6 +58,9 @@ jobs:
         cd frontend
         npm ci
         npm run typecheck
+        cd ../frontend-vue
+        npm ci
+        npm run typecheck
 
   build-docker:
     runs-on: ubuntu-latest

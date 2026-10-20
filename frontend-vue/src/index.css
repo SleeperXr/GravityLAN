@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --color-background: #0E1116;
+  --color-foreground: #E6EAF0;
+  --color-card: #151A21;
+  --color-card-foreground: #E6EAF0;
+  --color-popover: #151A21;
+  --color-popover-foreground: #E6EAF0;
+  --color-primary: #3DB8F5;
+  --color-primary-foreground: #07121A;
+  --color-secondary: #1F2732;
+  --color-secondary-foreground: #E6EAF0;
+  --color-muted: #12161C;
+  --color-muted-foreground: #9AA5B4;
+  --color-accent: #1F2732;
+  --color-accent-foreground: #E6EAF0;
+  --color-destructive: #F47067;
+  --color-destructive-foreground: #0E1116;
+  --color-border: #1F2732;
+  --color-input: #2A3340;
+  --color-ring: #3DB8F5;
+}
+
+:root {
+  --bg-app: #0E1116;
+  --bg-surface: #12161C;
+  --bg-card: #151A21;
+  --bg-elevated: #1F2732;
+  --bg-input: #0B0E13;
+  --text-primary: #E6EAF0;
+  --text-secondary: #9AA5B4;
+  --text-tertiary: #8390A0;
+  --accent-primary: #3DB8F5;
+  --accent-success: #2EA043;
+  --accent-danger: #F47067;
+  --accent-warning: #E3B341;
+  --border-subtle: #1F2732;
+  --border-medium: #2A3340;
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+}

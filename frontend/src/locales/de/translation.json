@@ -15,7 +15,9 @@
     "logs": "Logs",
     "settings": "Einstellungen",
     "navigation": "Hauptnavigation",
-    "open_menu": "Menü öffnen"
+    "open_menu": "Menü öffnen",
+    "gravity_ui": "GravityUI",
+    "gravity_ui_hint": "Zu GravityUI (Vue + shadcn) wechseln"
   },
   "auth": {
     "required": "Anmeldung erforderlich",

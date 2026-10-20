@@ -8,6 +8,14 @@ RUN npm ci --no-audit
 COPY frontend/ ./
 RUN npm run build
 
+# Stage 1b: Build GravityUI (Vue 3 + shadcn-vue) Frontend
+FROM node:20-alpine AS frontend-vue-build
+WORKDIR /build/frontend-vue
+COPY frontend-vue/package*.json ./
+RUN npm ci --no-audit || npm install --no-audit
+COPY frontend-vue/ ./
+RUN npm run build
+
 # Stage 2: Python Build Environment (Builder)
 FROM python:3.12-slim AS python-build
 
@@ -59,6 +67,7 @@ COPY backend/ .
 
 # Copy frontend build to static directory
 COPY --from=frontend-build /build/frontend/dist ./static
+COPY --from=frontend-vue-build /build/frontend-vue/dist ./static-vue
 
 # Create data directory and user
 RUN mkdir -p /app/data && \

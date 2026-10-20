@@ -65,6 +65,19 @@ class PollingFilter(logging.Filter):
 FRONTEND_DIR = Path("/app/static") if Path("/app/static").exists() else Path(__file__).parent.parent / "frontend" / "dist"
 
 
+def _resolve_frontend_vue_dir() -> Path:
+    """Resolve the GravityUI (Vue) build directory for Docker and local layouts."""
+    candidates = (
+        Path("/app/static-vue"),
+        Path(__file__).resolve().parent.parent.parent / "frontend-vue" / "dist",
+        Path(__file__).resolve().parent.parent / "frontend-vue" / "dist",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[1]
+
+
 async def _migrate_legacy_scan_subnets() -> None:
     """Fold the legacy scan_subnets setting into the Subnet table, then drop the setting.
 
@@ -476,6 +489,47 @@ async def serve_spa(full_path: str):
     # Fallback to index.html for SPA routing
     index_file = os.path.realpath(os.path.join(base_dir, "index.html"))
     return FileResponse(index_file, headers=INDEX_HEADERS)
+
+
+@app.get("/frontend-vue")
+@app.get("/frontend-vue/")
+async def serve_vue_root():
+    """Serve GravityUI (Vue + shadcn-vue) entry point."""
+    vue_dir = _resolve_frontend_vue_dir()
+    index_file = vue_dir / "index.html"
+    if index_file.exists():
+        return FileResponse(str(index_file), headers=INDEX_HEADERS)
+    raise HTTPException(status_code=404, detail="GravityUI build not found in frontend-vue/dist")
+
+
+@app.get("/frontend-vue/{full_path:path}")
+async def serve_vue_spa(full_path: str):
+    """Serve assets or SPA fallback for GravityUI under /frontend-vue/."""
+    if ".." in full_path or "\\" in full_path or full_path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    vue_dir = _resolve_frontend_vue_dir()
+    if not vue_dir.exists():
+        raise HTTPException(status_code=404, detail="GravityUI build not found")
+
+    try:
+        base_dir = os.path.realpath(str(vue_dir))
+        resolved_path = os.path.realpath(os.path.join(base_dir, full_path))
+        if not resolved_path.startswith(base_dir) or os.path.commonpath([base_dir, resolved_path]) != base_dir:
+            raise HTTPException(status_code=400, detail="Invalid path")
+
+        if os.path.isfile(resolved_path):
+            headers = INDEX_HEADERS if os.path.basename(resolved_path) == "index.html" else None
+            return FileResponse(resolved_path, headers=headers)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    index_file = os.path.realpath(os.path.join(base_dir, "index.html"))
+    if os.path.isfile(index_file):
+        return FileResponse(index_file, headers=INDEX_HEADERS)
+    raise HTTPException(status_code=404, detail="GravityUI index.html not found")
 
 
 if FRONTEND_DIR.exists():

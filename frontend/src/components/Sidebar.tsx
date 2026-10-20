@@ -1,4 +1,4 @@
-import { LayoutDashboard, Activity, Settings, Network, X, Grid3x3, Server, ScrollText, SquareTerminal, type LucideIcon } from 'lucide-react';
+import { LayoutDashboard, Activity, Settings, Network, X, Grid3x3, Server, ScrollText, SquareTerminal, Sparkles, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useLiveSshSessions } from './Ssh/sessionCount';
@@ -61,6 +61,37 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
             </Link>
           ))}
         </nav>
+        <div className="sidebar-footer">
+          <a
+            href="/frontend-vue/"
+            className="nav-item"
+            title={t('sidebar.gravity_ui_hint')}
+            style={{
+              border: '1px solid var(--border-medium)',
+              background: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              justifyContent: 'space-between',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontFamily: 'var(--font-sans)' }}>
+              <Sparkles size={16} style={{ color: 'var(--accent-primary)' }} aria-hidden="true" />
+              <span>{t('sidebar.gravity_ui')}</span>
+            </span>
+            <span
+              style={{
+                fontSize: '10px',
+                padding: '1px 6px',
+                borderRadius: '4px',
+                background: 'rgba(61, 184, 245, 0.14)',
+                color: 'var(--accent-primary)',
+                border: '1px solid rgba(61, 184, 245, 0.3)',
+                fontWeight: 600,
+              }}
+            >
+              Vue
+            </span>
+          </a>
+        </div>
       </aside>
 
       <nav className="mobile-tabbar" aria-label={t('sidebar.navigation')}>

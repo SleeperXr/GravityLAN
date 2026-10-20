@@ -26,6 +26,9 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location back
 
 # 4. Start Frontend
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location frontend; npm run dev" -WorkingDirectory $PSScriptRoot -WindowStyle Normal
+if (Test-Path "frontend-vue/package.json") {
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location frontend-vue; if (!(Test-Path 'node_modules')) { npm install }; npm run dev" -WorkingDirectory $PSScriptRoot -WindowStyle Normal
+}
 
 Write-Host "Backend: http://localhost:8000"
 Write-Host "Frontend: http://127.0.0.1:5173"
