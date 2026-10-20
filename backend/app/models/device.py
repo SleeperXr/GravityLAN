@@ -17,7 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 
-from app.database import Base
+from app.database import TELEMETRY_SCHEMA, Base
 
 if TYPE_CHECKING:
     from app.models.network import Subnet
@@ -244,6 +244,10 @@ class DeviceHealthSample(Base):
     ``is_online`` is the raw probe result; the device's own ``is_online`` keeps the
     scanner's offline hysteresis.
 
+    Stored in the telemetry database and kept only briefly; older probes survive as
+    hourly/daily DeviceHealthRollup rows. device_id has no foreign key (it points into
+    the inventory file), so deleting a device deletes its samples explicitly.
+
     Attributes:
         latency_ms: ICMP round-trip time, else the fastest TCP connect time (None when unreachable).
         probe_type: "icmp" or "tcp", how latency_ms was measured.
@@ -253,7 +257,7 @@ class DeviceHealthSample(Base):
     __tablename__ = "device_health_samples"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
+    device_id: Mapped[int] = mapped_column(Integer, nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     is_online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -263,6 +267,7 @@ class DeviceHealthSample(Base):
 
     __table_args__ = (
         Index("ix_device_health_samples_dev_ts", "device_id", "timestamp"),
+        {"schema": TELEMETRY_SCHEMA},
     )
 
 

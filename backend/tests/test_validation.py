@@ -142,6 +142,12 @@ async def test_lifespan_permission_error():
                 pass
         assert "PERMISSION ERROR" in str(exc_info.value)
 
+    # lifespan read the log level through the real engine before failing; close its
+    # connection (gravitylan.db + telemetry.db in the temp data dir) in this event loop,
+    # or Windows cannot delete the temp directory at exit
+    from app.database import engine
+    await engine.dispose()
+
 
 @pytest.mark.asyncio
 async def test_server_url_validation_valid(client, admin_token):

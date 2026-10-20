@@ -40,6 +40,32 @@ function formatErrorDetail(detail: unknown): string {
   return typeof detail === 'string' ? detail : '';
 }
 
+/** How long each measurement tier is kept (raw rows in hours, rollups in days). */
+export interface TelemetryRetention {
+  raw_hours: number;
+  hourly_days: number;
+  daily_days: number;
+}
+
+export interface TelemetryTableStats {
+  rows: number;
+  oldest: string | null;
+  newest: string | null;
+}
+
+/** Settings > Measurement data: sizes of both databases, rows per table, retention. */
+export interface TelemetryStatus {
+  sizes: { inventory_bytes: number; telemetry_bytes: number; telemetry_free_bytes: number };
+  tables: Record<'device_health_samples' | 'device_metrics' | 'device_health_rollups' | 'device_metrics_rollups', TelemetryTableStats>;
+  retention: TelemetryRetention;
+  limits: Record<keyof TelemetryRetention, { min: number; max: number; default: number }>;
+}
+
+export type TelemetryPurge =
+  | { scope: 'older_than'; older_than_days: number }
+  | { scope: 'device'; device_id: number }
+  | { scope: 'all' };
+
 export const api = {
   // Setup
   getSetupStatus: () => request<{ is_setup_complete: boolean; device_count: number; version?: string }>('/api/setup/status'),
@@ -126,6 +152,16 @@ export const api = {
   updateSettings: (settings: Record<string, string>) => 
     request<{ status: string }>('/api/settings', { method: 'POST', body: JSON.stringify(settings) }),
   resetDatabase: () => request<{status: string, message: string}>('/api/settings/reset-db', { method: 'POST' }),
+
+  // Measurement data (separate telemetry database)
+  getTelemetryStatus: () => request<TelemetryStatus>('/api/settings/telemetry'),
+  updateTelemetryRetention: (retention: TelemetryRetention) =>
+    request<TelemetryStatus>('/api/settings/telemetry/retention', { method: 'PUT', body: JSON.stringify(retention) }),
+  purgeTelemetry: (purge: TelemetryPurge) =>
+    request<TelemetryStatus & { deleted: Record<string, number> }>('/api/settings/telemetry/purge', {
+      method: 'POST',
+      body: JSON.stringify(purge),
+    }),
   
   // Backup
   exportBackup: () => fetch('/api/backup/export').then(res => res.json()),

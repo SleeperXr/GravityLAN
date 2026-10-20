@@ -89,7 +89,7 @@ def test_config_settings_defaults():
 
 @pytest.mark.asyncio
 async def test_clean_old_history_and_metrics(db):
-    """Verify ScanScheduler._clean_old_history successfully prunes DeviceHistory and DeviceMetrics."""
+    """ScanScheduler._clean_old_history prunes DeviceHistory; metrics follow the telemetry tiers instead."""
     from datetime import datetime, timezone, timedelta
     from app.models.device import Device, DeviceHistory
     from app.models.agent import DeviceMetrics
@@ -167,10 +167,10 @@ async def test_clean_old_history_and_metrics(db):
     assert len(histories) == 1
     assert histories[0].status == "online"
 
+    # Agent metrics are rolled up and pruned by the telemetry maintenance, not here
     res_met = await db.execute(select(DeviceMetrics))
     metrics = res_met.scalars().all()
-    assert len(metrics) == 1
-    assert metrics[0].cpu_percent == 12.0
+    assert len(metrics) == 2
 
 def test_config_settings_validation():
     """Verify validation constraints for config settings."""

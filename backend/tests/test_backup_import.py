@@ -26,7 +26,8 @@ def backup_db(tmp_path):
     """A file-based SQLite database with the full schema and a running instance's state."""
     path = tmp_path / "gravitylan.db"
     engine = create_engine(f"sqlite:///{path}")
-    Base.metadata.create_all(engine)
+    # Inventory tables only: the measurement tables live in the separate telemetry.db
+    Base.metadata.create_all(engine, tables=[t for t in Base.metadata.sorted_tables if t.schema is None])
     with Session(engine) as s:
         for key, value in PROTECTED.items():
             s.add(Setting(key=key, value=value))

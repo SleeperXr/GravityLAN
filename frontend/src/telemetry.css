@@ -1,0 +1,77 @@
+/* Settings > Measurement data (TelemetrySection) */
+
+.telemetry-sizes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.telemetry-size {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.telemetry-size__label { font-size: 0.75rem; color: var(--text-tertiary); }
+.telemetry-size__value {
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.telemetry-tier__count {
+  flex-shrink: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.telemetry-save {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: -8px;
+}
+
+/* Rows with an input next to the button: text on top, controls below (right-aligned),
+   or the description gets squeezed into a narrow column */
+.settings-action-row:has(> .telemetry-action) {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.telemetry-action {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.telemetry-action > .btn { flex-shrink: 0; white-space: nowrap; }
+.telemetry-action__input { width: 120px; }
+.telemetry-action .settings-field { flex: 1 1 auto; max-width: 340px; min-width: 0; }
+.telemetry-action .settings-field > .form-label {
+  /* The row title already names the field; keep the label for screen readers only */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .telemetry-sizes { grid-template-columns: minmax(0, 1fr); }
+  .telemetry-action { flex-direction: column; align-items: stretch; }
+  .telemetry-action__input,
+  .telemetry-action .settings-field { width: 100%; }
+  .telemetry-action > .btn { justify-content: center; }
+  .settings-list__row .telemetry-tier__count { text-align: left; }
+}

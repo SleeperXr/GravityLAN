@@ -205,6 +205,17 @@ async def lifespan(app: FastAPI):
     async with async_session() as db:
         await run_migrations(db)
 
+    # Migration: measurement tables of older versions move from the inventory into telemetry.db
+    from app.database import engine
+    from app.services.telemetry_store import migrate_legacy_telemetry, vacuum_inventory
+    try:
+        async with async_session() as db:
+            moved = await migrate_legacy_telemetry(db)
+        if moved:
+            await vacuum_inventory(engine)
+    except Exception as e:
+        logger.error("Telemetry migration failed (retried on next start): %s", e, exc_info=True)
+
     # Migration: fold scan_subnets into the Subnet table before the scheduler reads it
     await _migrate_legacy_scan_subnets()
 
@@ -342,6 +353,7 @@ from app.api.health import router as health_router  # noqa: E402
 from app.api.ssh import router as ssh_router, ws_router as ssh_ws_router  # noqa: E402
 from app.api.interfaces import router as interfaces_router  # noqa: E402
 from app.api.router_import import router as router_import_router  # noqa: E402
+from app.api.telemetry import router as telemetry_router  # noqa: E402
 
 from app.api.auth import get_current_admin
 
@@ -356,6 +368,7 @@ app.include_router(groups_router, dependencies=[Depends(get_current_admin)])
 app.include_router(router_services, dependencies=[Depends(get_current_admin)])
 app.include_router(scanner_router, dependencies=[Depends(get_current_admin)])
 app.include_router(settings_router, dependencies=[Depends(get_current_admin)])
+app.include_router(telemetry_router)  # Settings > Measurement data; guards itself with get_current_admin
 app.include_router(webhooks_router, dependencies=[Depends(get_current_admin)])
 app.include_router(summary_router, dependencies=[Depends(get_current_admin)])
 app.include_router(issues_router, dependencies=[Depends(get_current_admin)])

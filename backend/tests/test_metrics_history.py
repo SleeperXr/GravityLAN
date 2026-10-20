@@ -56,7 +56,8 @@ async def test_metrics_legacy_compatibility(client, db):
     assert response.status_code == 200
     data = response.json()
     assert data["device_id"] == 10
-    assert data["retention_days"] == 30
+    # Longest telemetry tier (daily rollups, 365 days by default)
+    assert data["retention_days"] == 365
     assert data["available_ranges"] == ["6h", "24h", "7d", "30d"]
     
     # Legacy returns limit (5) snapshots
@@ -112,7 +113,8 @@ async def test_metrics_aggregation_6h_range(client, db):
     response = await client.get("/api/agent/metrics/20?range=6h", headers=headers)
     assert response.status_code == 200
     data = response.json()
-    assert data["retention_days"] == 30
+    # Longest telemetry tier (daily rollups, 365 days by default)
+    assert data["retention_days"] == 365
     assert data["available_ranges"] == ["6h", "24h", "7d", "30d"]
     
     snapshots = data["snapshots"]
@@ -165,13 +167,17 @@ async def test_metrics_aggregation_empty_buckets_skipped(client, db):
 
 @pytest.mark.asyncio
 async def test_metrics_db_retention_override(client, db):
-    """Verify that when history_retention_days is configured in the database, the API returns the DB value and limits ranges accordingly."""
+    """The offered ranges follow the telemetry retention: the longest tier bounds them."""
     # 1. Setup Auth and Setup Complete
     token = "test-token"
     db.add(Setting(key="setup.complete", value="true"))
     db.add(Setting(key="api.master_token", value=token))
     
-    # Configure 5-day retention in database override
+    # Shortest allowed telemetry retention: raw 48 h, hourly 2 days, daily 7 days
+    db.add(Setting(key="telemetry.raw_retention_hours", value="48"))
+    db.add(Setting(key="telemetry.hourly_retention_days", value="2"))
+    db.add(Setting(key="telemetry.daily_retention_days", value="7"))
+    # The event history retention no longer limits the metric ranges
     db.add(Setting(key="history_retention_days", value="5"))
     await db.commit()
     
@@ -186,6 +192,6 @@ async def test_metrics_db_retention_override(client, db):
     assert response.status_code == 200
     data = response.json()
     
-    # 4. Assertions: Should return DB setting value (5) and range constraints based on 5 days (no 7d or 30d!)
-    assert data["retention_days"] == 5
-    assert data["available_ranges"] == ["6h", "24h"]  # 7d and 30d are excluded because 5 < 7
+    # 4. Assertions: the daily tier reaches 7 days back, so 30d is not offered
+    assert data["retention_days"] == 7
+    assert data["available_ranges"] == ["6h", "24h", "7d"]

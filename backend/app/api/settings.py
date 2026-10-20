@@ -190,7 +190,10 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
             # List of tables to clear in order (Leaf to Root)
             # Using raw table names to be independent of model mapping issues
             tables = [
-                "topology_links", "device_metrics", "agent_tokens", "agent_configs",
+                "topology_links", "agent_tokens", "agent_configs",
+                # Measurement data in the attached telemetry.db
+                "telemetry.device_metrics", "telemetry.device_health_samples",
+                "telemetry.device_health_rollups", "telemetry.device_metrics_rollups",
                 "device_history", "services", "devices", "racks", "discovered_hosts",
                 "subnets", "router_import_sources", "app_settings"
             ]

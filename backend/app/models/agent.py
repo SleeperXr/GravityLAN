@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
+from app.database import TELEMETRY_SCHEMA, Base
 
 if TYPE_CHECKING:
     from app.models.device import Device
@@ -61,7 +61,10 @@ class DeviceMetrics(Base):
     """Time-series storage for agent-reported system metrics.
 
     Each row represents one snapshot of a device's health at a point in time.
-    Old entries can be pruned periodically to save storage.
+    Stored in the telemetry database: raw rows are kept for a short time and then
+    folded into hourly/daily DeviceMetricsRollup rows (app.services.telemetry_rollups).
+    device_id has no foreign key (it points into the inventory file), so deleting a
+    device must delete its rows explicitly (app.services.telemetry_store).
 
     Attributes:
         id: Primary key.
@@ -84,9 +87,7 @@ class DeviceMetrics(Base):
     __tablename__ = "device_metrics"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    device_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    device_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     cpu_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     ram_used_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     ram_total_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -102,10 +103,9 @@ class DeviceMetrics(Base):
     reboot_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     major_upgrade_available: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    device: Mapped["Device"] = relationship()  # noqa: F821
-
     __table_args__ = (
         Index("idx_device_metrics_device_timestamp", "device_id", "timestamp"),
+        {"schema": TELEMETRY_SCHEMA},
     )
 
 
