@@ -50,6 +50,10 @@
       "legend_device": "In the overview",
       "legend_discovered": "Discovered only",
       "legend_reserved": "Reserved"
+    },
+    "settings": {
+      "appearance": "Language & appearance",
+      "sections": "Sections"
     }
   }
 }
