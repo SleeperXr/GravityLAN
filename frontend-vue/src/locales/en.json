@@ -42,6 +42,14 @@
       "clear_filter": "Clear filter",
       "matches": "{{count}} of {{total}} devices",
       "no_match": "No device matches the filter."
+    },
+    "network": {
+      "free": "free",
+      "used": "in use",
+      "usage": "Address usage",
+      "legend_device": "In the overview",
+      "legend_discovered": "Discovered only",
+      "legend_reserved": "Reserved"
     }
   }
 }

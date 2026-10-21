@@ -42,6 +42,14 @@
       "clear_filter": "Filter zurücksetzen",
       "matches": "{{count}} von {{total}} Geräten",
       "no_match": "Kein Gerät passt zum Filter."
+    },
+    "network": {
+      "free": "frei",
+      "used": "belegt",
+      "usage": "Adressbelegung",
+      "legend_device": "In der Übersicht",
+      "legend_discovered": "Nur entdeckt",
+      "legend_reserved": "Reserviert"
     }
   }
 }
