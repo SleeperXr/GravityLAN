@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- GravityUI (`/frontend-vue/`, optional second interface next to the unchanged React UI): new foundation with light and dark mode (follows the system or chosen in the sidebar), the same German/English texts as the React UI (shared i18next files, same language setting), phone layout with bottom tab bar, toasts, confirmation dialogs and a login screen of its own. Pages that are not ported yet link to the same page in the classic view.
+- GravityUI overview with the full feature set of the React dashboard: groups (collapsible, reorderable), tile grid with edit mode (move, resize, move between groups, compact, reset layout; positions are shared with the React UI), list view, bulk delete, refresh all, scan with subnet choice, gateways popover, notification history and agent update center. New: status tiles (online, offline, agents, services down) that filter the overview, and a search over name, IP, MAC and services.
+- GravityUI device editor with all five tabs of the React editor (general, services, interfaces incl. merge suggestions, history, agent with SSH install/update/uninstall, manual commands and configuration). Services are added inline instead of through browser prompts.
+
+### Fixed
+- GravityUI showed values the backend never sends (device `name`, `os_info`, `device_role`, service `url`, subnet `color`); it now uses the React UI's types and API client directly.
+
 ## [0.4.1] - 2026-10-20
 
 ### Added

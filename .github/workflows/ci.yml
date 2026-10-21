@@ -51,16 +51,23 @@ jobs:
       with:
         node-version: "22"
         cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
+        cache-dependency-path: |
+          frontend/package-lock.json
+          frontend-vue/package-lock.json
 
     - name: Install and typecheck
       run: |
         cd frontend
         npm ci
         npm run typecheck
-        cd ../frontend-vue
+
+    - name: GravityUI (Vue) typecheck, lint and tests
+      run: |
+        cd frontend-vue
         npm ci
         npm run typecheck
+        npm run lint
+        npm test
 
   build-docker:
     runs-on: ubuntu-latest

@@ -1,4 +1,28 @@
-/** API client for HomeLan backend. */
+/** API client for HomeLan backend. Shared with the Vue UI in frontend-vue/ (alias @shared). */
+
+/** What a 401 and a logout do. The Vue UI under /frontend-vue/ replaces both with its own login screen. */
+export const authHandlers = {
+  onUnauthorized: () => {
+    // Redirect to login if unauthorized and not already on auth/setup pages
+    if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
+      window.location.href = '/login';
+    }
+  },
+  onLoggedOut: () => {
+    window.location.href = '/login';
+  },
+};
+
+/** An API error that keeps the HTTP status, so callers can tell 401/404/409 apart. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
 
 export async function request<T>(path: string, options?: RequestInit): Promise<T> {
   let token = localStorage.getItem('gravitylan_token');
@@ -18,16 +42,11 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
     ...options,
   });
 
-  if (response.status === 401) {
-    // Redirect to login if unauthorized and not already on auth/setup pages
-    if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
-      window.location.href = '/login';
-    }
-  }
+  if (response.status === 401) authHandlers.onUnauthorized();
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(formatErrorDetail(error.detail) || `API Error: ${response.status}`);
+    throw new ApiError(formatErrorDetail(error.detail) || `API Error: ${response.status}`, response.status);
   }
 
   if (response.status === 204) return undefined as T;
@@ -293,7 +312,7 @@ export const api = {
   logout: () => 
     request<{ status: string }>('/api/auth/logout', { method: 'POST' }).then(() => {
       localStorage.removeItem('gravitylan_token');
-      window.location.href = '/login';
+      authHandlers.onLoggedOut();
     }),
   checkAuth: () => request<{ status: string }>('/api/auth/check', { method: 'POST' }),
   changePassword: (current_password: string, new_password: string) =>

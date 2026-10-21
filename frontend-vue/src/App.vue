@@ -1,56 +1,135 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { RefreshCw } from 'lucide-vue-next';
-import { api } from '@/api/client';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
+import { ArrowLeftRight, Loader2, Radar, Square } from 'lucide-vue-next';
+import { api, sessionExpired } from '@/api/client';
 import { useNetworkStore } from '@/stores/network';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
-import AppHeader from '@/components/layout/AppHeader.vue';
-import LoginDialog from '@/components/auth/LoginDialog.vue';
+import MobileNav from '@/components/layout/MobileNav.vue';
+import ToastHost from '@/components/ui/ToastHost.vue';
+import ConfirmHost from '@/components/ui/ConfirmHost.vue';
+import Button from '@/components/ui/Button.vue';
+import LoginView from '@/views/LoginView.vue';
+import { t } from '@/i18n';
+
+type BootState = 'checking' | 'setup' | 'login' | 'ready';
 
 const store = useNetworkStore();
-const authState = ref<'checking' | 'authenticated' | 'unauthenticated'>('checking');
-const appVersion = ref<string | undefined>(undefined);
+const route = useRoute();
+const state = ref<BootState>('checking');
+const version = ref<string>();
 
-async function bootstrap() {
-  authState.value = 'checking';
+const pageTitle = computed(() => (route.meta.titleKey ? t(route.meta.titleKey) : t('app.title')));
+watch(pageTitle, (title) => (document.title = `${title} · ${t('app.title')}`), { immediate: true });
+
+async function boot() {
+  state.value = 'checking';
   try {
     const setup = await api.getSetupStatus();
-    appVersion.value = setup.version;
+    version.value = setup.version;
     if (!setup.is_setup_complete) {
-      window.location.href = '/';
+      state.value = 'setup';
       return;
     }
-    await api.checkAuth();
-    authState.value = 'authenticated';
-    await store.fetchInventory(true);
-    store.connectScanStream();
   } catch {
-    authState.value = 'unauthenticated';
+    // Backend unreachable: the login screen at least shows something actionable
   }
+  try {
+    await api.checkAuth();
+  } catch {
+    state.value = 'login';
+    return;
+  }
+  sessionExpired.value = false;
+  state.value = 'ready';
+  store.fetchInventory(true).catch(() => {});
+  store.connectScanStream();
 }
 
-onMounted(bootstrap);
+watch(sessionExpired, (expired) => {
+  if (expired && state.value === 'ready') {
+    store.disconnectScanStream();
+    state.value = 'login';
+  }
+});
+
+const scanPercent = computed(() => {
+  const p = store.scanProgress;
+  if (!p?.hosts_total) return null;
+  return Math.min(100, Math.round(((p.hosts_scanned ?? 0) / p.hosts_total) * 100));
+});
+
+onMounted(boot);
 onBeforeUnmount(() => store.disconnectScanStream());
 </script>
 
 <template>
-  <div
-    v-if="authState === 'checking'"
-    class="flex h-screen w-screen items-center justify-center bg-[#0a0a0c] text-zinc-400 gap-2.5 text-xs"
-  >
-    <RefreshCw class="h-4 w-4 animate-spin text-emerald-400" />
-    <span>Loading GravityUI...</span>
+  <div v-if="state === 'checking'" class="flex min-h-dvh items-center justify-center gap-2.5 bg-canvas text-sm text-fg-muted" role="status">
+    <Loader2 class="size-4 animate-spin text-accent-text" aria-hidden="true" />
+    {{ t('app_status.initializing') }}
   </div>
 
-  <LoginDialog v-else-if="authState === 'unauthenticated'" @authenticated="bootstrap" />
+  <main v-else-if="state === 'setup'" class="flex min-h-dvh items-center justify-center bg-canvas px-4">
+    <div class="gl-card max-w-md p-6 text-center">
+      <h1 class="text-lg font-semibold text-fg">{{ t('app.title') }}</h1>
+      <p class="mt-2 text-sm text-fg-muted">{{ t('gv.legacy.setup_desc') }}</p>
+      <a href="/" class="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-semibold text-accent-fg hover:bg-accent-hover">
+        <ArrowLeftRight class="size-4" aria-hidden="true" />
+        {{ t('gv.legacy.open') }}
+      </a>
+    </div>
+  </main>
 
-  <div v-else class="flex h-screen w-screen overflow-hidden bg-[#0a0a0c] text-zinc-100">
-    <AppSidebar :version="appVersion" />
-    <div class="flex flex-1 flex-col overflow-hidden">
-      <AppHeader />
-      <main class="flex-1 overflow-y-auto">
+  <LoginView v-else-if="state === 'login'" @authenticated="boot" />
+
+  <div v-else class="flex h-dvh overflow-hidden bg-canvas text-fg">
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:shadow-pop"
+    >
+      {{ t('gv.skip_to_content') }}
+    </a>
+    <AppSidebar :version="version" />
+
+    <div class="flex min-w-0 flex-1 flex-col">
+      <!-- Phone app bar -->
+      <header class="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-chrome px-4 pt-[env(safe-area-inset-top)] md:hidden">
+        <span class="text-xs font-semibold text-fg-subtle">{{ t('app.title') }}</span>
+        <span class="text-fg-subtle" aria-hidden="true">/</span>
+        <span class="truncate text-sm font-semibold text-fg">{{ pageTitle }}</span>
+      </header>
+
+      <!-- Live scan strip: visible on every page while the scanner runs -->
+      <div
+        v-if="store.isScanning"
+        role="status"
+        class="relative flex shrink-0 items-center gap-3 overflow-hidden border-b border-accent/20 bg-accent/[0.07] px-4 py-2 text-xs md:px-8"
+      >
+        <Radar class="size-4 shrink-0 animate-spin text-accent-text [animation-duration:2.5s]" aria-hidden="true" />
+        <span class="font-medium text-fg">{{ t('gv.scan.running') }}</span>
+        <span v-if="store.scanProgress?.current_subnet" class="hidden truncate font-mono text-fg-muted sm:inline">
+          {{ store.scanProgress.current_subnet }}
+        </span>
+        <span v-if="store.scanProgress?.hosts_total" class="font-mono text-fg-muted tabular">
+          {{ t('gv.scan.progress', { done: store.scanProgress.hosts_scanned ?? 0, total: store.scanProgress.hosts_total }) }}
+        </span>
+        <Button size="sm" variant="ghost" class="ml-auto h-7" @click="store.stopScan()">
+          <Square aria-hidden="true" />
+          {{ t('gv.scan.stop') }}
+        </Button>
+        <div v-if="scanPercent !== null" class="absolute inset-x-0 bottom-0 h-0.5 bg-accent/15" aria-hidden="true">
+          <div class="h-full bg-accent transition-[width] duration-500" :style="{ width: `${scanPercent}%` }" />
+        </div>
+      </div>
+
+      <main id="main" tabindex="-1" class="min-h-0 flex-1 overflow-y-auto pb-[calc(4rem+env(safe-area-inset-bottom))] focus:outline-none md:pb-0">
         <RouterView />
       </main>
     </div>
+
+    <MobileNav />
   </div>
+
+  <ToastHost />
+  <ConfirmHost />
 </template>

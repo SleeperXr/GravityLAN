@@ -1,0 +1,47 @@
+{
+  "gv": {
+    "brand_tag": "GravityUI",
+    "skip_to_content": "Skip to content",
+    "more": "More",
+    "logout": "Sign out",
+    "language": "Language",
+    "theme": {
+      "label": "Color scheme",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "legacy": {
+      "switch": "Classic view",
+      "switch_hint": "Switch to the familiar GravityLAN interface",
+      "badge": "React",
+      "only_title": "{{page}} is not in GravityUI yet",
+      "only_desc": "This area is being ported. Until then it works unchanged in the classic view.",
+      "open": "Open in the classic view",
+      "setup_desc": "First-time setup is not finished yet. It runs in the classic view."
+    },
+    "state": {
+      "load_failed": "Could not load data",
+      "checking_session": "Checking sign-in..."
+    },
+    "toast": {
+      "region": "Notifications"
+    },
+    "scan": {
+      "running": "Scan running",
+      "progress": "{{done}} of {{total}} hosts",
+      "stop": "Stop scan",
+      "all": "All scan subnets",
+      "all_targets": "{{count}} subnets, one after another",
+      "no_targets": "No subnets found. Check your network settings."
+    },
+    "dashboard": {
+      "services_down": "Services down",
+      "services_down_hint": "Unreachable ports on online devices",
+      "search": "Search name, IP, MAC or service",
+      "clear_filter": "Clear filter",
+      "matches": "{{count}} of {{total}} devices",
+      "no_match": "No device matches the filter."
+    }
+  }
+}

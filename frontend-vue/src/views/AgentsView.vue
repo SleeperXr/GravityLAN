@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { Cpu, HardDrive, MemoryStick, RefreshCw, Server, Thermometer } from 'lucide-vue-next';
+import { Cpu, MemoryStick, RefreshCw, Server, Thermometer } from 'lucide-vue-next';
 import RelativeTime from '@/components/8starlabs-ui/RelativeTime.vue';
 import StatusIndicator from '@/components/8starlabs-ui/StatusIndicator.vue';
 import DeviceMetricsBar from '@/components/dashboard/DeviceMetricsBar.vue';
@@ -102,7 +102,7 @@ onMounted(loadAgents);
             <div class="w-10 h-10 rounded-xl bg-[#1b1b20] border border-zinc-800 flex items-center justify-center relative">
               <Server class="w-4.5 h-4.5 text-emerald-400" />
               <div class="absolute -bottom-1 -right-1 bg-[#131316] p-0.5 rounded-full">
-                <StatusIndicator :state="ag.is_online || ag.is_active ? 'active' : 'down'" size="sm" />
+                <StatusIndicator :state="ag.is_online ? 'active' : 'down'" size="sm" />
               </div>
             </div>
             <div>
@@ -139,10 +139,6 @@ onMounted(loadAgents);
             <span v-if="ag.temp !== null" class="inline-flex items-center gap-1 font-mono text-zinc-300">
               <Thermometer class="w-3 h-3 text-amber-400" />
               {{ ag.temp.toFixed(0) }}°C
-            </span>
-            <span class="inline-flex items-center gap-1 font-mono text-zinc-400">
-              <HardDrive class="w-3 h-3" />
-              Max Disk {{ (ag.disk_max_usage ?? 0).toFixed(0) }}%
             </span>
           </div>
           <RelativeTime v-if="ag.last_seen" :date="ag.last_seen" />

@@ -1,0 +1,49 @@
+/** Agent helpers ported from the React UI (Agents/ManualInstallCommand.tsx, Agents/savedLogins.ts). */
+import { api } from '@/api/client';
+import type { Device, SshProfile } from '@/types';
+
+export { isAgentOutdated } from '@shared/utils/version';
+
+/** Server address as the browser sees it; the Vite dev servers (5173/5174) talk to the API on 8000. */
+export function serverOrigin(): string {
+  const { protocol, hostname, port } = window.location;
+  const apiPort = port === '5173' || port === '5174' ? ':8000' : port ? `:${port}` : '';
+  return `${protocol}//${hostname}${apiPort}`;
+}
+
+export function buildInstallCommand(deviceId: number, code: string): string {
+  return `curl -sSL "${serverOrigin()}/api/agent/download/install-sh/${deviceId}?code=${code}" | sudo bash`;
+}
+
+export function buildUninstallCommand(deviceId: number): string {
+  return `curl -sSL "${serverOrigin()}/api/agent/download/uninstall-sh/${deviceId}" | sudo bash`;
+}
+
+export interface InstallCode {
+  code: string;
+  expiresAt: Date;
+}
+
+/** A fresh single-use enrollment code for the install command of one device. */
+export async function requestInstallCode(deviceId: number): Promise<InstallCode> {
+  const { code, expires_in } = await api.createAgentEnrollment(deviceId);
+  // The code ends up in a root shell command: accept only the backend's token_urlsafe alphabet.
+  if (!/^[A-Za-z0-9_-]+$/.test(code)) throw new Error('Unexpected install code format');
+  return { code, expiresAt: new Date(Date.now() + expires_in * 1000) };
+}
+
+/**
+ * Saved SSH connections that may log in for agent deploy and updates: key logins of
+ * this device (linked to it, or to its address). The backend checks the same (ADR-002).
+ */
+export function agentKeyProfiles(profiles: SshProfile[], device: Pick<Device, 'id' | 'ip'>): SshProfile[] {
+  return profiles.filter(
+    (p) => p.auth_method === 'key' && p.key_id !== null && (p.device_id !== null ? p.device_id === device.id : p.host === device.ip),
+  );
+}
+
+/** "user@host" (with a port other than 22) of a saved connection. */
+export function profileTarget(profile: SshProfile): string {
+  const port = profile.port !== 22 ? `:${profile.port}` : '';
+  return `${profile.username}@${profile.target_host ?? profile.host ?? ''}${port}`;
+}
