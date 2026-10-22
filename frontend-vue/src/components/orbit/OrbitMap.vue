@@ -77,6 +77,8 @@ const gatewayIds = ref(new Set<number>());
 const localPositions = ref(new Map<number, Point>());
 const selectedLinkId = ref<number | null>(null);
 const selectedDeviceId = ref<number | null>(null);
+const hoveredBodyId = ref<number | null>(null);
+const hoveredBeamId = ref<number | null>(null);
 const loaded = ref(false);
 
 // Viewport pan & zoom state
@@ -161,6 +163,61 @@ function posOf(id: number): Point {
 const orbitRings = computed(() => computeOrbitRings(bodies.value, positions.value));
 const lightBeams = computed(() => computeLightBeams(links.value, bodies.value));
 
+/**
+ * Deterministic Deep-Space Starfield points (astronomical coordinates with varying magnitudes)
+ */
+interface CosmicStar {
+  id: number;
+  x: number;
+  y: number;
+  r: number;
+  opacity: number;
+  twinkle: boolean;
+  delay: string;
+}
+
+const cosmicStars = computed<CosmicStar[]>(() => {
+  let seed = 1337;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+  const list: CosmicStar[] = [];
+  for (let i = 0; i < 96; i++) {
+    const x = Math.round((rand() - 0.48) * 3600);
+    const y = Math.round((rand() - 0.48) * 2600);
+    const r = rand() > 0.86 ? 1.4 : rand() > 0.45 ? 1.0 : 0.65;
+    const opacity = Math.round((0.25 + rand() * 0.55) * 100) / 100;
+    const twinkle = rand() > 0.4;
+    const delay = `${Math.round(rand() * 45) / 10}s`;
+    list.push({ id: i, x, y, r, opacity, twinkle, delay });
+  }
+  return list;
+});
+
+/**
+ * Cluster under active inspection (hover or selection).
+ * In Cosmic Constellation mode, orbit rings are contextual and ONLY appear around
+ * the inspected hub, preventing the whole screen from turning into a chaotic spiderweb of circles.
+ */
+const activeClusterCenterId = computed(() => {
+  if (draggingBodyId.value) {
+    const b = bodies.value.get(draggingBodyId.value);
+    return b?.parentId ?? null;
+  }
+  const activeId = hoveredBodyId.value ?? selectedDeviceId.value;
+  if (!activeId) return null;
+  const b = bodies.value.get(activeId);
+  if (!b) return null;
+  return b.kind === 'moon' ? b.parentId : b.id;
+});
+
+const visibleOrbitRings = computed(() => {
+  if (editing.value) return orbitRings.value;
+  if (!activeClusterCenterId.value) return [];
+  return orbitRings.value.filter((r) => r.centerId === activeClusterCenterId.value);
+});
+
 /** Active preview radius while dragging a body in space */
 const activeDragOrbit = computed(() => {
   if (draggingBodyId.value == null || dropTarget.value) return null;
@@ -211,7 +268,16 @@ const linkEnds = computed(() => {
 function bodyRadius(kind: OrbitBody['kind']): number {
   if (kind === 'star') return 22;
   if (kind === 'planet') return 16;
-  return 11;
+  return 10.5;
+}
+
+function roleBadge(device: Device): string | null {
+  if (device.is_ap) return 'AP';
+  if (device.is_host) return 'HOST';
+  const dt = (device.device_type || '').toLowerCase();
+  const sub = (device.device_subtype || '').toLowerCase();
+  if (dt === 'switch' || sub === 'switch') return 'SW';
+  return null;
 }
 
 function screenToWorld(clientX: number, clientY: number): Point {
@@ -242,7 +308,7 @@ function fitView() {
     minY = Math.min(minY, p.y - 75);
     maxY = Math.max(maxY, p.y + 75);
   }
-  for (const r of orbitRings.value) {
+  for (const r of visibleOrbitRings.value) {
     const c = posOf(r.centerId);
     minX = Math.min(minX, c.x - r.radius - 30);
     maxX = Math.max(maxX, c.x + r.radius + 30);
@@ -253,7 +319,10 @@ function fitView() {
   const contentW = Math.max(240, maxX - minX);
   const contentH = Math.max(240, maxY - minY);
   const pad = 0.84;
-  const nextZoom = Math.min(1.6, Math.max(0.22, Math.min((rect.width * pad) / contentW, (rect.height * pad) / contentH)));
+  const nextZoom = Math.min(
+    1.6,
+    Math.max(0.22, Math.min((rect.width * pad) / contentW, (rect.height * pad) / contentH)),
+  );
   zoom.value = nextZoom;
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
@@ -345,7 +414,12 @@ function onWindowPointerMove(e: PointerEvent) {
 
     if (body.kind === 'star' || body.kind === 'planet') {
       // Moving a Planet or Star moves all of its moons along with it
-      localPositions.value = moveWithDescendants(id, { x: dx, y: dy }, bodies.value, dragStartPositions.value);
+      localPositions.value = moveWithDescendants(
+        id,
+        { x: dx, y: dy },
+        bodies.value,
+        dragStartPositions.value,
+      );
     } else {
       // Moving a Moon snaps to sibling orbit rings when not dropping onto a new planet
       const snapped = dropTarget.value
@@ -448,54 +522,44 @@ async function assignOrbitToTarget(childId: number, target: OrbitBody) {
 
   const tPos = posOf(target.id);
   const siblingCount = bodyList.value.filter((b) => b.parentId === target.id).length;
-  const orbitR = target.kind === 'star' ? (child.kind !== 'moon' ? 260 : 140) : 96;
-  const angle = -Math.PI / 2 + siblingCount * 0.9;
+  const radius = target.kind === 'star' ? 190 : 120 + Math.floor(siblingCount / 6) * 44;
+  const angle = (siblingCount * (2 * Math.PI)) / Math.max(1, siblingCount + 1);
   const newPos = {
-    x: Math.round(tPos.x + orbitR * Math.cos(angle)),
-    y: Math.round(tPos.y + orbitR * Math.sin(angle)),
+    x: Math.round(tPos.x + radius * Math.cos(angle)),
+    y: Math.round(tPos.y + radius * Math.sin(angle)),
   };
 
   localPositions.value = new Map(localPositions.value).set(childId, newPos);
   store.patchDevice(childId, { topology_x: newPos.x, topology_y: newPos.y });
 
   try {
-    // Remove old parent topology link if one existed
+    await api.updateDevice(childId, { topology_x: newPos.x, topology_y: newPos.y });
+
+    // Remove existing parent link if one was previously stored
     if (child.parentLinkId != null) {
       await api.deleteTopologyLink(child.parentLinkId).catch(() => {});
       links.value = links.value.filter((l) => l.id !== child.parentLinkId);
     }
 
-    // Create new topology link to the target Planet/AP/Switch/Star if not already linked
-    const exists = links.value.some(
-      (l) =>
-        (l.source_id === target.id && l.target_id === childId) ||
-        (l.source_id === childId && l.target_id === target.id),
-    );
-    if (!exists) {
-      const linkType = target.device.is_ap || child.device.is_wlan ? 'WLAN' : '1GbE';
-      const created = (await api.createTopologyLink({
-        source_id: target.id,
-        target_id: childId,
-        link_type: linkType,
-      })) as OrbitLink;
-      links.value = [...links.value, created];
-    }
+    // Create a new topology link connecting the child to the target hub
+    const defaultType =
+      child.device.is_ap || target.device.is_ap || child.device.is_wlan ? 'WLAN' : '1GbE';
+    const created = (await api.createTopologyLink({
+      source_id: target.id,
+      target_id: childId,
+      link_type: defaultType,
+    })) as OrbitLink;
 
-    // Update parent_id if moving a VM/Container onto a Host, or clear it if moving to a Switch/AP
-    const nextParentId = target.device.is_host && child.device.virtual_type ? target.id : null;
-    await api.updateDevice(childId, {
-      topology_x: newPos.x,
-      topology_y: newPos.y,
-      ...(child.device.parent_id !== nextParentId ? { parent_id: nextParentId } : {}),
-    });
-    store.patchDevice(childId, { parent_id: nextParentId });
+    links.value = [...links.value, created];
+    showToast('success', t('gv.plan.assigned_to', { parent: deviceLabel(target.device) }), '');
   } catch (err) {
     showToast('error', t('notifications.save_failed'), (err as Error).message);
+    void load();
   }
 }
 
 async function createBeamBetween(source: number, target: number) {
-  if (!source || !target || source === target) return;
+  if (source === target) return;
   if (
     links.value.some(
       (l) =>
@@ -509,7 +573,8 @@ async function createBeamBetween(source: number, target: number) {
   try {
     const srcDev = devicesById.value.get(source);
     const tgtDev = devicesById.value.get(target);
-    const defaultType = srcDev?.is_ap || tgtDev?.is_ap || srcDev?.is_wlan || tgtDev?.is_wlan ? 'WLAN' : '1GbE';
+    const defaultType =
+      srcDev?.is_ap || tgtDev?.is_ap || srcDev?.is_wlan || tgtDev?.is_wlan ? 'WLAN' : '1GbE';
     const created = (await api.createTopologyLink({
       source_id: source,
       target_id: target,
@@ -584,7 +649,7 @@ watch(
 <template>
   <div
     :id="flowId"
-    class="orbit-canvas relative h-full w-full overflow-hidden select-none"
+    class="cosmic-canvas relative h-full w-full overflow-hidden select-none"
     :class="[
       editing && 'is-editing',
       vitalityMode === 'subtle' && 'vitality-subtle',
@@ -600,40 +665,96 @@ watch(
       @pointerdown="onCanvasPointerDown"
     >
       <defs>
-        <!-- Soft glow filter for Stars, Planets, and Light Beams -->
+        <!-- Soft stardust glow filter for constellation nodes and photon beams -->
         <filter :id="`${flowId}-beam-glow`" x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="3.5" result="blur" />
+          <feGaussianBlur stdDeviation="3.2" result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
+
+        <!-- Lens flare core glow filter for Central Stars -->
+        <filter :id="`${flowId}-star-flare`" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="5" result="flare" />
+          <feMerge>
+            <feMergeNode in="flare" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+
+        <!-- Dynamic localized cosmic nebula radial gradients for each unique body color -->
+        <radialGradient
+          v-for="body in bodyList"
+          :id="`${flowId}-nebula-${body.id}`"
+          :key="`nebula-${body.id}`"
+          cx="50%"
+          cy="50%"
+          r="50%"
+        >
+          <stop offset="0%" :stop-color="body.color" stop-opacity="0.32" />
+          <stop offset="45%" :stop-color="body.color" stop-opacity="0.12" />
+          <stop offset="100%" :stop-color="body.color" stop-opacity="0" />
+        </radialGradient>
       </defs>
 
       <g :transform="`translate(${viewX}, ${viewY}) scale(${zoom})`">
-        <!-- 1. CONCENTRIC ORBIT RINGS -->
-        <g class="orbit-rings">
+        <!-- 0. DEEP-SPACE STARFIELD: Micro-stars with subtle twinkle -->
+        <g class="cosmic-starfield pointer-events-none" aria-hidden="true">
           <circle
-            v-for="ring in orbitRings"
+            v-for="s in cosmicStars"
+            :key="s.id"
+            :cx="s.x"
+            :cy="s.y"
+            :r="s.r"
+            fill="var(--gl-fg)"
+            :fill-opacity="s.opacity"
+            class="cosmic-star"
+            :class="s.twinkle && 'star-twinkle'"
+            :style="{ animationDelay: s.delay }"
+          />
+        </g>
+
+        <!-- 1. LOCALIZED COSMIC NEBULAE (Ethereal cluster gas auras, no intersecting lines!) -->
+        <g class="cosmic-nebulae pointer-events-none" aria-hidden="true">
+          <circle
+            v-for="body in bodyList.filter((b) => b.kind !== 'moon')"
+            :key="`neb-${body.id}`"
+            :cx="posOf(body.id).x"
+            :cy="posOf(body.id).y"
+            :r="body.kind === 'star' ? 120 : 80"
+            :fill="`url(#${flowId}-nebula-${body.id})`"
+            class="nebula-cloud transition-opacity duration-300"
+            :class="[
+              activeClusterCenterId === body.id ? 'opacity-90' : 'opacity-40',
+              body.kind === 'star' && 'star-nebula-pulse',
+            ]"
+          />
+        </g>
+
+        <!-- 2. CONTEXTUAL CELESTIAL ORBIT RINGS (Shown ONLY around active hovered/selected hub or when dragging) -->
+        <g class="orbit-rings pointer-events-none" aria-hidden="true">
+          <circle
+            v-for="ring in visibleOrbitRings"
             :key="ring.id"
             :cx="posOf(ring.centerId).x"
             :cy="posOf(ring.centerId).y"
             :r="ring.radius"
             fill="none"
             :stroke="ring.style === 'broken' ? 'var(--gl-danger)' : ring.color"
-            :stroke-width="ring.style === 'broken' ? 1.5 : 1.35"
+            :stroke-width="1.35"
             :stroke-dasharray="
               ring.style === 'broken'
                 ? '4 10'
                 : ring.style === 'dashed'
-                  ? '7 6'
-                  : undefined
+                  ? '6 6'
+                  : '3 8'
             "
             :stroke-opacity="ring.style === 'broken' ? 0.45 : 0.28"
-            class="orbit-ring"
+            class="celestial-orbit-arc transition-opacity duration-300"
           />
 
-          <!-- Live preview orbit ring while dragging a moon -->
+          <!-- Live preview orbit arc while dragging a moon -->
           <circle
             v-if="activeDragOrbit"
             :cx="activeDragOrbit.center.x"
@@ -643,15 +764,15 @@ watch(
             :stroke="activeDragOrbit.color"
             stroke-width="1.75"
             stroke-dasharray="4 4"
-            stroke-opacity="0.7"
+            stroke-opacity="0.75"
           />
 
-          <!-- Visual Drop Highlight Ring when hovering a dragged body over a Planet/AP/Switch/Star -->
+          <!-- Visual Drop Highlight Ring when hovering a dragged body over a Target Hub -->
           <g v-if="dropTarget">
             <circle
               :cx="posOf(dropTarget.id).x"
               :cy="posOf(dropTarget.id).y"
-              :r="bodyRadius(dropTarget.kind) + 22"
+              :r="bodyRadius(dropTarget.kind) + 24"
               fill="none"
               stroke="var(--gl-accent)"
               stroke-width="2.5"
@@ -661,20 +782,22 @@ watch(
             <circle
               :cx="posOf(dropTarget.id).x"
               :cy="posOf(dropTarget.id).y"
-              :r="bodyRadius(dropTarget.kind) + 12"
+              :r="bodyRadius(dropTarget.kind) + 14"
               fill="var(--gl-accent)"
-              fill-opacity="0.14"
+              fill-opacity="0.16"
             />
           </g>
         </g>
 
-        <!-- 2. LIGHT BEAMS (Star <-> Planets / Switches / APs & Explicit Links) -->
-        <g class="light-beams">
+        <!-- 3. CONSTELLATION ENERGY BEAMS (Star <-> Planets & Explicit Links) -->
+        <g class="constellation-beams">
           <g
             v-for="beam in lightBeams"
             :key="beam.id"
             class="cursor-pointer group/beam"
             @click="onBeamClick(beam.id, $event)"
+            @pointerenter="hoveredBeamId = beam.id"
+            @pointerleave="hoveredBeamId = null"
           >
             <!-- Wide click hit target -->
             <line
@@ -683,37 +806,37 @@ watch(
               :x2="posOf(beam.targetId).x"
               :y2="posOf(beam.targetId).y"
               stroke="transparent"
-              stroke-width="18"
+              stroke-width="20"
             />
 
-            <!-- Outer Light Beam Halo -->
+            <!-- Outer Constellation Stardust Glow -->
             <line
               :x1="posOf(beam.sourceId).x"
               :y1="posOf(beam.sourceId).y"
               :x2="posOf(beam.targetId).x"
               :y2="posOf(beam.targetId).y"
               :stroke="beam.interrupted ? 'var(--gl-danger)' : beam.color"
-              :stroke-width="selectedLinkId === beam.id ? 11 : beam.isPrimaryBridge ? 8 : 5"
-              :stroke-opacity="selectedLinkId === beam.id ? 0.32 : beam.interrupted ? 0.12 : 0.18"
+              :stroke-width="selectedLinkId === beam.id ? 9 : beam.isPrimaryBridge ? 6 : 4"
+              :stroke-opacity="selectedLinkId === beam.id ? 0.38 : beam.interrupted ? 0.12 : 0.2"
               stroke-linecap="round"
             />
 
-            <!-- Core Light Beam -->
+            <!-- Laser-Crisp Constellation Vector Line -->
             <line
               :x1="posOf(beam.sourceId).x"
               :y1="posOf(beam.sourceId).y"
               :x2="posOf(beam.targetId).x"
               :y2="posOf(beam.targetId).y"
               :stroke="beam.interrupted ? 'var(--gl-danger)' : beam.color"
-              :stroke-width="selectedLinkId === beam.id ? 3.5 : beam.isPrimaryBridge ? 2.6 : 1.9"
+              :stroke-width="selectedLinkId === beam.id ? 3.2 : beam.isPrimaryBridge ? 2.2 : 1.4"
               :stroke-dasharray="
-                beam.interrupted ? '2 9' : beam.isWireless ? '7 6' : undefined
+                beam.interrupted ? '2 9' : beam.isWireless ? '6 6' : undefined
               "
-              :stroke-opacity="beam.interrupted ? 0.65 : 0.88"
+              :stroke-opacity="beam.interrupted ? 0.65 : 0.9"
               stroke-linecap="round"
             />
 
-            <!-- Travelling Energy Pulse on Online Light Beams -->
+            <!-- Flowing Photon Pulse along Active Constellation Line -->
             <line
               v-if="!beam.interrupted && vitalityMode !== 'off'"
               :x1="posOf(beam.sourceId).x"
@@ -722,12 +845,12 @@ watch(
               :y2="posOf(beam.targetId).y"
               stroke="var(--gl-fg)"
               :stroke-width="beam.isPrimaryBridge ? 2.2 : 1.6"
-              stroke-dasharray="10 130"
+              stroke-dasharray="8 120"
               stroke-linecap="round"
-              class="light-beam-pulse"
+              class="photon-pulse"
             />
 
-            <!-- Link Type Badge on Primary Bridges or Selected Link -->
+            <!-- Spectral Link Type Badge -->
             <g
               v-if="beam.linkType && (beam.isPrimaryBridge || selectedLinkId === beam.id)"
               :transform="`translate(${(posOf(beam.sourceId).x + posOf(beam.targetId).x) / 2}, ${(posOf(beam.sourceId).y + posOf(beam.targetId).y) / 2})`"
@@ -747,14 +870,14 @@ watch(
                 y="3.5"
                 text-anchor="middle"
                 fill="var(--gl-fg-muted)"
-                class="font-mono text-[9.5px] font-medium pointer-events-none"
+                class="font-mono text-[10px] font-medium pointer-events-none"
               >
                 {{ beam.linkType }}
               </text>
             </g>
           </g>
 
-          <!-- Live Light Beam being drawn in Edit Mode -->
+          <!-- Live Constellation Line being drawn in Edit Mode -->
           <line
             v-if="connectingFromId != null"
             :x1="posOf(connectingFromId).x"
@@ -762,57 +885,61 @@ watch(
             :x2="connectingCursor.x"
             :y2="connectingCursor.y"
             stroke="var(--gl-accent)"
-            stroke-width="3"
+            stroke-width="2.5"
             stroke-dasharray="6 4"
             stroke-linecap="round"
           />
         </g>
 
-        <!-- 3. CELESTIAL BODIES (Stars, Planets, Moons) -->
-        <g class="orbit-bodies">
+        <!-- 4. CELESTIAL LIGHT NODES (Stars, Planets, Moons) -->
+        <g class="constellation-nodes">
           <g
             v-for="(body, idx) in bodyList"
             :key="body.id"
             :transform="`translate(${posOf(body.id).x}, ${posOf(body.id).y})`"
-            class="orbit-body-group cursor-pointer"
+            class="constellation-node cursor-pointer"
             :class="[
               editing && 'cursor-grab active:cursor-grabbing',
-              body.state === 'offline' && 'opacity-75',
+              body.state === 'offline' && 'opacity-70',
             ]"
             role="button"
             tabindex="0"
             :aria-label="`${deviceLabel(body.device)} (${body.device.ip})`"
             @pointerdown="onBodyPointerDown(body, $event)"
             @click="onBodyClick(body, $event)"
+            @pointerenter="hoveredBodyId = body.id"
+            @pointerleave="hoveredBodyId = null"
             @keydown.enter.prevent="onBodyClick(body, $event as unknown as MouseEvent)"
           >
-            <!-- Inner wrapper with gentle floating animation when vitality is enabled -->
+            <!-- Gentle cosmic drift when vitality is active -->
             <g
               class="orbit-float-node"
               :style="{ animationDelay: `${(idx % 7) * -0.85}s` }"
             >
-              <!-- STAR Corona & Outer Gravity Halo -->
-              <template v-if="body.kind === 'star'">
+              <!-- STAR: 4-Point Optical Diffraction Spikes (Astronomical Lens Flare) -->
+              <g
+                v-if="body.kind === 'star'"
+                class="star-diffraction pointer-events-none"
+                :stroke="body.color"
+              >
+                <line x1="-32" y1="0" x2="32" y2="0" stroke-width="1.2" stroke-opacity="0.8" />
+                <line x1="0" y1="-32" x2="0" y2="32" stroke-width="1.2" stroke-opacity="0.8" />
+                <!-- Secondary diagonal faint spikes -->
+                <line x1="-14" y1="-14" x2="14" y2="14" stroke-width="0.65" stroke-opacity="0.4" />
+                <line x1="-14" y1="14" x2="14" y2="-14" stroke-width="0.65" stroke-opacity="0.4" />
+                <!-- Pulsing coronal plasma ring -->
                 <circle
                   :r="bodyRadius('star') + 12"
                   :fill="body.color"
-                  fill-opacity="0.14"
+                  fill-opacity="0.16"
                   class="star-corona"
                 />
-                <circle
-                  :r="bodyRadius('star') + 6"
-                  fill="none"
-                  :stroke="body.color"
-                  stroke-width="1.5"
-                  stroke-opacity="0.45"
-                  stroke-dasharray="3 5"
-                />
-              </template>
+              </g>
 
-              <!-- PLANET Outer Atmosphere Ring (Switches, APs, Hypervisors) -->
+              <!-- PLANET: Atmospheric Ring with Orbital Accent Ticks -->
               <template v-else-if="body.kind === 'planet'">
                 <circle
-                  :r="bodyRadius('planet') + 6"
+                  :r="bodyRadius('planet') + 7"
                   :fill="body.color"
                   fill-opacity="0.1"
                   class="planet-halo"
@@ -821,22 +948,35 @@ watch(
                   :r="bodyRadius('planet') + 4"
                   fill="none"
                   :stroke="body.color"
-                  stroke-width="1.25"
+                  stroke-width="1.2"
                   :stroke-dasharray="body.device.is_ap ? '4 3' : undefined"
-                  stroke-opacity="0.55"
+                  stroke-opacity="0.65"
+                />
+              </template>
+
+              <!-- MOON: WLAN Subtle Satellite Beacon Ring -->
+              <template v-else-if="body.device.is_wlan && body.state === 'online'">
+                <circle
+                  :r="bodyRadius('moon') + 4"
+                  fill="none"
+                  :stroke="body.color"
+                  stroke-width="1"
+                  stroke-dasharray="3 3"
+                  stroke-opacity="0.45"
+                  class="wlan-satellite-ring"
                 />
               </template>
 
               <!-- Selection Ring -->
               <circle
                 v-if="selectedDeviceId === body.id"
-                :r="bodyRadius(body.kind) + 8"
+                :r="bodyRadius(body.kind) + 9"
                 fill="none"
                 stroke="var(--gl-fg)"
                 stroke-width="2"
               />
 
-              <!-- Main Celestial Body Sphere -->
+              <!-- Main Celestial Node Core Sphere -->
               <circle
                 :r="bodyRadius(body.kind)"
                 :fill="body.kind === 'star' ? body.color : 'var(--gl-station)'"
@@ -847,10 +987,10 @@ watch(
                       ? 'var(--gl-warn)'
                       : body.color
                 "
-                :stroke-width="body.kind === 'star' ? 3 : body.kind === 'planet' ? 3.5 : 2.75"
+                :stroke-width="body.kind === 'star' ? 3.2 : body.kind === 'planet' ? 3 : 2.5"
               />
 
-              <!-- Multi-VLAN secondary inner ring if device answers in multiple subnets -->
+              <!-- Multi-VLAN Secondary Inner Ring -->
               <circle
                 v-if="body.rings.length > 1 && body.kind !== 'star'"
                 :r="Math.max(4, bodyRadius(body.kind) - 4)"
@@ -859,10 +999,10 @@ watch(
                 stroke-width="2"
               />
 
-              <!-- Star Core Emblem / Planet Role Indicator -->
+              <!-- Star Core Nucleus -->
               <circle
                 v-if="body.kind === 'star'"
-                r="6"
+                r="6.5"
                 fill="var(--gl-sign-ink)"
               />
               <circle
@@ -870,6 +1010,32 @@ watch(
                 r="4"
                 :fill="body.color"
               />
+
+              <!-- Planetary Role Pill (SW, AP, HOST) -->
+              <g
+                v-if="body.kind === 'planet' && roleBadge(body.device)"
+                :transform="`translate(${bodyRadius('planet') + 1}, ${-bodyRadius('planet') + 2})`"
+              >
+                <rect
+                  x="-2"
+                  y="-8"
+                  width="26"
+                  height="13"
+                  rx="4"
+                  fill="var(--gl-surface)"
+                  :stroke="body.color"
+                  stroke-width="0.8"
+                />
+                <text
+                  x="11"
+                  y="1.5"
+                  text-anchor="middle"
+                  :fill="body.color"
+                  class="font-mono text-[10px] font-bold"
+                >
+                  {{ roleBadge(body.device) }}
+                </text>
+              </g>
 
               <!-- Offline Strike-Through (State never by color alone) -->
               <line
@@ -883,12 +1049,12 @@ watch(
                 stroke-linecap="round"
               />
 
-              <!-- Degraded Service Exclamation Badge -->
+              <!-- Degraded Service Warning Indicator -->
               <g
                 v-if="body.state === 'degraded'"
                 :transform="`translate(${bodyRadius(body.kind) - 2}, ${-bodyRadius(body.kind) + 2})`"
               >
-                <circle r="6.5" fill="var(--gl-warn)" />
+                <circle r="6" fill="var(--gl-warn)" />
                 <text
                   x="0"
                   y="3.5"
@@ -900,7 +1066,7 @@ watch(
                 </text>
               </g>
 
-              <!-- Edit Mode: Beam Connection Handle (+ on right rim) -->
+              <!-- Edit Mode: Constellation Beam Handle (+ on right rim) -->
               <g
                 v-if="editing"
                 :transform="`translate(${bodyRadius(body.kind) + 7}, 0)`"
@@ -917,14 +1083,14 @@ watch(
                 <line x1="0" y1="-3" x2="0" y2="3" stroke="var(--gl-accent)" stroke-width="1.5" />
               </g>
 
-              <!-- Label Plate below Celestial Body -->
+              <!-- Celestial Label Plate with Deep Space Halo -->
               <g :transform="`translate(0, ${bodyRadius(body.kind) + 15})`">
                 <text
                   x="0"
                   y="0"
                   text-anchor="middle"
                   fill="var(--gl-fg)"
-                  class="text-[12.5px] font-bold"
+                  class="text-[12px] font-bold tracking-tight"
                   :class="body.state === 'offline' && 'line-through opacity-75'"
                   style="paint-order: stroke; stroke: var(--gl-canvas); stroke-width: 4px; stroke-linejoin: round"
                 >
@@ -940,7 +1106,6 @@ watch(
                 >
                   {{ body.device.ip }}
                 </text>
-                <!-- Explicit Non-Color Status Text for Offline / Degraded -->
                 <text
                   v-if="body.state !== 'online'"
                   x="0"
@@ -974,8 +1139,8 @@ watch(
         type="button"
         class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg"
         :class="vitalityMode !== 'off' && 'text-accent-text'"
-        :title="`Orbit-Dynamik: ${vitalityMode}`"
-        :aria-label="`Orbit-Dynamik: ${vitalityMode}`"
+        :title="`Galaktische Dynamik: ${vitalityMode}`"
+        :aria-label="`Galaktische Dynamik: ${vitalityMode}`"
         @click="cycleVitality"
       >
         <Sparkles class="size-3.5" />
@@ -1131,7 +1296,7 @@ watch(
         v-if="selectedBody.kind !== 'star' && assignableParents.length > 0"
         class="flex flex-col gap-1 text-xs font-medium text-fg"
       >
-        <span>Umlaufbahn (Planet / Stern)</span>
+        <span>Galaktischer Hub (Planet / Stern)</span>
         <select
           :value="selectedBody.parentId ?? ''"
           class="h-8 rounded-md border border-line bg-sunken px-2 text-xs text-fg focus:border-accent focus:outline-none"
@@ -1153,21 +1318,49 @@ watch(
 </template>
 
 <style scoped>
-.orbit-canvas {
-  background-color: var(--gl-sunken);
-  background-image: radial-gradient(var(--gl-line) 1px, transparent 1px);
-  background-size: 28px 28px;
+.cosmic-canvas {
+  background-color: var(--gl-canvas);
+  background-image:
+    radial-gradient(ellipse 65% 50% at 50% 35%, rgba(46, 196, 166, 0.045) 0%, transparent 70%),
+    radial-gradient(circle at 82% 18%, rgba(90, 169, 255, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 18% 75%, rgba(255, 159, 67, 0.03) 0%, transparent 50%);
 }
 
-:root[data-theme='light'] .orbit-canvas {
+:root[data-theme='light'] .cosmic-canvas {
   background-color: var(--gl-surface);
+  background-image:
+    radial-gradient(ellipse 65% 50% at 50% 35%, rgba(8, 122, 101, 0.035) 0%, transparent 70%),
+    radial-gradient(circle at 82% 18%, rgba(31, 111, 209, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 18% 75%, rgba(240, 138, 36, 0.025) 0%, transparent 50%);
 }
 
-.orbit-canvas.is-editing {
-  background-image: radial-gradient(var(--gl-line-strong) 1px, transparent 1px);
+.cosmic-canvas.is-editing {
+  background-image:
+    radial-gradient(var(--gl-line-strong) 1px, transparent 1px),
+    radial-gradient(ellipse 65% 50% at 50% 35%, rgba(46, 196, 166, 0.045) 0%, transparent 70%);
+  background-size: 28px 28px, 100% 100%;
 }
 
-/* Subtle life & floating animations when vitalityMode is 'subtle' or 'lively' */
+/* Starfield micro-twinkle */
+@keyframes star-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.15);
+  }
+}
+
+.star-twinkle {
+  animation: star-twinkle 4.5s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Subtle stellar drifting for vitality mode */
 @keyframes orbit-float {
   0%,
   100% {
@@ -1182,17 +1375,29 @@ watch(
   0%,
   100% {
     transform: scale(1);
-    opacity: 0.14;
+    opacity: 0.16;
   }
   50% {
-    transform: scale(1.16);
-    opacity: 0.26;
+    transform: scale(1.18);
+    opacity: 0.3;
+  }
+}
+
+@keyframes diffraction-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.95;
   }
 }
 
 @keyframes beam-flow {
   from {
-    stroke-dashoffset: 140;
+    stroke-dashoffset: 128;
   }
   to {
     stroke-dashoffset: 0;
@@ -1209,7 +1414,7 @@ watch(
 }
 
 .vitality-subtle .orbit-float-node {
-  animation: orbit-float 5.5s ease-in-out infinite;
+  animation: orbit-float 5.8s ease-in-out infinite;
 }
 
 .vitality-lively .orbit-float-node {
@@ -1230,11 +1435,23 @@ watch(
   transform-origin: center;
 }
 
-.vitality-subtle .light-beam-pulse {
+.vitality-subtle .star-diffraction {
+  animation: diffraction-pulse 4.5s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.vitality-lively .star-diffraction {
+  animation: diffraction-pulse 2.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.vitality-subtle .photon-pulse {
   animation: beam-flow 4.2s linear infinite;
 }
 
-.vitality-lively .light-beam-pulse {
+.vitality-lively .photon-pulse {
   animation: beam-flow 2.2s linear infinite;
 }
 
@@ -1242,5 +1459,17 @@ watch(
   animation: drop-ring-spin 8s linear infinite;
   transform-box: fill-box;
   transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star-twinkle,
+  .orbit-float-node,
+  .star-corona,
+  .planet-halo,
+  .star-diffraction,
+  .photon-pulse,
+  .orbit-drop-ring {
+    animation: none !important;
+  }
 }
 </style>

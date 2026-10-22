@@ -1,7 +1,7 @@
 {
   "name": "GravityUI",
-  "direction": "Gravitation / Orbit",
-  "description": "Das Heimnetz als Gravitationssystem – Router als Stern, Switches & APs als Planeten, Geräte als Monde auf konzentrischen Orbits, verbunden durch Light-Beams.",
+  "direction": "Cosmic Constellation",
+  "description": "Das Heimnetz als Deep-Space-Sternkarte – Router als leuchtender Fusionsstern mit Diffraction Spikes, Switches & APs als Planeten-Lichtknoten mit Rollen-Badges, Sternbild-Vektoren mit wandernden Photonen und kontextuelle Orbit-Bahnen.",
   "theme": {
     "default": "dark",
     "supportsLight": true,

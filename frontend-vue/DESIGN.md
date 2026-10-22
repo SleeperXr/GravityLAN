@@ -132,6 +132,11 @@ typography:
     fontSize: "13px"
     fontWeight: 700
     lineHeight: "16px"
+  micro:
+    fontFamily: "JetBrains Mono, ui-monospace, monospace"
+    fontSize: "10px"
+    fontWeight: 500
+    lineHeight: "12px"
 rounded:
   sm: "6px"
   md: "10px"
@@ -353,20 +358,21 @@ Sachlich und kompakt.
 ### Dialoge und Sheets
 `Dialog` ist ab 640 px zentriert (18 px Radius), darunter ein Bottom-Sheet über volle Breite mit Safe-Area. Kopf mit Titel (1 rem, 600), Schließen-Knopf, Trennlinie; Fuß rechtsbündig. Eintritt 220 ms mit `--ease-out-expo`, Overlay 160 ms ein / 120 ms aus. `Sheet` ist das Seitenpanel (mobil Vollbild). Toasts und Bestätigungen laufen über `useToast`/`useConfirm`.
 
-### Orbit-Netzplan (Signaturkomponente)
-`src/components/orbit/` (`OrbitMap.vue` + `orbitModel.ts`), eigenes interaktives SVG mit Pan/Zoom, teilt `topology_x`/`topology_y` und `TopologyLink`-Einträge kompatibel mit dem React-Topologie-Editor.
+### Cosmic Constellation Netzplan (Signaturkomponente)
+`src/components/orbit/` (`OrbitMap.vue` + `orbitModel.ts`), interaktives Deep-Space-SVG mit Pan/Zoom, teilt `topology_x`/`topology_y` und `TopologyLink`-Einträge kompatibel mit dem React-Topologie-Editor.
 - **Himmelskörper (`OrbitBody`):**
-  - **Stern (`star`, Radius 24 px):** Router/Gateways im Zentrum mit Korona-Ringen und sanftem Pulsieren.
-  - **Planet (`planet`, Radius 17 px):** Switches, Access Points (`is_ap`) und Hypervisor-Hosts (`is_host`) mit Atmosphärenring in Subnetzfarbe und Rollen-Subbadge (`SW`, `AP`, `HOST`).
-  - **Mond (`moon`, Radius 11 px):** Kabel-Clients, WLAN-Geräte (`is_wlan`) und VMs/Container (`parent_id`).
-- **Umlaufbahnen (`OrbitRing`):** Konzentrische Kreise um das jeweilige Elternobjekt. Geschwister-Monde innerhalb von `ORBIT_SNAP_TOLERANCE = 18 px` teilen sich einen gemeinsamen Orbit-Ring. Durchgezogen für Kabel/VM, gestrichelt (`7 6`) für WLAN, unterbrochen (`3 9`) bei Offline-Geräten.
-- **Light-Beams (`LightBeam`):** Mehrschichtige leuchtende Energieverbindungen (Außen-Glow + Kernstrahl + wandernder Lichtpuls + Linktyp-Etikett `10GbE`/`2.5GbE`/`1GbE`/`WLAN`/`Fiber`) zwischen Stern und Planeten sowie für explizite Topologie-Links.
+  - **Stern (`star`, Radius 22 px):** Router/Gateways im Zentrum als Fusionskern mit 4-Punkt optischen Diffraction Spikes (astronomischer Lens-Flare), Korona-Ring und sanftem Plasma-Pulsieren.
+  - **Planet (`planet`, Radius 16 px):** Switches, Access Points (`is_ap`) und Hypervisor-Hosts (`is_host`) mit Atmosphärenring in Subnetzfarbe, subtiler Gravitationsaura und Rollen-Badge (`SW`, `AP`, `HOST`).
+  - **Mond (`moon`, Radius 10.5 px):** Kabel-Clients, WLAN-Geräte (`is_wlan` mit dezenter Radio-Beacon-Aura) und VMs/Container (`parent_id`).
+- **Sternbild-Vektoren (`LightBeam`):** Zweischichtige leuchtende Sternbild-Linien (Stardust-Aura + laser-scharfer Vektorkern + wandernde Photonen-Pulse + Spektral-Etikett `10GbE`/`2.5GbE`/`1GbE`/`WLAN`/`Fiber`).
+- **Deep-Space Starfield & Nebulae:** Hintergrund mit mikroskopischem Sternenfeld (twinkling stars mit unterschiedlicher Magnitude) und weichen, lokalen kosmischen Gasnebeln pro Subnetz-Hub, ohne störende Gitterlinien.
+- **Kontextuelle Orbit-Bahnen:** Umlaufbahnen werden gezielt nur um den aktuell fokussierten oder gehoverten Hub eingeblendet – dadurch entfallen die vorherigen 20+ globalen, sich überkreuzenden Drahtkreise vollständig.
 - **Komplett anpassbar (Bearbeitungsmodus):**
   - **Gruppenbewegung:** Wird ein Planet oder Stern verschoben, wandern alle seine Monde (inkl. Kind-Hierarchie) synchron mit (`moveWithDescendants`).
   - **Orbit-Zuweisung per Drag & Drop:** Zieht man ein Gerät auf einen anderen Planeten/Switch/AP/Stern, erscheint ein **visueller Drop-Highlight-Ring** sowie das Banner `Orbit → <Ziel>`. Beim Loslassen wird der Topologie-Link automatisch umgehängt bzw. angelegt und das Gerät auf einer freien Umlaufbahn um das neue Elternobjekt platziert (mit Zyklusschutz).
-  - **Light-Beams zeichnen:** Über den `+`-Griff am Rand eines ausgewählten Körpers lässt sich direkt ein neuer Light-Beam zu einem anderen Körper ziehen.
-  - **Inspektor-Panels (unten links):** Erlauben für Light-Beams die Wahl von Farbe und Linktyp (`10GbE`, `2.5GbE`, `1GbE`, `WLAN`, `Fiber`) sowie für Himmelskörper den direkten Wechsel des Eltern-Planeten per Auswahlfeld.
-  - **Lebendigkeit (`vitalityMode`):** Über den Sparkles-Button unten rechts umschaltbar zwischen `Aus`, `Dezent` (Standard) und `Lebendig`.
+  - **Sternbild-Linien zeichnen:** Über den `+`-Griff am Rand eines ausgewählten Körpers lässt sich direkt eine neue Verbindung zu einem anderen Körper ziehen.
+  - **Inspektor-Panels (unten links):** Erlauben für Verbindungen die Wahl von Farbe und Linktyp (`10GbE`, `2.5GbE`, `1GbE`, `WLAN`, `Fiber`) sowie für Himmelskörper den direkten Wechsel des Eltern-Hubs per Auswahlfeld.
+  - **Galaktische Dynamik (`vitalityMode`):** Über den Sparkles-Button unten rechts umschaltbar zwischen `Aus`, `Dezent` (Standard) und `Lebendig`.
 
 ### Netz-Statusboard und Betriebsmeldungen
 Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rundes Netzschild, Name (700), Zustandstext in Zustandsfarbe, rechts „online/gesamt“ in Mono; ein Klick filtert die Übersicht. Betriebsmeldungen (`ServiceNotices.vue`) zeigen das Netzschild des betroffenen Geräts, Titel in Zustandsfarbe, Detail in Mono und relative Zeit.
