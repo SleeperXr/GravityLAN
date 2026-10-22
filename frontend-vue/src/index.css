@@ -1,15 +1,16 @@
 @import "tailwindcss";
 
 /*
- * GravityUI design tokens. Semantic names only; components never use raw hex values.
- * Dark is the default, light is opt-in via [data-theme="light"] (set by useTheme from the
- * stored preference or prefers-color-scheme). See frontend-vue/DESIGN.md for the rationale.
+ * GravityUI design tokens: the network as a transit map. Night network (dark) is the default,
+ * the white daytime map is the light theme. Components use semantic names only, never hex.
+ * Line colours (one per subnet/VLAN) live in --line-1 ... --line-10 and can be overridden by
+ * the user (Settings > Language & appearance). See frontend-vue/DESIGN.md.
  */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme {
-  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --color-canvas: var(--gl-canvas);
   --color-chrome: var(--gl-chrome);
@@ -23,6 +24,7 @@
   --color-fg: var(--gl-fg);
   --color-fg-muted: var(--gl-fg-muted);
   --color-fg-subtle: var(--gl-fg-subtle);
+  --color-station: var(--gl-station);
 
   --color-accent: var(--gl-accent);
   --color-accent-hover: var(--gl-accent-hover);
@@ -37,9 +39,9 @@
   --color-neutral-dot: var(--gl-neutral-dot);
 
   --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
 
   --shadow-card: var(--gl-shadow-card);
   --shadow-pop: var(--gl-shadow-pop);
@@ -50,33 +52,47 @@
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --gl-canvas: #0a0a0c;
-  --gl-chrome: #0e0e11;
-  --gl-surface: #131316;
-  --gl-raised: #1b1b20;
-  --gl-sunken: #0d0d10;
-  --gl-control: #1f1f25;
-  --gl-control-hover: #28282f;
-  --gl-line: rgb(255 255 255 / 0.075);
-  --gl-line-strong: rgb(255 255 255 / 0.15);
-  --gl-fg: #f4f4f5;
-  --gl-fg-muted: #a1a1aa;
-  --gl-fg-subtle: #8b8b94;
+  --gl-canvas: #0c0f14;
+  --gl-chrome: #090b0f;
+  --gl-surface: #11151c;
+  --gl-raised: #161b23;
+  --gl-sunken: #0e1218;
+  --gl-control: #161b23;
+  --gl-control-hover: #1d232d;
+  --gl-line: #1d232c;
+  --gl-line-strong: #2b323d;
+  --gl-fg: #eef1f5;
+  --gl-fg-muted: #a3adbb;
+  --gl-fg-subtle: #7f8a99;
+  /* station fill: the "paper" a station ring is drawn on */
+  --gl-station: #0e1218;
 
-  --gl-accent: #10b981;
-  --gl-accent-hover: #34d399;
-  --gl-accent-fg: #03140d;
-  --gl-accent-text: #34d399;
-  --gl-info: #38bdf8;
-  --gl-info-text: #7dd3fc;
-  --gl-warn: #f59e0b;
-  --gl-warn-text: #fbbf24;
-  --gl-danger: #f43f5e;
-  --gl-danger-text: #fb7185;
-  --gl-neutral-dot: #71717a;
+  --gl-accent: #2ec4a6;
+  --gl-accent-hover: #4fd6bb;
+  --gl-accent-fg: #03201a;
+  --gl-accent-text: #45d6b9;
+  --gl-info: #5aa9ff;
+  --gl-info-text: #8cc3ff;
+  --gl-warn: #ffb547;
+  --gl-warn-text: #ffc977;
+  --gl-danger: #ff6b6b;
+  --gl-danger-text: #ff8f8f;
+  --gl-neutral-dot: #6b7686;
 
-  --gl-shadow-card: 0 8px 24px -6px rgb(0 0 0 / 0.45), inset 0 1px 0 0 rgb(255 255 255 / 0.04);
-  --gl-shadow-pop: 0 24px 48px -12px rgb(0 0 0 / 0.7);
+  --gl-shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.025) inset;
+  --gl-shadow-pop: 0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04);
+
+  /* Line palette: one hue per network, the same on the map, chips and the gateway list */
+  --line-1: #2ec4a6;
+  --line-2: #ff9f43;
+  --line-3: #5aa9ff;
+  --line-4: #ffd23f;
+  --line-5: #ff7eb6;
+  --line-6: #9be15d;
+  --line-7: #4dd4ff;
+  --line-8: #e0a370;
+  --line-9: #c3cad4;
+  --line-10: #f2856d;
 }
 
 :root[data-theme="light"] {
@@ -84,30 +100,42 @@
   --gl-canvas: #f4f5f7;
   --gl-chrome: #ffffff;
   --gl-surface: #ffffff;
-  --gl-raised: #f4f5f7;
-  --gl-sunken: #eceef1;
+  --gl-raised: #f2f4f7;
+  --gl-sunken: #eef0f3;
   --gl-control: #ffffff;
-  --gl-control-hover: #f0f1f4;
-  --gl-line: rgb(9 9 11 / 0.09);
-  --gl-line-strong: rgb(9 9 11 / 0.18);
-  --gl-fg: #18181b;
-  --gl-fg-muted: #52525b;
-  --gl-fg-subtle: #63636c;
+  --gl-control-hover: #f2f4f7;
+  --gl-line: #e2e5ea;
+  --gl-line-strong: #c9ced6;
+  --gl-fg: #10141b;
+  --gl-fg-muted: #4a5462;
+  --gl-fg-subtle: #5d6776;
+  --gl-station: #ffffff;
 
-  --gl-accent: #059669;
-  --gl-accent-hover: #047857;
+  --gl-accent: #0b8a72;
+  --gl-accent-hover: #087560;
   --gl-accent-fg: #ffffff;
-  --gl-accent-text: #047857;
-  --gl-info: #0284c7;
-  --gl-info-text: #0369a1;
+  --gl-accent-text: #077a64;
+  --gl-info: #1f6fd1;
+  --gl-info-text: #1a5fb4;
   --gl-warn: #d97706;
-  --gl-warn-text: #b45309;
-  --gl-danger: #e11d48;
-  --gl-danger-text: #be123c;
-  --gl-neutral-dot: #a1a1aa;
+  --gl-warn-text: #a85a00;
+  --gl-danger: #dc3545;
+  --gl-danger-text: #b42332;
+  --gl-neutral-dot: #a3aab5;
 
-  --gl-shadow-card: 0 1px 2px rgb(9 9 11 / 0.05), 0 4px 12px -4px rgb(9 9 11 / 0.06);
-  --gl-shadow-pop: 0 20px 40px -12px rgb(9 9 11 / 0.22);
+  --gl-shadow-card: 0 1px 2px rgb(16 20 27 / 0.04);
+  --gl-shadow-pop: 0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06);
+
+  --line-1: #12a88b;
+  --line-2: #f08a24;
+  --line-3: #2f86e8;
+  --line-4: #e5b800;
+  --line-5: #e8589b;
+  --line-6: #6fbf3b;
+  --line-7: #1fb3e0;
+  --line-8: #b9773f;
+  --line-9: #8a94a3;
+  --line-10: #e0644a;
 }
 
 @layer base {
@@ -119,11 +147,17 @@
 
   body {
     font-family: var(--font-sans);
+    font-feature-settings: 'ss01', 'cv11';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     margin: 0;
     overflow-x: hidden;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--gl-accent) 35%, transparent);
+    color: var(--gl-fg);
   }
 
   * {
@@ -135,6 +169,7 @@
   kbd,
   .font-mono {
     font-family: var(--font-mono);
+    font-feature-settings: 'zero';
   }
 
   .tabular,
@@ -142,8 +177,13 @@
     font-variant-numeric: tabular-nums;
   }
 
+  input,
+  textarea {
+    caret-color: var(--gl-accent);
+  }
+
   :focus-visible {
-    outline: 2px solid var(--gl-info);
+    outline: 2px solid var(--gl-accent);
     outline-offset: 2px;
   }
 
@@ -178,52 +218,26 @@
   }
 
   .gl-eyebrow {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     line-height: 1rem;
     font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
     color: var(--gl-fg-subtle);
   }
 
-  /* Prototype class names kept as aliases until every view uses the gl-* names */
-  .sh-card,
-  .sh-card-interactive {
-    background-color: var(--gl-surface);
-    border: 1px solid var(--gl-line);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--gl-shadow-card);
-  }
-
-  .sh-card-interactive {
-    transition: border-color 0.18s ease, background-color 0.18s ease;
-  }
-
-  @media (hover: hover) {
-    .sh-card-interactive:hover {
-      border-color: var(--gl-line-strong);
-    }
-  }
-
-  .sh-subcard {
-    background-color: var(--gl-raised);
-    border: 1px solid var(--gl-line);
-    border-radius: var(--radius-md);
-  }
-
-  .sh-pill-btn {
-    background-color: var(--gl-control);
-    border: 1px solid var(--gl-line);
-    border-radius: var(--radius-md);
-    color: var(--gl-fg);
-    transition: background-color 0.15s ease, border-color 0.15s ease;
-  }
-
-  @media (hover: hover) {
-    .sh-pill-btn:hover {
-      background-color: var(--gl-control-hover);
-      border-color: var(--gl-line-strong);
-    }
+  /* Round line bullet, like a transit line sign: <span class="gl-bullet" style="--c: ...">30</span> */
+  .gl-bullet {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.75rem;
+    height: 1.75rem;
+    padding: 0 0.375rem;
+    border-radius: 9999px;
+    background: var(--c, var(--gl-accent));
+    color: #0c0f14;
+    font-weight: 800;
+    font-size: 0.75rem;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -238,6 +252,10 @@
   }
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gl-line-strong) transparent;
+}
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

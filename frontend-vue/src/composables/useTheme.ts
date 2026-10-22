@@ -1,4 +1,4 @@
-/** Light/dark theme for GravityUI. The preference survives reloads; "system" follows the OS. */
+/** Light/dark theme for GravityUI. Dark (night network) is the default; "system" follows the OS. */
 import { computed, ref, watch } from 'vue';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
@@ -9,9 +9,9 @@ const media = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-
 function readPreference(): ThemePreference {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored === 'light' || stored === 'dark' ? stored : 'system';
+    return stored === 'light' || stored === 'system' ? stored : 'dark';
   } catch {
-    return 'system';
+    return 'dark';
   }
 }
 
@@ -37,16 +37,16 @@ export function useTheme() {
   function setPreference(next: ThemePreference) {
     preference.value = next;
     try {
-      if (next === 'system') localStorage.removeItem(STORAGE_KEY);
+      if (next === 'dark') localStorage.removeItem(STORAGE_KEY);
       else localStorage.setItem(STORAGE_KEY, next);
     } catch {
       // Private mode: the choice simply lasts for this page view
     }
   }
 
-  /** system -> light -> dark -> system */
+  /** dark -> light -> system -> dark */
   function cycle() {
-    setPreference(preference.value === 'system' ? 'light' : preference.value === 'light' ? 'dark' : 'system');
+    setPreference(preference.value === 'dark' ? 'light' : preference.value === 'light' ? 'system' : 'dark');
   }
 
   return { preference, resolved, setPreference, cycle };

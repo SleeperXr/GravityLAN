@@ -54,6 +54,25 @@
     "settings": {
       "appearance": "Language & appearance",
       "sections": "Sections"
+    },
+    "plan": {
+      "title": "Network map",
+      "subtitle": "{{devices}} stations · drag, connect, colour",
+      "edit": "Edit map",
+      "edit_hint": "Drag stations to place them. Drag from the edge of one station to another to lay a line. Click a line to change its colour and type.",
+      "arrange": "Arrange automatically",
+      "arrange_confirm": "Rearrange all stations by network? Your positions will be overwritten.",
+      "link": "Line",
+      "line_color": "Line colour",
+      "network_color": "Network colour",
+      "custom_color": "Custom colour",
+      "link_type": "Link type",
+      "link_exists": "This connection already exists",
+      "degraded": "Service degraded",
+      "dropped": "Stop dropped",
+      "zoom_in": "Zoom in",
+      "zoom_out": "Zoom out",
+      "fit": "Show whole map"
     }
   }
 }

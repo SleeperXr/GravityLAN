@@ -54,6 +54,25 @@
     "settings": {
       "appearance": "Sprache & Darstellung",
       "sections": "Abschnitte"
+    },
+    "plan": {
+      "title": "Netzplan",
+      "subtitle": "{{devices}} Stationen · ziehen, verbinden, einfärben",
+      "edit": "Plan bearbeiten",
+      "edit_hint": "Stationen ziehen, um sie zu platzieren. Vom Rand einer Station zur nächsten ziehen, um eine Linie zu verlegen. Eine Linie anklicken, um Farbe und Typ zu ändern.",
+      "arrange": "Automatisch anordnen",
+      "arrange_confirm": "Alle Stationen nach Netzen neu anordnen? Deine Positionen werden überschrieben.",
+      "link": "Linie",
+      "line_color": "Linienfarbe",
+      "network_color": "Netzfarbe",
+      "custom_color": "Eigene Farbe",
+      "link_type": "Verbindungstyp",
+      "link_exists": "Diese Verbindung gibt es schon",
+      "degraded": "Dienst gestört",
+      "dropped": "Halt entfällt",
+      "zoom_in": "Vergrößern",
+      "zoom_out": "Verkleinern",
+      "fit": "Ganzen Plan zeigen"
     }
   }
 }

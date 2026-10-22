@@ -1,19 +1,25 @@
 import type { Device } from '@/types';
 
+import { useAppearance } from '@/stores/appearance';
+
 /**
- * One hue per subnet, the same on device chips, the gateway list and the interface tab.
- * Same assignment as the React UI (by subnet id, else by /24), but a palette without
- * violet, and green/red stay reserved for online/offline.
+ * The line colour of a subnet, the same on the network map, line bullets, device chips and the
+ * gateway list: the user's choice (Settings), else the palette slot by subnet id (--line-1..10,
+ * which follows light/dark), else a slot hashed from the /24 around the address.
  */
-const NETWORK_HUES = ['#2DD4BF', '#FB923C', '#F472B6', '#60A5FA', '#FACC15', '#22D3EE', '#F9A8D4', '#94A3B8'];
+const LINE_SLOTS = 10;
 
 export function networkColor(subnetId: number | null | undefined, ip?: string | null): string {
-  if (subnetId != null) return NETWORK_HUES[(Math.abs(subnetId) - 1 + NETWORK_HUES.length) % NETWORK_HUES.length];
+  if (subnetId != null) {
+    const custom = useAppearance().lineColors[String(subnetId)];
+    if (custom) return custom;
+    return `var(--line-${((Math.abs(subnetId) - 1 + LINE_SLOTS) % LINE_SLOTS) + 1})`;
+  }
   const prefix = (ip || '').split('.').slice(0, 3).join('.');
   if (!prefix) return 'var(--gl-fg-subtle)';
   let hash = 0;
   for (let i = 0; i < prefix.length; i++) hash = (hash * 31 + prefix.charCodeAt(i)) >>> 0;
-  return NETWORK_HUES[hash % NETWORK_HUES.length];
+  return `var(--line-${(hash % LINE_SLOTS) + 1})`;
 }
 
 export interface NetworkChip {

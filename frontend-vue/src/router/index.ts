@@ -19,7 +19,7 @@ export const router = createRouter({
     { path: '/', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { navId: 'dashboard', titleKey: 'sidebar.dashboard' } },
     { path: '/health', name: 'health', component: () => import('@/views/HealthView.vue'), meta: { navId: 'health', titleKey: 'sidebar.health' } },
     { path: '/network', name: 'network', component: () => import('@/views/NetworkView.vue'), meta: { navId: 'network', titleKey: 'sidebar.network_planner' } },
-    { path: '/topology', name: 'topology', component: LegacyOnlyView, meta: { navId: 'topology', titleKey: 'sidebar.topology' } },
+    { path: '/topology', name: 'topology', component: () => import('@/views/TopologyView.vue'), meta: { navId: 'topology', titleKey: 'sidebar.topology' } },
     { path: '/agents', name: 'agents', component: () => import('@/views/AgentsView.vue'), meta: { navId: 'agents', titleKey: 'sidebar.agents' } },
     { path: '/ssh', name: 'ssh', component: LegacyOnlyView, meta: { navId: 'ssh', titleKey: 'sidebar.ssh' } },
     { path: '/logs', name: 'logs', component: LegacyOnlyView, meta: { navId: 'logs', titleKey: 'sidebar.logs' } },
