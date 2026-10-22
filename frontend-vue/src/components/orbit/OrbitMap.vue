@@ -9,6 +9,7 @@ import {
   Orbit,
   Pencil,
   Plus,
+  Search,
   Sparkles,
   Trash2,
   Wand2,
@@ -35,6 +36,17 @@ import {
   type OrbitLink,
   type Point,
 } from './orbitModel';
+import {
+  computeFocusSet,
+  easeInOutCubic,
+  fitTransform,
+  focusSetFromIds,
+  lerpView,
+  matchBodies,
+  zoomAround,
+  type FocusSet,
+  type ViewTransform,
+} from './orbitFocus';
 import { deviceLabel } from '@/lib/networks';
 import { t } from '@/i18n';
 
@@ -96,6 +108,14 @@ const dragStartPositions = ref(new Map<number, Point>());
 const dragMoved = ref(false);
 const dropTarget = ref<OrbitBody | null>(null);
 
+// Focus mode (view mode): a clicked hub/device dims everything unrelated
+const focusedId = ref<number | null>(null);
+const searchQuery = ref('');
+const activePointers = new Map<number, Point>();
+let pinchStartDistance = 0;
+let pinchStartView: ViewTransform | null = null;
+let viewAnimationFrame = 0;
+
 const connectingFromId = ref<number | null>(null);
 const connectingCursor = ref<Point>({ x: 0, y: 0 });
 
@@ -122,11 +142,16 @@ onMounted(() => {
   if (!store.loaded) void store.loadData();
   window.addEventListener('pointermove', onWindowPointerMove);
   window.addEventListener('pointerup', onWindowPointerUp);
+  window.addEventListener('pointercancel', onWindowPointerUp);
+  window.addEventListener('keydown', onWindowKeyDown);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('pointermove', onWindowPointerMove);
   window.removeEventListener('pointerup', onWindowPointerUp);
+  window.removeEventListener('pointercancel', onWindowPointerUp);
+  window.removeEventListener('keydown', onWindowKeyDown);
+  cancelViewAnimation();
 });
 
 const devicesById = computed(() => new Map(store.devices.map((d) => [d.id, d])));
@@ -290,80 +315,134 @@ function screenToWorld(clientX: number, clientY: number): Point {
   };
 }
 
-function fitView() {
-  const svg = svgRef.value;
-  if (!svg || store.devices.length === 0) return;
-  const rect = svg.getBoundingClientRect();
-  if (rect.width === 0 || rect.height === 0) return;
+function currentView(): ViewTransform {
+  return { x: viewX.value, y: viewY.value, zoom: zoom.value };
+}
 
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
+function applyView(v: ViewTransform) {
+  viewX.value = v.x;
+  viewY.value = v.y;
+  zoom.value = v.zoom;
+}
 
-  for (const d of store.devices) {
-    const p = posOf(d.id);
-    minX = Math.min(minX, p.x - 90);
-    maxX = Math.max(maxX, p.x + 90);
-    minY = Math.min(minY, p.y - 75);
-    maxY = Math.max(maxY, p.y + 75);
+function cancelViewAnimation() {
+  if (viewAnimationFrame) cancelAnimationFrame(viewAnimationFrame);
+  viewAnimationFrame = 0;
+}
+
+/** Smoothly glide the viewport to `target` (instant with reduced motion). */
+function animateViewTo(target: ViewTransform, duration = 520) {
+  cancelViewAnimation();
+  if (prefersReducedMotion.value || duration <= 0) {
+    applyView(target);
+    return;
   }
+  const from = currentView();
+  const startedAt = performance.now();
+  const step = (now: number) => {
+    const t = Math.min(1, (now - startedAt) / duration);
+    applyView(lerpView(from, target, easeInOutCubic(t)));
+    viewAnimationFrame = t < 1 ? requestAnimationFrame(step) : 0;
+  };
+  viewAnimationFrame = requestAnimationFrame(step);
+}
+
+function viewportSize(): { width: number; height: number } | null {
+  const svg = svgRef.value;
+  if (!svg) return null;
+  const rect = svg.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 ? { width: rect.width, height: rect.height } : null;
+}
+
+function fitView(animated = false) {
+  const size = viewportSize();
+  if (!size || store.devices.length === 0) return;
+
+  const points: Point[] = store.devices.map((d) => posOf(d.id));
+  // Orbit rings extend the content area; approximate them by four extreme points each
   for (const r of visibleOrbitRings.value) {
     const c = posOf(r.centerId);
-    minX = Math.min(minX, c.x - r.radius - 30);
-    maxX = Math.max(maxX, c.x + r.radius + 30);
-    minY = Math.min(minY, c.y - r.radius - 30);
-    maxY = Math.max(maxY, c.y + r.radius + 30);
+    const reach = r.radius - 60;
+    points.push(
+      { x: c.x - reach, y: c.y },
+      { x: c.x + reach, y: c.y },
+      { x: c.x, y: c.y - reach },
+      { x: c.x, y: c.y + reach },
+    );
   }
+  const target = fitTransform(points, size.width, size.height, { padding: 0.84 });
+  if (!target) return;
+  if (animated) animateViewTo(target);
+  else applyView(target);
+}
 
-  const contentW = Math.max(240, maxX - minX);
-  const contentH = Math.max(240, maxY - minY);
-  const pad = 0.84;
-  const nextZoom = Math.min(
-    1.6,
-    Math.max(0.22, Math.min((rect.width * pad) / contentW, (rect.height * pad) / contentH)),
+/** Fly to a set of bodies (focus / search hit). */
+function flyToBodies(ids: number[]) {
+  const size = viewportSize();
+  if (!size || ids.length === 0) return;
+  const target = fitTransform(
+    ids.map((id) => posOf(id)),
+    size.width,
+    size.height,
+    { margin: 140, padding: 0.72, maxZoom: 1.5 },
   );
-  zoom.value = nextZoom;
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  viewX.value = Math.round(rect.width / 2 - cx * nextZoom);
-  viewY.value = Math.round(rect.height / 2 - cy * nextZoom);
+  if (target) animateViewTo(target);
 }
 
 function zoomBy(factor: number) {
-  const svg = svgRef.value;
-  if (!svg) return;
-  const rect = svg.getBoundingClientRect();
-  const cx = rect.width / 2;
-  const cy = rect.height / 2;
-  const next = Math.min(2.5, Math.max(0.2, zoom.value * factor));
-  const ratio = next / zoom.value;
-  viewX.value = cx - (cx - viewX.value) * ratio;
-  viewY.value = cy - (cy - viewY.value) * ratio;
-  zoom.value = next;
+  const size = viewportSize();
+  if (!size) return;
+  cancelViewAnimation();
+  applyView(
+    zoomAround(currentView(), { x: size.width / 2, y: size.height / 2 }, factor),
+  );
 }
 
 function onWheel(e: WheelEvent) {
   e.preventDefault();
   const svg = svgRef.value;
   if (!svg) return;
+  cancelViewAnimation();
   const rect = svg.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
   const factor = e.deltaY < 0 ? 1.12 : 0.89;
-  const next = Math.min(2.5, Math.max(0.2, zoom.value * factor));
-  const ratio = next / zoom.value;
-  viewX.value = mx - (mx - viewX.value) * ratio;
-  viewY.value = my - (my - viewY.value) * ratio;
-  zoom.value = next;
+  applyView(
+    zoomAround(currentView(), { x: e.clientX - rect.left, y: e.clientY - rect.top }, factor),
+  );
+}
+
+function pointerDistance(): number {
+  const [a, b] = [...activePointers.values()];
+  return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+}
+
+function pointerMidpoint(): Point {
+  const [a, b] = [...activePointers.values()];
+  return a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : { x: 0, y: 0 };
 }
 
 function onCanvasPointerDown(e: PointerEvent) {
   if (e.button !== 0) return;
+  cancelViewAnimation();
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (activePointers.size === 2) {
+    // Second finger: switch from panning to pinch-zoom
+    isPanning.value = false;
+    pinchStartDistance = pointerDistance();
+    pinchStartView = currentView();
+    return;
+  }
+
   isPanning.value = true;
   panStart.value = { x: e.clientX - viewX.value, y: e.clientY - viewY.value };
   selectedLinkId.value = null;
   selectedDeviceId.value = null;
+  clearFocus();
+}
+
+function onCanvasDoubleClick() {
+  clearFocus();
+  fitView(true);
 }
 
 function onBodyPointerDown(body: OrbitBody, e: PointerEvent) {
@@ -384,6 +463,26 @@ function startBeamConnect(body: OrbitBody, e: PointerEvent) {
 }
 
 function onWindowPointerMove(e: PointerEvent) {
+  if (activePointers.has(e.pointerId)) {
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  }
+
+  if (activePointers.size >= 2 && pinchStartView && pinchStartDistance > 0) {
+    const svg = svgRef.value;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const mid = pointerMidpoint();
+    const factor = pointerDistance() / pinchStartDistance;
+    applyView(
+      zoomAround(
+        pinchStartView,
+        { x: mid.x - rect.left, y: mid.y - rect.top },
+        factor,
+      ),
+    );
+    return;
+  }
+
   if (isPanning.value) {
     viewX.value = e.clientX - panStart.value.x;
     viewY.value = e.clientY - panStart.value.y;
@@ -433,6 +532,12 @@ function onWindowPointerMove(e: PointerEvent) {
 }
 
 async function onWindowPointerUp(e: PointerEvent) {
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) {
+    pinchStartView = null;
+    pinchStartDistance = 0;
+  }
+
   if (isPanning.value) {
     isPanning.value = false;
     return;
@@ -501,9 +606,107 @@ function onBodyClick(body: OrbitBody, e: MouseEvent) {
     selectedDeviceId.value = body.id;
     selectedLinkId.value = null;
   } else {
-    emit('openDevice', body.device);
+    focusBody(body.id);
   }
 }
+
+/** Double click / double tap opens the device straight away (view mode). */
+function onBodyDoubleClick(body: OrbitBody, e: MouseEvent) {
+  e.stopPropagation();
+  if (!editing.value) emit('openDevice', body.device);
+}
+
+function focusBody(id: number) {
+  focusedId.value = id;
+  searchQuery.value = '';
+  const set = computeFocusSet(id, bodies.value, lightBeams.value);
+  flyToBodies([...set.bodyIds]);
+}
+
+function clearFocus() {
+  focusedId.value = null;
+}
+
+function clearSearch() {
+  searchQuery.value = '';
+}
+
+/** Enter in the search box flies to the matches. */
+function submitSearch() {
+  const ids = searchHits.value.map((b) => b.id);
+  if (ids.length > 0) flyToBodies(ids);
+}
+
+function onWindowKeyDown(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return;
+  if (searchQuery.value) clearSearch();
+  else if (focusedId.value != null) {
+    clearFocus();
+    fitView(true);
+  }
+}
+
+const searchHits = computed(() =>
+  matchBodies(searchQuery.value, bodyList.value, (b) => deviceLabel(b.device)),
+);
+
+/**
+ * Which bodies/beams stay fully lit. `strong` dims the rest hard (focus, search),
+ * hover only dims softly so the map stays calm while moving the mouse.
+ */
+const spotlight = computed<{ set: FocusSet; strong: boolean } | null>(() => {
+  if (editing.value) return null;
+  if (searchQuery.value.trim()) {
+    return {
+      set: focusSetFromIds(
+        searchHits.value.map((b) => b.id),
+        lightBeams.value,
+      ),
+      strong: true,
+    };
+  }
+  if (focusedId.value != null) {
+    return { set: computeFocusSet(focusedId.value, bodies.value, lightBeams.value), strong: true };
+  }
+  if (hoveredBodyId.value != null) {
+    return {
+      set: computeFocusSet(hoveredBodyId.value, bodies.value, lightBeams.value),
+      strong: false,
+    };
+  }
+  return null;
+});
+
+function bodyDim(id: number): number {
+  const s = spotlight.value;
+  if (!s || s.set.bodyIds.has(id)) return 1;
+  return s.strong ? 0.16 : 0.55;
+}
+
+function beamDim(id: number): number {
+  const s = spotlight.value;
+  if (!s || s.set.beamIds.has(id)) return 1;
+  return s.strong ? 0.1 : 0.5;
+}
+
+const focusedInfo = computed(() => {
+  const b = focusedId.value != null ? bodies.value.get(focusedId.value) : null;
+  if (!b) return null;
+  const parent = b.parentId != null ? bodies.value.get(b.parentId) : null;
+  const children = bodyList.value.filter((o) => o.parentId === b.id);
+  const beamCount = lightBeams.value.filter(
+    (l) => l.sourceId === b.id || l.targetId === b.id,
+  ).length;
+  const roleName =
+    b.kind === 'star' ? 'Stern (Gateway)' : b.kind === 'planet' ? 'Planet (Hub)' : 'Mond';
+  return { body: b, parent, children, beamCount, roleName, badge: roleBadge(b.device) };
+});
+
+const STATE_LABEL: Record<OrbitBody['state'], string> = {
+  online: 'Online',
+  degraded: 'Eingeschränkt',
+  offline: 'Offline',
+};
 
 function onBeamClick(beamId: number, e: MouseEvent) {
   e.stopPropagation();
@@ -631,6 +834,7 @@ async function arrange() {
 
 function toggleEditing() {
   editing.value = !editing.value;
+  clearFocus();
   selectedLinkId.value = null;
   selectedDeviceId.value = null;
 }
@@ -663,6 +867,7 @@ watch(
       :aria-label="t('gv.plan.title')"
       @wheel="onWheel"
       @pointerdown="onCanvasPointerDown"
+      @dblclick="onCanvasDoubleClick"
     >
       <defs>
         <!-- Soft stardust glow filter for constellation nodes and photon beams -->
@@ -794,7 +999,8 @@ watch(
           <g
             v-for="beam in lightBeams"
             :key="beam.id"
-            class="cursor-pointer group/beam"
+            class="cursor-pointer group/beam transition-opacity duration-300"
+            :style="{ opacity: beamDim(beam.id) }"
             @click="onBeamClick(beam.id, $event)"
             @pointerenter="hoveredBeamId = beam.id"
             @pointerleave="hoveredBeamId = null"
@@ -897,16 +1103,17 @@ watch(
             v-for="(body, idx) in bodyList"
             :key="body.id"
             :transform="`translate(${posOf(body.id).x}, ${posOf(body.id).y})`"
-            class="constellation-node cursor-pointer"
+            class="constellation-node cursor-pointer transition-opacity duration-300"
+            :style="{ opacity: bodyDim(body.id) * (body.state === 'offline' ? 0.7 : 1) }"
             :class="[
               editing && 'cursor-grab active:cursor-grabbing',
-              body.state === 'offline' && 'opacity-70',
             ]"
             role="button"
             tabindex="0"
             :aria-label="`${deviceLabel(body.device)} (${body.device.ip})`"
             @pointerdown="onBodyPointerDown(body, $event)"
             @click="onBodyClick(body, $event)"
+            @dblclick="onBodyDoubleClick(body, $event)"
             @pointerenter="hoveredBodyId = body.id"
             @pointerleave="hoveredBodyId = null"
             @keydown.enter.prevent="onBodyClick(body, $event as unknown as MouseEvent)"
@@ -1133,8 +1340,105 @@ watch(
       <span>Orbit → {{ deviceLabel(dropTarget.device) }}</span>
     </div>
 
-    <!-- Bottom-Right Zoom & Vitality Controls -->
-    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-surface shadow-pop">
+    <!-- Top-Left Search: highlights matches in space, Enter flies there -->
+    <div
+      v-if="!editing"
+      class="absolute top-3 left-3 z-10 flex h-9 w-[min(16rem,calc(100%-6rem))] items-center gap-2 rounded-md border border-line bg-surface/95 px-2.5 shadow-pop backdrop-blur focus-within:border-accent"
+      @pointerdown.stop
+    >
+      <Search class="size-3.5 shrink-0 text-fg-subtle" aria-hidden="true" />
+      <input
+        v-model="searchQuery"
+        type="search"
+        class="min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-fg-subtle focus:outline-none"
+        placeholder="Gerät suchen…"
+        aria-label="Gerät in der Karte suchen"
+        @keydown.enter.prevent="submitSearch"
+      />
+      <span
+        v-if="searchQuery"
+        class="font-mono text-[10px] text-fg-subtle"
+        aria-live="polite"
+      >
+        {{ searchHits.length }}
+      </span>
+    </div>
+
+    <!-- Focus Card (view mode): details of the clicked body and quick actions -->
+    <div
+      v-if="!editing && focusedInfo"
+      class="absolute bottom-3 left-3 z-10 w-[min(22rem,calc(100%-4.5rem))] space-y-2.5 rounded-lg border border-line-strong bg-surface/95 p-3.5 shadow-pop backdrop-blur"
+      role="dialog"
+      :aria-label="deviceLabel(focusedInfo.body.device)"
+      @pointerdown.stop
+    >
+      <div class="flex items-start gap-2">
+        <span
+          class="mt-1.5 size-2.5 shrink-0 rounded-full"
+          :style="{ backgroundColor: focusedInfo.body.color }"
+          aria-hidden="true"
+        />
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-semibold text-fg">
+            {{ deviceLabel(focusedInfo.body.device) }}
+          </p>
+          <p class="font-mono text-xs text-fg-subtle">{{ focusedInfo.body.device.ip }}</p>
+        </div>
+        <button
+          type="button"
+          class="-m-1 inline-flex size-7 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover"
+          :aria-label="t('common.close')"
+          @click="clearFocus(); fitView(true)"
+        >
+          <X class="size-4" />
+        </button>
+      </div>
+
+      <dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+        <dt class="text-fg-subtle">Typ</dt>
+        <dd class="text-fg">
+          {{ focusedInfo.roleName }}
+          <span v-if="focusedInfo.badge" class="font-mono text-[10px] text-fg-muted">
+            · {{ focusedInfo.badge }}
+          </span>
+        </dd>
+        <dt class="text-fg-subtle">Status</dt>
+        <dd class="text-fg">{{ STATE_LABEL[focusedInfo.body.state] }}</dd>
+        <dt class="text-fg-subtle">Umkreist</dt>
+        <dd class="truncate text-fg">
+          {{ focusedInfo.parent ? deviceLabel(focusedInfo.parent.device) : '–' }}
+        </dd>
+        <dt class="text-fg-subtle">Monde / Links</dt>
+        <dd class="text-fg">{{ focusedInfo.children.length }} / {{ focusedInfo.beamCount }}</dd>
+      </dl>
+
+      <div class="flex flex-wrap items-center gap-1.5">
+        <Button size="sm" @click="emit('openDevice', focusedInfo.body.device)">
+          Details öffnen
+        </Button>
+        <Button
+          v-if="focusedInfo.parent"
+          size="sm"
+          variant="secondary"
+          @click="focusBody(focusedInfo.parent.id)"
+        >
+          Zum Hub
+        </Button>
+        <Button size="sm" variant="secondary" @click="flyToBodies([focusedInfo.body.id])">
+          Zentrieren
+        </Button>
+      </div>
+    </div>
+
+    <!-- Hint in view mode when nothing is focused -->
+    <p
+      v-if="!editing && !focusedInfo && !searchQuery"
+      class="pointer-events-none absolute bottom-3 left-3 z-10 hidden max-w-xs rounded-md border border-line bg-surface/90 px-2.5 py-1.5 text-[11px] text-fg-muted backdrop-blur sm:block"
+    >
+      Klick: fokussieren · Doppelklick: Details · Esc: zurück · Mausrad / Pinch: Zoom
+    </p>
+
+    <!-- Bottom-Right Zoom & Vitality Controls -->    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-surface shadow-pop">
       <button
         type="button"
         class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg"
@@ -1165,7 +1469,7 @@ watch(
         type="button"
         class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg"
         :aria-label="t('gv.plan.fit')"
-        @click="fitView"
+        @click="fitView(true)"
       >
         <Maximize class="size-3.5" />
       </button>
