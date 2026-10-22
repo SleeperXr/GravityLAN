@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { ArrowLeftRight, Loader2, Radar, Square } from 'lucide-vue-next';
+import { Loader2, Radar, Square } from 'lucide-vue-next';
 import { api, sessionExpired } from '@/api/client';
 import { useNetworkStore } from '@/stores/network';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
@@ -10,6 +10,7 @@ import ToastHost from '@/components/ui/ToastHost.vue';
 import ConfirmHost from '@/components/ui/ConfirmHost.vue';
 import Button from '@/components/ui/Button.vue';
 import LoginView from '@/views/LoginView.vue';
+import SetupView from '@/views/SetupView.vue';
 import { t } from '@/i18n';
 
 type BootState = 'checking' | 'setup' | 'login' | 'ready';
@@ -69,16 +70,7 @@ onBeforeUnmount(() => store.disconnectScanStream());
     {{ t('app_status.initializing') }}
   </div>
 
-  <main v-else-if="state === 'setup'" class="flex min-h-dvh items-center justify-center bg-canvas px-4">
-    <div class="gl-card max-w-md p-6 text-center">
-      <h1 class="text-lg font-semibold text-fg">{{ t('app.title') }}</h1>
-      <p class="mt-2 text-sm text-fg-muted">{{ t('gv.legacy.setup_desc') }}</p>
-      <a href="/" class="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-semibold text-accent-fg hover:bg-accent-hover">
-        <ArrowLeftRight class="size-4" aria-hidden="true" />
-        {{ t('gv.legacy.open') }}
-      </a>
-    </div>
-  </main>
+  <SetupView v-else-if="state === 'setup'" @complete="boot" />
 
   <LoginView v-else-if="state === 'login'" @authenticated="boot" />
 
