@@ -5,7 +5,7 @@ import type { Device } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
 import { isAgentOutdated } from '@/lib/agent';
-import { deviceLabel, networkColor } from '@/lib/networks';
+import { deviceLabel, lineLabelFor, networkColor } from '@/lib/networks';
 import { t } from '@/i18n';
 
 /**
@@ -52,8 +52,6 @@ const notices = computed<Notice[]>(() => {
   return list.sort((a, b) => a.rank - b.rank);
 });
 
-const toneDot = { danger: 'border-danger', warn: 'border-warn', info: 'border-info' };
-
 function open(n: Notice) {
   if (n.action === 'updates') emit('openUpdates');
   else if (n.device) emit('openDevice', n.device);
@@ -74,14 +72,15 @@ function open(n: Notice) {
     <ul v-else class="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
       <li v-for="n in notices" :key="n.key">
         <button type="button" class="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-raised" @click="open(n)">
+          <!-- The sign of the line the device rides on; fleet-wide notices get a neutral sign -->
           <LineBullet
             v-if="n.device"
             :color="networkColor(n.device.subnet_id, n.device.ip)"
-            :label="(deviceLabel(n.device)[0] ?? '·').toUpperCase()"
+            :label="lineLabelFor(n.device.subnet_id)"
             size="sm"
             class="mt-0.5"
           />
-          <span v-else class="mt-1 size-3.5 shrink-0 rounded-full border-[3px]" :class="toneDot[n.tone]" aria-hidden="true" />
+          <LineBullet v-else color="var(--gl-fg-muted)" label="A" size="sm" class="mt-0.5" />
           <span class="min-w-0 flex-1">
             <span class="block text-sm leading-5 font-bold" :class="n.tone === 'danger' ? 'text-danger-text' : n.tone === 'warn' ? 'text-warn-text' : 'text-fg'">
               {{ n.title }}

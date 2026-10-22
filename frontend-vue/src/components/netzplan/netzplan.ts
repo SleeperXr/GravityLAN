@@ -103,6 +103,45 @@ export function octilinearPath(sx: number, sy: number, tx: number, ty: number): 
   return `M${sx},${sy} L${sx},${y1} L${tx},${y2} L${tx},${ty}`;
 }
 
+type Point = { x: number; y: number };
+
+/** How far apart two linked stations may sit and still be drawn on one straight axis. */
+export const ALIGN_TOLERANCE = 24;
+
+/**
+ * Straight lines stay straight: two linked stations whose x (or y) differ by at most the
+ * tolerance are put on one axis. The station with fewer links moves, so hubs stay put.
+ * Display only; the saved positions are untouched.
+ */
+export function alignStations(positions: Map<number, Point>, links: Pick<TopologyLink, 'source_id' | 'target_id'>[], tolerance = ALIGN_TOLERANCE): Map<number, Point> {
+  const out = new Map([...positions].map(([id, p]) => [id, { ...p }]));
+  const degree = new Map<number, number>();
+  for (const l of links) {
+    degree.set(l.source_id, (degree.get(l.source_id) ?? 0) + 1);
+    degree.set(l.target_id, (degree.get(l.target_id) ?? 0) + 1);
+  }
+  // Two passes, so a chain A–B–C settles on one axis even when B moved in the first
+  for (let pass = 0; pass < 2; pass++) {
+    for (const l of links) {
+      const a = out.get(l.source_id);
+      const b = out.get(l.target_id);
+      if (!a || !b) continue;
+      const bMoves = (degree.get(l.target_id) ?? 0) <= (degree.get(l.source_id) ?? 0);
+      const [anchor, mover] = bMoves ? [a, b] : [b, a];
+      if (mover.x !== anchor.x && Math.abs(mover.x - anchor.x) <= tolerance) mover.x = anchor.x;
+      if (mover.y !== anchor.y && Math.abs(mover.y - anchor.y) <= tolerance) mover.y = anchor.y;
+    }
+  }
+  return out;
+}
+
+/** Where a dropped station lands: on the x/y axis of its nearest linked neighbour, if close enough. */
+export function snapToNeighbours(pos: Point, neighbours: Point[], tolerance = ALIGN_TOLERANCE): Point {
+  const nearest = (axis: 'x' | 'y') =>
+    neighbours.map((n) => n[axis]).filter((v) => Math.abs(v - pos[axis]) <= tolerance).sort((p, q) => Math.abs(p - pos[axis]) - Math.abs(q - pos[axis]))[0];
+  return { x: nearest('x') ?? pos.x, y: nearest('y') ?? pos.y };
+}
+
 /**
  * Positions for devices that were never placed: one row per network, the gateway of that
  * network at the row's start, members spaced along it in address order.

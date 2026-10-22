@@ -14,6 +14,8 @@ import Button from '@/components/ui/Button.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import IpTile from '@/components/network/IpTile.vue';
+import LineBullet from '@/components/common/LineBullet.vue';
+import { lineLabel, networkColor } from '@/lib/networks';
 import SubnetModeBadge from '@/components/network/SubnetModeBadge.vue';
 import AddSubnetDialog from '@/components/network/AddSubnetDialog.vue';
 import SubnetSettingsDialog from '@/components/network/SubnetSettingsDialog.vue';
@@ -255,7 +257,8 @@ function openEditor(device: Device) {
         v-for="sub in store.subnets"
         :key="sub.id"
         class="group flex shrink-0 items-center rounded-md border transition-colors"
-        :class="prefix === prefixOf(sub.cidr) ? 'border-accent/50 bg-accent/[0.07]' : 'border-line bg-surface hover:border-line-strong'"
+        :class="prefix === prefixOf(sub.cidr) ? 'bg-raised' : 'border-line bg-surface hover:border-line-strong'"
+        :style="prefix === prefixOf(sub.cidr) ? { borderColor: networkColor(sub.id) } : undefined"
       >
         <button
           type="button"
@@ -266,6 +269,7 @@ function openEditor(device: Device) {
           :class="sub.is_enabled === false && 'opacity-60'"
           @click="prefix = prefixOf(sub.cidr)"
         >
+          <LineBullet :color="networkColor(sub.id)" :label="lineLabel(sub)" size="sm" />
           <span class="font-medium text-fg">{{ sub.name }}</span>
           <span v-if="sub.vlan_id != null" class="font-mono text-[11px] text-fg-subtle">VLAN {{ sub.vlan_id }}</span>
           <SubnetModeBadge :subnet="sub" />
@@ -329,6 +333,7 @@ function openEditor(device: Device) {
           v-for="tile in visibleTiles"
           :key="`${prefix}-${tile.i}`"
           :tile="tile"
+          :line-color="currentSubnet ? networkColor(currentSubnet.id) : undefined"
           :scan-busy="scanBusy(tile.ip)"
           :add-busy="!!busy[`${tile.ip}-add`]"
           :show-area-label="!!tile.group && tile.i === tile.group.start"

@@ -1,6 +1,7 @@
-import type { Device } from '@/types';
+import type { Device, Subnet } from '@/types';
 
 import { useAppearance } from '@/stores/appearance';
+import { useNetworkStore } from '@/stores/network';
 
 /**
  * The line colour of a subnet, the same on the network map, line bullets, device chips and the
@@ -20,6 +21,17 @@ export function networkColor(subnetId: number | null | undefined, ip?: string | 
   let hash = 0;
   for (let i = 0; i < prefix.length; i++) hash = (hash * 31 + prefix.charCodeAt(i)) >>> 0;
   return `var(--line-${(hash % LINE_SLOTS) + 1})`;
+}
+
+/** A line's sign text: the VLAN id, else the first letter of the subnet name. */
+export function lineLabel(subnet: Pick<Subnet, 'vlan_id' | 'name'>): string {
+  return subnet.vlan_id != null ? String(subnet.vlan_id) : (subnet.name.trim()[0] ?? '·').toUpperCase();
+}
+
+/** The sign of the line a device rides on; '·' when its subnet is unknown. */
+export function lineLabelFor(subnetId: number | null | undefined): string {
+  const subnet = subnetId == null ? undefined : useNetworkStore().subnets.find((s) => s.id === subnetId);
+  return subnet ? lineLabel(subnet) : '·';
 }
 
 export interface NetworkChip {

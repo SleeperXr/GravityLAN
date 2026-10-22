@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { Device, Subnet } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
-import { networkColor } from '@/lib/networks';
+import { lineLabel, networkColor } from '@/lib/networks';
 import { t } from '@/i18n';
 
 /**
@@ -33,7 +33,7 @@ const rows = computed<LineRow[]>(() =>
       id: s.id,
       name: s.name,
       cidr: s.cidr,
-      bullet: s.vlan_id != null ? String(s.vlan_id) : (s.name.trim()[0] ?? '·').toUpperCase(),
+      bullet: lineLabel(s),
       color: networkColor(s.id, s.cidr),
       total: members.length,
       online: members.filter((d) => d.is_online).length,

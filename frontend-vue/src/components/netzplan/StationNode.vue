@@ -24,13 +24,15 @@ const handles = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 </script>
 
 <template>
+  <!-- Every station has the same 28×28 anchor box with the marker centred in it, so stations
+       placed on one axis line up exactly, whatever the marker or name width -->
   <div
-    class="group relative flex flex-col items-center"
+    class="group relative flex size-7 items-center justify-center"
     :class="data.editable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'"
     :title="`${name} · ${data.device.ip} · ${stateLabel}`"
   >
     <div
-      class="station relative flex items-center justify-center rounded-full border-[3.5px] bg-station transition-[transform,box-shadow] duration-200 group-hover:scale-110"
+      class="station relative flex shrink-0 items-center justify-center rounded-full border-[3.5px] bg-station transition-[transform,box-shadow] duration-200 group-hover:scale-110"
       :class="[
         data.interchange ? 'h-7 min-w-12 px-1.5 gap-1' : 'size-[18px]',
         data.state === 'offline' ? 'border-danger' : data.state === 'degraded' ? 'border-warn' : 'border-fg',

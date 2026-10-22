@@ -22,6 +22,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - GravityUI light theme: accent, accent text and warning text are a little darker, free addresses in the IP overview and the "stop dropped" label on the map are no longer faded; every text on every GravityUI page now reaches at least 4.5:1 contrast in light and dark.
+- GravityUI network map keeps straight lines straight: every station has the same anchor, so stations placed on one axis line up whatever their name or marker width, linked stations a few pixels off one axis are drawn on it, and a dropped station snaps onto the axis of a linked neighbour within 24 px.
+- GravityUI line identity on more places: service notices show the sign of the line the device rides on (no more device initials that looked like lines), subnet tabs on the IP overview carry their line sign, reachable devices on the IP grid wear their line colour, rack slots use line signs instead of coloured stripes, and the network map is the white surface in the light theme. Map zoom animations respect "reduce motion".
 
 ### Fixed
 - GravityUI showed values the backend never sends (device `name`, `os_info`, `device_role`, service `url`, subnet `color`); it now uses the React UI's types and API client directly.

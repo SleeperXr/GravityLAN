@@ -8,7 +8,8 @@ import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import StatusDot from '@/components/common/StatusDot.vue';
-import { deviceLabel, networkColor } from '@/lib/networks';
+import { deviceLabel, lineLabelFor, networkColor } from '@/lib/networks';
+import LineBullet from '@/components/common/LineBullet.vue';
 import { heightOf, occupiedUnits, placementIssues, rackSlots } from './rackModel';
 import { confirmAction } from '@/composables/useConfirm';
 import { useToast } from '@/composables/useToast';
@@ -139,13 +140,13 @@ const UNIT_REM = 1.75;
               v-if="slot.device"
               type="button"
               role="listitem"
-              class="group relative my-px flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden rounded-[5px] border bg-raised pr-3 pl-4 text-left transition-colors hover:border-line-strong hover:bg-control-hover focus-visible:border-accent"
+              class="group relative my-px flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden rounded-[5px] border bg-raised pr-3 pl-1.5 text-left transition-colors hover:border-line-strong hover:bg-control-hover focus-visible:border-accent"
               :class="[issueIds.has(slot.device.id) ? 'border-warn/60' : 'border-line', !slot.device.is_online && 'opacity-70']"
               :style="{ height: `calc(${heightOf(slot.device) * UNIT_REM}rem - 2px)` }"
               :title="t('gv.racks.open_hint')"
               @click="emit('openDevice', slot.device)"
             >
-              <span class="absolute inset-y-0 left-0 w-1.5" :style="{ background: networkColor(slot.device.subnet_id, slot.device.ip) }" aria-hidden="true" />
+              <LineBullet :color="networkColor(slot.device.subnet_id, slot.device.ip)" :label="lineLabelFor(slot.device.subnet_id)" size="sm" />
               <StatusDot :state="slot.device.is_online ? 'online' : 'offline'" size="sm" :label="slot.device.is_online ? t('network.online') : t('network.offline')" />
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-xs font-semibold text-fg">{{ deviceLabel(slot.device) }}</span>
@@ -190,7 +191,7 @@ const UNIT_REM = 1.75;
             <ul v-else class="divide-y divide-line">
               <li v-for="d in inventory" :key="d.id">
                 <button type="button" class="flex w-full items-center gap-2.5 py-2 text-left hover:text-accent-text" @click="emit('openDevice', d)">
-                  <span class="h-4 w-1 shrink-0 rounded-full" :style="{ background: networkColor(d.subnet_id, d.ip) }" aria-hidden="true" />
+                  <LineBullet :color="networkColor(d.subnet_id, d.ip)" :label="lineLabelFor(d.subnet_id)" size="sm" />
                   <StatusDot :state="d.is_online ? 'online' : 'offline'" size="sm" :label="d.is_online ? t('network.online') : t('network.offline')" />
                   <span class="min-w-0 flex-1 truncate text-sm text-fg">{{ deviceLabel(d) }}</span>
                   <span class="shrink-0 font-mono text-[11px] text-fg-subtle">{{ d.rack_unit ? t('rack.position', { unit: d.rack_unit, count: heightOf(d) }) : '–' }}</span>

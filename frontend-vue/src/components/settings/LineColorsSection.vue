@@ -4,7 +4,7 @@ import { Check, RotateCcw } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Subnet } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
-import { networkColor } from '@/lib/networks';
+import { lineLabel, networkColor } from '@/lib/networks';
 import { useAppearance } from '@/stores/appearance';
 import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
@@ -38,7 +38,7 @@ const palette = computed(() => {
   return Array.from({ length: 10 }, (_, i) => style.getPropertyValue(`--line-${i + 1}`).trim()).filter((c) => /^#[0-9a-f]{6}$/i.test(c));
 });
 
-const bullet = (s: Subnet) => (s.vlan_id != null ? String(s.vlan_id) : (s.name.trim()[0] ?? '·').toUpperCase());
+const bullet = (s: Subnet) => lineLabel(s);
 const custom = (s: Subnet) => appearance.lineColors[String(s.id)] ?? null;
 const toHex = (color: string | null) => (color && /^#[0-9a-f]{6}$/i.test(color) ? color : '#2ec4a6');
 

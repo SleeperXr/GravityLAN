@@ -12,7 +12,7 @@ import { useConfirm } from '@/composables/useConfirm';
 import Button from '@/components/ui/Button.vue';
 import StationNode from './StationNode.vue';
 import TransitEdge from './TransitEdge.vue';
-import { LINK_TYPES, autoLayout, lineSlots, linkColor, stationState, type PlanLink, type StationData } from './netzplan';
+import { LINK_TYPES, alignStations, autoLayout, lineSlots, linkColor, snapToNeighbours, stationState, type PlanLink, type StationData } from './netzplan';
 import { deviceLabel, networkColor } from '@/lib/networks';
 import { t } from '@/i18n';
 
@@ -33,6 +33,9 @@ const appearance = useAppearance();
 const { showToast } = useToast();
 const { confirm } = useConfirm();
 const { fitView, zoomIn, zoomOut } = useVueFlow(props.flowId);
+// Viewport tweens run in JS, outside the CSS reduced-motion rule
+const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+const motion = (ms: number) => (reduceMotion?.matches ? 0 : ms);
 
 const editing = ref(props.editable && props.startEditing);
 const links = ref<PlanLink[]>([]);
@@ -66,8 +69,13 @@ const devicesById = computed(() => new Map(store.devices.map((d) => [d.id, d])))
 
 /** Saved position, else the drag position of this session, else the automatic layout. */
 const auto = computed(() => autoLayout(store.devices.filter((d) => d.topology_x == null || d.topology_y == null), gatewayIds.value));
-function positionOf(d: Device) {
+function rawPositionOf(d: Device) {
   return positions.value.get(d.id) ?? (d.topology_x != null && d.topology_y != null ? { x: d.topology_x, y: d.topology_y } : auto.value.get(d.id) ?? { x: 0, y: 0 });
+}
+/** Drawn positions: linked stations a few pixels off one axis are drawn on it (straight lines). */
+const drawn = computed(() => alignStations(new Map(store.devices.map((d) => [d.id, rawPositionOf(d)])), links.value));
+function positionOf(d: Device) {
+  return drawn.value.get(d.id) ?? rawPositionOf(d);
 }
 
 const slots = computed(() => lineSlots(links.value, gatewayIds.value));
@@ -145,7 +153,12 @@ function onEdgeClick({ edge }: EdgeMouseEvent) {
 
 async function onDragStop({ node }: NodeDragEvent) {
   const id = Number(node.id);
-  const pos = { x: Math.round(node.position.x), y: Math.round(node.position.y) };
+  // Drop onto the axis of a linked neighbour when close, so the line runs dead straight
+  const neighbours = links.value
+    .filter((l) => l.source_id === id || l.target_id === id)
+    .map((l) => drawn.value.get(l.source_id === id ? l.target_id : l.source_id))
+    .filter((p): p is { x: number; y: number } => !!p);
+  const pos = snapToNeighbours({ x: Math.round(node.position.x), y: Math.round(node.position.y) }, neighbours);
   positions.value = new Map(positions.value).set(id, pos);
   try {
     await api.updateDevice(id, { topology_x: pos.x, topology_y: pos.y });
@@ -213,7 +226,7 @@ async function arrange() {
     [...layout].map(([id, pos]) => api.updateDevice(id, { topology_x: pos.x, topology_y: pos.y }).catch(() => {})),
   );
   await store.loadData(true);
-  window.setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 50);
+  window.setTimeout(() => fitView({ padding: 0.15, duration: motion(400) }), 50);
 }
 
 function toggleEditing() {
@@ -264,7 +277,7 @@ const linkEnds = computed(() => {
     <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-surface shadow-pop">
       <button type="button" class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg" :aria-label="t('gv.plan.zoom_in')" @click="zoomIn()"><Plus class="size-4" /></button>
       <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg" :aria-label="t('gv.plan.zoom_out')" @click="zoomOut()"><Minus class="size-4" /></button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg" :aria-label="t('gv.plan.fit')" @click="fitView({ padding: 0.15, duration: 300 })"><Maximize class="size-3.5" /></button>
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg" :aria-label="t('gv.plan.fit')" @click="fitView({ padding: 0.15, duration: motion(300) })"><Maximize class="size-3.5" /></button>
     </div>
 
     <div v-if="editable" class="absolute top-3 right-3 z-10 flex gap-2">
@@ -348,6 +361,10 @@ const linkEnds = computed(() => {
   background-color: var(--gl-sunken);
   background-image: radial-gradient(var(--gl-line) 1px, transparent 1px);
   background-size: 28px 28px;
+}
+/* The daytime map is the whitest surface on the page */
+:root[data-theme='light'] .plan {
+  background-color: var(--gl-surface);
 }
 .plan.is-editing {
   background-image: radial-gradient(var(--gl-line-strong) 1px, transparent 1px);

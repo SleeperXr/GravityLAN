@@ -121,7 +121,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
     <EmptyState v-else-if="agents.length === 0" :icon="Server" :title="t('agent_detail.no_agents')" />
 
     <section v-else class="gl-card overflow-hidden">
-      <div class="hidden grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,0.8fr)] gap-4 border-b border-line px-4 py-2 text-[11px] font-semibold tracking-wide text-fg-subtle uppercase lg:grid" aria-hidden="true">
+      <div class="hidden grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,0.8fr)] gap-4 border-b border-line px-4 py-2 text-xs font-medium text-fg-subtle lg:grid" aria-hidden="true">
         <span class="pl-7">{{ t('agents_page.col_agent') }}</span>
         <span>{{ t('agents_page.col_connection') }}</span>
         <span>{{ t('agents_page.col_performance') }}</span>

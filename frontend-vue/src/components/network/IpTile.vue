@@ -12,7 +12,7 @@ import { t } from '@/i18n';
  * One address of the /24 map. Known addresses open a popover with details and actions on
  * click or Enter (works on touch and keyboard, unlike the hover tooltip of the React UI).
  */
-const props = defineProps<{ tile: Tile; scanBusy: boolean; addBusy: boolean; showAreaLabel: boolean }>();
+const props = defineProps<{ tile: Tile; scanBusy: boolean; addBusy: boolean; showAreaLabel: boolean; lineColor?: string }>();
 const emit = defineEmits<{
   openDevice: [device: Device];
   updateDevice: [id: number, data: Partial<Device>];
@@ -41,7 +41,7 @@ const kind = computed(() => {
 const tileClass = computed(
   () =>
     ({
-      'device-online': 'border-accent/45 bg-accent/[0.12] text-fg font-semibold',
+      'device-online': 'text-fg font-semibold',
       'device-offline': 'border-danger/45 bg-danger/[0.07] text-fg-muted',
       'host-online': 'border-info/45 bg-info/[0.1] text-fg',
       'host-offline': 'border-line-strong bg-raised text-fg-subtle',
@@ -49,6 +49,13 @@ const tileClass = computed(
       free: 'border-line text-fg-subtle',
     })[kind.value],
 );
+
+// Overview devices that are up wear their line's colour (a station on that line)
+const lineStyle = computed(() => {
+  if (kind.value !== 'device-online') return undefined;
+  const color = props.lineColor ?? 'var(--gl-accent)';
+  return { borderColor: `color-mix(in oklab, ${color} 55%, transparent)`, backgroundColor: `color-mix(in oklab, ${color} 14%, transparent)` };
+});
 
 const label = computed(() => {
   const state = known.value ? (online.value ? t('network.online') : t('network.offline')) : t('gv.network.free');
@@ -68,6 +75,7 @@ const ports = computed(() => [
         type="button"
         class="relative flex aspect-square min-w-0 items-center justify-center rounded-md border font-mono text-[0.72em] transition-[transform,border-color] duration-100 hover:-translate-y-px hover:border-fg-subtle focus-visible:z-10"
         :class="[tileClass, tile.isReserved && 'border-dashed', host?.is_monitored && !online && 'ring-2 ring-danger/40 ring-inset']"
+        :style="lineStyle"
         :aria-label="label"
       >
         <span v-if="tile.group" class="absolute inset-x-0.5 top-0.5 h-[3px] rounded-full" :style="{ backgroundColor: tile.group.color }" aria-hidden="true" />
