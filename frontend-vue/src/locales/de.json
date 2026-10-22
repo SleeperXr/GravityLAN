@@ -111,6 +111,23 @@
     },
     "ssh": {
       "back_to_sessions": "Zurück zu den Sitzungen ({{count}})"
+    },
+    "logs": {
+      "subtitle": "Was das Backend gerade protokolliert – live, die letzten 500 Zeilen.",
+      "live": "Live",
+      "paused": "Pausiert",
+      "reconnecting": "Verbinde neu …",
+      "level": "Mindest-Level",
+      "level_all": "Alle",
+      "level_warning": "Warnungen",
+      "level_error": "Fehler",
+      "search": "Logs durchsuchen",
+      "waiting": "Warte auf Log-Zeilen …",
+      "paused_hint": "Pausiert – fortsetzen, um neue Zeilen zu empfangen.",
+      "no_match": "Keine Zeile passt zu Filter oder Suche.",
+      "jump": "Zu den neuesten",
+      "copied": "{{count}} Zeilen kopiert",
+      "copy_failed": "Kopieren nicht möglich"
     }
   }
 }

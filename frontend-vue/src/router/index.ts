@@ -10,8 +10,6 @@ declare module 'vue-router' {
   }
 }
 
-const LegacyOnlyView = () => import('@/views/LegacyOnlyView.vue');
-
 export const router = createRouter({
   history: createWebHistory('/frontend-vue/'),
   scrollBehavior: () => ({ top: 0 }),
@@ -22,7 +20,7 @@ export const router = createRouter({
     { path: '/topology', name: 'topology', component: () => import('@/views/TopologyView.vue'), meta: { navId: 'topology', titleKey: 'sidebar.topology' } },
     { path: '/agents', name: 'agents', component: () => import('@/views/AgentsView.vue'), meta: { navId: 'agents', titleKey: 'sidebar.agents' } },
     { path: '/ssh', name: 'ssh', component: () => import('@/views/SshView.vue'), meta: { navId: 'ssh', titleKey: 'sidebar.ssh' } },
-    { path: '/logs', name: 'logs', component: LegacyOnlyView, meta: { navId: 'logs', titleKey: 'sidebar.logs' } },
+    { path: '/logs', name: 'logs', component: () => import('@/views/LogsView.vue'), meta: { navId: 'logs', titleKey: 'sidebar.logs' } },
     { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { navId: 'settings', titleKey: 'sidebar.settings' } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
