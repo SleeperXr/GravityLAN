@@ -136,3 +136,78 @@ export function lerpView(a: ViewTransform, b: ViewTransform, t: number): ViewTra
     zoom: a.zoom + (b.zoom - a.zoom) * t,
   };
 }
+
+export interface TracedPath {
+  /** Body ids from start to end (inclusive). */
+  bodyIds: number[];
+  /** Beam ids in travel order (length = bodyIds.length - 1). */
+  beamIds: number[];
+  /** True if at least one hop crosses an interrupted beam. */
+  broken: boolean;
+}
+
+function bfsPath(fromId: number, toId: number, beams: LightBeam[]): TracedPath | null {
+  if (fromId === toId) return { bodyIds: [fromId], beamIds: [], broken: false };
+  const adjacency = new Map<number, { to: number; beam: LightBeam }[]>();
+  for (const beam of beams) {
+    for (const [a, b] of [
+      [beam.sourceId, beam.targetId],
+      [beam.targetId, beam.sourceId],
+    ] as const) {
+      const list = adjacency.get(a) ?? [];
+      list.push({ to: b, beam });
+      adjacency.set(a, list);
+    }
+  }
+
+  const previous = new Map<number, { from: number; beam: LightBeam }>();
+  const visited = new Set<number>([fromId]);
+  const queue: number[] = [fromId];
+  for (let head = 0; head < queue.length; head++) {
+    const current = queue[head];
+    for (const edge of adjacency.get(current) ?? []) {
+      if (visited.has(edge.to)) continue;
+      visited.add(edge.to);
+      previous.set(edge.to, { from: current, beam: edge.beam });
+      if (edge.to === toId) {
+        const bodyIds = [toId];
+        const path: LightBeam[] = [];
+        let step = toId;
+        while (step !== fromId) {
+          const prev = previous.get(step)!;
+          path.push(prev.beam);
+          bodyIds.push(prev.from);
+          step = prev.from;
+        }
+        bodyIds.reverse();
+        path.reverse();
+        return {
+          bodyIds,
+          beamIds: path.map((b) => b.id),
+          broken: path.some((b) => b.interrupted),
+        };
+      }
+      queue.push(edge.to);
+    }
+  }
+  return null;
+}
+
+/**
+ * Shortest hop path between two bodies along light beams.
+ * Prefers a route over healthy beams; falls back to one crossing interrupted
+ * beams (flagged `broken`). Returns null if the bodies are not connected at all.
+ */
+export function findPath(
+  fromId: number,
+  toId: number,
+  beams: LightBeam[],
+): TracedPath | null {
+  return (
+    bfsPath(
+      fromId,
+      toId,
+      beams.filter((b) => !b.interrupted),
+    ) ?? bfsPath(fromId, toId, beams)
+  );
+}

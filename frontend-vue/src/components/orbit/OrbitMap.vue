@@ -9,6 +9,7 @@ import {
   Orbit,
   Pencil,
   Plus,
+  Route,
   Search,
   Sparkles,
   Trash2,
@@ -39,12 +40,14 @@ import {
 import {
   computeFocusSet,
   easeInOutCubic,
+  findPath,
   fitTransform,
   focusSetFromIds,
   lerpView,
   matchBodies,
   zoomAround,
   type FocusSet,
+  type TracedPath,
   type ViewTransform,
 } from './orbitFocus';
 import { deviceLabel } from '@/lib/networks';
@@ -111,6 +114,9 @@ const dropTarget = ref<OrbitBody | null>(null);
 // Focus mode (view mode): a clicked hub/device dims everything unrelated
 const focusedId = ref<number | null>(null);
 const searchQuery = ref('');
+// Path tracing: pick a start (focus card), then click the destination
+const traceFromId = ref<number | null>(null);
+const traceToId = ref<number | null>(null);
 const activePointers = new Map<number, Point>();
 let pinchStartDistance = 0;
 let pinchStartView: ViewTransform | null = null;
@@ -605,10 +611,70 @@ function onBodyClick(body: OrbitBody, e: MouseEvent) {
   if (editing.value) {
     selectedDeviceId.value = body.id;
     selectedLinkId.value = null;
+  } else if (traceFromId.value != null) {
+    if (body.id !== traceFromId.value) setTraceTarget(body.id);
   } else {
     focusBody(body.id);
   }
 }
+
+function startTrace(fromId: number) {
+  traceFromId.value = fromId;
+  traceToId.value = null;
+  focusedId.value = null;
+  searchQuery.value = '';
+  flyToBodies([fromId]);
+}
+
+function setTraceTarget(toId: number) {
+  traceToId.value = toId;
+  const path = tracedPath.value;
+  flyToBodies(path ? path.bodyIds : [traceFromId.value!, toId]);
+}
+
+function cancelTrace() {
+  traceFromId.value = null;
+  traceToId.value = null;
+  fitView(true);
+}
+
+const tracedPath = computed<TracedPath | null>(() =>
+  traceFromId.value != null && traceToId.value != null
+    ? findPath(traceFromId.value, traceToId.value, lightBeams.value)
+    : null,
+);
+
+const traceHops = computed(() => {
+  const path = tracedPath.value;
+  if (!path) return [];
+  return path.bodyIds.map((id, i) => {
+    const beam = i > 0 ? lightBeams.value.find((b) => b.id === path.beamIds[i - 1]) : null;
+    const body = bodies.value.get(id);
+    return {
+      id,
+      label: body ? deviceLabel(body.device) : '?',
+      linkType: beam?.linkType ?? null,
+      interrupted: beam?.interrupted ?? false,
+    };
+  });
+});
+
+/** Line segments of the traced path, in travel order. */
+const traceSegments = computed(() => {
+  const path = tracedPath.value;
+  if (!path) return [];
+  return path.beamIds.map((beamId, i) => ({
+    key: beamId,
+    from: path.bodyIds[i],
+    to: path.bodyIds[i + 1],
+    interrupted: lightBeams.value.find((b) => b.id === beamId)?.interrupted ?? false,
+  }));
+});
+
+const traceStartLabel = computed(() => {
+  const b = traceFromId.value != null ? bodies.value.get(traceFromId.value) : null;
+  return b ? deviceLabel(b.device) : '?';
+});
 
 /** Double click / double tap opens the device straight away (view mode). */
 function onBodyDoubleClick(body: OrbitBody, e: MouseEvent) {
@@ -639,7 +705,8 @@ function submitSearch() {
 
 function onWindowKeyDown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return;
-  if (searchQuery.value) clearSearch();
+  if (traceFromId.value != null) cancelTrace();
+  else if (searchQuery.value) clearSearch();
   else if (focusedId.value != null) {
     clearFocus();
     fitView(true);
@@ -656,6 +723,16 @@ const searchHits = computed(() =>
  */
 const spotlight = computed<{ set: FocusSet; strong: boolean } | null>(() => {
   if (editing.value) return null;
+  if (traceFromId.value != null) {
+    const path = tracedPath.value;
+    return {
+      set: {
+        bodyIds: new Set(path ? path.bodyIds : [traceFromId.value]),
+        beamIds: new Set(path ? path.beamIds : []),
+      },
+      strong: true,
+    };
+  }
   if (searchQuery.value.trim()) {
     return {
       set: focusSetFromIds(
@@ -835,6 +912,8 @@ async function arrange() {
 function toggleEditing() {
   editing.value = !editing.value;
   clearFocus();
+  traceFromId.value = null;
+  traceToId.value = null;
   selectedLinkId.value = null;
   selectedDeviceId.value = null;
 }
@@ -1095,6 +1174,48 @@ watch(
             stroke-dasharray="6 4"
             stroke-linecap="round"
           />
+        </g>
+
+        <!-- 3b. PATH TRACE: animated route between two bodies -->
+        <g v-if="traceSegments.length" class="trace-path pointer-events-none" aria-hidden="true">
+          <template v-for="seg in traceSegments" :key="`trace-${seg.key}`">
+            <line
+              :x1="posOf(seg.from).x"
+              :y1="posOf(seg.from).y"
+              :x2="posOf(seg.to).x"
+              :y2="posOf(seg.to).y"
+              :stroke="seg.interrupted ? 'var(--gl-danger)' : 'var(--gl-accent)'"
+              stroke-width="9"
+              stroke-opacity="0.22"
+              stroke-linecap="round"
+            />
+            <line
+              :x1="posOf(seg.from).x"
+              :y1="posOf(seg.from).y"
+              :x2="posOf(seg.to).x"
+              :y2="posOf(seg.to).y"
+              :stroke="seg.interrupted ? 'var(--gl-danger)' : 'var(--gl-accent)'"
+              stroke-width="3"
+              stroke-dasharray="10 8"
+              stroke-linecap="round"
+              class="trace-flow"
+            />
+          </template>
+          <g
+            v-for="(hop, i) in traceHops"
+            :key="`trace-hop-${hop.id}`"
+            :transform="`translate(${posOf(hop.id).x + 20}, ${posOf(hop.id).y - 24})`"
+          >
+            <circle r="9" fill="var(--gl-accent)" />
+            <text
+              y="3.5"
+              text-anchor="middle"
+              fill="var(--gl-sign-ink)"
+              class="font-mono text-[10px] font-bold"
+            >
+              {{ i + 1 }}
+            </text>
+          </g>
         </g>
 
         <!-- 4. CELESTIAL LIGHT NODES (Stars, Planets, Moons) -->
@@ -1366,7 +1487,7 @@ watch(
 
     <!-- Focus Card (view mode): details of the clicked body and quick actions -->
     <div
-      v-if="!editing && focusedInfo"
+      v-if="!editing && focusedInfo && traceFromId == null"
       class="absolute bottom-3 left-3 z-10 w-[min(22rem,calc(100%-4.5rem))] space-y-2.5 rounded-lg border border-line-strong bg-surface/95 p-3.5 shadow-pop backdrop-blur"
       role="dialog"
       :aria-label="deviceLabel(focusedInfo.body.device)"
@@ -1427,16 +1548,74 @@ watch(
         <Button size="sm" variant="secondary" @click="flyToBodies([focusedInfo.body.id])">
           Zentrieren
         </Button>
+        <Button size="sm" variant="secondary" @click="startTrace(focusedInfo.body.id)">
+          <Route aria-hidden="true" />Pfad verfolgen
+        </Button>
       </div>
     </div>
 
     <!-- Hint in view mode when nothing is focused -->
     <p
-      v-if="!editing && !focusedInfo && !searchQuery"
+      v-if="!editing && !focusedInfo && !searchQuery && traceFromId == null"
       class="pointer-events-none absolute bottom-3 left-3 z-10 hidden max-w-xs rounded-md border border-line bg-surface/90 px-2.5 py-1.5 text-[11px] text-fg-muted backdrop-blur sm:block"
     >
       Klick: fokussieren · Doppelklick: Details · Esc: zurück · Mausrad / Pinch: Zoom
     </p>
+
+    <!-- Path Trace Panel: pick destination, then show hops -->
+    <div
+      v-if="!editing && traceFromId != null"
+      class="absolute bottom-3 left-3 z-10 w-[min(24rem,calc(100%-4.5rem))] space-y-2.5 rounded-lg border border-accent bg-surface/95 p-3.5 shadow-pop backdrop-blur"
+      role="dialog"
+      aria-label="Pfad verfolgen"
+      @pointerdown.stop
+    >
+      <div class="flex items-center gap-2">
+        <Route class="size-4 shrink-0 text-accent-text" aria-hidden="true" />
+        <p class="min-w-0 flex-1 truncate text-sm font-semibold text-fg">
+          <template v-if="traceToId == null">Von {{ traceStartLabel }}: Ziel anklicken</template>
+          <template v-else-if="tracedPath">
+            {{ tracedPath.bodyIds.length - 1 }}
+            {{ tracedPath.bodyIds.length === 2 ? 'Hop' : 'Hops' }}
+          </template>
+          <template v-else>Kein Pfad gefunden</template>
+        </p>
+        <button
+          type="button"
+          class="-m-1 inline-flex size-7 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover"
+          :aria-label="t('common.close')"
+          @click="cancelTrace"
+        >
+          <X class="size-4" />
+        </button>
+      </div>
+
+      <p v-if="traceToId != null && !tracedPath" class="text-xs text-fg-muted">
+        Zwischen diesen Geräten gibt es keine verbundene Strecke. Verbinde sie im Bearbeiten-Modus
+        mit Lichtstrahlen.
+      </p>
+      <p v-if="tracedPath?.broken" class="text-xs font-medium text-danger-text">
+        Die Strecke führt über eine unterbrochene Verbindung (offline).
+      </p>
+
+      <ol v-if="traceHops.length" class="max-h-44 space-y-1 overflow-y-auto text-xs">
+        <li v-for="(hop, i) in traceHops" :key="hop.id" class="flex items-center gap-2">
+          <span
+            class="flex size-4 shrink-0 items-center justify-center rounded-full bg-accent font-mono text-[10px] font-bold text-sign-ink"
+          >
+            {{ i + 1 }}
+          </span>
+          <span class="min-w-0 flex-1 truncate text-fg">{{ hop.label }}</span>
+          <span
+            v-if="hop.linkType"
+            class="font-mono text-[10px]"
+            :class="hop.interrupted ? 'text-danger-text' : 'text-fg-subtle'"
+          >
+            {{ hop.linkType }}
+          </span>
+        </li>
+      </ol>
+    </div>
 
     <!-- Bottom-Right Zoom & Vitality Controls -->    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-surface shadow-pop">
       <button
@@ -1759,6 +1938,16 @@ watch(
   animation: beam-flow 2.2s linear infinite;
 }
 
+@keyframes trace-flow {
+  to {
+    stroke-dashoffset: -36;
+  }
+}
+
+.trace-flow {
+  animation: trace-flow 0.9s linear infinite;
+}
+
 .orbit-drop-ring {
   animation: drop-ring-spin 8s linear infinite;
   transform-box: fill-box;
@@ -1772,6 +1961,7 @@ watch(
   .planet-halo,
   .star-diffraction,
   .photon-pulse,
+  .trace-flow,
   .orbit-drop-ring {
     animation: none !important;
   }

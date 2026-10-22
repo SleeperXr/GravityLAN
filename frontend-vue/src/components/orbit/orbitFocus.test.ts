@@ -3,6 +3,7 @@ import {
   computeFocusSet,
   easeInOutCubic,
   fitTransform,
+  findPath,
   focusSetFromIds,
   matchBodies,
   zoomAround,
@@ -92,5 +93,37 @@ describe('easeInOutCubic', () => {
   it('is 0 at start, 1 at end', () => {
     expect(easeInOutCubic(0)).toBe(0);
     expect(easeInOutCubic(1)).toBe(1);
+  });
+});
+
+describe('findPath', () => {
+  const link = (id: number, sourceId: number, targetId: number, interrupted = false) =>
+    ({ id, sourceId, targetId, interrupted }) as LightBeam;
+
+  it('finds the shortest hop route in travel order', () => {
+    const path = findPath(3, 5, beams)!;
+    expect(path.bodyIds).toEqual([3, 2, 1, 5]);
+    expect(path.beamIds).toEqual([11, 10, 13]);
+    expect(path.broken).toBe(false);
+  });
+
+  it('returns a single node for identical endpoints', () => {
+    expect(findPath(2, 2, beams)).toEqual({ bodyIds: [2], beamIds: [], broken: false });
+  });
+
+  it('prefers a healthy detour over an interrupted shortcut', () => {
+    const graph = [link(1, 1, 2, true), link(2, 1, 3), link(3, 3, 2)];
+    const path = findPath(1, 2, graph)!;
+    expect(path.bodyIds).toEqual([1, 3, 2]);
+    expect(path.broken).toBe(false);
+  });
+
+  it('falls back to a broken route when no healthy one exists', () => {
+    const path = findPath(1, 2, [link(1, 1, 2, true)])!;
+    expect(path.broken).toBe(true);
+  });
+
+  it('returns null for disconnected bodies', () => {
+    expect(findPath(1, 99, beams)).toBeNull();
   });
 });
