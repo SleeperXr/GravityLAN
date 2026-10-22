@@ -128,6 +128,22 @@
       "jump": "Jump to newest",
       "copied": "{{count}} lines copied",
       "copy_failed": "Could not copy"
+    },
+    "racks": {
+      "new": "New rack",
+      "create": "Create rack",
+      "name": "Name",
+      "units": "Height units",
+      "width": "Width",
+      "delete": "Delete rack",
+      "delete_confirm": "Delete “{{name}}”? The {{count}} devices in it stay, but lose their rack position.",
+      "free": "{{count}} U free",
+      "open_hint": "Edit device (rack and position)",
+      "issues": "{{count}} device(s) do not fit the picture",
+      "issue_no_position": "no unit set",
+      "issue_outside": "reaches beyond the rack",
+      "issue_overlap": "overlaps another device",
+      "subtitle": "Where your devices physically sit. Set rack and position in the device editor – just click a device."
     }
   }
 }

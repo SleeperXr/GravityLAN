@@ -128,6 +128,22 @@
       "jump": "Zu den neuesten",
       "copied": "{{count}} Zeilen kopiert",
       "copy_failed": "Kopieren nicht möglich"
+    },
+    "racks": {
+      "new": "Neues Rack",
+      "create": "Rack anlegen",
+      "name": "Name",
+      "units": "Höheneinheiten",
+      "width": "Breite",
+      "delete": "Rack löschen",
+      "delete_confirm": "„{{name}}“ löschen? {{count}} Geräte darin bleiben erhalten, verlieren aber ihre Rack-Position.",
+      "free": "{{count}} HE frei",
+      "open_hint": "Gerät bearbeiten (Rack und Position)",
+      "issues": "{{count}} Gerät(e) passen nicht ins Bild",
+      "issue_no_position": "keine Höheneinheit gesetzt",
+      "issue_outside": "ragt über das Rack hinaus",
+      "issue_overlap": "überschneidet sich mit einem anderen Gerät",
+      "subtitle": "Wo deine Geräte physisch stecken. Rack und Position legst du im Geräte-Editor fest – ein Klick aufs Gerät genügt."
     }
   }
 }
