@@ -1,0 +1,97 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+import { ArrowRight, CheckCircle2 } from 'lucide-vue-next';
+import type { Device } from '@/types';
+import LineBullet from '@/components/common/LineBullet.vue';
+import RelativeTime from '@/components/common/RelativeTime.vue';
+import { isAgentOutdated } from '@/lib/agent';
+import { deviceLabel, networkColor } from '@/lib/networks';
+import { t } from '@/i18n';
+
+/**
+ * Service notices: everything that needs the operator, most urgent first. Dropped stops
+ * (offline devices watched 24/7), new agent keys, services down, IP changes, agent updates.
+ */
+const props = defineProps<{ devices: Device[] }>();
+const emit = defineEmits<{ openDevice: [device: Device]; openUpdates: [] }>();
+
+interface Notice {
+  key: string;
+  rank: number;
+  device?: Device;
+  tone: 'danger' | 'warn' | 'info';
+  title: string;
+  detail: string;
+  since?: string | null;
+  action?: 'device' | 'updates';
+}
+
+const notices = computed<Notice[]>(() => {
+  const list: Notice[] = [];
+  for (const d of props.devices) {
+    const name = deviceLabel(d);
+    if (!d.is_online && d.alert_offline !== false) {
+      list.push({ key: `off-${d.id}`, rank: 0, device: d, tone: 'danger', title: t('gv.notices.dropped', { name }), detail: d.ip, since: d.status_changed_at, action: 'device' });
+    }
+    if (d.has_pending_token) {
+      list.push({ key: `key-${d.id}`, rank: 1, device: d, tone: 'danger', title: t('gv.notices.new_key', { name }), detail: t('dashboard.security_alert'), action: 'device' });
+    }
+    const down = d.is_online ? d.services.filter((s) => !s.is_up) : [];
+    if (down.length) {
+      list.push({ key: `svc-${d.id}`, rank: 2, device: d, tone: 'warn', title: t('gv.notices.services_down', { name, count: down.length }), detail: down.map((s) => `${s.name} :${s.port}`).join(', '), action: 'device' });
+    }
+    if (d.old_ip) {
+      list.push({ key: `ip-${d.id}`, rank: 3, device: d, tone: 'info', title: t('gv.notices.ip_changed', { name }), detail: `${d.old_ip} → ${d.ip}`, since: d.ip_changed_at, action: 'device' });
+    }
+  }
+  const outdated = props.devices.filter((d) => d.has_agent && isAgentOutdated(d.agent_info?.agent_version, d.agent_info?.latest_version));
+  if (outdated.length) {
+    const target = outdated[0].agent_info?.latest_version;
+    list.push({ key: 'updates', rank: 4, tone: 'info', title: t('gv.notices.updates', { count: outdated.length }), detail: target ? `→ v${target}` : '', action: 'updates' });
+  }
+  return list.sort((a, b) => a.rank - b.rank);
+});
+
+const toneDot = { danger: 'border-danger', warn: 'border-warn', info: 'border-info' };
+
+function open(n: Notice) {
+  if (n.action === 'updates') emit('openUpdates');
+  else if (n.device) emit('openDevice', n.device);
+}
+</script>
+
+<template>
+  <section class="gl-card flex min-h-0 flex-col" aria-labelledby="notices-title">
+    <header class="flex items-baseline justify-between border-b border-line px-4 py-3">
+      <h2 id="notices-title" class="text-sm font-bold text-fg">{{ t('gv.notices.title') }}</h2>
+      <span class="font-mono text-xs text-fg-subtle tabular">{{ notices.length }}</span>
+    </header>
+    <div v-if="notices.length === 0" class="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+      <CheckCircle2 class="size-6 text-accent-text" aria-hidden="true" />
+      <p class="text-sm font-semibold text-fg">{{ t('gv.notices.all_clear') }}</p>
+      <p class="text-xs text-fg-subtle">{{ t('gv.notices.all_clear_hint') }}</p>
+    </div>
+    <ul v-else class="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
+      <li v-for="n in notices" :key="n.key">
+        <button type="button" class="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-raised" @click="open(n)">
+          <LineBullet
+            v-if="n.device"
+            :color="networkColor(n.device.subnet_id, n.device.ip)"
+            :label="(deviceLabel(n.device)[0] ?? '·').toUpperCase()"
+            size="sm"
+            class="mt-0.5"
+          />
+          <span v-else class="mt-1 size-3.5 shrink-0 rounded-full border-[3px]" :class="toneDot[n.tone]" aria-hidden="true" />
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm leading-5 font-bold" :class="n.tone === 'danger' ? 'text-danger-text' : n.tone === 'warn' ? 'text-warn-text' : 'text-fg'">
+              {{ n.title }}
+            </span>
+            <span class="mt-0.5 block truncate font-mono text-[11px] text-fg-subtle">{{ n.detail }}</span>
+            <span v-if="n.since" class="mt-0.5 block text-[11px] text-fg-subtle"><RelativeTime :date="n.since" /></span>
+          </span>
+          <ArrowRight class="mt-1 size-4 shrink-0 text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+        </button>
+      </li>
+    </ul>
+  </section>
+</template>

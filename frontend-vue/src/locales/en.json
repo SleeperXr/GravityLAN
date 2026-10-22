@@ -72,7 +72,29 @@
       "dropped": "Stop dropped",
       "zoom_in": "Zoom in",
       "zoom_out": "Zoom out",
-      "fit": "Show whole map"
+      "fit": "Show whole map",
+      "live": "{{online}} of {{total}} stations running · live"
+    },
+    "lines": {
+      "title": "Service status",
+      "normal": "Good service",
+      "paused": "Paused, not scanned",
+      "dropped_one": "Disruption: {{count}} stop dropped",
+      "dropped_other": "Disruption: {{count}} stops dropped",
+      "degraded_one": "{{count}} station with a service down",
+      "degraded_other": "{{count}} stations with services down"
+    },
+    "notices": {
+      "title": "Service notices",
+      "all_clear": "All on schedule",
+      "all_clear_hint": "No disruptions, no pending updates.",
+      "dropped": "{{name}}: stop dropped",
+      "new_key": "{{name}}: new agent key",
+      "services_down_one": "{{name}}: {{count}} service down",
+      "services_down_other": "{{name}}: {{count}} services down",
+      "ip_changed": "{{name}}: new IP address",
+      "updates_one": "{{count}} agent update ready",
+      "updates_other": "{{count}} agent updates ready"
     }
   }
 }

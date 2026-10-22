@@ -22,6 +22,9 @@ import NotificationCenter from '@/components/dashboard/NotificationCenter.vue';
 import ScanDialog from '@/components/dashboard/ScanDialog.vue';
 import AgentUpdateCenter from '@/components/dashboard/AgentUpdateCenter.vue';
 import DeviceEditor from '@/components/editor/DeviceEditor.vue';
+import LineStatusBoard from '@/components/dashboard/LineStatusBoard.vue';
+import ServiceNotices from '@/components/dashboard/ServiceNotices.vue';
+import NetzPlan from '@/components/netzplan/NetzPlan.vue';
 import type { EditorTab } from '@shared/components/Dashboard/editor/deviceForm';
 import { t } from '@/i18n';
 
@@ -41,6 +44,8 @@ const refreshingAll = ref(false);
 const updateCenterOpen = ref(false);
 const query = ref('');
 const statusFilter = ref<'all' | 'online' | 'offline'>('all');
+/** Network line chosen on the status board; the overview then shows only that network. */
+const lineFilter = ref<number | null>(null);
 
 const editorDevice = ref<Device | null>(null);
 const editorTab = ref<EditorTab>('settings');
@@ -62,8 +67,7 @@ if (!store.loaded) void store.loadData();
 const outdatedAgents = computed(
   () => store.devices.filter((d) => d.has_agent && isAgentOutdated(d.agent_info?.agent_version, d.agent_info?.latest_version)).length,
 );
-const servicesDown = computed(() => store.devices.reduce((sum, d) => sum + (d.is_online ? d.services.filter((s) => !s.is_up).length : 0), 0));
-const filtering = computed(() => !editMode.value && (query.value.trim() !== '' || statusFilter.value !== 'all'));
+const filtering = computed(() => !editMode.value && (query.value.trim() !== '' || statusFilter.value !== 'all' || lineFilter.value !== null));
 
 const filteredDevices = computed(() => {
   if (!filtering.value) return store.devices;
@@ -71,6 +75,7 @@ const filteredDevices = computed(() => {
   return store.devices.filter((d) => {
     if (statusFilter.value === 'online' && !d.is_online) return false;
     if (statusFilter.value === 'offline' && d.is_online) return false;
+    if (lineFilter.value !== null && d.subnet_id !== lineFilter.value && !d.interfaces?.some((i) => i.subnet_id === lineFilter.value)) return false;
     if (words.length === 0) return true;
     const hay = [deviceLabel(d), d.hostname, d.ip, d.mac, d.vendor, d.notes, d.parent_name, ...(d.interfaces ?? []).map((i) => i.ip), ...d.services.map((s) => `${s.name} ${s.port}`)]
       .filter(Boolean)
@@ -200,6 +205,7 @@ async function moveTile(id: number, groupId: number | null, layout: { x?: number
 function clearFilters() {
   query.value = '';
   statusFilter.value = 'all';
+  lineFilter.value = null;
 }
 </script>
 
@@ -249,48 +255,23 @@ function clearFilters() {
       </template>
     </PageHeader>
 
-    <!-- Fleet summary: status at a glance, each tile filters the overview -->
-    <div v-if="store.loaded && store.totalCount > 0 && !editMode" class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <button
-        type="button"
-        class="gl-card p-4 text-left transition-colors hover:border-line-strong"
-        :class="statusFilter === 'online' && 'border-accent/50'"
-        :aria-pressed="statusFilter === 'online'"
-        @click="statusFilter = statusFilter === 'online' ? 'all' : 'online'"
-      >
-        <p class="gl-eyebrow">{{ t('network.online') }}</p>
-        <p class="mt-1.5 flex items-baseline gap-1.5">
-          <span class="font-mono text-2xl font-semibold text-fg tabular">{{ store.onlineCount }}</span>
-          <span class="font-mono text-sm text-fg-subtle">/ {{ store.totalCount }}</span>
-        </p>
-        <div class="mt-3 flex h-1.5 overflow-hidden rounded-full bg-sunken" aria-hidden="true">
-          <div class="bg-accent transition-[width] duration-500" :style="{ width: `${(store.onlineCount / Math.max(store.totalCount, 1)) * 100}%` }" />
+    <!-- Status board and the live network map with service notices -->
+    <template v-if="store.loaded && store.totalCount > 0 && !editMode">
+      <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
+      <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div class="gl-card relative h-[22rem] overflow-hidden md:h-[30rem]">
+          <div class="pointer-events-none absolute top-3 left-4 z-10">
+            <p class="text-sm font-bold text-fg">{{ t('gv.plan.title') }}</p>
+            <p class="text-xs text-fg-subtle">{{ t('gv.plan.live', { online: store.onlineCount, total: store.totalCount }) }}</p>
+          </div>
+          <NetzPlan flow-id="dashboard-plan" @open-device="(d) => openEditor(d)" />
+          <RouterLink to="/topology" class="absolute top-3 right-3 z-10 inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg shadow-pop hover:border-line-strong">
+            <Pencil class="size-3.5" aria-hidden="true" />{{ t('gv.plan.edit') }}
+          </RouterLink>
         </div>
-      </button>
-      <button
-        type="button"
-        class="gl-card p-4 text-left transition-colors hover:border-line-strong"
-        :class="statusFilter === 'offline' && 'border-danger/50'"
-        :aria-pressed="statusFilter === 'offline'"
-        @click="statusFilter = statusFilter === 'offline' ? 'all' : 'offline'"
-      >
-        <p class="gl-eyebrow">{{ t('network.offline_devices') }}</p>
-        <p class="mt-1.5 font-mono text-2xl font-semibold tabular" :class="store.offlineCount > 0 ? 'text-danger-text' : 'text-fg'">{{ store.offlineCount }}</p>
-        <p class="mt-2 text-xs text-fg-subtle">{{ store.offlineCount > 0 ? t('network.show') : '—' }}</p>
-      </button>
-      <div class="gl-card p-4">
-        <p class="gl-eyebrow">{{ t('sidebar.agents') }}</p>
-        <p class="mt-1.5 font-mono text-2xl font-semibold text-fg tabular">{{ store.agentCount }}</p>
-        <p class="mt-2 text-xs" :class="outdatedAgents > 0 ? 'text-warn-text' : 'text-fg-subtle'">
-          {{ outdatedAgents > 0 ? `${outdatedAgents} ${t('dashboard.agent_updates')}` : t('agent.all_up_to_date') }}
-        </p>
+        <ServiceNotices class="max-h-[30rem]" :devices="store.devices" @open-device="(d) => openEditor(d)" @open-updates="updateCenterOpen = true" />
       </div>
-      <div class="gl-card p-4">
-        <p class="gl-eyebrow">{{ t('gv.dashboard.services_down') }}</p>
-        <p class="mt-1.5 font-mono text-2xl font-semibold tabular" :class="servicesDown > 0 ? 'text-warn-text' : 'text-fg'">{{ servicesDown }}</p>
-        <p class="mt-2 text-xs text-fg-subtle">{{ t('gv.dashboard.services_down_hint') }}</p>
-      </div>
-    </div>
+    </template>
 
     <!-- Filter -->
     <div v-if="store.loaded && store.totalCount > 0 && !editMode" class="flex flex-wrap items-center gap-2">
