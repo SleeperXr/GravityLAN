@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useMediaQuery, useStorage } from '@vueuse/core';
 import { Check, LayoutGrid, List, Pencil, Radar, RefreshCw, RotateCcw, Search, Server, Trash2, X } from 'lucide-vue-next';
 import { api } from '@/api/client';
@@ -24,7 +24,7 @@ import AgentUpdateCenter from '@/components/dashboard/AgentUpdateCenter.vue';
 import DeviceEditor from '@/components/editor/DeviceEditor.vue';
 import LineStatusBoard from '@/components/dashboard/LineStatusBoard.vue';
 import ServiceNotices from '@/components/dashboard/ServiceNotices.vue';
-import NetzPlan from '@/components/netzplan/NetzPlan.vue';
+import OrbitMap from '@/components/orbit/OrbitMap.vue';
 import type { EditorTab } from '@shared/components/Dashboard/editor/deviceForm';
 import { t } from '@/i18n';
 
@@ -43,13 +43,24 @@ const selectedIds = ref(new Set<number>());
 const refreshingAll = ref(false);
 const updateCenterOpen = ref(false);
 const query = ref('');
+const searchInputRef = ref<HTMLInputElement | null>(null);
 const statusFilter = ref<'all' | 'online' | 'offline'>('all');
-/** Network line chosen on the status board; the overview then shows only that network. */
+/** Network orbit chosen on the status board; the overview then shows only that network. */
 const lineFilter = ref<number | null>(null);
 
 const editorDevice = ref<Device | null>(null);
 const editorTab = ref<EditorTab>('settings');
 const editorOpen = ref(false);
+
+function onGlobalKeyDown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    searchInputRef.value?.focus();
+    searchInputRef.value?.select();
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onGlobalKeyDown));
 
 // Keep the overview current outside edit mode: every 10 s during a scan, 30 s otherwise.
 let timer: number | undefined;
@@ -61,7 +72,10 @@ watch(
   },
   { immediate: true },
 );
-onBeforeUnmount(() => window.clearInterval(timer));
+onBeforeUnmount(() => {
+  window.clearInterval(timer);
+  window.removeEventListener('keydown', onGlobalKeyDown);
+});
 if (!store.loaded) void store.loadData();
 
 const outdatedAgents = computed(
@@ -213,6 +227,20 @@ function clearFilters() {
   <div class="mx-auto max-w-[1800px] space-y-6 px-4 py-5 md:px-8 md:py-7">
     <PageHeader :title="t('sidebar.dashboard')" :description="t('dashboard.devices_sections', { devices: store.totalCount, groups: store.groups.length })">
       <template v-if="!editMode">
+        <label v-if="store.totalCount > 0" class="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
+          <span class="sr-only">{{ t('gv.dashboard.search') }}</span>
+          <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
+          <input
+            ref="searchInputRef"
+            v-model="query"
+            type="search"
+            :placeholder="t('gv.dashboard.search')"
+            class="h-9 w-full rounded-md border border-line bg-sunken pr-14 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none"
+          />
+          <kbd class="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle sm:inline">
+            Ctrl K
+          </kbd>
+        </label>
         <div v-if="!isMobile" class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('dashboard.view_mode')">
           <button
             v-for="mode in [{ id: 'grid', icon: LayoutGrid, label: t('dashboard.view_grid') }, { id: 'list', icon: List, label: t('dashboard.view_list') }] as const"
@@ -255,7 +283,7 @@ function clearFilters() {
       </template>
     </PageHeader>
 
-    <!-- Status board and the live network map with service notices -->
+    <!-- Status board and the live gravitational orbit map with system notices -->
     <template v-if="store.loaded && store.totalCount > 0 && !editMode">
       <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
       <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -264,7 +292,7 @@ function clearFilters() {
             <p class="text-sm font-bold text-fg">{{ t('gv.plan.title') }}</p>
             <p class="text-xs text-fg-subtle">{{ t('gv.plan.live', { online: store.onlineCount, total: store.totalCount }) }}</p>
           </div>
-          <NetzPlan flow-id="dashboard-plan" @open-device="(d) => openEditor(d)" />
+          <OrbitMap flow-id="dashboard-plan" @open-device="(d) => openEditor(d)" />
           <RouterLink to="/topology" class="absolute top-3 right-3 z-10 inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg shadow-pop hover:border-line-strong">
             <Pencil class="size-3.5" aria-hidden="true" />{{ t('gv.plan.edit') }}
           </RouterLink>
@@ -273,22 +301,12 @@ function clearFilters() {
       </div>
     </template>
 
-    <!-- Filter -->
-    <div v-if="store.loaded && store.totalCount > 0 && !editMode" class="flex flex-wrap items-center gap-2">
-      <label class="relative min-w-0 flex-1 sm:max-w-sm">
-        <span class="sr-only">{{ t('gv.dashboard.search') }}</span>
-        <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input
-          v-model="query"
-          type="search"
-          :placeholder="t('gv.dashboard.search')"
-          class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none"
-        />
-      </label>
-      <Button v-if="filtering" variant="ghost" size="sm" @click="clearFilters">
+    <!-- Active Filter Bar -->
+    <div v-if="filtering" class="flex flex-wrap items-center gap-2">
+      <span class="text-xs text-fg-subtle" role="status">{{ t('gv.dashboard.matches', { count: filteredDevices.length, total: store.totalCount }) }}</span>
+      <Button variant="ghost" size="sm" @click="clearFilters">
         <X aria-hidden="true" />{{ t('gv.dashboard.clear_filter') }}
       </Button>
-      <span v-if="filtering" class="text-xs text-fg-subtle" role="status">{{ t('gv.dashboard.matches', { count: filteredDevices.length, total: store.totalCount }) }}</span>
     </div>
 
     <!-- States -->

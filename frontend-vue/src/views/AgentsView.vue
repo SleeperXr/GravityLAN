@@ -84,33 +84,34 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
       </Button>
     </PageHeader>
 
-    <section class="gl-card grid grid-cols-2 divide-line overflow-hidden md:grid-cols-4 md:divide-x" :aria-label="t('agents_page.title')">
-      <div class="border-b border-line p-4 md:border-b-0">
-        <p class="gl-eyebrow">{{ t('agents_page.nodes') }}</p>
-        <p class="mt-1 font-mono text-3xl font-semibold text-fg tabular">{{ data?.total_agents ?? 0 }}</p>
-        <p class="mt-1 text-xs text-accent-text">{{ t('agents_page.active', { count: data?.active_agents ?? 0 }) }}</p>
-      </div>
-      <div class="border-b border-line p-4 md:border-b-0">
-        <p class="gl-eyebrow">{{ t('agents_page.avg_cpu') }}</p>
-        <p class="mt-1 font-mono text-3xl font-semibold tabular" :class="(data?.avg_cpu ?? 0) >= 80 ? 'text-warn-text' : 'text-fg'">{{ (data?.avg_cpu ?? 0).toFixed(1) }}<span class="text-base text-fg-subtle"> %</span></p>
-      </div>
-      <div class="p-4">
-        <p class="gl-eyebrow">{{ t('agents_page.avg_ram') }}</p>
-        <p class="mt-1 font-mono text-3xl font-semibold text-fg tabular">{{ (data?.avg_ram ?? 0).toFixed(1) }}<span class="text-base text-fg-subtle"> %</span></p>
-      </div>
-      <div class="p-4">
-        <p class="gl-eyebrow">{{ t('agents_page.snapshots') }}</p>
-        <p class="mt-1 font-mono text-3xl font-semibold text-fg tabular">{{ formatNumber(data?.total_data_points ?? 0) }}</p>
-        <p class="mt-1 text-xs text-fg-subtle">{{ t('agents_page.snapshots_note') }}</p>
-      </div>
-    </section>
-
-    <div class="flex flex-wrap items-center gap-2">
+    <div class="flex flex-wrap items-center gap-3">
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('agents_page.search_placeholder') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
         <input v-model="search" type="search" :placeholder="t('agents_page.search_placeholder')" class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-accent focus:outline-none" />
       </label>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-line bg-surface px-3.5 py-2 text-xs" :aria-label="t('agents_page.title')">
+        <span class="flex items-baseline gap-1.5">
+          <span class="text-fg-subtle">{{ t('agents_page.nodes') }}:</span>
+          <span class="font-mono font-semibold text-accent-text tabular">{{ data?.active_agents ?? 0 }}</span>
+          <span class="font-mono text-fg-subtle">/ {{ data?.total_agents ?? 0 }}</span>
+        </span>
+        <span class="h-3.5 w-px bg-line" aria-hidden="true" />
+        <span class="flex items-baseline gap-1.5">
+          <span class="text-fg-subtle">{{ t('agents_page.avg_cpu') }}:</span>
+          <span class="font-mono font-semibold tabular" :class="(data?.avg_cpu ?? 0) >= 80 ? 'text-warn-text' : 'text-fg'">{{ (data?.avg_cpu ?? 0).toFixed(1) }}%</span>
+        </span>
+        <span class="h-3.5 w-px bg-line" aria-hidden="true" />
+        <span class="flex items-baseline gap-1.5">
+          <span class="text-fg-subtle">{{ t('agents_page.avg_ram') }}:</span>
+          <span class="font-mono font-semibold text-fg tabular">{{ (data?.avg_ram ?? 0).toFixed(1) }}%</span>
+        </span>
+        <span class="hidden h-3.5 w-px bg-line sm:inline-block" aria-hidden="true" />
+        <span class="hidden items-baseline gap-1.5 sm:flex">
+          <span class="text-fg-subtle">{{ t('agents_page.snapshots') }}:</span>
+          <span class="font-mono font-semibold text-fg tabular">{{ formatNumber(data?.total_data_points ?? 0) }}</span>
+        </span>
+      </div>
       <Button class="ml-auto" @click="showGlobal = true"><Activity aria-hidden="true" />{{ t('agents_page.global_analytics') }}</Button>
     </div>
 

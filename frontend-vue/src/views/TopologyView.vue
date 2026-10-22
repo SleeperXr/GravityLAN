@@ -5,12 +5,12 @@ import { Network, Server } from 'lucide-vue-next';
 import type { Device } from '@/types';
 import { useNetworkStore } from '@/stores/network';
 import PageHeader from '@/components/ui/PageHeader.vue';
-import NetzPlan from '@/components/netzplan/NetzPlan.vue';
+import OrbitMap from '@/components/orbit/OrbitMap.vue';
 import RackView from '@/components/racks/RackView.vue';
 import DeviceEditor from '@/components/editor/DeviceEditor.vue';
 import { t } from '@/i18n';
 
-/** Topology: the editable network map, or the racks (same records as the React topology). */
+/** Topology: the editable gravitational orbit map, or the racks (same records as the React topology). */
 const store = useNetworkStore();
 const route = useRoute();
 const router = useRouter();
@@ -55,7 +55,7 @@ const views = [
       </div>
     </PageHeader>
     <div class="gl-card min-h-[28rem] flex-1 overflow-hidden">
-      <NetzPlan v-if="view === 'map'" editable flow-id="topology" @open-device="openDevice" />
+      <OrbitMap v-if="view === 'map'" editable flow-id="topology" @open-device="openDevice" />
       <RackView v-else :devices="store.devices" @open-device="openDevice" @changed="store.loadData(true)" />
     </div>
     <DeviceEditor v-if="editorDevice" v-model:open="editorOpen" :device="editorDevice" @saved="store.loadData(true)" @after-leave="editorDevice = null" />

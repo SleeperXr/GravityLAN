@@ -1,8 +1,8 @@
 ---
 name: GravityUI
-description: Das Heimnetz als Liniennetzplan – Subnetze sind farbige Linien, Geräte sind Stationen.
+description: Das Heimnetz als Gravitationssystem – Router als Stern, Switches & APs als Planeten, Geräte als Monde auf konzentrischen Orbits, verbunden durch Light-Beams.
 colors:
-  # Nachtnetz (dunkel, Standard)
+  # Nachtmodus (dunkel, Standard)
   canvas: "#0c0f14"
   chrome: "#090b0f"
   surface: "#11151c"
@@ -39,7 +39,7 @@ colors:
   line-8: "#e0a370"
   line-9: "#c3cad4"
   line-10: "#f2856d"
-  # Weißer Tagesplan (hell)
+  # Tagmodus (hell)
   canvas-day: "#f4f5f7"
   chrome-day: "#ffffff"
   surface-day: "#ffffff"
@@ -127,7 +127,7 @@ typography:
     lineHeight: 1
     letterSpacing: "-0.01em"
     fontFeature: "'tnum'"
-  station-name:
+  body-name:
     fontFamily: "Hanken Grotesk Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "13px"
     fontWeight: 700
@@ -200,10 +200,10 @@ components:
     typography: "{typography.line-sign}"
     height: "28px"
     padding: "0 6px"
-  station:
+  orbit-body:
     backgroundColor: "{colors.station}"
     rounded: "{rounded.full}"
-    size: "18px"
+    size: "22px"
   nav-item-active:
     backgroundColor: "{colors.raised}"
     textColor: "{colors.fg}"
@@ -217,72 +217,75 @@ components:
 
 # Design System: GravityUI
 
-GravityUI (`frontend-vue/`) ist die optionale zweite Oberfläche von GravityLAN unter `/frontend-vue/`, neben der unveränderten React-Ansicht (Standard unter `/`). Beide sprechen dasselbe Backend an, teilen den API-Client über den Alias `@shared` und die Texte (i18next aus `frontend/src/locales`; eigene Schlüssel nur unter `gv.*`). Dieses Dokument beschreibt den ausgelieferten Stand (Richtung „Liniennetzplan“, Seed `818d609b`), nicht die Planung. Es ersetzt die frühere Fassung im Antigravity-Look vollständig.
+GravityUI (`frontend-vue/`) ist die optionale zweite Oberfläche von GravityLAN unter `/frontend-vue/`, neben der unveränderten React-Ansicht (Standard unter `/`). Beide sprechen dasselbe Backend an, teilen den API-Client über den Alias `@shared` und die Texte (i18next aus `frontend/src/locales`; eigene Schlüssel nur unter `gv.*`). Dieses Dokument beschreibt das Designsystem in der Richtung **„Gravitation / Orbit“** und ersetzt die frühere Liniennetzplan-Fassung.
 
 ## Overview
 
-**Creative North Star: „Der Liniennetzplan“**
+**Creative North Star: „Das Gravitationssystem (Orbit)“**
 
-Das Heimnetz wird gelesen wie ein Verkehrsplan, den der Betreiber selbst zeichnet. Jedes Subnetz bzw. VLAN ist eine farbige Linie mit eigenem rundem Linienschild („30“, „H“), Geräte sind Stationen mit Ring, Router und mehrfach angebundene Geräte sind Umsteigestationen. Dieselbe Linienfarbe trägt ein Netz überall: auf dem Netzplan, im Linienschild, im Statusboard, in den Betriebsmeldungen, auf belegten IP-Kacheln, in Rack-Einschüben und in der Subnetz-Auswahl. Auch die Navigation ist eine Strecke: jede Seite hat ihre eigene Linienfarbe, die aktuelle Station ist gefüllt.
+Passend zum Namen GravityLAN wird das Heimnetz als gravitatives Sonnensystem gelesen und frei gestaltet:
+- **Stern:** Der Router bzw. das Gateway steht im Zentrum (`gatewayIds` aus `api.getGateways()`).
+- **Planeten:** Switches, Access Points und Hypervisor-Hosts kreisen um den Stern und sind über gerichtete **Light-Beams** (leuchtende Energieverbindungen mit animiertem Puls) verbunden.
+- **Monde:** Kabelgeräte laufen auf **durchgezogenen** konzentrischen Bahnen um ihren Switch/Planeten; WLAN-Geräte auf **gestrichelten** Bahnen um ihren Access Point; VMs und Container (`parent_id`) kreisen als Monde um ihren Host.
+- **Zustand doppelt kodiert:** Ausgefallene Himmelskörper verlieren ihre geschlossene Umlaufbahn (unterbrochener Orbit-Ring, rot umrandet, durchgestrichen und Text-Badge „Offline“); gestörte Dienste zeigen einen Bernstein-Ring plus `!`-Indikator.
+- **Netz-Identität:** Jedes Subnetz bzw. VLAN hat genau eine Farbe (`networkColor()`, überschreibbar über `ui.line_colors`). Sie trägt den Atmosphärenring des Objekts, die Orbit-Bahn, das runde Netz-Schild (`LineBullet`), das Statusboard, die Betriebsmeldungen, IP-Kacheln und Rack-Einschübe.
 
-Der Standard ist das Nachtnetz: ein tiefblauschwarzer Grund mit flachen Flächen, Haarlinien statt Schatten, hellen Linien und weißen Stationsringen. Das helle Thema ist der weiße Tagesplan mit derselben Linienlogik und eigens abgedunkelten Palettenwerten. Die Oberfläche ist ein Werkzeug für den täglichen Blick: dicht, ruhig, Zahlen und Adressen in Mono, Störungen vorne. Zustand wird nie nur über Farbe getragen: ausgefallene Stationen sind rot umrandet und durchgestrichen („Halt entfällt“), Strecken zu ihnen werden gepunktet („Störung“), Meldungen haben immer einen Text.
-
-Die Richtung lehnt das KPI-Kacheln-plus-Tabelle-Admin-Dashboard ab. Health und Agents tragen diesen Aufbau noch (siehe „Offene Punkte“); er ist kein Vorbild für neue Seiten.
+Der Standard ist der dunkle Nachtmodus (`canvas` `#0c0f14`), das helle Thema (`#f4f5f7`) arbeitet mit derselben Farblogik und eigens abgedunkelten Palettenwerten, sodass alle Texte in beiden Themen mindestens 4,5:1 Kontrast erreichen. Keine Seite nutzt generische KPI-Kachelreihen: Health und Agents fassen ihre Kennzahlen in einer kompakten Statusleiste direkt über der Tabelle zusammen.
 
 **Key Characteristics:**
-- Eine Farbe pro Netz, überall identisch, vom Nutzer umfärbbar (Einstellung `ui.line_colors`).
-- Runde Linienschilder mit dunkler Schildtinte; Stationen als Ringe; oktilineare 45°-Strecken mit runden Enden.
-- Nachtnetz als Standard, weißer Tagesplan als helles Thema; alle Texte erreichen in beiden Themen 4,5:1.
-- Flach: Karten mit Haarlinie, Schatten nur für schwebende Ebenen.
+- Gravitationshierarchie: Stern (Gateway) → Planeten (Switch, AP, Host) → Monde (Clients, WLAN, VMs/Container).
+- Konzentrische Orbit-Ringe (durchgezogen = Kabel/VM, gestrichelt = WLAN, unterbrochen = Offline) und Light-Beams zwischen Stern und Planeten.
+- Manuell steuerbare Lebendigkeit (`vitalityMode: 'off' | 'subtle' | 'lively'`, gespeichert unter `gravityui.orbit.vitality`, respektiert `prefers-reduced-motion`).
+- Nachtmodus als Standard, helles Thema gleichwertig mit ≥ 4,5:1 Kontrast.
 - Hanken Grotesk für die Oberfläche, JetBrains Mono für IPs, MACs, Ports, Latenzen und Zähler.
 
 ## Colors
 
-Ein neutraler, leicht blaustichiger Grund trägt eine Palette aus zehn klaren Linienfarben; dazu ein einziger Handlungsakzent (Türkis) und drei Zustandsfarben.
+Ein neutraler, leicht blaustichiger Grund trägt eine Palette aus zehn klaren Netzfarben; dazu ein einziger Handlungsakzent (Türkis) und drei Zustandsfarben.
 
 Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden über `@theme` auf Tailwind-Klassen abgebildet (`bg-canvas`, `bg-chrome`, `bg-surface`, `bg-raised`, `bg-sunken`, `bg-control`, `border-line`, `border-line-strong`, `text-fg`, `text-fg-muted`, `text-fg-subtle`, `bg-station`, `bg-accent`/`text-accent-text`, `info`, `warn`, `danger` jeweils mit `*-text`). Komponenten verwenden nur diese semantischen Namen. Das Thema hängt an `data-theme` auf `<html>`; ein Skript in `index.html` setzt es vor dem ersten Paint (Standard dunkel), `useTheme.ts` schaltet zwischen dunkel, hell und System um und speichert unter `gravityui.theme`.
 
 ### Primary
-- **Signaltürkis** (`accent`, dunkel #2ec4a6 / hell #087a65): primäre Aktion (Scan, Fertig), Fokusring (2 px, Abstand 2 px), Textcursor, aktive Tab-Unterstreichung, aktive Statusboard-Zeile, „gesund/online“-Punkte, Verbindungslinie beim Zeichnen im Netzplan. Text in Akzentfarbe nutzt immer `accent-text`; Text auf gefülltem Akzent `accent-fg`.
+- **Signaltürkis** (`accent`, dunkel `#2ec4a6` / hell `#087a65`): primäre Aktion (Scan, Fertig), Fokusring (2 px, Abstand 2 px), Textcursor, aktive Tab-Unterstreichung, aktive Statusboard-Zeile, „gesund/online“-Punkte, Light-Beam beim Ziehen einer neuen Verbindung im Orbit-Netzplan. Text in Akzentfarbe nutzt immer `accent-text`; Text auf gefülltem Akzent `accent-fg`.
 
 ### Secondary
-- **Linienpalette** (`--line-1` bis `--line-10`, je Thema eigener Satz): Identität der Netze und der Seiten. Ohne Nutzerwahl bekommt ein Subnetz den Slot `((id − 1) mod 10) + 1`; ohne Subnetz wird der Slot aus dem /24-Präfix gehasht (`networkColor` in `src/lib/networks.ts`). Die Nutzerwahl (Hex, pro Subnetz) hat Vorrang und gilt in beiden Themen. Die helle Palette ist dunkler gestimmt, damit Linien auf Weiß tragen.
+- **Netzpalette** (`--line-1` bis `--line-10`, je Thema eigener Satz): Identität der Subnetze/Orbits und der Seiten. Ohne Nutzerwahl bekommt ein Subnetz den Slot `((id − 1) mod 10) + 1`; ohne Subnetz wird der Slot aus dem `/24`-Präfix gehasht (`networkColor` in `src/lib/networks.ts`). Die Nutzerwahl (Hex, pro Subnetz) hat Vorrang und gilt in beiden Themen. Die helle Palette ist dunkler gestimmt, damit Ringe und Light-Beams auf Weiß tragen.
 
 ### Tertiary
-- **Zustandsfarben**: Info-Blau (`info`) für Eingabefokus und Hinweise, Bernstein (`warn`) für gestörte Dienste und blinkende Stationsringe, Signalrot (`danger`) für ausgefallene Stationen, Fehler und destruktive Aktionen. Flächen davon nur als Tönung (`/10`, Rand `/25`–`/30`), Text immer in der `*-text`-Variante.
+- **Zustandsfarben**: Info-Blau (`info`) für Eingabefokus und Hinweise, Bernstein (`warn`) für gestörte Dienste, Signalrot (`danger`) für ausgefallene Geräte, Fehler und destruktive Aktionen. Flächen davon nur als Tönung (`/10`, Rand `/25`–`/30`), Text immer in der `*-text`-Variante.
 
 ### Neutral
-- **Nachtgrund** (`canvas`): Seitenhintergrund. **Nachtleiste** (`chrome`): Seitenleiste und mobile Tab-Leiste. **Kartenfläche** (`surface`): Karten, Dialoge, Popover. **Innenfläche** (`raised`): Unterkarten, aktive Navigation, Hover von Zeilen. **Senke** (`sunken`): Eingabefelder, Segmentschalter, Rack-Innenraum, Netzplan-Grund im Dunkeln. **Bedienfläche** (`control`/`control-hover`): Sekundär-Buttons.
+- **Nachtgrund** (`canvas`): Seitenhintergrund. **Nachtleiste** (`chrome`): Seitenleiste und mobile Tab-Leiste. **Kartenfläche** (`surface`): Karten, Dialoge, Popover. **Innenfläche** (`raised`): Unterkarten, aktive Navigation, Hover von Zeilen. **Senke** (`sunken`): Eingabefelder, Segmentschalter, Rack-Innenraum, Orbit-Grund im Dunkeln. **Bedienfläche** (`control`/`control-hover`): Sekundär-Buttons.
 - **Haarlinien** (`hairline` = `--gl-line`, `hairline-strong`): Rahmen, Trenner, Hover-Rahmen, Scrollbalken.
 - **Textstufen** (`fg`, `fg-muted`, `fg-subtle`): Inhalt, Beschreibung, Metadaten. Im hellen Thema wurden alle Textstufen so abgedunkelt, dass sie auf ihren eigenen 10–15-%-Tönungen über Weiß 4,5:1 erreichen.
-- **Stationspapier** (`station`): Füllung der Stationsringe. **Schildtinte** (`sign-ink`, #0c0f14): fester Text auf Linienschildern und aktiven Navigationsschildern, in beiden Themen.
+- **Körperkern** (`station`): Füllung der Himmelskörper im Orbit-Netzplan. **Schildtinte** (`sign-ink`, `#0c0f14`): fester Text auf Netzschildern und aktiven Navigationsschildern, in beiden Themen.
 
 ### Named Rules
-**The Linienfarbe-ist-Identität Rule.** Ein Netz hat genau eine Farbe, und die kommt immer aus `networkColor()` (oder `lineVar()` für Seiten). Wer ein Netz zeigt, zeigt es in dieser Farbe; keine zweite Farblogik pro Ansicht, keine Hex-Werte in Komponenten.
+**The Netzfarbe-ist-Identität Rule.** Ein Subnetz hat genau eine Farbe, und die kommt immer aus `networkColor()` (oder `lineVar()` für Seiten). Wer ein Netz zeigt, zeigt es in dieser Farbe; keine zweite Farblogik pro Ansicht, keine Hex-Werte in Komponenten.
 
-**The Tönung-ist-keine-Schrift Rule.** Getönte Flächen (`bg-accent/10`, `bg-danger/10`, `color-mix(… 14–16 %)`) tragen nie Text in der Grundfarbe; Text darauf nutzt `*-text` bzw. `lineInk()` (Linienfarbe 75 % zur Textfarbe gemischt).
+**The Tönung-ist-keine-Schrift Rule.** Getönte Flächen (`bg-accent/10`, `bg-danger/10`, `color-mix(… 14–16 %)`) tragen nie Text in der Grundfarbe; Text darauf nutzt `*-text` bzw. `lineInk()` (Netzfarbe 75 % zur Textfarbe gemischt).
 
-**The Schildtinte Rule.** Auf vollflächigen Linienfarben steht immer die dunkle Schildtinte (#0c0f14), nie Weiß, unabhängig vom Thema.
+**The Schildtinte Rule.** Auf vollflächigen Netzfarben steht immer die dunkle Schildtinte (`#0c0f14`), nie Weiß, unabhängig vom Thema.
 
 ## Typography
 
-**Display Font:** Hanken Grotesk Variable (mit ui-sans-serif, system-ui)
+**Display Font:** Hanken Grotesk Variable (mit `ui-sans-serif`, `system-ui`)
 **Body Font:** Hanken Grotesk Variable, Stilsätze `ss01`, `cv11`
-**Label/Mono Font:** JetBrains Mono (mit ui-monospace), Null mit Strich, Tabellenziffern
+**Label/Mono Font:** JetBrains Mono (mit `ui-monospace`), Null mit Strich, Tabellenziffern
 
-**Character:** Eine sachliche, leicht kantige Grotesk wie auf Verkehrsschildern, gepaart mit einer technischen Mono für alles, was man abliest oder abtippt.
+**Character:** Eine sachliche, leicht kantige Grotesk für klare Orientierung, gepaart mit einer technischen Mono für alles, was man abliest oder abtippt.
 
 ### Hierarchy
 - **Display** (700, 1,5 rem, eng gesperrt): nur der Willkommensschritt der Ersteinrichtung.
 - **Headline** (600, 1,25 rem): Seitentitel im `PageHeader`; auf Telefonen nur für Screenreader, weil die App-Leiste den Titel zeigt. Einrichtungsschritte nutzen dieselbe Größe in 700.
-- **Title** (700, 0,875 rem): Karten- und Abschnittstitel, Linienname im Statusboard, Meldungstitel. Dialogtitel 1 rem in 600.
+- **Title** (700, 0,875 rem): Karten- und Abschnittstitel, Netzname im Statusboard, Meldungstitel. Dialogtitel 1 rem in 600.
 - **Body** (400–500, 0,875 rem): Fließtext, Navigation, Buttons (500, primär 600), Beschreibungen (`max-w-2xl`).
 - **Meta** (0,75 rem): Hilfetexte, Zähler, Zeitangaben.
 - **Label** (600, 0,75 rem, `fg-subtle`, normale Schreibung; Klasse `.gl-eyebrow`): Beschriftung direkt über einem Messwert oder einer Definitionsliste und kleine Listengruppen-Überschriften. Kein Versal-Satz, kein Vorspann über Seiten- oder Abschnittstiteln.
 - **Badge** (500, 11 px): Badges, mobile Tab-Beschriftungen, Versionsnummer.
 - **Mono** (11 px bis 0,875 rem): IPs, CIDRs, MACs, Ports, Latenzen („2,4 ms“), Online-Zähler („14/15“), Linktypen.
-- **Linienschild** (800, 10 px / 12 px / 14 px in sm/md/lg): VLAN-ID oder Anfangsbuchstabe.
-- **Stationsname** (700, 13 px) mit Mono-Zeile (10,5 px) darunter: nur im Netzplan.
+- **Netzschild** (800, 10 px / 12 px / 14 px in sm/md/lg): VLAN-ID oder Anfangsbuchstabe.
+- **Körpername** (700, 13 px) mit Mono-Zeile (10,5 px) darunter: im Orbit-Netzplan auf Pille mit halbtransparentem Hintergrund für optimale Lesbarkeit bei jedem Zoom.
 
 ### Named Rules
 **The Abgelesen-in-Mono Rule.** Alles, was eine Adresse, ein Zähler oder ein Messwert ist, steht in JetBrains Mono mit Tabellenziffern; Fließtext und Namen nie.
@@ -290,10 +293,10 @@ Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden 
 ## Layout
 
 - **Hülle:** Desktop ab 768 px mit fester Seitenleiste (240 px, `chrome`, rechte Haarlinie); darunter eine obere App-Leiste mit Seitentitel und eine untere Tab-Leiste (vier Ziele plus „Mehr“, Mindesthöhe 56 px, `chrome` 95 % mit Unschärfe, Safe-Area-Abstand). „Mehr“ öffnet die volle Navigation als Bottom-Sheet.
-- **Seiten:** `max-w-[1800px]`, zentriert; Rand 16 px mobil / 32 px ab `md`; oben 20 px / 28 px; 24 px zwischen Blöcken. Kopfzeile: Titel und Einzeiler links, Aktionen rechts, umbrechend.
-- **Raster:** 16 px zwischen Karten (12 px in dichten Gerätegittern); Karten-Innenabstand 16 px horizontal, 12–14 px vertikal; Dialoge 20 px.
-- **Statusboard:** eine Zelle pro Linie, `auto-fit` mit mindestens 16 rem, auf Telefonen gestapelt mit Trennern.
-- **Netzplan:** füllt seinen Rahmen, `fitView` mit 15 % Rand, Zoom 0,2–2,5; Bedienknöpfe unten rechts, Bearbeitungspanels unten links. Grund: dunkel `sunken`, hell `surface` (Weiß), jeweils mit Punktraster (28 px).
+- **Seiten:** `max-w-[1800px]`, zentriert; Rand 16 px mobil / 32 px ab `md`; oben 20 px / 28 px; 24 px zwischen Blöcken. Kopfzeile: Titel und Einzeiler links, globale Suche (`Strg+K`) und Aktionen rechts, umbrechend.
+- **Raster:** 16 px zwischen Karten (12 px in dichten Gerätegittern); Karten-Innenabstand 16 px horizontal, 12–14 px vertikal; Gerätekarten innerhalb einer Gruppe erhalten einheitliche Standardhöhen (`groupDefaultH`).
+- **Statusboard:** eine Zelle pro Subnetz/Orbit, `auto-fit` mit mindestens 16 rem, auf Telefonen gestapelt mit Trennern.
+- **Orbit-Netzplan:** füllt seinen Rahmen, `fitView` mit 16 % Rand, Zoom 0,22–2,6; Bedienknöpfe (Zoom, Einpassen, Lebendigkeit) unten rechts, Inspektor-Panels unten links. Grund: dunkel `sunken`, hell `surface` (Weiß), jeweils mit feinem Koordinatenraster (28 px).
 - **Touch:** Ziele mindestens 44 px auf Telefonen; Eingaben dort 16 px Schrift, sonst zoomt iOS.
 
 ## Elevation & Depth
@@ -302,7 +305,7 @@ Das System ist flach und tonal geschichtet: `canvas` → `surface` → `raised`,
 
 ### Shadow Vocabulary
 - **Kartenkante** (`--gl-shadow-card`; dunkel `0 1px 0 0 rgb(255 255 255 / 0.025) inset`, hell `0 1px 2px rgb(16 20 27 / 0.04)`): auf jeder `.gl-card`, kaum sichtbar.
-- **Schwebend** (`--gl-shadow-pop`; dunkel `0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04)`, hell `0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06)`): Dialoge, Sheets, Popover, Netzplan-Bedienelemente und -Panels, Linktyp-Etikett.
+- **Schwebend** (`--gl-shadow-pop`; dunkel `0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04)`, hell `0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06)`): Dialoge, Sheets, Popover, Orbit-Bedienelemente und -Inspektorpanels.
 - Dialog-Overlay: Schwarz 55 % mit 2 px Unschärfe.
 
 ### Named Rules
@@ -310,11 +313,9 @@ Das System ist flach und tonal geschichtet: `canvas` → `surface` → `raised`,
 
 ## Shapes
 
-Runde Formen gehören dem Netz, weich gerundete Rechtecke der Bedienung. Linienschilder, Stationen, Umsteigekapseln, Statuspunkte, Fortschrittsbalken und Streckenenden sind voll rund. Badges 6 px, Buttons, Felder, Navigationseinträge und Kacheln 10 px, Karten 14 px, Dialoge 18 px (auf Telefonen nur oben). Navigations-Seitenschilder sind gerundete Quadrate (7 px), Rack-Einschübe und Segmentschalter-Knöpfe 5 px. Rahmen sind 1 px Haarlinien; gestrichelte Rahmen bedeuten „frei“ oder „reserviert“ (IP-Kacheln, leere Rack-Einheiten).
+Runde Formen gehören dem Gravitationssystem (Sterne, Planeten, Monde, konzentrische Umlaufbahnen, Netzschilder, Statuspunkte), weich gerundete Rechtecke der Bedienung. Badges 6 px, Buttons, Felder, Navigationseinträge und Kacheln 10 px, Karten 14 px, Dialoge 18 px (auf Telefonen nur oben). Navigations-Seitenschilder sind gerundete Quadrate (7 px), Rack-Einschübe und Segmentschalter-Knöpfe 5 px. Rahmen sind 1 px Haarlinien; gestrichelte Rahmen bedeuten „frei“, „reserviert“ oder „WLAN-Orbit“.
 
-Strecken im Netzplan sind oktilinear: gerade entlang der längeren Achse, eine 45°-Diagonale, wieder gerade; 8 px Strich (ausgewählt 11 px), runde Enden und Knicke.
-
-**The Gerade-bleibt-gerade Rule.** Verbundene Stationen, deren x- oder y-Wert um höchstens 24 px (`ALIGN_TOLERANCE`) abweicht, liegen auf einer Achse: `alignStations()` zieht beim Zeichnen die weniger verbundene Station auf die Achse (nur Anzeige), `snapToNeighbours()` rastet eine abgelegte Station vor dem Speichern auf die Achse des nächsten verbundenen Nachbarn ein. Diagonalen entstehen nur als bewusste 45°-Abzweige.
+**The Orbit-Snapping Rule.** Geschwister-Monde desselben Eltern-Planeten oder -Sterns, deren Abstand zum Elternobjekt sich um höchstens 18 px (`ORBIT_SNAP_TOLERANCE`) unterscheidet, teilen sich automatisch denselben konzentrischen Orbit-Ring (`snapToOrbitRing()` / `computeOrbitRings()`).
 
 ## Components
 
@@ -324,12 +325,12 @@ Sachlich und kompakt.
 - **Primary:** Akzentfläche mit `accent-fg`, 600; Hover `accent-hover`.
 - **Secondary (Standard):** `control` mit Haarlinie; Hover `control-hover` und `hairline-strong`.
 - **Ghost:** transparent, `fg-muted`; Hover Fläche und `fg`.
-- **Danger / Danger-ghost:** gefülltes Rot mit `danger-fg` (dunkle Tinte im Nachtnetz, Weiß im Tagesplan; wie `accent-fg` beim Primär-Button) bzw. roter Text mit Tönung im Hover. Gefüllte Info-Flächen tragen Text in `canvas`.
+- **Danger / Danger-ghost:** gefülltes Rot mit `danger-fg` (dunkle Tinte im Nachtmodus, Weiß im Tagmodus) bzw. roter Text mit Tönung im Hover. Gefüllte Info-Flächen tragen Text in `canvas`.
 - **States:** Farbübergang 150 ms; deaktiviert 50 % Deckkraft; Laden mit drehendem Loader und `aria-busy`. Fokus über den globalen Akzentring.
 
 ### Chips
 - **Badges:** 11 px, 6 px Radius, Tönung + `*-text` + getönter Rand (neutral, accent, info, warn, danger), optional Mono.
-- **Linienschild (`LineBullet`):** rund, Linienfarbe, Schildtinte, 800; Größen 20 / 28 / 40 px. Text ist die VLAN-ID, sonst der Anfangsbuchstabe des Subnetzes (`lineLabel`), „·“ wenn unbekannt; Meldungen ohne Gerät tragen ein neutrales Schild in `fg-muted`. Das Schild ist dekorativ (`aria-hidden`), der Netzname steht immer als Text daneben.
+- **Netzschild (`LineBullet`):** rund, Netzfarbe, Schildtinte, 800; Größen 20 / 28 / 40 px. Text ist die VLAN-ID, sonst der Anfangsbuchstabe des Subnetzes (`lineLabel`), „·“ wenn unbekannt; Meldungen ohne Gerät tragen ein neutrales Schild in `fg-muted`. Das Schild ist dekorativ (`aria-hidden`), der Netzname steht immer als Text daneben.
 - **Segmentschalter:** `sunken`-Wanne mit 2 px Innenabstand, aktiver Knopf `control`.
 
 ### Cards / Containers
@@ -345,29 +346,36 @@ Sachlich und kompakt.
 - **Error / Disabled:** Rahmen `danger` über `aria-invalid`; deaktiviert 60 %. `Field` verknüpft Label, Hinweis und Fehler per `aria-describedby`. Selects sind nativ.
 
 ### Navigation
-- **Seitenleiste:** Einträge 36 px, 10 px Radius. Jede Seite trägt ein 26-px-Schild in ihrer Linienfarbe (`navigation.ts`, `line`): inaktiv 16 % Tönung mit Icon in `lineInk`, aktiv voll gefüllt mit Schildtinte, Eintrag `raised` und 600. Zwischen den Schildern verbindet ein kurzer Verlauf von Linie zu Linie die Seiten zur Strecke. Zähler (online/gesamt, SSH-Sitzungen) rechts in Mono.
-- **Mobil:** Tab-Leiste mit 20-px-Icons und 11-px-Beschriftung; aktiv `fg`, Icon in `lineInk` und ein 3-px-Balken in Linienfarbe an der Oberkante. „Mehr“ öffnet das Navigations-Sheet mit denselben Schildern.
+- **Seitenleiste:** Einträge 36 px, 10 px Radius. Jede Seite trägt ein 26-px-Schild in ihrer Farbe (`navigation.ts`, `line`): inaktiv 16 % Tönung mit Icon in `lineInk`, aktiv voll gefüllt mit Schildtinte, Eintrag `raised` und 600. Zähler (online/gesamt, SSH-Sitzungen) rechts in Mono.
+- **Mobil:** Tab-Leiste mit 20-px-Icons und 11-px-Beschriftung; aktiv `fg`, Icon in `lineInk` und ein 3-px-Balken in Seitenfarbe an der Oberkante. „Mehr“ öffnet das Navigations-Sheet.
 - **Tabs:** 40 px, `fg-muted`; aktiv `fg` mit 2-px-Unterstreichung in Akzent.
 
 ### Dialoge und Sheets
 `Dialog` ist ab 640 px zentriert (18 px Radius), darunter ein Bottom-Sheet über volle Breite mit Safe-Area. Kopf mit Titel (1 rem, 600), Schließen-Knopf, Trennlinie; Fuß rechtsbündig. Eintritt 220 ms mit `--ease-out-expo`, Overlay 160 ms ein / 120 ms aus. `Sheet` ist das Seitenpanel (mobil Vollbild). Toasts und Bestätigungen laufen über `useToast`/`useConfirm`.
 
-### Netzplan (Signaturkomponente)
-`src/components/netzplan/`, gebaut auf Vue Flow, teilt Positionen und Links mit dem React-Topologie-Editor.
-- **Ankerbox:** jede Station sitzt mittig in derselben 28×28-px-Box, unabhängig von Marker- und Namensbreite; so fluchten Stationen auf einer Achse.
-- **Station:** 18-px-Ring (3,5 px) auf Stationspapier. Online: Ring in `fg`. Gestört: Ring `warn` mit stufig blinkender Füllung (1,2 s). Ausgefallen: Ring `danger`, rot durchgestrichen, Name und „Halt entfällt“ in `danger-text`. Hover vergrößert auf 110 % (200 ms); Auswahl 4-px-Akzentring.
-- **Umsteigestation:** Kapsel (28 px hoch, mindestens 48 px breit) mit bis zu vier Punkten in den Farben der dort treffenden Linien; für Gateways und Geräte in mehreren Netzen.
-- **Strecke:** oktilinear, Linienfarbe, 8 px; gepunktet (`1 13`), wenn ein Endpunkt ausgefallen ist. Farbe: gewählte Linkfarbe, sonst Linien-Slot aus `lineSlots()`, sonst Netzfarbe.
-- **Bearbeiten:** Stationen ziehen (Ablage rastet auf die Achse des nächsten verbundenen Nachbarn ein, siehe Gerade-bleibt-gerade), an Griffen (10 px, Akzent) neue Strecken ziehen, pro Strecke Farbe und Linktyp (10GbE, 2.5GbE, 1GbE, WLAN, Fiber) im Panel unten links, automatisch anordnen (eine Zeile pro Netz, Gateway vorn).
+### Orbit-Netzplan (Signaturkomponente)
+`src/components/orbit/` (`OrbitMap.vue` + `orbitModel.ts`), eigenes interaktives SVG mit Pan/Zoom, teilt `topology_x`/`topology_y` und `TopologyLink`-Einträge kompatibel mit dem React-Topologie-Editor.
+- **Himmelskörper (`OrbitBody`):**
+  - **Stern (`star`, Radius 24 px):** Router/Gateways im Zentrum mit Korona-Ringen und sanftem Pulsieren.
+  - **Planet (`planet`, Radius 17 px):** Switches, Access Points (`is_ap`) und Hypervisor-Hosts (`is_host`) mit Atmosphärenring in Subnetzfarbe und Rollen-Subbadge (`SW`, `AP`, `HOST`).
+  - **Mond (`moon`, Radius 11 px):** Kabel-Clients, WLAN-Geräte (`is_wlan`) und VMs/Container (`parent_id`).
+- **Umlaufbahnen (`OrbitRing`):** Konzentrische Kreise um das jeweilige Elternobjekt. Geschwister-Monde innerhalb von `ORBIT_SNAP_TOLERANCE = 18 px` teilen sich einen gemeinsamen Orbit-Ring. Durchgezogen für Kabel/VM, gestrichelt (`7 6`) für WLAN, unterbrochen (`3 9`) bei Offline-Geräten.
+- **Light-Beams (`LightBeam`):** Mehrschichtige leuchtende Energieverbindungen (Außen-Glow + Kernstrahl + wandernder Lichtpuls + Linktyp-Etikett `10GbE`/`2.5GbE`/`1GbE`/`WLAN`/`Fiber`) zwischen Stern und Planeten sowie für explizite Topologie-Links.
+- **Komplett anpassbar (Bearbeitungsmodus):**
+  - **Gruppenbewegung:** Wird ein Planet oder Stern verschoben, wandern alle seine Monde (inkl. Kind-Hierarchie) synchron mit (`moveWithDescendants`).
+  - **Orbit-Zuweisung per Drag & Drop:** Zieht man ein Gerät auf einen anderen Planeten/Switch/AP/Stern, erscheint ein **visueller Drop-Highlight-Ring** sowie das Banner `Orbit → <Ziel>`. Beim Loslassen wird der Topologie-Link automatisch umgehängt bzw. angelegt und das Gerät auf einer freien Umlaufbahn um das neue Elternobjekt platziert (mit Zyklusschutz).
+  - **Light-Beams zeichnen:** Über den `+`-Griff am Rand eines ausgewählten Körpers lässt sich direkt ein neuer Light-Beam zu einem anderen Körper ziehen.
+  - **Inspektor-Panels (unten links):** Erlauben für Light-Beams die Wahl von Farbe und Linktyp (`10GbE`, `2.5GbE`, `1GbE`, `WLAN`, `Fiber`) sowie für Himmelskörper den direkten Wechsel des Eltern-Planeten per Auswahlfeld.
+  - **Lebendigkeit (`vitalityMode`):** Über den Sparkles-Button unten rechts umschaltbar zwischen `Aus`, `Dezent` (Standard) und `Lebendig`.
 
-### Linien-Statusboard und Betriebsmeldungen
-Das Statusboard zeigt eine Zelle pro Linie: großes Linienschild, Name (700), Zustandstext in Zustandsfarbe, rechts „online/gesamt“ in Mono; ein Klick filtert die Geräte, die aktive Zelle ist `raised` mit Akzent-Unterkante. Betriebsmeldungen sind eine Karte mit Trennern: kleines Linienschild des betroffenen Geräts, Titel in Zustandsfarbe, Detail in Mono, relative Zeit, Pfeil erscheint im Hover.
+### Netz-Statusboard und Betriebsmeldungen
+Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rundes Netzschild, Name (700), Zustandstext in Zustandsfarbe, rechts „online/gesamt“ in Mono; ein Klick filtert die Übersicht. Betriebsmeldungen (`ServiceNotices.vue`) zeigen das Netzschild des betroffenen Geräts, Titel in Zustandsfarbe, Detail in Mono und relative Zeit.
 
-### Weitere Linienträger
-- **IP-Kacheln:** belegt und online = Rahmen 55 % und Fläche 14 % in der Linienfarbe; offline rot getönt; frei Haarlinie; reserviert gestrichelt. Adressen in Mono.
-- **Rack:** Einschübe als `raised`-Leisten mit kleinem Linienschild statt Farbstreifen; leere Einheiten gestrichelt; Rahmen 6 px in gedämpfter Haarlinie.
-- **Ersteinrichtung:** die vier Schritte als Stationen auf einer 5-px-Linie (erledigt Akzent, offen `hairline-strong`), Hintergrund mit Punktraster.
-- **Linienfarben (Einstellungen):** pro Subnetz Linienschild, Palettenvorschläge des aktuellen Themas und freier Farbwähler; Zurücksetzen auf den Palettenslot.
+### Weitere Netzfarbträger
+- **IP-Kacheln:** belegt und online = Rahmen 55 % und Fläche 14 % in der Netzfarbe; offline rot getönt; frei Haarlinie; reserviert gestrichelt. Adressen in Mono.
+- **Rack:** Einschübe als `raised`-Leisten mit kleinem Netzschild; leere Einheiten gestrichelt; Rahmen 6 px in gedämpfter Haarlinie.
+- **Ersteinrichtung:** die vier Schritte entlang einer 5-px-Trajektorie (erledigt Akzent, offen `hairline-strong`), Hintergrund mit Koordinatenraster.
+- **Netzfarben (Einstellungen):** pro Subnetz Netzschild, Palettenvorschläge des aktuellen Themas und freier Farbwähler; Zurücksetzen auf den Palettenslot.
 
 ### Leer-, Fehler- und Ladezustände
 `EmptyState`, `ErrorState` (mit Wiederholen) und `Skeleton` in Kartenform; jede Liste und jede Karte hat alle drei.
@@ -376,24 +384,15 @@ Das Statusboard zeigt eine Zelle pro Linie: großes Linienschild, Name (700), Zu
 
 ### Do:
 - **Do** jede Netzfarbe über `networkColor()` bzw. `lineVar()`/`lineInk()` holen und sie überall gleich zeigen.
-- **Do** neben jedem Linienschild den Netznamen als Text führen; das Schild ist Zierde, nicht Information.
-- **Do** Zustand doppelt kodieren: Ring plus Durchstreichung, gepunktete Strecke, Text („Halt entfällt“, „Störung“).
+- **Do** neben jedem Netzschild den Netznamen als Text führen; das Schild ist Zierde, nicht alleinige Information.
+- **Do** Zustand doppelt kodieren: Ring plus Durchstreichung, unterbrochene Umlaufbahn und Text-Badge („Offline“, „Störung“).
 - **Do** Text auf Tönungen in `*-text` setzen und neue Textfarben in beiden Themen gegen 4,5:1 prüfen.
 - **Do** Adressen, Zähler und Messwerte in JetBrains Mono mit Tabellenziffern setzen.
-- **Do** Bewegung auf `opacity`/`transform` (bzw. Strichbreite) begrenzen, 150–400 ms, Eintritte mit `--ease-out-expo`; `prefers-reduced-motion` schaltet global ab, Netzplan-Tweens (Einpassen, Zoom) laufen dann mit Dauer 0 über `motion()`.
+- **Do** Bewegung auf `opacity`/`transform` begrenzen; `prefers-reduced-motion` schaltet kontinuierliche Orbit-/Puls-Animationen automatisch ab.
 
 ### Don't:
-- **Don't** Hex-Werte in Komponenten schreiben; Ausnahme ist die Schildtinte auf Linienfarben.
-- **Don't** Weiß auf Linienfarben setzen.
-- **Don't** eine zweite Farblogik für Netze erfinden (etwa Farbstreifen, Gruppenfarben oder Gerätekürzel statt Linienschild).
+- **Don't** Hex-Werte in Komponenten schreiben; Ausnahme ist die Schildtinte (`#0c0f14`) auf vollen Netzfarben.
+- **Don't** Weiß auf vollen Netzfarben setzen.
 - **Don't** Schatten auf ruhende Karten legen; `shadow-pop` gehört schwebenden Ebenen.
 - **Don't** `.gl-eyebrow` als Vorspann über Titel setzen oder in Versalien; sie beschriftet Werte.
-- **Don't** neue Seiten als KPI-Kachelreihe plus Tabelle bauen.
-
-### Offene Punkte (Stand Abschluss-Review, nicht erledigt)
-- Netzplan-Farben folgen Ästen (`lineSlots`: jede Abzweigung vom Kern oder von einem Switch eröffnet eine neue Linie), nicht streng einem Subnetz pro Linie.
-- Stationen ohne Links schweben neben den Linien statt auf ihnen.
-- Beschriftungen im Netzplan sind beim eingepassten Zoom zu klein (13 px / 10,5 px vor Skalierung).
-- Health und Agents nutzen noch KPI-Leiste plus Tabelle.
-- Die Suche sitzt nicht in der oberen Leiste (Ctrl K), sondern als Filter über den Gruppen.
-- Gerätekarten in der Übersicht haben ungleiche Höhen.
+- **Don't** Seiten als KPI-Kachelreihe plus Tabelle bauen (kompakte Statusleisten nutzen).

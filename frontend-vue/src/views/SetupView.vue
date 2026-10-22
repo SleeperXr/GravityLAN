@@ -169,7 +169,7 @@ const features = [
 
 <template>
   <div class="relative flex min-h-dvh flex-col bg-canvas text-fg">
-    <!-- Faint transit grid behind the panel -->
+    <!-- Faint coordinate grid behind the panel -->
     <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(var(--gl-line)_1px,transparent_1px)] [background-size:24px_24px] opacity-60" aria-hidden="true" />
 
     <header class="relative flex items-center justify-between gap-3 px-5 py-4 md:px-8">
@@ -194,7 +194,7 @@ const features = [
 
     <main class="relative flex flex-1 items-start justify-center px-4 pt-4 pb-12 md:items-center md:pt-0">
       <div class="w-full max-w-xl">
-        <!-- The four steps as stations on one line -->
+        <!-- The four steps along the setup trajectory -->
         <ol v-if="!finishing" class="mb-6 grid grid-cols-4" :aria-label="t('setup.steps_label')">
           <li v-for="s in stations" :key="s.key" class="relative flex flex-col items-center gap-2 text-center" :aria-current="s.state === 'current' ? 'step' : undefined">
             <span

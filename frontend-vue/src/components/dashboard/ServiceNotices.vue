@@ -9,8 +9,8 @@ import { deviceLabel, lineLabelFor, networkColor } from '@/lib/networks';
 import { t } from '@/i18n';
 
 /**
- * Service notices: everything that needs the operator, most urgent first. Dropped stops
- * (offline devices watched 24/7), new agent keys, services down, IP changes, agent updates.
+ * Service notices: everything that needs the operator, most urgent first. Offline devices
+ * watched 24/7, new agent keys, services down, IP changes, agent updates.
  */
 const props = defineProps<{ devices: Device[] }>();
 const emit = defineEmits<{ openDevice: [device: Device]; openUpdates: [] }>();
@@ -72,7 +72,7 @@ function open(n: Notice) {
     <ul v-else class="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
       <li v-for="n in notices" :key="n.key">
         <button type="button" class="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-raised" @click="open(n)">
-          <!-- The sign of the line the device rides on; fleet-wide notices get a neutral sign -->
+          <!-- The badge of the network orbit the device belongs to; fleet-wide notices get a neutral sign -->
           <LineBullet
             v-if="n.device"
             :color="networkColor(n.device.subnet_id, n.device.ip)"

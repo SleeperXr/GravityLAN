@@ -4,7 +4,6 @@ import { GridStack, type GridStackNode } from 'gridstack';
 import 'gridstack/dist/gridstack.min.css';
 import { ChevronDown, ChevronUp } from 'lucide-vue-next';
 import type { Device, DeviceGroup } from '@/types';
-import { gridItemAttrs } from '@shared/components/Dashboard/overview/layout';
 import DeviceCard from './DeviceCard.vue';
 import DeviceList from './DeviceList.vue';
 import { t } from '@/i18n';
@@ -41,7 +40,25 @@ let grid: GridStack | null = null;
 const groupId = computed(() => (props.group ? props.group.id : null));
 const sectionId = computed(() => `group-${props.group ? props.group.id : 'none'}`);
 
-const layoutKey = computed(() => props.devices.map((d) => `${d.id}:${d.w}:${d.h}:${d.x}:${d.y}`).join(','));
+/** Uniform default height for unsized tiles in this group so every card in a row lines up cleanly. */
+const groupDefaultH = computed(() => {
+  if (props.devices.some((d) => d.has_agent)) return 5;
+  if (props.devices.some((d) => (d.services?.length ?? 0) > 0)) return 3;
+  return 3;
+});
+
+function tileAttrs(device: Device) {
+  const x = device.x !== null ? device.x : undefined;
+  return {
+    x,
+    y: device.y !== null ? device.y : undefined,
+    w: device.w !== null && device.w !== undefined ? device.w : 4,
+    h: device.h !== null && device.h !== undefined ? device.h : groupDefaultH.value,
+    autoPosition: x === undefined,
+  };
+}
+
+const layoutKey = computed(() => props.devices.map((d) => `${d.id}:${d.w ?? 4}:${d.h ?? groupDefaultH.value}:${d.x}:${d.y}`).join(','));
 
 function destroy() {
   try {
@@ -170,13 +187,13 @@ defineExpose({ compact });
           :key="device.id"
           class="grid-stack-item"
           :gs-id="device.id"
-          :gs-x="gridItemAttrs(device).x"
-          :gs-y="gridItemAttrs(device).y"
-          :gs-w="gridItemAttrs(device).w"
-          :gs-h="gridItemAttrs(device).h"
+          :gs-x="tileAttrs(device).x"
+          :gs-y="tileAttrs(device).y"
+          :gs-w="tileAttrs(device).w"
+          :gs-h="tileAttrs(device).h"
           gs-min-w="2"
           gs-min-h="2"
-          :gs-auto-position="gridItemAttrs(device).autoPosition ? 'true' : undefined"
+          :gs-auto-position="tileAttrs(device).autoPosition ? 'true' : undefined"
         >
           <div class="grid-stack-item-content group/tile">
             <DeviceCard

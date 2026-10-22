@@ -134,40 +134,36 @@ const sortOptions = computed(() => [
       </Button>
     </PageHeader>
 
-    <section class="gl-card grid grid-cols-2 divide-line overflow-hidden md:grid-cols-5 md:divide-x" :aria-label="t('health_page.network_health_score')">
-      <div class="col-span-2 border-b border-line p-4 md:col-span-1 md:border-b-0">
-        <p class="gl-eyebrow">{{ t('health_page.network_health_score') }}</p>
-        <p class="mt-1 flex items-baseline gap-1.5">
-          <span class="font-mono text-4xl font-semibold tabular" :class="scoreText(kpis?.network_health_score ?? 100)">{{ kpis?.network_health_score ?? '–' }}</span>
-          <span class="font-mono text-sm text-fg-subtle">/ 100</span>
-        </p>
-        <p class="mt-1 text-xs text-fg-subtle">{{ kpis ? t('health_page.devices_measured', { count: kpis.total_devices }) : t('common.loading') }}</p>
+    <div class="gl-card flex flex-wrap items-center gap-x-5 gap-y-2.5 px-4 py-3" :aria-label="t('health_page.network_health_score')">
+      <div class="flex items-baseline gap-2">
+        <span class="text-xs font-semibold text-fg-subtle">{{ t('health_page.network_health_score') }}</span>
+        <span class="font-mono text-xl font-bold tabular" :class="scoreText(kpis?.network_health_score ?? 100)">{{ kpis?.network_health_score ?? '–' }}</span>
+        <span class="font-mono text-xs text-fg-subtle">/ 100</span>
       </div>
-      <div class="border-b border-line p-4 md:border-b-0">
-        <p class="gl-eyebrow">{{ t('health_page.devices_online') }}</p>
-        <p class="mt-1 font-mono text-2xl font-semibold text-accent-text tabular">{{ kpis?.online_devices ?? 0 }}</p>
-        <p class="mt-1 text-xs text-fg-subtle">{{ kpis?.offline_devices ?? 0 }} {{ t('health_page.devices_offline').toLowerCase() }}</p>
+      <span class="hidden h-4 w-px bg-line sm:inline-block" aria-hidden="true" />
+      <div class="flex items-baseline gap-1.5 text-xs">
+        <span class="font-mono font-semibold text-accent-text tabular">{{ kpis?.online_devices ?? 0 }}</span>
+        <span class="text-fg-muted">{{ t('health_page.devices_online').toLowerCase() }}</span>
+        <span class="font-mono text-fg-subtle">· {{ kpis?.offline_devices ?? 0 }} {{ t('health_page.devices_offline').toLowerCase() }}</span>
       </div>
-      <div class="border-b border-line p-4 md:border-b-0">
-        <p class="gl-eyebrow">{{ t('health_page.devices_flapping') }}</p>
-        <p class="mt-1 font-mono text-2xl font-semibold tabular" :class="(kpis?.flapping_devices ?? 0) > 0 ? 'text-warn-text' : 'text-fg'">{{ kpis?.flapping_devices ?? 0 }}</p>
-        <p class="mt-1 truncate text-xs text-fg-subtle">{{ (kpis?.flapping_devices ?? 0) > 0 ? t('health_page.frequent_disconnects') : t('health_page.all_stable') }}</p>
+      <span class="hidden h-4 w-px bg-line sm:inline-block" aria-hidden="true" />
+      <div class="flex items-baseline gap-1.5 text-xs">
+        <span class="text-fg-subtle">{{ t('health_page.devices_flapping') }}:</span>
+        <span class="font-mono font-semibold tabular" :class="(kpis?.flapping_devices ?? 0) > 0 ? 'text-warn-text' : 'text-fg'">{{ kpis?.flapping_devices ?? 0 }}</span>
       </div>
-      <div class="p-4">
-        <p class="gl-eyebrow">{{ t('health_page.avg_latency') }}</p>
-        <p class="mt-1 font-mono text-2xl font-semibold text-info-text tabular">{{ ms(kpis?.avg_latency_ms) }}</p>
-        <p class="mt-1 font-mono text-xs text-fg-subtle">Jitter ±{{ ms(kpis?.avg_jitter_ms) }}</p>
+      <span class="hidden h-4 w-px bg-line sm:inline-block" aria-hidden="true" />
+      <div class="flex items-baseline gap-1.5 font-mono text-xs">
+        <span class="font-sans text-fg-subtle">{{ t('health_page.avg_latency') }}:</span>
+        <span class="font-semibold text-info-text tabular">{{ ms(kpis?.avg_latency_ms) }}</span>
+        <span class="text-fg-subtle">±{{ ms(kpis?.avg_jitter_ms) }}</span>
       </div>
-      <div class="p-4">
-        <p class="gl-eyebrow">{{ t('health_page.active_issues') }}</p>
-        <p class="mt-1 font-mono text-2xl font-semibold tabular" :class="(kpis?.active_issues_count ?? 0) > 0 ? 'text-danger-text' : 'text-accent-text'">{{ kpis?.active_issues_count ?? 0 }}</p>
-        <p class="mt-1 flex flex-wrap gap-1.5 text-xs text-fg-subtle">
-          <Badge v-if="kpis && kpis.ssl_warning_count > 0" tone="warn" mono>{{ kpis.ssl_warning_count }} SSL</Badge>
-          <Badge v-if="kpis && kpis.patch_warning_count > 0" tone="danger" mono>{{ kpis.patch_warning_count }} Patches</Badge>
-          <span v-if="kpis && !kpis.ssl_warning_count && !kpis.patch_warning_count">{{ t('health_page.no_security_warnings') }}</span>
-        </p>
+      <div class="ml-auto flex flex-wrap items-center gap-1.5 text-xs">
+        <Badge v-if="kpis && kpis.active_issues_count > 0" tone="danger" mono>{{ kpis.active_issues_count }} {{ t('health_page.active_issues') }}</Badge>
+        <Badge v-if="kpis && kpis.ssl_warning_count > 0" tone="warn" mono>{{ kpis.ssl_warning_count }} SSL</Badge>
+        <Badge v-if="kpis && kpis.patch_warning_count > 0" tone="danger" mono>{{ kpis.patch_warning_count }} Patches</Badge>
+        <span v-if="kpis && !kpis.active_issues_count && !kpis.ssl_warning_count && !kpis.patch_warning_count" class="text-fg-subtle">{{ t('health_page.no_security_warnings') }}</span>
       </div>
-    </section>
+    </div>
 
     <div class="flex flex-wrap items-center gap-2">
       <label class="relative min-w-0 flex-1 sm:max-w-xs">

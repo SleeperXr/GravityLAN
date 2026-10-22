@@ -1,0 +1,17 @@
+{
+  "name": "GravityUI",
+  "direction": "Gravitation / Orbit",
+  "description": "Das Heimnetz als Gravitationssystem – Router als Stern, Switches & APs als Planeten, Geräte als Monde auf konzentrischen Orbits, verbunden durch Light-Beams.",
+  "theme": {
+    "default": "dark",
+    "supportsLight": true,
+    "storageKey": "gravityui.theme",
+    "minContrastRatio": 4.5
+  },
+  "typography": {
+    "sans": "Hanken Grotesk Variable",
+    "mono": "JetBrains Mono"
+  },
+  "signatureComponent": "src/components/orbit/OrbitMap.vue",
+  "vitalityStorageKey": "gravityui.orbit.vitality"
+}

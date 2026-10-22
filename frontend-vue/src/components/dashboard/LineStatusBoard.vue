@@ -6,9 +6,8 @@ import { lineLabel, networkColor } from '@/lib/networks';
 import { t } from '@/i18n';
 
 /**
- * Service status per network line, like a transit operator's status board: one row per
- * subnet with its bullet, its state in words and how many stations run. A row filters the
- * overview to that network.
+ * Network orbit status board: one cell per subnet with its VLAN/subnet badge, its health state
+ * in words and how many devices are online. Selecting a cell filters the overview to that orbit.
  */
 const props = defineProps<{ subnets: Subnet[]; devices: Device[]; active: number | null }>();
 const emit = defineEmits<{ select: [subnetId: number | null] }>();
