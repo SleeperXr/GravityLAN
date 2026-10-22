@@ -1,235 +1,291 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
-import { Activity, AlertTriangle, Clock, RefreshCw, ShieldAlert } from 'lucide-vue-next';
-import StatusIndicator from '@/components/8starlabs-ui/StatusIndicator.vue';
-import StatusMonitor, { type AppStatusData } from '@/components/8starlabs-ui/StatusMonitor.vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { ArrowDown, ArrowUp, ChevronRight, Layers, Lock, RefreshCw, Search, ShieldAlert } from 'lucide-vue-next';
 import { api } from '@/api/client';
-import { useI18n } from '@/composables/useI18n';
-import type { DeviceHealthItem, HealthOverviewResponse } from '@/types';
+import type { Device, DeviceHealthItem, HealthOverviewResponse } from '@/types';
+import { useNetworkStore } from '@/stores/network';
+import PageHeader from '@/components/ui/PageHeader.vue';
+import Button from '@/components/ui/Button.vue';
+import Badge from '@/components/ui/Badge.vue';
+import Select from '@/components/ui/Select.vue';
+import Skeleton from '@/components/ui/Skeleton.vue';
+import EmptyState from '@/components/ui/EmptyState.vue';
+import ErrorState from '@/components/ui/ErrorState.vue';
+import HealthStatusBadge from '@/components/health/HealthStatusBadge.vue';
+import UptimeBars from '@/components/health/UptimeBars.vue';
+import Sparkline from '@/components/health/Sparkline.vue';
+import IncidentList from '@/components/health/IncidentList.vue';
+import HealthDetailSheet from '@/components/health/HealthDetailSheet.vue';
+import DeviceEditor from '@/components/editor/DeviceEditor.vue';
+import { hasAgentWarning, ms, scoreText, scoreTone, sslWarnings } from '@/components/health/healthModel';
+import { t } from '@/i18n';
 
-const { t } = useI18n();
-const period = ref<'24h' | '7d' | '30d'>('24h');
-const overview = ref<HealthOverviewResponse | null>(null);
+/** Health & availability (port of React HealthView): network score, per-device SLA table, incidents. */
+type Period = '24h' | '7d' | '30d';
+type Filter = 'all' | 'healthy' | 'degraded' | 'flapping' | 'critical';
+type SortKey = 'score' | 'latency' | 'name' | 'uptime';
+
+const store = useNetworkStore();
+const data = ref<HealthOverviewResponse | null>(null);
 const loading = ref(true);
+const refreshing = ref(false);
+const error = ref<string | null>(null);
+const period = ref<Period>('24h');
+const search = ref('');
+const filter = ref<Filter>('all');
+const sortBy = ref<SortKey>('score');
+const sortOrder = ref<'asc' | 'desc'>('asc');
+const selected = ref<DeviceHealthItem | null>(null);
+const sheetOpen = ref(false);
+const editorDevice = ref<Device | null>(null);
+const editorOpen = ref(false);
 
-async function loadHealth() {
-  loading.value = true;
+async function load(spinner = true) {
+  if (spinner) loading.value = true;
+  refreshing.value = true;
   try {
-    overview.value = await api.getHealthOverview(period.value);
+    data.value = await api.getHealthOverview(period.value);
+    error.value = null;
+    if (selected.value) selected.value = data.value.devices.find((d) => d.id === selected.value!.id) ?? selected.value;
+  } catch (err) {
+    error.value = (err as Error).message;
   } finally {
     loading.value = false;
+    refreshing.value = false;
   }
 }
 
-onMounted(loadHealth);
-watch(period, loadHealth);
+let timer: number | undefined;
+watch(
+  period,
+  () => {
+    void load(true);
+    window.clearInterval(timer);
+    timer = window.setInterval(() => void load(false), 30000);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => window.clearInterval(timer));
 
-function rowToStatusBars(item: DeviceHealthItem): AppStatusData[] {
-  if (item.uptime?.history_bars && item.uptime.history_bars.length > 0) {
-    return item.uptime.history_bars.map((val) => ({
-      status: val === null ? 'empty' : val >= 98 ? 'normal' : val >= 50 ? 'warning' : 'error',
-      info: val === null ? 'No probe sample' : `${item.display_name}: ${val.toFixed(0)}% availability`,
-    }));
-  }
-  const slots = 30;
-  const pct = item.uptime?.uptime_pct ?? 100;
-  return Array.from({ length: slots }, (_, idx) => {
-    if (idx === slots - 1) {
-      return {
-        status:
-          item.health_status === 'healthy'
-            ? 'normal'
-            : item.health_status === 'offline' || item.health_status === 'critical'
-              ? 'error'
-              : 'warning',
-        info: `${item.display_name}: ${pct.toFixed(1)}% uptime · Score ${item.health_score}%`,
-      };
-    }
-    const failThreshold = Math.round(((100 - pct) / 100) * slots);
-    if (failThreshold > 0 && idx < failThreshold) {
-      return { status: 'warning', info: 'Historical degradation window' };
-    }
-    return { status: 'normal', info: 'Healthy probe response' };
+const kpis = computed(() => data.value?.kpis);
+
+const rows = computed(() => {
+  if (!data.value) return [];
+  let list = [...data.value.devices];
+  if (filter.value === 'critical') list = list.filter((d) => d.health_status === 'critical' || d.health_status === 'offline');
+  else if (filter.value !== 'all') list = list.filter((d) => d.health_status === filter.value);
+  const q = search.value.trim().toLowerCase();
+  if (q) list = list.filter((d) => [d.display_name, d.ip, d.hostname, d.group_name].filter(Boolean).join(' ').toLowerCase().includes(q));
+  const dir = sortOrder.value === 'asc' ? 1 : -1;
+  list.sort((a, b) => {
+    if (sortBy.value === 'score') return (a.health_score - b.health_score) * dir;
+    if (sortBy.value === 'latency') return ((a.latency.avg_ms ?? 999999) - (b.latency.avg_ms ?? 999999)) * dir;
+    if (sortBy.value === 'uptime') return (a.uptime.uptime_pct - b.uptime.uptime_pct) * dir;
+    return a.display_name.localeCompare(b.display_name) * dir;
   });
+  return list;
+});
+
+function select(device: DeviceHealthItem) {
+  selected.value = device;
+  sheetOpen.value = true;
 }
 
-const fleetStatusBars = computed<AppStatusData[]>(() => {
-  if (!overview.value) return [];
-  const score = overview.value.kpis.network_health_score;
-  return Array.from({ length: 45 }, (_, idx) => ({
-    status: score >= 90 || idx % 11 !== 0 ? 'normal' : score >= 70 ? 'warning' : 'error',
-    info: `Fleet Health Score: ${score}%`,
-  }));
-});
+function selectById(id: number) {
+  const target = data.value?.devices.find((d) => d.id === id);
+  if (target) select(target);
+}
+
+async function openEditor(id: number) {
+  sheetOpen.value = false;
+  const known = store.devices.find((d) => d.id === id);
+  editorDevice.value = known ?? (await api.getDevice(id).catch(() => null));
+  if (editorDevice.value) editorOpen.value = true;
+}
+
+const periods: Period[] = ['24h', '7d', '30d'];
+const filters: Filter[] = ['all', 'healthy', 'degraded', 'flapping', 'critical'];
+const sortOptions = computed(() => [
+  { value: 'score' as SortKey, label: t('health_page.sort_score') },
+  { value: 'latency' as SortKey, label: t('health_page.sort_latency') },
+  { value: 'uptime' as SortKey, label: t('health_page.sort_uptime') },
+  { value: 'name' as SortKey, label: t('health_page.sort_name') },
+]);
 </script>
 
 <template>
-  <div class="p-6 max-w-[1640px] mx-auto space-y-6">
-    <!-- Header & Period Switcher -->
-    <div class="flex flex-wrap items-center justify-between gap-4">
-      <div>
-        <h2 class="text-lg font-bold text-zinc-100 tracking-tight">Health & SLA Telemetry</h2>
-        <p class="text-xs text-zinc-400">
-          Availability monitors, latency jitter, flapping detection & certificate hygiene
-        </p>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="inline-flex rounded-xl border border-zinc-800 bg-[#131316] p-1">
-          <button
-            v-for="p in ['24h', '7d', '30d'] as const"
-            :key="p"
-            type="button"
-            :class="[
-              'px-3 py-1 rounded-lg text-xs font-mono font-semibold transition-colors cursor-pointer',
-              period === p ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200',
-            ]"
-            @click="period = p"
-          >
-            {{ p }}
-          </button>
-        </div>
+  <div class="mx-auto max-w-[1800px] space-y-5 px-4 py-5 md:px-8 md:py-7">
+    <PageHeader :title="t('health_page.title')" :description="t('health_page.subtitle')">
+      <div class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('gv.health.period')">
         <button
+          v-for="p in periods"
+          :key="p"
           type="button"
-          class="sh-pill-btn px-3 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-          @click="loadHealth"
+          class="h-8 rounded-[7px] px-3 font-mono text-xs font-semibold transition-colors"
+          :class="period === p ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
+          :aria-pressed="period === p"
+          @click="period = p"
         >
-          <RefreshCw :class="['w-3.5 h-3.5', loading && 'animate-spin text-emerald-400']" />
-          Refresh
+          {{ t(`health_page.period_${p}`) }}
         </button>
       </div>
-    </div>
+      <Button size="icon" :aria-label="t('common.retry')" :title="t('common.retry')" :disabled="refreshing" @click="load(false)">
+        <RefreshCw :class="refreshing && 'animate-spin'" aria-hidden="true" />
+      </Button>
+    </PageHeader>
 
-    <!-- Top Bento Row -->
-    <div v-if="overview" class="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
-      <div class="sh-card p-5 space-y-3">
-        <div class="flex items-center justify-between text-xs text-zinc-400">
-          <span class="font-semibold uppercase tracking-wider text-[10px]">{{ t('kpi.health_score') }}</span>
-          <Activity class="h-4 w-4 text-emerald-400" />
-        </div>
-        <div class="flex items-baseline justify-between">
-          <span class="font-mono text-3xl font-bold text-zinc-100">
-            {{ overview.kpis.network_health_score }}%
-          </span>
-          <span class="text-xs font-mono text-emerald-400">
-            {{ overview.kpis.online_devices }}/{{ overview.kpis.total_devices }} Online
-          </span>
-        </div>
-        <StatusMonitor :statuses="fleetStatusBars" :slots="30" :show-uptime="false" compact />
+    <section class="gl-card grid grid-cols-2 divide-line overflow-hidden md:grid-cols-5 md:divide-x" :aria-label="t('health_page.network_health_score')">
+      <div class="col-span-2 border-b border-line p-4 md:col-span-1 md:border-b-0">
+        <p class="gl-eyebrow">{{ t('health_page.network_health_score') }}</p>
+        <p class="mt-1 flex items-baseline gap-1.5">
+          <span class="font-mono text-4xl font-semibold tabular" :class="scoreText(kpis?.network_health_score ?? 100)">{{ kpis?.network_health_score ?? '–' }}</span>
+          <span class="font-mono text-sm text-fg-subtle">/ 100</span>
+        </p>
+        <p class="mt-1 text-xs text-fg-subtle">{{ kpis ? t('health_page.devices_measured', { count: kpis.total_devices }) : t('common.loading') }}</p>
       </div>
-
-      <div class="sh-card p-5 flex flex-col justify-between">
-        <div class="flex items-center justify-between text-xs text-zinc-400">
-          <span class="font-semibold uppercase tracking-wider text-[10px]">{{ t('kpi.avg_latency') }}</span>
-          <Clock class="h-4 w-4 text-sky-400" />
-        </div>
-        <div class="my-2">
-          <span class="font-mono text-3xl font-bold text-zinc-100">
-            {{ overview.kpis.avg_latency_ms !== null ? `${overview.kpis.avg_latency_ms.toFixed(1)} ms` : '—' }}
-          </span>
-        </div>
-        <div class="sh-subcard p-2.5 flex items-center justify-between text-xs">
-          <span class="text-zinc-400">Avg Jitter</span>
-          <span class="font-mono font-semibold text-zinc-200">
-            {{ overview.kpis.avg_jitter_ms !== null ? `${overview.kpis.avg_jitter_ms.toFixed(1)} ms` : '—' }}
-          </span>
-        </div>
+      <div class="border-b border-line p-4 md:border-b-0">
+        <p class="gl-eyebrow">{{ t('health_page.devices_online') }}</p>
+        <p class="mt-1 font-mono text-2xl font-semibold text-accent-text tabular">{{ kpis?.online_devices ?? 0 }}</p>
+        <p class="mt-1 text-xs text-fg-subtle">{{ kpis?.offline_devices ?? 0 }} {{ t('health_page.devices_offline').toLowerCase() }}</p>
       </div>
-
-      <div class="sh-card p-5 flex flex-col justify-between">
-        <div class="flex items-center justify-between text-xs text-zinc-400">
-          <span class="font-semibold uppercase tracking-wider text-[10px]">Flapping / Degraded</span>
-          <AlertTriangle class="h-4 w-4 text-amber-400" />
-        </div>
-        <div class="my-2">
-          <span class="font-mono text-3xl font-bold text-amber-400">
-            {{ overview.kpis.flapping_devices }}
-          </span>
-        </div>
-        <div class="sh-subcard p-2.5 flex items-center justify-between text-xs">
-          <span class="text-zinc-400">Active Incidents</span>
-          <span class="font-mono font-semibold text-zinc-200">{{ overview.kpis.active_issues_count }}</span>
-        </div>
+      <div class="border-b border-line p-4 md:border-b-0">
+        <p class="gl-eyebrow">{{ t('health_page.devices_flapping') }}</p>
+        <p class="mt-1 font-mono text-2xl font-semibold tabular" :class="(kpis?.flapping_devices ?? 0) > 0 ? 'text-warn-text' : 'text-fg'">{{ kpis?.flapping_devices ?? 0 }}</p>
+        <p class="mt-1 truncate text-xs text-fg-subtle">{{ (kpis?.flapping_devices ?? 0) > 0 ? t('health_page.frequent_disconnects') : t('health_page.all_stable') }}</p>
       </div>
+      <div class="p-4">
+        <p class="gl-eyebrow">{{ t('health_page.avg_latency') }}</p>
+        <p class="mt-1 font-mono text-2xl font-semibold text-info-text tabular">{{ ms(kpis?.avg_latency_ms) }}</p>
+        <p class="mt-1 font-mono text-xs text-fg-subtle">Jitter ±{{ ms(kpis?.avg_jitter_ms) }}</p>
+      </div>
+      <div class="p-4">
+        <p class="gl-eyebrow">{{ t('health_page.active_issues') }}</p>
+        <p class="mt-1 font-mono text-2xl font-semibold tabular" :class="(kpis?.active_issues_count ?? 0) > 0 ? 'text-danger-text' : 'text-accent-text'">{{ kpis?.active_issues_count ?? 0 }}</p>
+        <p class="mt-1 flex flex-wrap gap-1.5 text-xs text-fg-subtle">
+          <Badge v-if="kpis && kpis.ssl_warning_count > 0" tone="warn" mono>{{ kpis.ssl_warning_count }} SSL</Badge>
+          <Badge v-if="kpis && kpis.patch_warning_count > 0" tone="danger" mono>{{ kpis.patch_warning_count }} Patches</Badge>
+          <span v-if="kpis && !kpis.ssl_warning_count && !kpis.patch_warning_count">{{ t('health_page.no_security_warnings') }}</span>
+        </p>
+      </div>
+    </section>
 
-      <div class="sh-card p-5 flex flex-col justify-between">
-        <div class="flex items-center justify-between text-xs text-zinc-400">
-          <span class="font-semibold uppercase tracking-wider text-[10px]">Security & SSL Hygiene</span>
-          <ShieldAlert class="h-4 w-4 text-rose-400" />
-        </div>
-        <div class="my-2">
-          <span class="font-mono text-3xl font-bold text-zinc-100">
-            {{ overview.kpis.patch_warning_count + overview.kpis.ssl_warning_count }}
-          </span>
-        </div>
-        <div class="sh-subcard p-2.5 flex items-center justify-between text-xs">
-          <span class="text-zinc-400">SSL / OS Patches</span>
-          <span class="font-mono font-semibold text-zinc-200">
-            {{ overview.kpis.ssl_warning_count }} SSL · {{ overview.kpis.patch_warning_count }} Pkg
-          </span>
-        </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <label class="relative min-w-0 flex-1 sm:max-w-xs">
+        <span class="sr-only">{{ t('health_page.search_placeholder') }}</span>
+        <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
+        <input v-model="search" type="search" :placeholder="t('health_page.search_placeholder')" class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-accent focus:outline-none" />
+      </label>
+      <div class="flex max-w-full overflow-x-auto rounded-md border border-line bg-sunken p-0.5 [scrollbar-width:none]" role="group" :aria-label="t('gv.health.filter')">
+        <button
+          v-for="f in filters"
+          :key="f"
+          type="button"
+          class="h-8 shrink-0 rounded-[7px] px-3 text-xs font-semibold transition-colors"
+          :class="filter === f ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
+          :aria-pressed="filter === f"
+          @click="filter = f"
+        >
+          {{ t(`health_page.filter_${f}`) }}
+        </button>
+      </div>
+      <div class="ml-auto flex items-center gap-2">
+        <Button size="icon" :aria-label="sortOrder === 'asc' ? t('health_page.sort_asc') : t('health_page.sort_desc')" :title="sortOrder === 'asc' ? t('health_page.sort_asc') : t('health_page.sort_desc')" @click="sortOrder = sortOrder === 'asc' ? 'desc' : 'asc'">
+          <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" aria-hidden="true" />
+        </Button>
+        <Select v-model="sortBy" :options="sortOptions" class="w-40" :aria-label="t('gv.health.sort')" />
       </div>
     </div>
 
-    <!-- Host SLA & 8StarLabs StatusMonitor Table -->
-    <div v-if="overview" class="sh-card overflow-hidden">
-      <div class="p-4 border-b border-zinc-800/80 flex items-center justify-between">
-        <div>
-          <h3 class="text-sm font-bold text-zinc-100">Per-Host Availability Monitors ({{ overview.devices.length }})</h3>
-          <p class="text-xs text-zinc-400">Live 8StarLabs status history bars across the {{ period }} window</p>
-        </div>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="w-full border-collapse text-left text-xs">
+    <div v-if="loading && !data" class="space-y-2" aria-busy="true"><Skeleton v-for="i in 6" :key="i" class="h-16" /></div>
+    <div v-else-if="error && !data" class="gl-card"><ErrorState :message="error" @retry="load()" /></div>
+    <div v-else-if="rows.length === 0" class="gl-card"><EmptyState compact :icon="Search" :title="t('health_page.no_devices_found')" /></div>
+
+    <template v-else>
+      <div class="gl-card hidden overflow-x-auto md:block">
+        <table class="w-full table-fixed text-left">
           <thead>
-            <tr class="border-b border-zinc-800/80 bg-[#16161a] text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-              <th class="px-4 py-3">Host</th>
-              <th class="px-4 py-3">State</th>
-              <th class="px-4 py-3 w-[260px]">Uptime Timeline ({{ period }})</th>
-              <th class="px-4 py-3">SLA %</th>
-              <th class="px-4 py-3">Latency (Avg / Max)</th>
-              <th class="px-4 py-3">Services</th>
+            <tr class="border-b border-line text-xs font-semibold text-fg-subtle">
+              <th class="w-[32%] px-5 py-3">{{ t('health_page.table_device') }}</th>
+              <th class="w-44 px-4 py-3">{{ t('health_page.table_status') }}</th>
+              <th class="w-56 px-4 py-3">{{ t('health_page.table_uptime') }}</th>
+              <th class="w-56 px-4 py-3">{{ t('health_page.table_latency') }}</th>
+              <th class="w-40 px-4 py-3">{{ t('health_page.table_services') }}</th>
+              <th class="w-12" />
             </tr>
           </thead>
-          <tbody class="divide-y divide-zinc-800/60">
-            <tr v-for="item in overview.devices" :key="item.id" class="hover:bg-[#19191f] transition-colors">
-              <td class="px-4 py-3">
-                <div class="font-semibold text-zinc-100">{{ item.display_name }}</div>
-                <div class="font-mono text-[11px] text-zinc-500">{{ item.ip }}</div>
+          <tbody class="divide-y divide-line">
+            <tr v-for="d in rows" :key="d.id" class="group cursor-pointer transition-colors hover:bg-raised" :class="selected?.id === d.id && sheetOpen && 'bg-raised'" @click="select(d)">
+              <td class="px-5 py-3">
+                <button type="button" class="block max-w-full truncate text-left text-sm font-bold text-fg group-hover:text-accent-text" @click.stop="select(d)">{{ d.display_name }}</button>
+                <p class="mt-0.5 flex items-center gap-2 truncate font-mono text-xs text-fg-subtle">
+                  {{ d.ip }}<span v-if="d.group_name" class="rounded-sm bg-raised px-1.5 font-sans text-[10px] text-fg-muted">{{ d.group_name }}</span>
+                </p>
               </td>
               <td class="px-4 py-3">
-                <StatusIndicator
-                  :state="
-                    item.health_status === 'healthy'
-                      ? 'active'
-                      : item.health_status === 'flapping' || item.health_status === 'degraded'
-                        ? 'fixing'
-                        : 'down'
-                  "
-                  :label="item.health_status"
-                  size="sm"
-                />
+                <div class="flex items-center gap-2">
+                  <HealthStatusBadge :status="d.health_status" />
+                  <Badge :tone="scoreTone(d.health_score, d.health_status)" mono :title="`Health Score ${d.health_score}/100`">{{ d.health_score }}</Badge>
+                </div>
               </td>
               <td class="px-4 py-3">
-                <StatusMonitor :statuses="rowToStatusBars(item)" :slots="28" :show-uptime="false" compact />
+                <div class="flex items-baseline justify-between text-xs">
+                  <span class="font-mono font-semibold text-fg">{{ d.uptime.uptime_pct.toFixed(1) }}%</span>
+                  <span class="font-mono text-[11px] text-fg-subtle">24h {{ d.uptime.uptime_24h.toFixed(0) }}%</span>
+                </div>
+                <UptimeBars class="mt-1" :bars="d.uptime.history_bars" :uptime="d.uptime.uptime_pct" />
               </td>
-              <td class="px-4 py-3 font-mono font-bold text-emerald-400">
-                {{ item.uptime.uptime_pct.toFixed(2) }}%
+              <td class="px-4 py-3">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="font-mono text-xs">
+                    <p class="font-semibold text-fg">{{ ms(d.latency.current_ms) }}</p>
+                    <p class="text-[10px] text-fg-subtle">Ø {{ ms(d.latency.avg_ms) }}<span v-if="d.latency.jitter_ms !== null"> ±{{ d.latency.jitter_ms.toFixed(1) }}</span></p>
+                  </div>
+                  <Sparkline :values="d.latency.sparkline" />
+                </div>
               </td>
-              <td class="px-4 py-3 font-mono text-zinc-300">
-                {{ item.latency.avg_ms !== null ? `${item.latency.avg_ms.toFixed(1)} ms` : '—' }}
-                <span v-if="item.latency.max_ms !== null" class="text-zinc-500">
-                  / {{ item.latency.max_ms.toFixed(1) }} ms
-                </span>
+              <td class="px-4 py-3">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <Badge v-if="d.services.length" mono><Layers aria-hidden="true" />{{ d.services.filter((s) => s.is_up).length }}/{{ d.services.length }}</Badge>
+                  <span v-else class="font-mono text-xs text-fg-subtle">–</span>
+                  <Badge v-if="sslWarnings(d.services) > 0" tone="warn" :title="t('health_page.ssl_expiring_soon', { count: sslWarnings(d.services) })"><Lock aria-hidden="true" />SSL</Badge>
+                  <Badge v-if="hasAgentWarning(d)" tone="danger" :title="t('health_page.agent_warning_title')"><ShieldAlert aria-hidden="true" />{{ d.agent?.reboot_required ? 'Reboot' : 'Patch' }}</Badge>
+                </div>
               </td>
-              <td class="px-4 py-3 font-mono text-[11px] text-zinc-300">
-                <span class="px-2 py-0.5 rounded-md bg-[#1b1b20] border border-zinc-800">
-                  {{ item.services.filter((s) => s.is_up).length }}/{{ item.services.length }} up
-                </span>
-              </td>
+              <td class="pr-4 text-right"><ChevronRight class="ml-auto size-4 text-fg-subtle" aria-hidden="true" /></td>
             </tr>
           </tbody>
         </table>
       </div>
-    </div>
+
+      <ul class="space-y-2.5 md:hidden">
+        <li v-for="d in rows" :key="d.id">
+          <button type="button" class="gl-card w-full space-y-3 p-4 text-left" @click="select(d)">
+            <div class="flex items-start gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-bold text-fg">{{ d.display_name }}</p>
+                <p class="font-mono text-xs text-fg-subtle">{{ d.ip }}</p>
+              </div>
+              <Badge :tone="scoreTone(d.health_score, d.health_status)" mono>{{ d.health_score }}</Badge>
+            </div>
+            <div class="flex items-center justify-between gap-2 text-xs">
+              <HealthStatusBadge :status="d.health_status" />
+              <span class="font-mono text-fg">{{ d.uptime.uptime_pct.toFixed(1) }}% <span class="text-fg-subtle">· {{ ms(d.latency.current_ms) }}</span></span>
+            </div>
+            <UptimeBars height="sm" :bars="d.uptime.history_bars" :uptime="d.uptime.uptime_pct" />
+          </button>
+        </li>
+      </ul>
+    </template>
+
+    <section class="gl-card space-y-4 p-5" aria-labelledby="incidents-title">
+      <div class="flex items-baseline justify-between">
+        <h2 id="incidents-title" class="text-base font-bold text-fg">{{ t('health_page.incidents_title') }}</h2>
+        <span class="font-mono text-xs text-fg-subtle">{{ data?.recent_incidents?.length ?? 0 }}</span>
+      </div>
+      <IncidentList :incidents="data?.recent_incidents ?? []" @select="selectById" />
+    </section>
+
+    <HealthDetailSheet v-model:open="sheetOpen" :device="selected" :period="period" @updated="load(false)" @open-editor="openEditor" />
+    <DeviceEditor v-if="editorDevice" v-model:open="editorOpen" :device="editorDevice" @saved="store.loadData(true); load(false)" @after-leave="editorDevice = null" />
   </div>
 </template>

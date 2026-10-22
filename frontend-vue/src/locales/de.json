@@ -95,6 +95,11 @@
       "ip_changed": "{{name}}: neue IP-Adresse",
       "updates_one": "{{count}} Agent-Update bereit",
       "updates_other": "{{count}} Agent-Updates bereit"
+    },
+    "health": {
+      "period": "Zeitraum",
+      "filter": "Status filtern",
+      "sort": "Sortieren nach"
     }
   }
 }
