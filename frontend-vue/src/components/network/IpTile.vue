@@ -46,7 +46,7 @@ const tileClass = computed(
       'host-online': 'border-info/45 bg-info/[0.1] text-fg',
       'host-offline': 'border-line-strong bg-raised text-fg-subtle',
       reserved: 'border-dashed border-line-strong text-fg-subtle',
-      free: 'border-line text-fg-subtle/60',
+      free: 'border-line text-fg-subtle',
     })[kind.value],
 );
 

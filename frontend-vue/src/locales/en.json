@@ -14,11 +14,7 @@
     "legacy": {
       "switch": "Classic view",
       "switch_hint": "Switch to the familiar GravityLAN interface",
-      "badge": "React",
-      "only_title": "{{page}} is not in GravityUI yet",
-      "only_desc": "This area is being ported. Until then it works unchanged in the classic view.",
-      "open": "Open in the classic view",
-      "setup_desc": "First-time setup is not finished yet. It runs in the classic view."
+      "badge": "React"
     },
     "state": {
       "load_failed": "Could not load data",
@@ -82,7 +78,14 @@
       "dropped_one": "Disruption: {{count}} stop dropped",
       "dropped_other": "Disruption: {{count}} stops dropped",
       "degraded_one": "{{count}} station with a service down",
-      "degraded_other": "{{count}} stations with services down"
+      "degraded_other": "{{count}} stations with services down",
+      "colors_title": "Line colours",
+      "colors_desc": "Each network has its own line colour – on the network map, line signs, device chips and racks. Changes apply right away.",
+      "colors_empty": "No subnets yet.",
+      "colors_for": "Line colour for {{name}}",
+      "custom": "Custom colour",
+      "reset": "Network colour",
+      "slot": "Line {{n}}"
     },
     "notices": {
       "title": "Service notices",

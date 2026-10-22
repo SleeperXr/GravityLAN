@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { Loader2, Radar, Square } from 'lucide-vue-next';
 import { api, sessionExpired } from '@/api/client';
 import { useNetworkStore } from '@/stores/network';
+import { useAppearance } from '@/stores/appearance';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
 import MobileNav from '@/components/layout/MobileNav.vue';
 import ToastHost from '@/components/ui/ToastHost.vue';
@@ -16,6 +17,7 @@ import { t } from '@/i18n';
 type BootState = 'checking' | 'setup' | 'login' | 'ready';
 
 const store = useNetworkStore();
+const appearance = useAppearance();
 const route = useRoute();
 const state = ref<BootState>('checking');
 const version = ref<string>();
@@ -45,6 +47,8 @@ async function boot() {
   state.value = 'ready';
   store.fetchInventory(true).catch(() => {});
   store.connectScanStream();
+  // Custom line colours apply on every page, not only once the network map was opened
+  void appearance.load();
 }
 
 watch(sessionExpired, (expired) => {

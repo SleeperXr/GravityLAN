@@ -18,7 +18,7 @@ describe('i18n', () => {
 
   it('interpolates and pluralizes like i18next in React', () => {
     setLocale('en');
-    expect(t('gv.legacy.only_title', { page: 'SSH' })).toBe('SSH is not in GravityUI yet');
+    expect(t('gv.racks.free', { count: 3 })).toBe('3 U free');
     expect(i18next.exists('gv.scan.progress')).toBe(true);
   });
 

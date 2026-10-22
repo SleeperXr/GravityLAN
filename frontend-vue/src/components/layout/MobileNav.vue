@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Menu } from 'lucide-vue-next';
-import { NAV_ITEMS, TAB_IDS } from './navigation';
+import { NAV_ITEMS, TAB_IDS, lineInk, lineVar } from './navigation';
 import NavPreferences from './NavPreferences.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import { t } from '@/i18n';
@@ -30,10 +30,11 @@ watch(() => route.fullPath, () => (menuOpen.value = false));
       :key="item.id"
       :to="item.to"
       :aria-current="activeId === item.id ? 'page' : undefined"
-      class="flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors"
-      :class="activeId === item.id ? 'text-accent-text' : 'text-fg-subtle'"
+      class="relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors"
+      :class="activeId === item.id ? 'text-fg' : 'text-fg-subtle'"
     >
-      <component :is="item.icon" class="size-5" aria-hidden="true" />
+      <span v-if="activeId === item.id" class="absolute inset-x-4 top-0 h-[3px] rounded-b-full" :style="{ background: lineVar(item) }" aria-hidden="true" />
+      <component :is="item.icon" class="size-5" :style="activeId === item.id ? { color: lineInk(item) } : undefined" aria-hidden="true" />
       <span class="max-w-full truncate px-1">{{ t(item.label) }}</span>
     </RouterLink>
     <button
@@ -59,7 +60,17 @@ watch(() => route.fullPath, () => (menuOpen.value = false));
         class="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium"
         :class="activeId === item.id ? 'bg-raised text-fg' : 'text-fg-muted hover:bg-control-hover hover:text-fg'"
       >
-        <component :is="item.icon" class="size-5" :class="activeId === item.id && 'text-accent-text'" aria-hidden="true" />
+        <span
+          class="grid size-7 shrink-0 place-items-center rounded-[7px]"
+          :style="
+            activeId === item.id
+              ? { background: lineVar(item), color: '#0c0f14' }
+              : { background: `color-mix(in oklab, ${lineVar(item)} 16%, transparent)`, color: lineInk(item) }
+          "
+          aria-hidden="true"
+        >
+          <component :is="item.icon" class="size-4" />
+        </span>
         <span class="flex-1">{{ t(item.label) }}</span>
         <span v-if="item.id === 'ssh' && ssh.liveCount > 0" class="rounded-sm bg-accent/15 px-1.5 font-mono text-xs text-accent-text">
           {{ ssh.liveCount }}

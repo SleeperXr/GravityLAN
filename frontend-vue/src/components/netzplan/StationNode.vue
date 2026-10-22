@@ -45,7 +45,7 @@ const handles = [Position.Top, Position.Right, Position.Bottom, Position.Left];
     </div>
     <div class="pointer-events-none absolute top-full mt-1.5 text-center whitespace-nowrap">
       <p class="text-[13px] leading-4 font-bold" :class="data.state === 'offline' ? 'text-danger-text' : 'text-fg'">{{ name }}</p>
-      <p class="font-mono text-[10.5px] leading-4" :class="data.state === 'offline' ? 'text-danger-text/80' : 'text-fg-subtle'">
+      <p class="font-mono text-[10.5px] leading-4" :class="data.state === 'offline' ? 'text-danger-text' : 'text-fg-subtle'">
         {{ data.state === 'offline' ? stateLabel : latency }}
       </p>
     </div>

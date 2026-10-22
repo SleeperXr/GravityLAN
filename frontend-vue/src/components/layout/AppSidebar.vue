@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { NAV_ITEMS } from './navigation';
+import { NAV_ITEMS, lineInk, lineVar } from './navigation';
 import NavPreferences from './NavPreferences.vue';
 import { t } from '@/i18n';
 import { useNetworkStore } from '@/stores/network';
@@ -25,26 +25,33 @@ const activeId = computed(() => route.meta.navId as string | undefined);
       </span>
     </div>
 
+    <!-- The pages as stops on one route: each has its own line sign, the current stop is filled -->
     <nav :aria-label="t('sidebar.navigation')" class="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
       <RouterLink
-        v-for="item in NAV_ITEMS"
+        v-for="(item, index) in NAV_ITEMS"
         :key="item.id"
         :to="item.to"
         :aria-current="activeId === item.id ? 'page' : undefined"
-        class="group relative flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors"
-        :class="activeId === item.id ? 'bg-raised text-fg' : 'text-fg-muted hover:bg-control-hover hover:text-fg'"
+        class="group relative flex h-9 items-center gap-3 rounded-md px-2 text-sm font-medium transition-colors"
+        :class="activeId === item.id ? 'bg-raised font-semibold text-fg' : 'text-fg-muted hover:bg-control-hover hover:text-fg'"
       >
         <span
-          v-if="activeId === item.id"
-          class="absolute top-2 bottom-2 -left-3 w-0.5 rounded-r-full bg-accent"
+          v-if="index < NAV_ITEMS.length - 1"
+          class="absolute top-[calc(50%+13px)] left-[calc(0.5rem+12px)] h-3 w-0.5 opacity-50"
+          :style="{ background: `linear-gradient(${lineVar(item)}, ${lineVar(NAV_ITEMS[index + 1])})` }"
           aria-hidden="true"
         />
-        <component
-          :is="item.icon"
-          class="size-[18px] shrink-0"
-          :class="activeId === item.id ? 'text-accent-text' : 'text-fg-subtle group-hover:text-fg-muted'"
+        <span
+          class="relative grid size-[26px] shrink-0 place-items-center rounded-[7px] transition-colors"
+          :style="
+            activeId === item.id
+              ? { background: lineVar(item), color: '#0c0f14' }
+              : { background: `color-mix(in oklab, ${lineVar(item)} 16%, transparent)`, color: lineInk(item) }
+          "
           aria-hidden="true"
-        />
+        >
+          <component :is="item.icon" class="size-[15px]" :stroke-width="activeId === item.id ? 2.4 : 2" />
+        </span>
         <span class="flex-1 truncate">{{ t(item.label) }}</span>
         <span
           v-if="item.id === 'dashboard' && store.totalCount > 0"

@@ -14,11 +14,7 @@
     "legacy": {
       "switch": "Klassische Ansicht",
       "switch_hint": "Zur gewohnten GravityLAN-Oberfläche wechseln",
-      "badge": "React",
-      "only_title": "{{page}} gibt es in GravityUI noch nicht",
-      "only_desc": "Dieser Bereich wird gerade portiert. Bis dahin funktioniert er unverändert in der klassischen Ansicht.",
-      "open": "In der klassischen Ansicht öffnen",
-      "setup_desc": "Die Ersteinrichtung ist noch nicht abgeschlossen. Sie läuft in der klassischen Ansicht."
+      "badge": "React"
     },
     "state": {
       "load_failed": "Daten konnten nicht geladen werden",
@@ -82,7 +78,14 @@
       "dropped_one": "Störung: {{count}} Halt entfällt",
       "dropped_other": "Störung: {{count}} Halte entfallen",
       "degraded_one": "{{count}} Station mit gestörtem Dienst",
-      "degraded_other": "{{count}} Stationen mit gestörten Diensten"
+      "degraded_other": "{{count}} Stationen mit gestörten Diensten",
+      "colors_title": "Linienfarben",
+      "colors_desc": "Jedes Netz hat eine eigene Linienfarbe – im Netzplan, auf Linienschildern, Geräte-Chips und im Rack. Änderungen gelten sofort.",
+      "colors_empty": "Noch keine Subnetze angelegt.",
+      "colors_for": "Linienfarbe für {{name}}",
+      "custom": "Eigene Farbe",
+      "reset": "Netzfarbe",
+      "slot": "Linie {{n}}"
     },
     "notices": {
       "title": "Betriebsmeldungen",

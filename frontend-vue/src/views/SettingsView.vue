@@ -16,6 +16,7 @@ import GroupsSection from '@/components/settings/GroupsSection.vue';
 import PasswordForm from '@/components/settings/PasswordForm.vue';
 import TokensSection from '@/components/settings/TokensSection.vue';
 import DataSections from '@/components/settings/DataSections.vue';
+import LineColorsSection from '@/components/settings/LineColorsSection.vue';
 import { useTheme, type ThemePreference } from '@/composables/useTheme';
 import { locale, setLocale, t, type Locale } from '@/i18n';
 
@@ -204,6 +205,7 @@ const languages: { value: Locale; key: string }[] = [
               </div>
             </fieldset>
           </div>
+          <LineColorsSection />
         </SettingsSection>
 
         <SettingsSection id="access" :title="t('settings.password.section')" :description="t('settings.password.section_desc')">

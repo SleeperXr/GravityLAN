@@ -111,14 +111,15 @@
   --gl-fg-subtle: #5d6776;
   --gl-station: #ffffff;
 
-  --gl-accent: #0b8a72;
-  --gl-accent-hover: #087560;
+  /* Text tones are measured against their own 10–15 % tints on white: all reach 4.5:1 */
+  --gl-accent: #087a65;
+  --gl-accent-hover: #066654;
   --gl-accent-fg: #ffffff;
-  --gl-accent-text: #077a64;
+  --gl-accent-text: #066a57;
   --gl-info: #1f6fd1;
   --gl-info-text: #1a5fb4;
   --gl-warn: #d97706;
-  --gl-warn-text: #a85a00;
+  --gl-warn-text: #8f4c00;
   --gl-danger: #dc3545;
   --gl-danger-text: #b42332;
   --gl-neutral-dot: #a3aab5;

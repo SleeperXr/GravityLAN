@@ -17,6 +17,11 @@ All notable changes to this project will be documented in this file.
 - GravityUI logs page with the React page's features (live backend log, last 500 lines, pause, copy, clear). New: lines split into time, level, logger and message, a filter for warnings or errors with their counts, a search, and the view stays put while you scroll back, with "Jump to newest" to follow again. The stream reconnects on its own after a backend restart.
 - GravityUI setup wizard: a new install opened under `/frontend-vue/` now runs the first-run setup there instead of sending you to the classic view. Same steps as the React wizard (welcome, choose and add networks, DNS server, first scan with live progress or skip it, admin password), shown as stations on one line, and it ends signed in on the overview.
 - GravityUI racks as the second view of the Topology page (`?view=rack`), with everything from the React rack view (rack choice, units drawn top down, devices spanning their height, occupancy, inventory). New: each device carries its network's line colour and opens the device editor on click, racks can be created with your own name, height and width and deleted, and devices without a unit, reaching beyond the rack or overlapping another device are listed.
+- GravityUI navigation as a route: every page has its own line sign, the current one filled, linked by short line segments; the phone tab bar marks the current page in its line colour.
+- GravityUI line colours in Settings ("Language & appearance"): one colour per network from the palette or any custom colour, saved right away and used on the network map, line signs, device chips and racks; "Network colour" goes back to the default.
+
+### Changed
+- GravityUI light theme: accent, accent text and warning text are a little darker, free addresses in the IP overview and the "stop dropped" label on the map are no longer faded; every text on every GravityUI page now reaches at least 4.5:1 contrast in light and dark.
 
 ### Fixed
 - GravityUI showed values the backend never sends (device `name`, `os_info`, `device_role`, service `url`, subnet `color`); it now uses the React UI's types and API client directly.
