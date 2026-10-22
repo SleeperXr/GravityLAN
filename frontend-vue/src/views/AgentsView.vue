@@ -1,149 +1,213 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { Cpu, MemoryStick, RefreshCw, Server, Thermometer } from 'lucide-vue-next';
-import RelativeTime from '@/components/8starlabs-ui/RelativeTime.vue';
-import StatusIndicator from '@/components/8starlabs-ui/StatusIndicator.vue';
-import DeviceMetricsBar from '@/components/dashboard/DeviceMetricsBar.vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { Activity, ArrowUpCircle, ChevronRight, Package, RefreshCw, RotateCcw, Search, Server, ShieldAlert, ShieldCheck } from 'lucide-vue-next';
 import { api } from '@/api/client';
-import type { AgentSummary } from '@/types';
+import PageHeader from '@/components/ui/PageHeader.vue';
+import Button from '@/components/ui/Button.vue';
+import Badge from '@/components/ui/Badge.vue';
+import Skeleton from '@/components/ui/Skeleton.vue';
+import EmptyState from '@/components/ui/EmptyState.vue';
+import ErrorState from '@/components/ui/ErrorState.vue';
+import StatusDot from '@/components/common/StatusDot.vue';
+import AgentDetail from '@/components/agents/AgentDetail.vue';
+import GlobalMetricsDialog from '@/components/agents/GlobalMetricsDialog.vue';
+import { hourState, loadTone, matchesAgent, osLabelOf, type AgentRow } from '@/components/agents/agentRow';
+import { confirmAction } from '@/composables/useConfirm';
+import { useToast } from '@/composables/useToast';
+import { formatDateTime, formatNumber, t } from '@/i18n';
 
-const agents = ref<AgentSummary[]>([]);
-const avgCpu = ref(0);
-const avgRam = ref(0);
-const activeCount = ref(0);
-const totalPoints = ref(0);
-const loading = ref(false);
+/** Every installed agent: load, uptime, pending updates; a row opens telemetry and patching. */
+interface Overview {
+  agents: AgentRow[];
+  total_agents: number;
+  active_agents: number;
+  total_data_points: number;
+  avg_cpu: number;
+  avg_ram: number;
+}
 
-async function loadAgents() {
-  loading.value = true;
+const { showToast } = useToast();
+const data = ref<Overview | null>(null);
+const loading = ref(true);
+const refreshing = ref(false);
+const error = ref<string | null>(null);
+const search = ref('');
+const expandedId = ref<number | null>(null);
+const showGlobal = ref(false);
+let timer: number | undefined;
+
+async function load(silent = true) {
+  if (!silent) refreshing.value = true;
   try {
-    const res = await api.getAgentsOverview();
-    agents.value = res.agents;
-    avgCpu.value = res.avg_cpu;
-    avgRam.value = res.avg_ram;
-    activeCount.value = res.active_agents;
-    totalPoints.value = res.total_data_points;
+    data.value = (await api.getAgentsOverview()) as Overview;
+    error.value = null;
+  } catch (err) {
+    if (!data.value) error.value = (err as Error).message;
   } finally {
     loading.value = false;
+    refreshing.value = false;
   }
 }
 
-onMounted(loadAgents);
+onMounted(() => {
+  void load();
+  timer = window.setInterval(() => void load(), 30000);
+});
+onBeforeUnmount(() => window.clearInterval(timer));
+
+const agents = computed(() => (data.value?.agents ?? []).filter((a) => matchesAgent(a, search.value)));
+
+async function adopt(agent: AgentRow) {
+  const ok = await confirmAction({ title: t('dashboard.adopt'), message: t('agent.adopt_confirm'), confirmLabel: t('dashboard.adopt') });
+  if (!ok) return;
+  try {
+    await api.adoptAgent(agent.device_id);
+    showToast('success', t('gv.agents.adopted'), agent.hostname);
+    await load();
+  } catch (err) {
+    showToast('error', t('gv.agents.adopt_failed'), (err as Error).message);
+  }
+}
+
+const toneText = { ok: 'text-fg-muted', warn: 'text-warn-text', danger: 'text-danger-text' } as const;
+const toneBar = { ok: 'bg-accent', warn: 'bg-warn', danger: 'bg-danger' } as const;
+const hourBar = { up: 'bg-accent', partial: 'bg-warn', down: 'bg-danger', none: 'bg-line' } as const;
+const uptimeText = (pct: number) => (pct < 80 ? 'text-danger-text' : pct < 95 ? 'text-warn-text' : 'text-accent-text');
+const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.uptime_history : Array<number | null>(24).fill(null));
 </script>
 
 <template>
-  <div class="p-6 max-w-[1640px] mx-auto space-y-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-      <div>
-        <h2 class="text-lg font-bold text-zinc-100 tracking-tight">Linux & Docker Telemetry Agents</h2>
-        <p class="text-xs text-zinc-400">
-          Real-time WebSocket host utilization, thermal sensors & package patch status
-        </p>
+  <div class="mx-auto max-w-[1800px] space-y-5 px-4 py-5 md:px-8 md:py-7">
+    <PageHeader :title="t('agents_page.title')" :description="t('agents_page.subtitle', { count: data?.total_agents ?? 0 })">
+      <Button :disabled="refreshing" @click="load(false)">
+        <RefreshCw :class="refreshing && 'animate-spin'" aria-hidden="true" />{{ t('agents_page.sync') }}
+      </Button>
+    </PageHeader>
+
+    <section class="gl-card grid grid-cols-2 divide-line overflow-hidden md:grid-cols-4 md:divide-x" :aria-label="t('agents_page.title')">
+      <div class="border-b border-line p-4 md:border-b-0">
+        <p class="gl-eyebrow">{{ t('agents_page.nodes') }}</p>
+        <p class="mt-1 font-mono text-3xl font-semibold text-fg tabular">{{ data?.total_agents ?? 0 }}</p>
+        <p class="mt-1 text-xs text-accent-text">{{ t('agents_page.active', { count: data?.active_agents ?? 0 }) }}</p>
       </div>
-      <button
-        type="button"
-        class="sh-pill-btn px-3.5 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-        @click="loadAgents"
-      >
-        <RefreshCw :class="['w-3.5 h-3.5', loading && 'animate-spin text-emerald-400']" />
-        Refresh Fleet
-      </button>
+      <div class="border-b border-line p-4 md:border-b-0">
+        <p class="gl-eyebrow">{{ t('agents_page.avg_cpu') }}</p>
+        <p class="mt-1 font-mono text-3xl font-semibold tabular" :class="(data?.avg_cpu ?? 0) >= 80 ? 'text-warn-text' : 'text-fg'">{{ (data?.avg_cpu ?? 0).toFixed(1) }}<span class="text-base text-fg-subtle"> %</span></p>
+      </div>
+      <div class="p-4">
+        <p class="gl-eyebrow">{{ t('agents_page.avg_ram') }}</p>
+        <p class="mt-1 font-mono text-3xl font-semibold text-fg tabular">{{ (data?.avg_ram ?? 0).toFixed(1) }}<span class="text-base text-fg-subtle"> %</span></p>
+      </div>
+      <div class="p-4">
+        <p class="gl-eyebrow">{{ t('agents_page.snapshots') }}</p>
+        <p class="mt-1 font-mono text-3xl font-semibold text-fg tabular">{{ formatNumber(data?.total_data_points ?? 0) }}</p>
+        <p class="mt-1 text-xs text-fg-subtle">{{ t('agents_page.snapshots_note') }}</p>
+      </div>
+    </section>
+
+    <div class="flex flex-wrap items-center gap-2">
+      <label class="relative min-w-0 flex-1 sm:max-w-xs">
+        <span class="sr-only">{{ t('agents_page.search_placeholder') }}</span>
+        <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
+        <input v-model="search" type="search" :placeholder="t('agents_page.search_placeholder')" class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-accent focus:outline-none" />
+      </label>
+      <Button class="ml-auto" @click="showGlobal = true"><Activity aria-hidden="true" />{{ t('agents_page.global_analytics') }}</Button>
     </div>
 
-    <!-- Top Bento Summary Cards -->
-    <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
-      <div class="sh-card p-5 flex flex-col justify-between gap-3">
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Connected Agents</span>
-          <Server class="w-4 h-4 text-emerald-400" />
-        </div>
-        <div class="font-mono text-3xl font-bold text-zinc-100">
-          {{ activeCount }} <span class="text-base font-normal text-zinc-500">/ {{ agents.length }}</span>
-        </div>
-        <div class="sh-subcard p-2.5 flex items-center justify-between text-xs">
-          <span class="text-zinc-400">Telemetry Snapshots</span>
-          <span class="font-mono font-semibold text-emerald-400">{{ totalPoints.toLocaleString() }}</span>
-        </div>
-      </div>
-
-      <div class="sh-card p-5 flex flex-col justify-between gap-3">
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Fleet Avg CPU Load</span>
-          <Cpu class="w-4 h-4 text-sky-400" />
-        </div>
-        <div class="font-mono text-3xl font-bold text-zinc-100">{{ avgCpu.toFixed(1) }}%</div>
-        <div class="h-2 w-full rounded-full bg-zinc-900 overflow-hidden">
-          <div class="h-full bg-emerald-500 rounded-full transition-all" :style="{ width: `${Math.min(100, avgCpu)}%` }" />
-        </div>
-      </div>
-
-      <div class="sh-card p-5 flex flex-col justify-between gap-3">
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Fleet Avg Memory</span>
-          <MemoryStick class="w-4 h-4 text-amber-400" />
-        </div>
-        <div class="font-mono text-3xl font-bold text-zinc-100">{{ avgRam.toFixed(1) }}%</div>
-        <div class="h-2 w-full rounded-full bg-zinc-900 overflow-hidden">
-          <div class="h-full bg-sky-400 rounded-full transition-all" :style="{ width: `${Math.min(100, avgRam)}%` }" />
-        </div>
-      </div>
+    <div v-if="loading" class="space-y-2">
+      <Skeleton v-for="i in 4" :key="i" class="h-20" />
     </div>
+    <ErrorState v-else-if="error" :title="t('gv.agents.load_failed')" :message="error" :retrying="refreshing" @retry="load(false)" />
+    <EmptyState v-else-if="agents.length === 0" :icon="Server" :title="t('agent_detail.no_agents')" />
 
-    <!-- Agent Cards Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-      <div
-        v-for="ag in agents"
-        :key="ag.device_id"
-        class="sh-card-interactive p-5 flex flex-col gap-4"
-      >
-        <div class="flex items-start justify-between gap-3">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-[#1b1b20] border border-zinc-800 flex items-center justify-center relative">
-              <Server class="w-4.5 h-4.5 text-emerald-400" />
-              <div class="absolute -bottom-1 -right-1 bg-[#131316] p-0.5 rounded-full">
-                <StatusIndicator :state="ag.is_online ? 'active' : 'down'" size="sm" />
-              </div>
-            </div>
-            <div>
-              <h3 class="text-sm font-bold text-zinc-100">{{ ag.hostname }}</h3>
-              <div class="font-mono text-xs text-zinc-400">{{ ag.ip }} · v{{ ag.agent_version || '1.0' }}</div>
-            </div>
-          </div>
-
-          <span
-            v-if="ag.patch_security > 0"
-            class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30"
+    <section v-else class="gl-card overflow-hidden">
+      <div class="hidden grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,0.8fr)] gap-4 border-b border-line px-4 py-2 text-[11px] font-semibold tracking-wide text-fg-subtle uppercase lg:grid" aria-hidden="true">
+        <span class="pl-7">{{ t('agents_page.col_agent') }}</span>
+        <span>{{ t('agents_page.col_connection') }}</span>
+        <span>{{ t('agents_page.col_performance') }}</span>
+        <span>{{ t('agents_page.col_uptime') }}</span>
+        <span class="text-right">{{ t('agents_page.col_activity') }}</span>
+      </div>
+      <ul class="divide-y divide-line">
+        <li v-for="agent in agents" :key="agent.device_id" :class="expandedId === agent.device_id && 'bg-raised/40'">
+          <button
+            type="button"
+            class="grid w-full grid-cols-1 gap-3 px-4 py-3 text-left transition-colors hover:bg-raised/60 lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,0.8fr)] lg:items-center lg:gap-4"
+            :aria-expanded="expandedId === agent.device_id"
+            :aria-controls="`agent-detail-${agent.device_id}`"
+            @click="expandedId = expandedId === agent.device_id ? null : agent.device_id"
           >
-            {{ ag.patch_available }} ({{ ag.patch_security }} Sec)
-          </span>
-          <span
-            v-else-if="ag.patch_available > 0"
-            class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30"
-          >
-            {{ ag.patch_available }} Updates
-          </span>
-          <span
-            v-else
-            class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/12 text-emerald-400 border border-emerald-500/25"
-          >
-            Up to date
-          </span>
-        </div>
-
-        <!-- Live WebSocket DeviceMetricsBar -->
-        <DeviceMetricsBar :device-id="ag.device_id" />
-
-        <div class="flex items-center justify-between text-[11px] text-zinc-500 pt-1 border-t border-zinc-800/70">
-          <div class="inline-flex items-center gap-3">
-            <span v-if="ag.temp !== null" class="inline-flex items-center gap-1 font-mono text-zinc-300">
-              <Thermometer class="w-3 h-3 text-amber-400" />
-              {{ ag.temp.toFixed(0) }}°C
+            <span class="flex min-w-0 items-start gap-2.5">
+              <ChevronRight class="mt-1 size-4 shrink-0 text-fg-subtle transition-transform" :class="expandedId === agent.device_id && 'rotate-90'" aria-hidden="true" />
+              <span class="grid size-9 shrink-0 place-items-center rounded-md border" :class="agent.is_online ? 'border-accent/40 bg-accent/10 text-accent-text' : 'border-line bg-sunken text-fg-subtle'" aria-hidden="true">
+                <Server class="size-4" />
+              </span>
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-semibold text-fg">{{ agent.hostname }}</span>
+                <span class="block font-mono text-xs text-fg-subtle">{{ agent.ip }} · v{{ agent.agent_version || '0.0.0' }}</span>
+                <span class="mt-1 flex flex-wrap gap-1">
+                  <Badge v-if="osLabelOf(agent)" class="max-w-48 truncate" :title="osLabelOf(agent) ?? undefined">{{ osLabelOf(agent) }}</Badge>
+                  <Badge v-if="agent.patch_available > 0" :tone="agent.patch_security > 0 ? 'danger' : 'warn'" mono :title="t('agent_detail.updates_badge', { count: agent.patch_available, security: agent.patch_security })">
+                    <component :is="agent.patch_security > 0 ? ShieldAlert : Package" aria-hidden="true" />{{ agent.patch_available }}
+                  </Badge>
+                  <Badge v-if="agent.reboot_required" tone="danger"><RotateCcw aria-hidden="true" />{{ t('agent_detail.reboot_badge') }}</Badge>
+                  <Badge v-if="agent.major_upgrade_available" tone="info" :title="t('agent_detail.major_upgrade', { target: agent.major_upgrade_available })"><ArrowUpCircle aria-hidden="true" />{{ agent.major_upgrade_available }}</Badge>
+                </span>
+              </span>
             </span>
+
+            <span class="flex items-center gap-2 text-xs font-medium" :class="agent.is_online ? 'text-accent-text' : 'text-danger-text'">
+              <StatusDot :state="agent.is_online ? 'online' : 'offline'" size="sm" />
+              {{ agent.is_online ? t('agents_page.connected') : t('agents_page.disconnected') }}
+            </span>
+
+            <span class="grid grid-cols-2 gap-3">
+              <span v-for="m in [{ label: 'CPU', value: agent.cpu_usage }, { label: 'RAM', value: agent.ram_usage }]" :key="m.label" class="space-y-1">
+                <span class="flex justify-between font-mono text-[11px]">
+                  <span class="text-fg-subtle">{{ m.label }}</span>
+                  <span class="font-semibold tabular" :class="toneText[loadTone(m.value)]">{{ m.value.toFixed(1) }} %</span>
+                </span>
+                <span class="block h-1.5 overflow-hidden rounded-full bg-sunken">
+                  <span class="block h-full rounded-full" :class="toneBar[loadTone(m.value)]" :style="{ width: `${Math.min(100, Math.max(0, m.value))}%` }" />
+                </span>
+              </span>
+            </span>
+
+            <span class="flex items-center gap-2.5">
+              <span class="w-14 shrink-0 font-mono text-xs font-semibold tabular" :class="uptimeText(agent.uptime_pct)">{{ agent.uptime_pct.toFixed(1) }} %</span>
+              <span class="flex h-5 min-w-0 flex-1 items-end gap-px" aria-hidden="true">
+                <span
+                  v-for="(val, i) in hours(agent)"
+                  :key="i"
+                  class="h-full min-w-0 flex-1 rounded-[1px]"
+                  :class="hourBar[hourState(val)]"
+                  :title="val === null || val < 0 ? undefined : t('agent_detail.uptime_hour', { hours: hours(agent).length - 1 - i, pct: val.toFixed(1) })"
+                />
+              </span>
+            </span>
+
+            <span class="font-mono text-xs text-fg-muted lg:text-right">
+              <template v-if="agent.last_seen">
+                {{ formatDateTime(agent.last_seen, { timeStyle: 'medium' }) }}
+                <span class="text-fg-subtle lg:block">{{ formatDateTime(agent.last_seen, { dateStyle: 'short' }) }}</span>
+              </template>
+              <template v-else>{{ t('agent_detail.never') }}</template>
+            </span>
+          </button>
+
+          <div v-if="agent.has_pending_token" class="mx-4 mb-3 flex flex-wrap items-center gap-3 rounded-md border border-danger/30 bg-danger/10 p-3 text-xs text-danger-text">
+            <ShieldCheck class="size-4 shrink-0" aria-hidden="true" />
+            <p class="min-w-0 flex-1">{{ t('agent_detail.token_mismatch') }}</p>
+            <Button size="sm" @click="adopt(agent)">{{ t('dashboard.adopt') }}</Button>
           </div>
-          <RelativeTime v-if="ag.last_seen" :date="ag.last_seen" />
-        </div>
-      </div>
-    </div>
+
+          <div v-if="expandedId === agent.device_id" :id="`agent-detail-${agent.device_id}`" class="border-t border-line px-4 pb-4">
+            <AgentDetail :agent="agent" @refresh="load()" />
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <GlobalMetricsDialog v-model:open="showGlobal" />
   </div>
 </template>

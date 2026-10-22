@@ -100,6 +100,14 @@
       "period": "Zeitraum",
       "filter": "Status filtern",
       "sort": "Sortieren nach"
+    },
+    "agents": {
+      "patch_confirm": "Die Pakete auf {{host}} werden jetzt per SSH aktualisiert. Laufende Dienste können kurz neu starten.",
+      "patch_start": "Aktualisieren",
+      "query_failed": "Updates konnten nicht abgefragt werden",
+      "adopted": "Neuer Agent-Schlüssel übernommen",
+      "adopt_failed": "Schlüssel konnte nicht übernommen werden",
+      "load_failed": "Agents konnten nicht geladen werden"
     }
   }
 }

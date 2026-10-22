@@ -100,6 +100,14 @@
       "period": "Period",
       "filter": "Filter by status",
       "sort": "Sort by"
+    },
+    "agents": {
+      "patch_confirm": "Packages on {{host}} will now be upgraded over SSH. Running services may restart briefly.",
+      "patch_start": "Upgrade",
+      "query_failed": "Could not query updates",
+      "adopted": "New agent key adopted",
+      "adopt_failed": "Could not adopt the key",
+      "load_failed": "Could not load agents"
     }
   }
 }
