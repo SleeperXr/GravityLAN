@@ -108,6 +108,9 @@
       "adopted": "Neuer Agent-Schlüssel übernommen",
       "adopt_failed": "Schlüssel konnte nicht übernommen werden",
       "load_failed": "Agents konnten nicht geladen werden"
+    },
+    "ssh": {
+      "back_to_sessions": "Zurück zu den Sitzungen ({{count}})"
     }
   }
 }

@@ -21,7 +21,7 @@ export const router = createRouter({
     { path: '/network', name: 'network', component: () => import('@/views/NetworkView.vue'), meta: { navId: 'network', titleKey: 'sidebar.network_planner' } },
     { path: '/topology', name: 'topology', component: () => import('@/views/TopologyView.vue'), meta: { navId: 'topology', titleKey: 'sidebar.topology' } },
     { path: '/agents', name: 'agents', component: () => import('@/views/AgentsView.vue'), meta: { navId: 'agents', titleKey: 'sidebar.agents' } },
-    { path: '/ssh', name: 'ssh', component: LegacyOnlyView, meta: { navId: 'ssh', titleKey: 'sidebar.ssh' } },
+    { path: '/ssh', name: 'ssh', component: () => import('@/views/SshView.vue'), meta: { navId: 'ssh', titleKey: 'sidebar.ssh' } },
     { path: '/logs', name: 'logs', component: LegacyOnlyView, meta: { navId: 'logs', titleKey: 'sidebar.logs' } },
     { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { navId: 'settings', titleKey: 'sidebar.settings' } },
     { path: '/:pathMatch(.*)*', redirect: '/' },

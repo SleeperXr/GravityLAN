@@ -108,6 +108,9 @@
       "adopted": "New agent key adopted",
       "adopt_failed": "Could not adopt the key",
       "load_failed": "Could not load agents"
+    },
+    "ssh": {
+      "back_to_sessions": "Back to sessions ({{count}})"
     }
   }
 }

@@ -123,7 +123,12 @@ onBeforeUnmount(() => store.disconnectScanStream());
       </div>
 
       <main id="main" tabindex="-1" class="min-h-0 flex-1 overflow-y-auto pb-[calc(4rem+env(safe-area-inset-bottom))] focus:outline-none md:pb-0">
-        <RouterView />
+        <!-- The SSH page stays alive after the first visit, so open terminals keep running elsewhere -->
+        <RouterView v-slot="{ Component }">
+          <KeepAlive include="SshView">
+            <component :is="Component" />
+          </KeepAlive>
+        </RouterView>
       </main>
     </div>
 
