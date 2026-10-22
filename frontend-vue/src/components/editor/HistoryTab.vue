@@ -6,6 +6,7 @@ import type { DeviceHistoryResponse } from '@/types';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
+import { statusWord } from '@/components/health/healthModel';
 import { t } from '@/i18n';
 
 /** Status history, (re)loaded each time the tab is opened. */
@@ -45,7 +46,7 @@ const isUp = (item: DeviceHistoryResponse) => item.status === 'online' || item.s
         aria-hidden="true"
       />
       <div class="flex flex-wrap items-center gap-2">
-        <span class="text-[11px] font-semibold uppercase tracking-wide" :class="isUp(item) ? 'text-accent-text' : 'text-danger-text'">{{ item.status }}</span>
+        <span class="text-[11px] font-semibold" :class="isUp(item) ? 'text-accent-text' : 'text-danger-text'">{{ statusWord(item.status) }}</span>
         <span v-if="item.service_id" class="rounded-sm bg-raised px-1.5 text-[10px] font-medium text-fg-muted">SERVICE</span>
         <span class="ml-auto text-xs text-fg-subtle"><RelativeTime :date="item.timestamp" /></span>
       </div>

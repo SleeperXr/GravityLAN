@@ -147,6 +147,11 @@
       "issue_outside": "ragt über das Rack hinaus",
       "issue_overlap": "überschneidet sich mit einem anderen Gerät",
       "subtitle": "Wo deine Geräte physisch stecken. Rack und Position legst du im Geräte-Editor fest – ein Klick aufs Gerät genügt."
+    },
+    "status": {
+      "flapping": "Instabil",
+      "service_up": "Dienst wieder da",
+      "service_down": "Dienst ausgefallen"
     }
   }
 }

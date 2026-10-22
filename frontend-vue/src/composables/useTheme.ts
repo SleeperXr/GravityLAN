@@ -28,7 +28,7 @@ const resolved = computed<'light' | 'dark'>(() =>
 function apply(theme: 'light' | 'dark') {
   const root = document.documentElement;
   root.setAttribute('data-theme', theme);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0e0e11' : '#ffffff');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0c0f14' : '#ffffff');
 }
 
 watch(resolved, apply, { immediate: true });

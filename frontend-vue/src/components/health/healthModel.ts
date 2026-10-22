@@ -37,4 +37,13 @@ export const sslWarnings = (services: ServiceHealthItem[]) =>
 
 export const hasAgentWarning = (device: DeviceHealthItem) => Boolean(device.agent && (device.agent.patch_security > 0 || device.agent.reboot_required));
 
+/** A status word from history/incident records in the UI language (unknown words stay as sent). */
+export function statusWord(status: string): string {
+  const key = status.toLowerCase();
+  if (key === 'online' || key === 'up') return t('network.online');
+  if (key === 'offline' || key === 'down') return t('network.offline');
+  if (key === 'flapping' || key === 'service_up' || key === 'service_down') return t(`gv.status.${key}`);
+  return status;
+}
+
 export const ms = (value: number | null | undefined, digits = 1) => (value === null || value === undefined ? '–' : `${value.toFixed(digits)} ms`);

@@ -121,7 +121,7 @@ function intOrNull(value: string | number | null | undefined): number | null {
         :class="form[role.key] ? 'border-info/50 bg-info/[0.07]' : 'border-line bg-raised hover:border-line-strong'"
         @click="form[role.key] = !form[role.key]"
       >
-        <span class="flex size-8 shrink-0 items-center justify-center rounded-md" :class="form[role.key] ? 'bg-info text-white' : 'bg-sunken text-fg-subtle'">
+        <span class="flex size-8 shrink-0 items-center justify-center rounded-md" :class="form[role.key] ? 'bg-info text-canvas' : 'bg-sunken text-fg-subtle'">
           <component :is="role.icon" class="size-4" aria-hidden="true" />
         </span>
         <span class="min-w-0">

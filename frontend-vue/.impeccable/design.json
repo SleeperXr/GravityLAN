@@ -1,0 +1,566 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-22T20:14:07+00:00",
+  "title": "Design System: GravityUI",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Nachtgrund",
+        "tonalRamp": [
+          "oklch(15% 0.012 255)",
+          "oklch(25% 0.012 255)",
+          "oklch(35% 0.012 255)",
+          "oklch(45% 0.012 255)",
+          "oklch(55% 0.012 255)",
+          "oklch(65% 0.012 255)",
+          "oklch(80% 0.012 255)",
+          "oklch(95% 0.012 255)"
+        ],
+        "themeVariant": "canvas-day"
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Kartenfläche",
+        "tonalRamp": [
+          "oklch(15% 0.012 255)",
+          "oklch(25% 0.012 255)",
+          "oklch(35% 0.012 255)",
+          "oklch(45% 0.012 255)",
+          "oklch(55% 0.012 255)",
+          "oklch(65% 0.012 255)",
+          "oklch(80% 0.012 255)",
+          "oklch(95% 0.012 255)"
+        ],
+        "themeVariant": "surface-day"
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Innenfläche",
+        "tonalRamp": [
+          "oklch(15% 0.012 255)",
+          "oklch(25% 0.012 255)",
+          "oklch(35% 0.012 255)",
+          "oklch(45% 0.012 255)",
+          "oklch(55% 0.012 255)",
+          "oklch(65% 0.012 255)",
+          "oklch(80% 0.012 255)",
+          "oklch(95% 0.012 255)"
+        ],
+        "themeVariant": "raised-day"
+      },
+      "sunken": {
+        "role": "neutral",
+        "displayName": "Senke",
+        "tonalRamp": [
+          "oklch(15% 0.012 255)",
+          "oklch(25% 0.012 255)",
+          "oklch(35% 0.012 255)",
+          "oklch(45% 0.012 255)",
+          "oklch(55% 0.012 255)",
+          "oklch(65% 0.012 255)",
+          "oklch(80% 0.012 255)",
+          "oklch(95% 0.012 255)"
+        ],
+        "themeVariant": "sunken-day"
+      },
+      "chrome": {
+        "role": "neutral",
+        "displayName": "Nachtleiste",
+        "tonalRamp": [
+          "oklch(15% 0.01 255)",
+          "oklch(25% 0.01 255)",
+          "oklch(35% 0.01 255)",
+          "oklch(45% 0.01 255)",
+          "oklch(55% 0.01 255)",
+          "oklch(65% 0.01 255)",
+          "oklch(80% 0.01 255)",
+          "oklch(95% 0.01 255)"
+        ],
+        "themeVariant": "chrome-day"
+      },
+      "fg": {
+        "role": "neutral",
+        "displayName": "Textweiß",
+        "tonalRamp": [
+          "oklch(15% 0.012 255)",
+          "oklch(25% 0.012 255)",
+          "oklch(35% 0.012 255)",
+          "oklch(45% 0.012 255)",
+          "oklch(55% 0.012 255)",
+          "oklch(65% 0.012 255)",
+          "oklch(80% 0.012 255)",
+          "oklch(95% 0.012 255)"
+        ],
+        "themeVariant": "fg-day"
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Signaltürkis",
+        "tonalRamp": [
+          "oklch(15% 0.13 175)",
+          "oklch(25% 0.13 175)",
+          "oklch(35% 0.13 175)",
+          "oklch(45% 0.13 175)",
+          "oklch(55% 0.13 175)",
+          "oklch(65% 0.13 175)",
+          "oklch(80% 0.13 175)",
+          "oklch(95% 0.13 175)"
+        ],
+        "themeVariant": "accent-day"
+      },
+      "info": {
+        "role": "tertiary",
+        "displayName": "Info-Blau",
+        "tonalRamp": [
+          "oklch(15% 0.15 252)",
+          "oklch(25% 0.15 252)",
+          "oklch(35% 0.15 252)",
+          "oklch(45% 0.15 252)",
+          "oklch(55% 0.15 252)",
+          "oklch(65% 0.15 252)",
+          "oklch(80% 0.15 252)",
+          "oklch(95% 0.15 252)"
+        ],
+        "themeVariant": "info-day"
+      },
+      "warn": {
+        "role": "tertiary",
+        "displayName": "Bernstein",
+        "tonalRamp": [
+          "oklch(15% 0.15 72)",
+          "oklch(25% 0.15 72)",
+          "oklch(35% 0.15 72)",
+          "oklch(45% 0.15 72)",
+          "oklch(55% 0.15 72)",
+          "oklch(65% 0.15 72)",
+          "oklch(80% 0.15 72)",
+          "oklch(95% 0.15 72)"
+        ],
+        "themeVariant": "warn-day"
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Signalrot",
+        "tonalRamp": [
+          "oklch(15% 0.18 22)",
+          "oklch(25% 0.18 22)",
+          "oklch(35% 0.18 22)",
+          "oklch(45% 0.18 22)",
+          "oklch(55% 0.18 22)",
+          "oklch(65% 0.18 22)",
+          "oklch(80% 0.18 22)",
+          "oklch(95% 0.18 22)"
+        ],
+        "themeVariant": "danger-day"
+      },
+      "sign-ink": {
+        "role": "neutral",
+        "displayName": "Schildtinte",
+        "tonalRamp": [
+          "oklch(15% 0.012 255)",
+          "oklch(25% 0.012 255)",
+          "oklch(35% 0.012 255)",
+          "oklch(45% 0.012 255)",
+          "oklch(55% 0.012 255)",
+          "oklch(65% 0.012 255)",
+          "oklch(80% 0.012 255)",
+          "oklch(95% 0.012 255)"
+        ]
+      },
+      "line-1": {
+        "role": "secondary",
+        "displayName": "Linie 1 Türkis",
+        "tonalRamp": [
+          "oklch(15% 0.13 175)",
+          "oklch(25% 0.13 175)",
+          "oklch(35% 0.13 175)",
+          "oklch(45% 0.13 175)",
+          "oklch(55% 0.13 175)",
+          "oklch(65% 0.13 175)",
+          "oklch(80% 0.13 175)",
+          "oklch(95% 0.13 175)"
+        ],
+        "themeVariant": "line-1-day"
+      },
+      "line-2": {
+        "role": "secondary",
+        "displayName": "Linie 2 Orange",
+        "tonalRamp": [
+          "oklch(15% 0.16 60)",
+          "oklch(25% 0.16 60)",
+          "oklch(35% 0.16 60)",
+          "oklch(45% 0.16 60)",
+          "oklch(55% 0.16 60)",
+          "oklch(65% 0.16 60)",
+          "oklch(80% 0.16 60)",
+          "oklch(95% 0.16 60)"
+        ],
+        "themeVariant": "line-2-day"
+      },
+      "line-3": {
+        "role": "secondary",
+        "displayName": "Linie 3 Blau",
+        "tonalRamp": [
+          "oklch(15% 0.15 252)",
+          "oklch(25% 0.15 252)",
+          "oklch(35% 0.15 252)",
+          "oklch(45% 0.15 252)",
+          "oklch(55% 0.15 252)",
+          "oklch(65% 0.15 252)",
+          "oklch(80% 0.15 252)",
+          "oklch(95% 0.15 252)"
+        ],
+        "themeVariant": "line-3-day"
+      },
+      "line-4": {
+        "role": "secondary",
+        "displayName": "Linie 4 Gelb",
+        "tonalRamp": [
+          "oklch(15% 0.17 92)",
+          "oklch(25% 0.17 92)",
+          "oklch(35% 0.17 92)",
+          "oklch(45% 0.17 92)",
+          "oklch(55% 0.17 92)",
+          "oklch(65% 0.17 92)",
+          "oklch(80% 0.17 92)",
+          "oklch(95% 0.17 92)"
+        ],
+        "themeVariant": "line-4-day"
+      },
+      "line-5": {
+        "role": "secondary",
+        "displayName": "Linie 5 Rosa",
+        "tonalRamp": [
+          "oklch(15% 0.16 355)",
+          "oklch(25% 0.16 355)",
+          "oklch(35% 0.16 355)",
+          "oklch(45% 0.16 355)",
+          "oklch(55% 0.16 355)",
+          "oklch(65% 0.16 355)",
+          "oklch(80% 0.16 355)",
+          "oklch(95% 0.16 355)"
+        ],
+        "themeVariant": "line-5-day"
+      },
+      "line-6": {
+        "role": "secondary",
+        "displayName": "Linie 6 Grün",
+        "tonalRamp": [
+          "oklch(15% 0.18 133)",
+          "oklch(25% 0.18 133)",
+          "oklch(35% 0.18 133)",
+          "oklch(45% 0.18 133)",
+          "oklch(55% 0.18 133)",
+          "oklch(65% 0.18 133)",
+          "oklch(80% 0.18 133)",
+          "oklch(95% 0.18 133)"
+        ],
+        "themeVariant": "line-6-day"
+      },
+      "line-7": {
+        "role": "secondary",
+        "displayName": "Linie 7 Cyan",
+        "tonalRamp": [
+          "oklch(15% 0.13 220)",
+          "oklch(25% 0.13 220)",
+          "oklch(35% 0.13 220)",
+          "oklch(45% 0.13 220)",
+          "oklch(55% 0.13 220)",
+          "oklch(65% 0.13 220)",
+          "oklch(80% 0.13 220)",
+          "oklch(95% 0.13 220)"
+        ],
+        "themeVariant": "line-7-day"
+      },
+      "line-8": {
+        "role": "secondary",
+        "displayName": "Linie 8 Ocker",
+        "tonalRamp": [
+          "oklch(15% 0.09 62)",
+          "oklch(25% 0.09 62)",
+          "oklch(35% 0.09 62)",
+          "oklch(45% 0.09 62)",
+          "oklch(55% 0.09 62)",
+          "oklch(65% 0.09 62)",
+          "oklch(80% 0.09 62)",
+          "oklch(95% 0.09 62)"
+        ],
+        "themeVariant": "line-8-day"
+      },
+      "line-9": {
+        "role": "secondary",
+        "displayName": "Linie 9 Grau",
+        "tonalRamp": [
+          "oklch(15% 0.015 255)",
+          "oklch(25% 0.015 255)",
+          "oklch(35% 0.015 255)",
+          "oklch(45% 0.015 255)",
+          "oklch(55% 0.015 255)",
+          "oklch(65% 0.015 255)",
+          "oklch(80% 0.015 255)",
+          "oklch(95% 0.015 255)"
+        ],
+        "themeVariant": "line-9-day"
+      },
+      "line-10": {
+        "role": "secondary",
+        "displayName": "Linie 10 Koralle",
+        "tonalRamp": [
+          "oklch(15% 0.14 33)",
+          "oklch(25% 0.14 33)",
+          "oklch(35% 0.14 33)",
+          "oklch(45% 0.14 33)",
+          "oklch(55% 0.14 33)",
+          "oklch(65% 0.14 33)",
+          "oklch(80% 0.14 33)",
+          "oklch(95% 0.14 33)"
+        ],
+        "themeVariant": "line-10-day"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Nur Willkommensschritt der Ersteinrichtung."
+      },
+      "headline": {
+        "displayName": "Seitentitel",
+        "purpose": "PageHeader; auf Telefonen nur für Screenreader."
+      },
+      "title": {
+        "displayName": "Kartentitel",
+        "purpose": "Karten, Abschnitte, Linienname, Meldungstitel."
+      },
+      "body": {
+        "displayName": "Fließtext",
+        "purpose": "Text, Navigation, Buttons."
+      },
+      "meta": {
+        "displayName": "Metadaten",
+        "purpose": "Hilfetexte, Zeitangaben, Zähler."
+      },
+      "label": {
+        "displayName": "Datenlabel",
+        "purpose": ".gl-eyebrow: Beschriftung über Messwerten und Definitionslisten; normale Schreibung, kein Vorspann über Titeln."
+      },
+      "badge": {
+        "displayName": "Badge",
+        "purpose": "Badges, mobile Tab-Beschriftung."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "IPs, CIDRs, MACs, Ports, Latenzen, Zähler."
+      },
+      "line-sign": {
+        "displayName": "Linienschild",
+        "purpose": "VLAN-ID oder Anfangsbuchstabe im runden Schild; 10/12/14 px in sm/md/lg."
+      },
+      "station-name": {
+        "displayName": "Stationsname",
+        "purpose": "Nur Netzplan, mit 10,5-px-Mono-Zeile darunter."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card",
+        "value": "0 1px 0 0 rgb(255 255 255 / 0.025) inset",
+        "valueDay": "0 1px 2px rgb(16 20 27 / 0.04)",
+        "purpose": "Kartenkante auf .gl-card."
+      },
+      {
+        "name": "pop",
+        "value": "0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04)",
+        "valueDay": "0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06)",
+        "purpose": "Nur schwebende Ebenen: Dialoge, Sheets, Popover, Netzplan-Bedienung."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Eintritte (Dialog 220 ms)."
+      },
+      {
+        "name": "state",
+        "value": "150ms",
+        "purpose": "Farb- und Strichbreitenwechsel."
+      },
+      {
+        "name": "overlay",
+        "value": "160ms ease-out / 120ms ease-in",
+        "purpose": "Dialog-Overlay ein/aus."
+      },
+      {
+        "name": "station-hover",
+        "value": "200ms scale(1.1)",
+        "purpose": "Station im Hover."
+      },
+      {
+        "name": "station-blink",
+        "value": "1.2s steps(2, jump-none) infinite",
+        "purpose": "Gestörte Station."
+      },
+      {
+        "name": "plan-fit",
+        "value": "400ms",
+        "purpose": "Netzplan einpassen, über motion() reduziert."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      },
+      {
+        "name": "2xl",
+        "value": "1536px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primäre Aktion einer Seite (Scan, Fertig).",
+      "html": "<button class=\"ds-btn-primary\">Scan</button>",
+      "css": ".ds-btn-primary { font-family: var(--font-sans, 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif); display:inline-flex; align-items:center; height:36px; padding:0 14px; border-radius:10px; font-size:14px; transition:background-color 150ms, border-color 150ms, color 150ms; border:1px solid transparent; background:var(--gl-accent); color:var(--gl-accent-fg); font-weight:600; } .ds-btn-primary:hover { background:var(--gl-accent-hover); } .ds-btn-primary:focus-visible { outline:2px solid var(--gl-accent); outline-offset:2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Standardknopf für Nebenaktionen.",
+      "html": "<button class=\"ds-btn-secondary\">Alle aktualisieren</button>",
+      "css": ".ds-btn-secondary { font-family: var(--font-sans, 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif); display:inline-flex; align-items:center; height:36px; padding:0 14px; border-radius:10px; font-size:14px; transition:background-color 150ms, border-color 150ms, color 150ms; border:1px solid var(--gl-line); background:var(--gl-control); color:var(--gl-fg); font-weight:500; } .ds-btn-secondary:hover { background:var(--gl-control-hover); border-color:var(--gl-line-strong); } .ds-btn-secondary:focus-visible { outline:2px solid var(--gl-accent); outline-offset:2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Leise Aktion in Leisten und Filtern.",
+      "html": "<button class=\"ds-btn-ghost\">Filter zurücksetzen</button>",
+      "css": ".ds-btn-ghost { font-family: var(--font-sans, 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif); display:inline-flex; align-items:center; height:36px; padding:0 14px; border-radius:10px; font-size:14px; transition:background-color 150ms, border-color 150ms, color 150ms; border:1px solid transparent; background:transparent; color:var(--gl-fg-muted); font-weight:500; } .ds-btn-ghost:hover { background:var(--gl-control-hover); color:var(--gl-fg); } .ds-btn-ghost:focus-visible { outline:2px solid var(--gl-accent); outline-offset:2px; }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Texteingabe in der Senke, Fokus in Info-Blau.",
+      "html": "<input class=\"ds-input\" placeholder=\"Name, IP, MAC oder Dienst suchen\" />",
+      "css": ".ds-input { font-family: var(--font-sans, 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif); height:36px; width:280px; padding:0 12px; border:1px solid var(--gl-line); border-radius:10px; background:var(--gl-sunken); color:var(--gl-fg); font-size:14px; transition:border-color 150ms; } .ds-input::placeholder { color:var(--gl-fg-subtle); } .ds-input:hover { border-color:var(--gl-line-strong); } .ds-input:focus { outline:none; border-color:var(--gl-info); box-shadow:0 0 0 2px color-mix(in oklab, var(--gl-info) 25%, transparent); }"
+    },
+    {
+      "name": "Badge",
+      "kind": "chip",
+      "refersTo": "badge-neutral",
+      "description": "Kleine Kennzeichnung; Töne neutral, accent, info, warn, danger.",
+      "html": "<span class=\"ds-badge\">Host</span> <span class=\"ds-badge ds-badge-warn\">Agent-Update</span>",
+      "css": ".ds-badge { font-family: var(--font-sans, 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif); display:inline-flex; align-items:center; padding:2px 6px; border:1px solid var(--gl-line); border-radius:6px; background:var(--gl-raised); color:var(--gl-fg-muted); font-size:11px; line-height:16px; font-weight:500; } .ds-badge-warn { background:color-mix(in oklab, var(--gl-warn) 10%, transparent); border-color:color-mix(in oklab, var(--gl-warn) 30%, transparent); color:var(--gl-warn-text); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flache Karte mit Haarlinie.",
+      "html": "<section class=\"ds-card\"><h2 class=\"ds-card-title\">Betriebsmeldungen</h2><p class=\"ds-card-meta\">192.168.100.101</p></section>",
+      "css": ".ds-card { font-family: var(--font-sans, 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif); width:300px; padding:14px 16px; border:1px solid var(--gl-line); border-radius:14px; background:var(--gl-surface); box-shadow:var(--gl-shadow-card); } .ds-card-title { margin:0; font-size:14px; font-weight:700; color:var(--gl-fg); } .ds-card-meta { font-family: var(--font-mono, 'JetBrains Mono', ui-monospace, monospace); font-variant-numeric: tabular-nums; margin:4px 0 0; font-size:11px; color:var(--gl-fg-subtle); }"
+    },
+    {
+      "name": "Line Sign",
+      "kind": "custom",
+      "refersTo": "line-sign",
+      "description": "Rundes Linienschild eines Netzes: VLAN-ID oder Anfangsbuchstabe, immer mit Netzname daneben.",
+      "html": "<span class=\"ds-line-row\"><span class=\"ds-line-sign\" style=\"background:var(--line-1)\">H</span>Home LAN</span> <span class=\"ds-line-row\"><span class=\"ds-line-sign\" style=\"background:var(--line-2)\">30</span>IoT</span>",
+      "css": ".ds-line-row { font-family: var(--font-sans, 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif); display:inline-flex; align-items:center; gap:10px; margin-right:16px; font-size:14px; font-weight:700; color:var(--gl-fg); } .ds-line-sign { display:inline-grid; place-items:center; min-width:28px; height:28px; padding:0 6px; box-sizing:border-box; border-radius:9999px; color:#0c0f14; font-size:12px; font-weight:800; letter-spacing:-0.01em; font-variant-numeric:tabular-nums; }"
+    },
+    {
+      "name": "Station",
+      "kind": "custom",
+      "refersTo": "station",
+      "description": "Station im Netzplan: online, gestört, ausgefallen (durchgestrichen).",
+      "html": "<div class=\"ds-stations\"><span class=\"ds-station\"></span><span class=\"ds-station ds-station-warn\"></span><span class=\"ds-station ds-station-down\"><i></i></span></div>",
+      "css": ".ds-stations { display:flex; gap:32px; align-items:center; padding:12px; } .ds-station { position:relative; display:flex; align-items:center; justify-content:center; width:18px; height:18px; box-sizing:border-box; border:3.5px solid var(--gl-fg); border-radius:9999px; background:var(--gl-station); transition:transform 200ms; } .ds-station:hover { transform:scale(1.1); } .ds-station-warn { border-color:var(--gl-warn); } .ds-station-down { border-color:var(--gl-danger); } .ds-station-down i { position:absolute; width:140%; height:3px; border-radius:9999px; background:var(--gl-danger); transform:rotate(45deg); }"
+    },
+    {
+      "name": "Navigation Item",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Seite als Station mit eigenem Linienschild; aktiv gefüllt.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item is-active\" href=\"#\"><span class=\"ds-nav-sign\" style=\"--c:var(--line-1)\"></span>Übersicht</a><a class=\"ds-nav-item\" href=\"#\"><span class=\"ds-nav-sign\" style=\"--c:var(--line-5)\"></span>Health-Radar</a></nav>",
+      "css": ".ds-nav { font-family: var(--font-sans, 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif); width:216px; padding:12px; background:var(--gl-chrome); } .ds-nav-item { display:flex; align-items:center; gap:12px; height:36px; padding:0 8px; border-radius:10px; color:var(--gl-fg-muted); font-size:14px; font-weight:500; text-decoration:none; transition:background-color 150ms, color 150ms; } .ds-nav-item:hover { background:var(--gl-control-hover); color:var(--gl-fg); } .ds-nav-item:focus-visible { outline:2px solid var(--gl-accent); outline-offset:2px; } .ds-nav-sign { width:26px; height:26px; border-radius:7px; background:color-mix(in oklab, var(--c) 16%, transparent); } .ds-nav-item.is-active { background:var(--gl-raised); color:var(--gl-fg); font-weight:600; } .ds-nav-item.is-active .ds-nav-sign { background:var(--c); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Der Liniennetzplan",
+    "overview": "Das Heimnetz wird gelesen wie ein Verkehrsplan, den der Betreiber selbst zeichnet. Jedes Subnetz bzw. VLAN ist eine farbige Linie mit eigenem rundem Linienschild („30“, „H“), Geräte sind Stationen mit Ring, Router und mehrfach angebundene Geräte sind Umsteigestationen. Dieselbe Linienfarbe trägt ein Netz überall: auf dem Netzplan, im Linienschild, im Statusboard, in den Betriebsmeldungen, auf belegten IP-Kacheln, in Rack-Einschüben und in der Subnetz-Auswahl. Auch die Navigation ist eine Strecke: jede Seite hat ihre eigene Linienfarbe, die aktuelle Station ist gefüllt.\n\nDer Standard ist das Nachtnetz: ein tiefblauschwarzer Grund mit flachen Flächen, Haarlinien statt Schatten, hellen Linien und weißen Stationsringen. Das helle Thema ist der weiße Tagesplan mit derselben Linienlogik und eigens abgedunkelten Palettenwerten. Die Oberfläche ist ein Werkzeug für den täglichen Blick: dicht, ruhig, Zahlen und Adressen in Mono, Störungen vorne. Zustand wird nie nur über Farbe getragen: ausgefallene Stationen sind rot umrandet und durchgestrichen („Halt entfällt“), Strecken zu ihnen werden gepunktet („Störung“), Meldungen haben immer einen Text.\n\nDie Richtung lehnt das KPI-Kacheln-plus-Tabelle-Admin-Dashboard ab. Health und Agents tragen diesen Aufbau noch (siehe „Offene Punkte“); er ist kein Vorbild für neue Seiten.",
+    "keyCharacteristics": [
+      "Eine Farbe pro Netz, überall identisch, vom Nutzer umfärbbar (Einstellung `ui.line_colors`).",
+      "Runde Linienschilder mit dunkler Schildtinte; Stationen als Ringe; oktilineare 45°-Strecken mit runden Enden.",
+      "Nachtnetz als Standard, weißer Tagesplan als helles Thema; alle Texte erreichen in beiden Themen 4,5:1.",
+      "Flach: Karten mit Haarlinie, Schatten nur für schwebende Ebenen.",
+      "Hanken Grotesk für die Oberfläche, JetBrains Mono für IPs, MACs, Ports, Latenzen und Zähler."
+    ],
+    "rules": [
+      {
+        "name": "The Linienfarbe-ist-Identität Rule",
+        "section": "colors",
+        "body": "Ein Netz hat genau eine Farbe, und die kommt immer aus `networkColor()` (oder `lineVar()` für Seiten). Wer ein Netz zeigt, zeigt es in dieser Farbe; keine zweite Farblogik pro Ansicht, keine Hex-Werte in Komponenten."
+      },
+      {
+        "name": "The Tönung-ist-keine-Schrift Rule",
+        "section": "colors",
+        "body": "Getönte Flächen (`bg-accent/10`, `bg-danger/10`, `color-mix(… 14–16 %)`) tragen nie Text in der Grundfarbe; Text darauf nutzt `*-text` bzw. `lineInk()` (Linienfarbe 75 % zur Textfarbe gemischt)."
+      },
+      {
+        "name": "The Schildtinte Rule",
+        "section": "colors",
+        "body": "Auf vollflächigen Linienfarben steht immer die dunkle Schildtinte (#0c0f14), nie Weiß, unabhängig vom Thema."
+      },
+      {
+        "name": "The Abgelesen-in-Mono Rule",
+        "section": "typography",
+        "body": "Alles, was eine Adresse, ein Zähler oder ein Messwert ist, steht in JetBrains Mono mit Tabellenziffern; Fließtext und Namen nie."
+      },
+      {
+        "name": "The Gerade-bleibt-gerade Rule",
+        "section": "shapes",
+        "body": "Verbundene Stationen, deren x- oder y-Wert um höchstens 24 px (`ALIGN_TOLERANCE`) abweicht, liegen auf einer Achse: `alignStations()` zieht beim Zeichnen die weniger verbundene Station auf die Achse (nur Anzeige), `snapToNeighbours()` rastet eine abgelegte Station vor dem Speichern auf die Achse des nächsten verbundenen Nachbarn ein. Diagonalen entstehen nur als bewusste 45°-Abzweige."
+      },
+      {
+        "name": "The Flach-auf-dem-Plan Rule",
+        "section": "elevation",
+        "body": "Was auf der Seite liegt, hat keinen Schatten außer der Kartenkante; nur was über anderem schwebt, bekommt `shadow-pop`."
+      }
+    ],
+    "dos": [
+      "**Do** jede Netzfarbe über `networkColor()` bzw. `lineVar()`/`lineInk()` holen und sie überall gleich zeigen.",
+      "**Do** neben jedem Linienschild den Netznamen als Text führen; das Schild ist Zierde, nicht Information.",
+      "**Do** Zustand doppelt kodieren: Ring plus Durchstreichung, gepunktete Strecke, Text („Halt entfällt“, „Störung“).",
+      "**Do** Text auf Tönungen in `*-text` setzen und neue Textfarben in beiden Themen gegen 4,5:1 prüfen.",
+      "**Do** Adressen, Zähler und Messwerte in JetBrains Mono mit Tabellenziffern setzen.",
+      "**Do** Bewegung auf `opacity`/`transform` (bzw. Strichbreite) begrenzen, 150–400 ms, Eintritte mit `--ease-out-expo`; `prefers-reduced-motion` schaltet global ab, Netzplan-Tweens (Einpassen, Zoom) laufen dann mit Dauer 0 über `motion()`."
+    ],
+    "donts": [
+      "**Don't** Hex-Werte in Komponenten schreiben; Ausnahme ist die Schildtinte auf Linienfarben.",
+      "**Don't** Weiß auf Linienfarben setzen.",
+      "**Don't** eine zweite Farblogik für Netze erfinden (etwa Farbstreifen, Gruppenfarben oder Gerätekürzel statt Linienschild).",
+      "**Don't** Schatten auf ruhende Karten legen; `shadow-pop` gehört schwebenden Ebenen.",
+      "**Don't** `.gl-eyebrow` als Vorspann über Titel setzen oder in Versalien; sie beschriftet Werte.",
+      "**Don't** neue Seiten als KPI-Kachelreihe plus Tabelle bauen."
+    ]
+  }
+}

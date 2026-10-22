@@ -75,7 +75,7 @@ async function clearIpChange() {
         v-if="editMode"
         type="button"
         class="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md border transition-colors"
-        :class="selected ? 'border-danger bg-danger text-white' : 'border-line-strong text-fg-subtle hover:border-danger hover:text-danger-text'"
+        :class="selected ? 'border-danger bg-danger text-danger-fg' : 'border-line-strong text-fg-subtle hover:border-danger hover:text-danger-text'"
         :aria-pressed="selected"
         :aria-label="t('dashboard.delete_selected', { count: 1 })"
         @click.stop="emit('select', !selected)"
@@ -142,7 +142,7 @@ async function clearIpChange() {
       </Badge>
       <span v-if="pendingKey" class="inline-flex items-center gap-1 rounded-sm border border-danger/30 bg-danger/10 py-0.5 pr-0.5 pl-1.5 text-[11px] font-medium text-danger-text">
         <ShieldAlert class="size-3" aria-hidden="true" />{{ t('dashboard.security_alert') }}
-        <button type="button" class="ml-1 rounded-[4px] bg-danger px-1.5 text-[10px] font-semibold text-white hover:opacity-90" @click.stop="adoptKey">
+        <button type="button" class="ml-1 rounded-[4px] bg-danger px-1.5 text-[10px] font-semibold text-danger-fg hover:opacity-90" @click.stop="adoptKey">
           {{ t('dashboard.adopt') }}
         </button>
       </span>

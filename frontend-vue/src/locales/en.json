@@ -147,6 +147,11 @@
       "issue_outside": "reaches beyond the rack",
       "issue_overlap": "overlaps another device",
       "subtitle": "Where your devices physically sit. Set rack and position in the device editor – just click a device."
+    },
+    "status": {
+      "flapping": "Flapping",
+      "service_up": "Service back",
+      "service_down": "Service down"
     }
   }
 }

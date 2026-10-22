@@ -18,7 +18,7 @@ const tones = { success: 'text-accent-text', error: 'text-danger-text', info: 't
         <Bell aria-hidden="true" />
         <span
           v-if="history.length > 0"
-          class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-info px-1 font-mono text-[10px] font-semibold text-white"
+          class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-info px-1 font-mono text-[10px] font-semibold text-canvas"
           aria-hidden="true"
         >
           {{ history.length > 9 ? '9+' : history.length }}

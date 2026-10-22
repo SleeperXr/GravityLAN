@@ -3,6 +3,7 @@ import { AlertCircle, AlertTriangle, CheckCircle2, Info, Radio } from 'lucide-vu
 import type { HealthIncident } from '@/types';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
+import { statusWord } from './healthModel';
 import { t } from '@/i18n';
 
 /** Recent outages, flapping, SSL and patch notices; a click opens the device. */
@@ -35,7 +36,7 @@ const frame = (incident: HealthIncident) =>
           <span class="mt-0.5 line-clamp-2 block text-xs text-fg-muted">{{ incident.message || incident.status }}</span>
           <span class="mt-2 flex items-center justify-between gap-2 border-t border-line pt-1.5 font-mono text-[11px] text-fg-subtle">
             <span class="truncate">{{ incident.device_ip }}</span>
-            <span class="shrink-0 font-semibold tracking-wide uppercase">{{ incident.status }}</span>
+            <span class="shrink-0 font-semibold">{{ statusWord(incident.status) }}</span>
           </span>
         </span>
       </button>
