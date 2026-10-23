@@ -20,10 +20,10 @@ Features:
 - Linux Agent (optional): Single-script monitoring for CPU, RAM, disks, temperatures, and pending package updates.
 
 Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
-  <Category>Network:Management Network:Scanner Tools:Utilities Status:Operation</Category>
+  <Category>Network:Management Network:Other Tools:Utilities Status:Stable</Category>
   <WebUI>http://[IP]:[PORT:8000]</WebUI>
   <TemplateURL/>
-  <Icon>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/assets/logo-mark.png</Icon>
+  <Icon>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/assets/logo-unraid.png</Icon>
   <ExtraParams>--cap-add=NET_RAW --cap-add=NET_ADMIN</ExtraParams>
   <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLanDashboard.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLanTopology.png</Screenshot>
