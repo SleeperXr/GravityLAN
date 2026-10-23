@@ -42,7 +42,7 @@ All notable changes to this project will be documented in this file.
 - Unraid template explains, in English and then German, which network type to choose (host, custom br0 with macvlan/ipvlan, one custom network per VLAN under "Additional Networks", why not bridge) and how scanning works (L2 Direct, L3 Routed, L2 Probe). The install page's "Additional Requirements" now names the network requirement instead of "None Listed".
 
 ### Fixed
-- GravityUI IP overview: tiles of devices whose icon is stored as a name ("server") printed that word instead of the address number; only real emoji icons are drawn now, all others show the number. The services list in the details popover leads with the port number ("22 SSH", "8080").
+- IP overview (React UI and GravityUI): tiles of devices whose icon is stored as a name ("server") printed that word instead of the address number; only real emoji icons are drawn now, all others show the number. The services list in the details tooltip / popover leads with the port number ("22 SSH", "8080").
 - GravityUI Orbit map no longer jumps: the view was refitted whenever the device list changed, including after saving a dragged position or a role. It now fits once, when the map first has devices.
 - Unraid template listed the categories `Network:Scanner` and `Status:Operation`, which Community Applications does not know ("Template Errors" on the app page); it now uses `Network:Other` and `Status:Stable`.
 - GravityUI showed values the backend never sends (device `name`, `os_info`, `device_role`, service `url`, subnet `color`); it now uses the React UI's types and API client directly.

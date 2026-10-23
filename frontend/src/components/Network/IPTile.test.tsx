@@ -95,6 +95,29 @@ describe('IPTile', () => {
     expect(screen.getByRole('button', { name: /Nmap Scan/ })).toBeDisabled();
   });
 
+  it('renders the address number instead of text icon name, but renders real emojis', () => {
+    const { rerender } = render(<IPTile {...props({ device: { ...device, icon: 'server' as any }, status: 'online' })} />);
+    expect(tile()).toHaveTextContent('12');
+    expect(tile()).not.toHaveTextContent('server');
+
+    rerender(<IPTile {...props({ device: { ...device, icon: '🖥️' }, status: 'online' })} />);
+    expect(tile()).toHaveTextContent('🖥️');
+  });
+
+  it('formats services with their port number when present', () => {
+    const devWithPorts = {
+      ...device,
+      services: [
+        { id: 10, name: 'Service SSH', port: 22, is_up: true },
+        { id: 11, name: '', port: 8080, is_up: true },
+      ],
+    } as unknown as Device;
+    render(<IPTile {...props({ device: devWithPorts, status: 'online' })} />);
+    const tip = tile().querySelector('.ip-tooltip') as HTMLElement;
+    expect(within(tip).getByText('22 SSH')).toBeInTheDocument();
+    expect(within(tip).getByText('8080')).toBeInTheDocument();
+  });
+
   it('manages a discovered host: reserve, monitor, name, add, scan, forget', async () => {
     const p = props({ discovered: host, status: 'offline', isReserved: true, isFirstRows: true });
     render(<IPTile {...p} />);

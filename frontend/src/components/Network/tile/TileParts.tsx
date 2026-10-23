@@ -184,6 +184,14 @@ export function DiscoveredActions({ host, scanBusy, addBusy, t, onRename, onAdd,
   );
 }
 
+function serviceLabel(s: { name?: string | null; port?: number }): string {
+  const cleanName = s.name?.replace('Service ', '').trim();
+  if (s.port != null) {
+    return cleanName && cleanName !== String(s.port) ? `${s.port} ${cleanName}` : String(s.port);
+  }
+  return cleanName || 'Svc';
+}
+
 /** Running services of an overview device and the open ports found on a discovered host. */
 export function ServiceBadges({ device, discovered, t }: { device?: Device; discovered?: DiscoveredHost; t: TFunction }) {
   if (!device?.services && !discovered?.ports) return null;
@@ -191,7 +199,7 @@ export function ServiceBadges({ device, discovered, t }: { device?: Device; disc
     <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)' }}>
       <div style={{ fontSize: '0.65rem', marginBottom: '8px', opacity: 0.6, fontWeight: 'bold', textTransform: 'uppercase' }}>Services / {t('network.nmap_scan')}:</div>
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-        {device?.services?.filter(s => s.is_up).map(s => (<span key={s.id} className="service-badge" style={{ fontSize: '0.55rem', padding: '2px 6px', background: 'rgba(56, 189, 248, 0.1)', color: 'white' }}>{s.name?.replace('Service ', '') || 'Svc'}</span>))}
+        {device?.services?.filter(s => s.is_up).map(s => (<span key={s.id} className="service-badge" style={{ fontSize: '0.55rem', padding: '2px 6px', background: 'rgba(56, 189, 248, 0.1)', color: 'white' }}>{serviceLabel(s)}</span>))}
         {discovered?.ports?.map((p: number) => (<span key={p} className="service-badge" style={{ fontSize: '0.55rem', padding: '2px 6px', background: 'rgba(34, 197, 94, 0.1)', color: '#4ade80' }}>{p}</span>))}
       </div>
     </div>

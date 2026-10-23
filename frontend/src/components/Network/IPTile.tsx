@@ -35,6 +35,7 @@ function sameTile(prev: IPTileProps, next: IPTileProps): boolean {
     prev.isReserved === next.isReserved &&
     prev.safeZoom === next.safeZoom &&
     prev.device?.id === next.device?.id &&
+    prev.device?.icon === next.device?.icon &&
     prev.device?.is_online === next.device?.is_online &&
     prev.device?.is_reserved === next.device?.is_reserved &&
     prev.discovered?.id === next.discovered?.id &&
@@ -50,6 +51,7 @@ export const IPTile = memo((props: IPTileProps) => {
   const { i, ip, device, discovered, status, group, isReserved, safeZoom, t, onSelectDevice } = props;
   const isResponding = status === 'online';
   const known = !!(device || discovered);
+  const isEmojiIcon = Boolean(device?.icon && /\p{Extended_Pictographic}/u.test(device.icon));
 
   return (
     <div
@@ -62,8 +64,8 @@ export const IPTile = memo((props: IPTileProps) => {
       onKeyDown={(e) => { if (e.key === 'Enter' && device) onSelectDevice(device); }}
     >
       <TileMarkers isReserved={isReserved} monitored={discovered?.is_monitored} known={known} isResponding={isResponding} safeZoom={safeZoom} />
-      {device?.icon ? (
-        <div style={{ fontSize: `${1.2 * safeZoom}rem`, opacity: isResponding ? 1 : 0.5 }}>{device.icon}</div>
+      {isEmojiIcon ? (
+        <div style={{ fontSize: `${1.2 * safeZoom}rem`, opacity: isResponding ? 1 : 0.5 }}>{device!.icon}</div>
       ) : (
         <span style={{ fontWeight: isResponding ? 'bold' : 'normal', opacity: known ? 1 : 0.4 }}>{i}</span>
       )}
