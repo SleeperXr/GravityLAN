@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-23
+
 ### Added
 - GravityUI (`/frontend-vue/`, optional second interface next to the unchanged React UI): new foundation with light and dark mode (follows the system or chosen in the sidebar), the same German/English texts as the React UI (shared i18next files, same language setting), phone layout with bottom tab bar, toasts, confirmation dialogs and a login screen of its own. Pages that are not ported yet link to the same page in the classic view.
 - GravityUI Orbit map interactions: click focuses a device and dims everything unrelated (hover dims softly), the view glides to the hub with easing, a focus card shows type, status, orbit parent and links with quick actions (details, to hub, centre), double click or double tap opens the device, search highlights matches in space (Enter flies there), double click on empty space or Esc returns to the full view, and touch screens get pinch-to-zoom and two-finger panning. Respects reduced motion.
