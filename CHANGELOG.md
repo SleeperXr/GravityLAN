@@ -4,16 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
-
-### Fixed
-- GravityUI IP overview: tiles of devices whose icon is stored as a name ("server") printed that word instead of the address number; only real emoji icons are drawn now, all others show the number. The services list in the details popover leads with the port number ("22 SSH", "8080").
-- GravityUI Orbit map no longer jumps: the view was refitted whenever the device list changed, including after saving a dragged position or a role. It now fits once, when the map first has devices.
-
 ## [0.5.0] - 2026-10-23
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - GravityUI (`/frontend-vue/`, optional second interface next to the unchanged React UI): new foundation with light and dark mode (follows the system or chosen in the sidebar), the same German/English texts as the React UI (shared i18next files, same language setting), phone layout with bottom tab bar, toasts, confirmation dialogs and a login screen of its own. Pages that are not ported yet link to the same page in the classic view.
 - GravityUI Orbit map interactions: click focuses a device and dims everything unrelated (hover dims softly), the view glides to the hub with easing, a focus card shows type, status, orbit parent and links with quick actions (details, to hub, centre), double click or double tap opens the device, search highlights matches in space (Enter flies there), double click on empty space or Esc returns to the full view, and touch screens get pinch-to-zoom and two-finger panning. Respects reduced motion.
 - GravityUI Orbit path tracing: "Pfad verfolgen" on the focus card, then click a destination. The shortest route along the light beams is highlighted with an animated flow and numbered hops, everything else is dimmed, and a panel lists every hop with its link type. Routes over healthy links are preferred; if only an interrupted link connects the two devices it is shown in red with a warning, and unconnected devices report that no path exists. Esc cancels.
@@ -48,6 +42,8 @@ All notable changes to this project will be documented in this file.
 - Unraid template explains, in English and then German, which network type to choose (host, custom br0 with macvlan/ipvlan, one custom network per VLAN under "Additional Networks", why not bridge) and how scanning works (L2 Direct, L3 Routed, L2 Probe). The install page's "Additional Requirements" now names the network requirement instead of "None Listed".
 
 ### Fixed
+- GravityUI IP overview: tiles of devices whose icon is stored as a name ("server") printed that word instead of the address number; only real emoji icons are drawn now, all others show the number. The services list in the details popover leads with the port number ("22 SSH", "8080").
+- GravityUI Orbit map no longer jumps: the view was refitted whenever the device list changed, including after saving a dragged position or a role. It now fits once, when the map first has devices.
 - Unraid template listed the categories `Network:Scanner` and `Status:Operation`, which Community Applications does not know ("Template Errors" on the app page); it now uses `Network:Other` and `Status:Stable`.
 - GravityUI showed values the backend never sends (device `name`, `os_info`, `device_role`, service `url`, subnet `color`); it now uses the React UI's types and API client directly.
 
@@ -58,6 +54,7 @@ All notable changes to this project will be documented in this file.
 ## [0.4.1] - 2026-10-20
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - **Import scan subnets and VLANs from the router**: Settings → Scan subnets → Import from router asks the router which networks it routes and lists them with gateway, name and VLAN in a preview. Only the networks you pick are added. For subnets you already have, only an empty gateway or VLAN is filled in; names and values you set are never overwritten. Two ways that work for most setups: read-only **SNMP** (v1/v2c/v3; IP-MIB for addresses and masks, IF-MIB for names, VLAN IDs from interface names such as `br10`, `eth0.10` or `vlan10`, Q-BRIDGE-MIB VLAN names), which covers OPNsense, pfSense, OpenWrt, MikroTik, Sophos and most business routers, and the official **UniFi Network API** of UniFi consoles (Cloud Gateway, UDM, UXG) with an API key. The UniFi console's self-signed certificate is pinned by its SHA-256 fingerprint, which you confirm on the first fetch; the API key is only sent after the certificate check. Community, SNMPv3 passwords and API key are stored encrypted like the SSH keys, never returned or logged, and only used for the router they were entered for. The import only contacts private LAN addresses. Guide: `docs/multi-vlan-setup.md`.
 - Measurement data moved into a separate `telemetry.db` next to the inventory database (attached as schema `telemetry`): health probes, agent metrics and their rollups no longer bloat the inventory, backups or exports, and can be cleared on their own. Existing data is moved on the first start (repeatable), then the inventory file is vacuumed.
 - Rollups: raw probes and agent reports are kept 48 h by default, then folded into hourly values (30 days) and daily values (365 days) with uptime, latency min/avg/max/jitter, CPU/RAM/temperature/disk/network avg/max. Runs hourly and once at startup, also for existing data.
@@ -73,6 +70,7 @@ All notable changes to this project will be documented in this file.
 ## [0.4.0] - 2026-10-19
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Health & Availability Dashboard (`/health`)**:
   - Dedicated network SLA radar combining real-time ICMP ping latency, jitter, uptime percentage, flapping frequency, SSL certificate validity, and pending security updates into an overall Network Health Score ($0-100$).
@@ -109,12 +107,14 @@ All notable changes to this project will be documented in this file.
 ## [0.3.23] - 2026-10-17
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Group Renaming**: Device groups can now be renamed directly in Settings → Manage Groups via an inline edit button with keyboard support (Enter to save, Escape to cancel). Duplicate and empty group names are validated and rejected gracefully.
 
 ## [0.3.22] - 2026-10-17
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **One device for a router that is the gateway of several VLANs**: A device can now carry further addresses as interfaces (new `device_interfaces` table: address, MAC, subnet, VLAN, label, own online state). Scans that see an interface address update the interface; no second device appears and no IP change is reported. When an address is the gateway of its subnet and answers with the MAC of a known device in another subnet, it is attached to that device automatically (history entry "Interface … attached"). Interfaces go offline silently with the usual miss threshold, so offline events and webhooks stay once per device.
 - **Subnet gateway and VLAN tag**: Subnets store an optional `gateway_ip` (must lie inside the subnet) and `vlan_id` (1–4094), edited in Settings → Scan subnets (router button per row) and in the network overview's subnet dialog. Where no gateway is entered, GravityLAN uses the container's default route for the local network, else the first host address (`.1`); the field shows that automatic value as placeholder. Changing a subnet's VLAN tag also applies to the interfaces in it.
@@ -184,6 +184,7 @@ All notable changes to this project will be documented in this file.
 This release introduces remote Layer-2 subnet scanning via agent probes, allowing Linux hosts with the GravityLAN agent installed to act as remote network probes for routed VLANs.
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Agent Layer-2 Scanner Probe (Relay)**: The GravityLAN agent (v0.3.8) can now be toggled as a remote L2 probe (`enable_scanner_relay`) in the Device Editor. The agent probes broadcast neighbors and reads the kernel ARP table (`/proc/net/arp`), reporting neighbor MAC and IP pairs to GravityLAN.
 - **Remote ARP Ingestion & Device MAC Resolution**: The backend ingests remote ARP tables, updating devices and discovered hosts in routed subnets with their native MAC addresses and vendor OUIs.
@@ -198,6 +199,7 @@ This release introduces remote Layer-2 subnet scanning via agent probes, allowin
 This release hardens the first-run Setup Wizard with atomic session cookie issuance and full multi-subnet adoption, resolves gateway and proxy-ARP MAC collisions across routed VLANs, adds live Layer-2 vs. Layer-3 reachability indicators to the Network Planner, and provides a multi-VLAN Docker Compose template.
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Layer-2 Direct vs. Layer-3 Routed Subnet Badges**: The Network Planner tabs, header, and settings dialog now dynamically detect whether a subnet is directly attached to a host interface (`L2 Direct`) or routed through a firewall/gateway (`L3 Routed`). Clear tooltips explain why routed subnets cannot resolve MAC addresses via ARP broadcasts and recommend using the host agent or multi-VLAN Docker Compose.
 - **Multi-VLAN Docker Compose Template & Guide**: Added `docker-compose.multi-vlan.yml` demonstrating IEEE 802.1Q tagged macvlan interfaces (`eth0.10`, `eth0.20`, etc.) along with comprehensive documentation in `docs/multi-vlan-setup.md`.
@@ -221,6 +223,7 @@ Agents can now be updated straight from the SSH terminal, and the agent install 
 - API: `POST /api/agent/deploy/{id}` and `/api/agent/uninstall/{id}` without `ssh_user` (and without `profile_id`) now answer HTTP 400 instead of 422.
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Agent update from the SSH terminal**: when the device a terminal is connected to runs an older agent than the server ships, the terminal toolbar shows an "Agent update" button. It types the same one-line installer as the device's Agent tab into the input line, with a fresh one-time install code (valid for 30 minutes, usable once), but does not run it: review it and press Enter yourself, sudo may ask for a password. The command starts with a space, so shells that leave such lines out of their history (`HISTCONTROL=ignorespace` or `ignoreboth`, as in the default user `~/.bashrc` on Debian and Ubuntu) do not keep it; where it is kept, the code stops working once the installer has used it, or after 30 minutes. Only sessions opened for a device or through a saved connection of a device get the button; a plain host address is never matched to a device.
 
@@ -325,6 +328,7 @@ A maintenance release: one security fix, fixes for the dashboard and the topolog
 Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published the same day while testing; their changes are all included here.
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Change the admin password** (Settings → Access): enter the current password and the new one twice (at least 8 characters). Only a logged-in browser session can change it; all other sessions are logged out, yours stays signed in.
 - **SSH terminal**
@@ -362,6 +366,7 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 ## [0.3.6] - 2026-10-10
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **SSH terminal in the browser** (new menu entry "SSH"): open shells on your devices from GravityLAN – like an integrated PuTTY, also on phones. Several sessions side by side in tabs, sessions stay open while you switch between Terminal, Keys and Known hosts. Device cards with an SSH service get a terminal button.
 - **SSH key store**: import private keys (OpenSSH/PEM: Ed25519, ECDSA, RSA, optionally with passphrase) or generate a new Ed25519 key and copy its public half to `authorized_keys`. Keys are stored encrypted (key file `data/ssh_vault.key` or `GRAVITYLAN_VAULT_KEY`) and never sent back to the browser.
@@ -401,6 +406,7 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 - **Device editor, Agent tab**: SSH access and the manual install/uninstall commands are restyled like the rest of the app; the install command is the same component as in the Update Center (fresh single-use code, copy button).
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Demo backend for UI work** (`scripts/dev_demo.py`): demo data and simulated agents, no scans, no SSH, separate database. `--fresh` starts like a new install (empty throw-away database) to work on the setup wizard.
 
@@ -432,6 +438,7 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 - **CI: lint and agent test failures**: Removed an unused `global` declaration that newer flake8 reports as F824, and made `test_orchestrator_collect_all` deterministic — it no longer runs the real package manager on Linux runners.
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Agent enrollment codes**: New `POST /api/agent/enroll/{device_id}` (admin) issues single-use codes for the manual installer. The Agent tab shows the code's expiry time and a "New code" button.
 
@@ -448,6 +455,7 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 - **Backend: apt-get update over SSH hung forever**: Rewrote the cache-refresh step in `patch_service.py` to use a PTY with a continuous read loop (no more full-buffer deadlock), send the SSH password only when sudo actually asks for it, fail fast when no password is available, and enforce a 90-second deadline. Failures now surface as a visible error in the Agents tab instead of an endless hang.
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Agent OS display**: Agents report their installed OS (parsed from `/etc/os-release`). The server stores it per agent token (new auto-migrated `os_*` columns) and the Agents view shows it as a badge next to the agent version.
 
@@ -470,6 +478,7 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 ## [0.3.2] - 2026-07-17
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Linux Package Patching**: Integrated a package patching manager directly into the Agents tab.
   - The Python agent reports update counts passively (without root/sudo privileges) for Debian/Ubuntu (apt) and Fedora/CentOS/RHEL (dnf/yum) hosts.
@@ -496,11 +505,13 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 - **Schema: ServiceUpdate Port Validation**: Added `ge=1, le=65535` constraint to `ServiceUpdate.port` field. `ServiceCreate` already had this, but `ServiceUpdate` allowed arbitrary integers which could cause socket errors in the port scanner.
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - **Scanner Integration Tests**: New `test_scanner_logic.py` with integration tests covering the Planner service guard (PR #7), Dashboard hybrid health-check transitions, and service port validation.
 
 ## [0.3.0] - 2026-05-24
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - **Schreibgeschützte API-Token (Read-Only)**: Einführung von Personal Access Tokens (API Keys) für externe Automatisierungen (z.B. Home Assistant) und LLM-Agenten. Diese erlauben ausschließlich sichere GET-Leseanfragen und blockieren alle verändernden Operationen (POST, PUT, DELETE, PATCH).
 - **SHA-256 Token-Hashing**: API-Token werden kryptografisch gehasht in der neuen `api_tokens`-Tabelle gespeichert. Der Klartext-Token wird dem Administrator nur einmal bei der Generierung angezeigt.
 - **WebSocket-Support**: Unterstützung der API-Token bei Echtzeit-Verbindungen für System-Logs, Agenten-Metriken und den Scanner-Status.
@@ -521,6 +532,7 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 ## [0.2.5] - 2026-05-17
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - Added retention-aware historical time ranges for agent metrics (`6h`, `24h`, `7d`, `30d`).
 - Added server-side downsampling for longer agent metric history views to keep SQLite-backed installations responsive.
 - Added API metadata for metrics history retention and available time ranges.
@@ -604,6 +616,7 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 ## [0.2.1] - 2026-05-13
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - **Infrastructure Hardening:** Upgraded backend to Python 3.12-slim and implemented a non-root user security model for the container.
 - **Central Versioning:** Implemented a single source of truth via root `VERSION` file, with a Python sync script and dynamic API/UI versioning.
 - **Security:** Added `SECURITY.md`, `SOUL.md`, `AGENT.md`, and `CONTRIBUTING.md`. Configured conditional `Secure` flag for authentication cookies.
@@ -619,6 +632,7 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 ## [0.2.0] - 2026-05-12
 
 ### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - **Authentication & Setup:** Added password configuration step to Setup Wizard and backend support. Dashboard authentication is now fully enforced.
 - **WebSockets:** Token-gated websockets with fallback allowance during the setup phase.
 - **Topology Designer:** Re-enabled dragging and dropping with live API synchronization.
