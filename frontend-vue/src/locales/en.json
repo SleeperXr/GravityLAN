@@ -184,6 +184,19 @@
       "motion_lively": "lively",
       "drop_to": "Orbit → {{name}}",
       "hub": "Orbits (planet or star)"
+    },
+    "status_monitor": {
+      "normal": "Reachable",
+      "warning": "Partly reachable",
+      "error": "Unreachable",
+      "empty": "No data",
+      "uptime": "{{pct}}% uptime",
+      "ago_hours_one": "{{count}} hour ago",
+      "ago_hours_other": "{{count}} hours ago",
+      "ago_days_one": "{{count}} day ago",
+      "ago_days_other": "{{count}} days ago",
+      "now": "Now",
+      "summary": "{{title}}: {{uptime}}% uptime, {{down}} outages and {{partial}} disruptions in {{count}} slots. Arrow keys show single slots."
     }
   }
 }

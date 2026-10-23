@@ -47,3 +47,6 @@ export function statusWord(status: string): string {
 }
 
 export const ms = (value: number | null | undefined, digits = 1) => (value === null || value === undefined ? '–' : `${value.toFixed(digits)} ms`);
+
+/** Hours covered by a health period, for the status monitor's time axis. */
+export const periodHours = (period: '24h' | '7d' | '30d') => ({ '24h': 24, '7d': 168, '30d': 720 })[period];

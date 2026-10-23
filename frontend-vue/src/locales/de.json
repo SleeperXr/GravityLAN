@@ -184,6 +184,19 @@
       "motion_lively": "lebhaft",
       "drop_to": "Umlaufbahn → {{name}}",
       "hub": "Umkreist (Planet oder Stern)"
+    },
+    "status_monitor": {
+      "normal": "Erreichbar",
+      "warning": "Teilweise erreichbar",
+      "error": "Nicht erreichbar",
+      "empty": "Keine Daten",
+      "uptime": "{{pct}} % Uptime",
+      "ago_hours_one": "vor {{count}} Stunde",
+      "ago_hours_other": "vor {{count}} Stunden",
+      "ago_days_one": "vor {{count}} Tag",
+      "ago_days_other": "vor {{count}} Tagen",
+      "now": "Jetzt",
+      "summary": "{{title}}: {{uptime}} % Uptime, {{down}} Ausfälle und {{partial}} Störungen in {{count}} Abschnitten. Pfeiltasten zeigen einzelne Abschnitte."
     }
   }
 }

@@ -12,12 +12,12 @@ import Skeleton from '@/components/ui/Skeleton.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import ErrorState from '@/components/ui/ErrorState.vue';
 import HealthStatusBadge from '@/components/health/HealthStatusBadge.vue';
-import UptimeBars from '@/components/health/UptimeBars.vue';
+import StatusMonitor from '@/components/common/StatusMonitor.vue';
 import Sparkline from '@/components/health/Sparkline.vue';
 import IncidentList from '@/components/health/IncidentList.vue';
 import HealthDetailSheet from '@/components/health/HealthDetailSheet.vue';
 import DeviceEditor from '@/components/editor/DeviceEditor.vue';
-import { hasAgentWarning, ms, scoreText, scoreTone, sslWarnings } from '@/components/health/healthModel';
+import { hasAgentWarning, ms, periodHours, scoreText, scoreTone, sslWarnings } from '@/components/health/healthModel';
 import { t } from '@/i18n';
 
 /** Health & availability (port of React HealthView): network score, per-device SLA table, incidents. */
@@ -228,7 +228,7 @@ const sortOptions = computed(() => [
                   <span class="font-mono font-semibold text-fg">{{ d.uptime.uptime_pct.toFixed(1) }}%</span>
                   <span class="font-mono text-[11px] text-fg-subtle">24h {{ d.uptime.uptime_24h.toFixed(0) }}%</span>
                 </div>
-                <UptimeBars class="mt-1" :bars="d.uptime.history_bars" :uptime="d.uptime.uptime_pct" />
+                <StatusMonitor class="mt-1" compact size="sm" :bars="d.uptime.history_bars" :span-hours="periodHours(period)" :uptime="d.uptime.uptime_pct" :title="d.display_name" />
               </td>
               <td class="px-4 py-3">
                 <div class="flex items-center justify-between gap-3">
@@ -267,7 +267,7 @@ const sortOptions = computed(() => [
               <HealthStatusBadge :status="d.health_status" />
               <span class="font-mono text-fg">{{ d.uptime.uptime_pct.toFixed(1) }}% <span class="text-fg-subtle">· {{ ms(d.latency.current_ms) }}</span></span>
             </div>
-            <UptimeBars height="sm" :bars="d.uptime.history_bars" :uptime="d.uptime.uptime_pct" />
+            <StatusMonitor compact size="sm" :focusable="false" :bars="d.uptime.history_bars" :span-hours="periodHours(period)" :uptime="d.uptime.uptime_pct" />
           </button>
         </li>
       </ul>

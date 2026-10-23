@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hourState, loadTone, matchesAgent, osLabelOf, type AgentRow } from './agentRow';
+import { loadTone, matchesAgent, osLabelOf, type AgentRow } from './agentRow';
 
 const agent = (over: Partial<AgentRow> = {}): AgentRow => ({
   device_id: 1,
@@ -34,14 +34,6 @@ describe('agentRow', () => {
     expect(loadTone(74.9)).toBe('ok');
     expect(loadTone(75)).toBe('warn');
     expect(loadTone(90)).toBe('danger');
-  });
-
-  it('classifies uptime hours, treating missing or negative values as no data', () => {
-    expect(hourState(100)).toBe('up');
-    expect(hourState(40)).toBe('partial');
-    expect(hourState(0)).toBe('down');
-    expect(hourState(-1)).toBe('none');
-    expect(hourState(null)).toBe('none');
   });
 
   it('matches by hostname (case-insensitive) or IP, and everything for an empty search', () => {

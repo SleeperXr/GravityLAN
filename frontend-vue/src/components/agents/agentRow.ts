@@ -20,13 +20,6 @@ export function loadTone(pct: number): 'ok' | 'warn' | 'danger' {
   return 'ok';
 }
 
-/** One hour of the uptime strip: fully up, partly up, down, or no data. */
-export function hourState(val: number | null | undefined): 'up' | 'partial' | 'down' | 'none' {
-  if (val === null || val === undefined || val < 0) return 'none';
-  if (val >= 100) return 'up';
-  return val > 0 ? 'partial' : 'down';
-}
-
 export function matchesAgent(agent: AgentRow, search: string): boolean {
   const q = search.trim().toLowerCase();
   return !q || agent.hostname.toLowerCase().includes(q) || agent.ip.includes(q);

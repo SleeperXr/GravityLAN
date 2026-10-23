@@ -11,8 +11,8 @@ import RelativeTime from '@/components/common/RelativeTime.vue';
 import HealthStatusBadge from './HealthStatusBadge.vue';
 import LatencyChart from './LatencyChart.vue';
 import IncidentList from './IncidentList.vue';
-import UptimeBars from './UptimeBars.vue';
-import { ms, scoreText } from './healthModel';
+import StatusMonitor from '@/components/common/StatusMonitor.vue';
+import { ms, periodHours, scoreText } from './healthModel';
 import { formatDateTime, t } from '@/i18n';
 
 /** Telemetry of one device: uptime, latency chart, service probes with SSL, agent health, incidents. */
@@ -103,13 +103,19 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
           <p class="gl-eyebrow">{{ t('health_page.table_uptime') }}</p>
           <p class="mt-1 font-mono text-xl font-semibold text-accent-text tabular">{{ dev.uptime.uptime_pct.toFixed(1) }}%</p>
           <p class="mt-0.5 font-mono text-[11px] text-fg-subtle">24h {{ dev.uptime.uptime_24h.toFixed(1) }}% · 7d {{ dev.uptime.uptime_7d.toFixed(1) }}%</p>
-          <UptimeBars class="mt-2" height="sm" :bars="dev.uptime.history_bars" :uptime="dev.uptime.uptime_pct" />
         </div>
         <div class="rounded-md border border-line bg-raised p-3">
           <p class="gl-eyebrow">{{ t('health_page.avg_latency') }}</p>
           <p class="mt-1 font-mono text-xl font-semibold text-info-text tabular">{{ ms(dev.latency.avg_ms) }}</p>
           <p class="mt-0.5 font-mono text-[11px] text-fg-subtle">Jitter ±{{ ms(dev.latency.jitter_ms) }}</p>
         </div>
+        <StatusMonitor
+          class="col-span-2 rounded-md border border-line bg-raised p-3"
+          :title="t(`health_page.period_${period}`)"
+          :bars="dev.uptime.history_bars"
+          :span-hours="periodHours(period)"
+          :uptime="dev.uptime.uptime_pct"
+        />
       </div>
 
       <LatencyChart :samples="detail?.device.id === dev.id ? detail.time_series : []" :loading="loading" />

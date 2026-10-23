@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { Activity, ArrowUpCircle, ChevronRight, Package, RefreshCw, RotateCcw, Search, Server, ShieldAlert, ShieldCheck } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import PageHeader from '@/components/ui/PageHeader.vue';
+import StatusMonitor from '@/components/common/StatusMonitor.vue';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
@@ -11,7 +12,7 @@ import ErrorState from '@/components/ui/ErrorState.vue';
 import StatusDot from '@/components/common/StatusDot.vue';
 import AgentDetail from '@/components/agents/AgentDetail.vue';
 import GlobalMetricsDialog from '@/components/agents/GlobalMetricsDialog.vue';
-import { hourState, loadTone, matchesAgent, osLabelOf, type AgentRow } from '@/components/agents/agentRow';
+import { loadTone, matchesAgent, osLabelOf, type AgentRow } from '@/components/agents/agentRow';
 import { confirmAction } from '@/composables/useConfirm';
 import { useToast } from '@/composables/useToast';
 import { formatDateTime, formatNumber, t } from '@/i18n';
@@ -71,7 +72,6 @@ async function adopt(agent: AgentRow) {
 
 const toneText = { ok: 'text-fg-muted', warn: 'text-warn-text', danger: 'text-danger-text' } as const;
 const toneBar = { ok: 'bg-accent', warn: 'bg-warn', danger: 'bg-danger' } as const;
-const hourBar = { up: 'bg-accent', partial: 'bg-warn', down: 'bg-danger', none: 'bg-line' } as const;
 const uptimeText = (pct: number) => (pct < 80 ? 'text-danger-text' : pct < 95 ? 'text-warn-text' : 'text-accent-text');
 const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.uptime_history : Array<number | null>(24).fill(null));
 </script>
@@ -176,15 +176,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
 
             <span class="flex items-center gap-2.5">
               <span class="w-14 shrink-0 font-mono text-xs font-semibold tabular" :class="uptimeText(agent.uptime_pct)">{{ agent.uptime_pct.toFixed(1) }} %</span>
-              <span class="flex h-5 min-w-0 flex-1 items-end gap-px" aria-hidden="true">
-                <span
-                  v-for="(val, i) in hours(agent)"
-                  :key="i"
-                  class="h-full min-w-0 flex-1 rounded-[1px]"
-                  :class="hourBar[hourState(val)]"
-                  :title="val === null || val < 0 ? undefined : t('agent_detail.uptime_hour', { hours: hours(agent).length - 1 - i, pct: val.toFixed(1) })"
-                />
-              </span>
+              <StatusMonitor class="flex-1" compact :focusable="false" :up-at="100" :bars="hours(agent)" :span-hours="24" :uptime="agent.uptime_pct" :title="agent.hostname" />
             </span>
 
             <span class="font-mono text-xs text-fg-muted lg:text-right">
