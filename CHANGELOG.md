@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- GravityUI no longer reports a client device in standby as disrupted. A device not watched 24/7 (a TV, PC or phone) that still answers on the network with every port closed is asleep: it gets no "services disrupted" notice, the line overview does not count it as disrupted and the orbit map does not mark it, as the health page already shows it as standby. A device watched 24/7 with every port closed now reads "no services reachable" instead of "4 services disrupted".
+
 ## [0.5.0] - 2026-10-23
 
 ### Added

@@ -5,12 +5,13 @@ import type { Device } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
 import { isAgentOutdated } from '@/lib/agent';
+import { isClientStandby } from '@/lib/standby';
 import { deviceLabel, lineLabelFor, networkColor } from '@/lib/networks';
 import { t } from '@/i18n';
 
 /**
  * Service notices: everything that needs the operator, most urgent first. Offline devices
- * watched 24/7, new agent keys, services down, IP changes, agent updates.
+ * watched 24/7, new agent keys, services down (not for clients in standby), IP changes, agent updates.
  */
 const props = defineProps<{ devices: Device[] }>();
 const emit = defineEmits<{ openDevice: [device: Device]; openUpdates: [] }>();
@@ -36,9 +37,11 @@ const notices = computed<Notice[]>(() => {
     if (d.has_pending_token) {
       list.push({ key: `key-${d.id}`, rank: 1, device: d, tone: 'danger', title: t('gv.notices.new_key', { name }), detail: t('dashboard.security_alert'), action: 'device' });
     }
-    const down = d.is_online ? d.services.filter((s) => !s.is_up) : [];
+    // A client with every port closed is asleep (standby), not disrupted
+    const down = d.is_online && !isClientStandby(d) ? d.services.filter((s) => !s.is_up) : [];
     if (down.length) {
-      list.push({ key: `svc-${d.id}`, rank: 2, device: d, tone: 'warn', title: t('gv.notices.services_down', { name, count: down.length }), detail: down.map((s) => `${s.name} :${s.port}`).join(', '), action: 'device' });
+      const title = down.length === d.services.length ? t('gv.notices.services_none', { name }) : t('gv.notices.services_down', { name, count: down.length });
+      list.push({ key: `svc-${d.id}`, rank: 2, device: d, tone: 'warn', title, detail: down.map((s) => `${s.name} :${s.port}`).join(', '), action: 'device' });
     }
     if (d.old_ip) {
       list.push({ key: `ip-${d.id}`, rank: 3, device: d, tone: 'info', title: t('gv.notices.ip_changed', { name }), detail: `${d.old_ip} → ${d.ip}`, since: d.ip_changed_at, action: 'device' });

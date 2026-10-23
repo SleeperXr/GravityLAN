@@ -98,7 +98,8 @@
       "services_down_other": "{{name}}: {{count}} services down",
       "ip_changed": "{{name}}: new IP address",
       "updates_one": "{{count}} agent update ready",
-      "updates_other": "{{count}} agent updates ready"
+      "updates_other": "{{count}} agent updates ready",
+      "services_none": "{{name}}: no services reachable"
     },
     "health": {
       "period": "Period",

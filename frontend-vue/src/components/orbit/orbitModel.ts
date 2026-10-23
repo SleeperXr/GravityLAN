@@ -9,6 +9,7 @@
  */
 import type { Device, TopologyLink } from '@/types';
 import { networkColor } from '@/lib/networks';
+import { isClientStandby } from '@/lib/standby';
 import { layoutOrbit, orbitCenterId } from './orbitLayout';
 
 export type OrbitLink = TopologyLink & {
@@ -80,7 +81,8 @@ export const DROP_TARGET_RADIUS = 46;
 
 export function bodyState(device: Device): BodyState {
   if (!device.is_online) return 'offline';
-  return device.services.some((s) => !s.is_up) ? 'degraded' : 'online';
+  // A client in standby answers but has every port closed: asleep, not degraded
+  return device.services.some((s) => !s.is_up) && !isClientStandby(device) ? 'degraded' : 'online';
 }
 
 /** Switches and access points: network gear that is a dwarf planet while it carries few devices. */

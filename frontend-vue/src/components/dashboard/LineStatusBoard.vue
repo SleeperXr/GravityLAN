@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import type { Device, Subnet } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import { lineLabel, networkColor } from '@/lib/networks';
+import { isClientStandby } from '@/lib/standby';
 import { t } from '@/i18n';
 
 /**
@@ -37,7 +38,7 @@ const rows = computed<LineRow[]>(() =>
       total: members.length,
       online: members.filter((d) => d.is_online).length,
       dropped: members.filter((d) => !d.is_online && d.alert_offline !== false).length,
-      degraded: members.filter((d) => d.is_online && d.services.some((x) => !x.is_up)).length,
+      degraded: members.filter((d) => d.is_online && !isClientStandby(d) && d.services.some((x) => !x.is_up)).length,
       paused: s.is_enabled === false,
     };
   }),
