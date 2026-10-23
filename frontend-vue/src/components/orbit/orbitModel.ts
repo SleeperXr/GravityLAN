@@ -9,6 +9,7 @@
  */
 import type { Device, TopologyLink } from '@/types';
 import { networkColor } from '@/lib/networks';
+import { layoutOrbit, orbitCenterId } from './orbitLayout';
 
 export type OrbitLink = TopologyLink & {
   color?: string | null;
@@ -329,16 +330,18 @@ export function computeOrbitRings(
   positions: Map<number, Point>,
   tolerance = ORBIT_SNAP_TOLERANCE,
 ): OrbitRing[] {
+  // Moons ring around their planet, planets around the star of their system
   const byParent = new Map<number, { body: OrbitBody; dist: number }[]>();
   for (const body of bodies.values()) {
-    if (body.parentId == null) continue;
-    const pPos = positions.get(body.parentId);
+    const centerId = orbitCenterId(body, bodies);
+    if (centerId == null) continue;
+    const pPos = positions.get(centerId);
     const cPos = positions.get(body.id);
     if (!pPos || !cPos) continue;
     const dist = Math.hypot(cPos.x - pPos.x, cPos.y - pPos.y);
     if (dist < 12) continue;
-    if (!byParent.has(body.parentId)) byParent.set(body.parentId, []);
-    byParent.get(body.parentId)!.push({ body, dist });
+    if (!byParent.has(centerId)) byParent.set(centerId, []);
+    byParent.get(centerId)!.push({ body, dist });
   }
 
   const rings: OrbitRing[] = [];
@@ -366,7 +369,9 @@ export function computeOrbitRings(
       const hasOffline = cluster.members.every((m) => m.state === 'offline');
       const hasDashed = cluster.members.some((m) => m.orbitStyle === 'dashed');
       const style: OrbitStyle = hasOffline ? 'broken' : hasDashed ? 'dashed' : 'solid';
-      const dominantColor = cluster.members[0]?.color ?? 'var(--gl-accent)';
+      // Planet tiers around the star are neutral tracks; moon rings take the members' network colour
+      const isTier = cluster.members.some((m) => m.kind !== 'moon');
+      const dominantColor = isTier ? 'var(--gl-fg-subtle)' : (cluster.members[0]?.color ?? 'var(--gl-accent)');
       rings.push({
         id: `ring-${centerId}-${idx}-${cluster.radius}`,
         centerId,
@@ -393,86 +398,7 @@ export function autoOrbitLayout(
   links: OrbitLink[],
   gatewayIds: Set<number>,
 ): Map<number, Point> {
-  const bodies = resolveOrbitSystem(devices, links, gatewayIds);
-  const positions = new Map<number, Point>();
-
-  const childrenOf = new Map<number, OrbitBody[]>();
-  const roots: OrbitBody[] = [];
-
-  for (const b of bodies.values()) {
-    if (b.parentId == null || !bodies.has(b.parentId)) {
-      roots.push(b);
-    } else {
-      if (!childrenOf.has(b.parentId)) childrenOf.set(b.parentId, []);
-      childrenOf.get(b.parentId)!.push(b);
-    }
-  }
-
-  roots.sort((a, b) => a.id - b.id);
-  const starSpacing = 680;
-  const startX = -((roots.length - 1) * starSpacing) / 2;
-
-  roots.forEach((star, idx) => {
-    positions.set(star.id, { x: Math.round(startX + idx * starSpacing), y: 0 });
-  });
-
-  // BFS placement from Stars -> Planets -> Moons
-  const queue = [...roots];
-  while (queue.length > 0) {
-    const parent = queue.shift()!;
-    const pPos = positions.get(parent.id) ?? { x: 0, y: 0 };
-    const kids = childrenOf.get(parent.id) ?? [];
-    if (kids.length === 0) continue;
-
-    const planets = kids.filter((k) => k.kind !== 'moon');
-    const moons = kids.filter((k) => k.kind === 'moon');
-
-    if (parent.kind === 'star') {
-      // Direct moons of the Star sit on an inner belt (r = 135)
-      placeOnBelt(moons, pPos, 135, 6, 55, positions, -Math.PI / 4);
-      // Planets (Switches, APs, Hosts) sit on a wider belt so their own moons don't collide
-      const planetRadius = moons.length > 0 ? 310 : 255;
-      placeOnBelt(planets, pPos, planetRadius, 6, 110, positions, -Math.PI / 2);
-    } else {
-      // Children of a Planet (Switch / AP / Host)
-      // Orient the fan away from the Star so moons don't crowd the inner beam
-      const gParentPos = parent.parentId != null ? positions.get(parent.parentId) : null;
-      const outwardAngle = gParentPos
-        ? Math.atan2(pPos.y - gParentPos.y, pPos.x - gParentPos.x)
-        : -Math.PI / 2;
-      placeOnBelt(moons, pPos, 96, 6, 48, positions, outwardAngle);
-      placeOnBelt(planets, pPos, 175, 5, 70, positions, outwardAngle);
-    }
-
-    queue.push(...planets, ...moons);
-  }
-
-  return positions;
-}
-
-function placeOnBelt(
-  items: OrbitBody[],
-  center: Point,
-  baseRadius: number,
-  maxPerRing: number,
-  ringStep: number,
-  out: Map<number, Point>,
-  startAngle = -Math.PI / 2,
-) {
-  if (items.length === 0) return;
-  const sorted = [...items].sort((a, b) => a.id - b.id);
-  sorted.forEach((item, index) => {
-    const ringIndex = Math.floor(index / maxPerRing);
-    const countInRing = Math.min(maxPerRing, sorted.length - ringIndex * maxPerRing);
-    const posInRing = index % maxPerRing;
-    const radius = baseRadius + ringIndex * ringStep;
-    const angleOffset = ringIndex % 2 === 1 ? Math.PI / countInRing : 0;
-    const angle = startAngle + angleOffset + (posInRing * 2 * Math.PI) / Math.max(1, countInRing);
-    out.set(item.id, {
-      x: Math.round(center.x + radius * Math.cos(angle)),
-      y: Math.round(center.y + radius * Math.sin(angle)),
-    });
-  });
+  return layoutOrbit(resolveOrbitSystem(devices, links, gatewayIds));
 }
 
 /**
@@ -529,10 +455,11 @@ export function snapToOrbitRing(
   tolerance = ORBIT_SNAP_TOLERANCE,
 ): Point {
   const body = bodies.get(bodyId);
-  if (!body || body.parentId == null) {
+  const centerId = body ? orbitCenterId(body, bodies) : null;
+  if (!body || centerId == null) {
     return { x: Math.round(candidatePos.x), y: Math.round(candidatePos.y) };
   }
-  const center = positions.get(body.parentId);
+  const center = positions.get(centerId);
   if (!center) {
     return { x: Math.round(candidatePos.x), y: Math.round(candidatePos.y) };
   }
@@ -550,7 +477,7 @@ export function snapToOrbitRing(
   let snappedRadius = rawDist;
   let bestDiff = tolerance + 1;
   for (const other of bodies.values()) {
-    if (other.id === bodyId || other.parentId !== body.parentId) continue;
+    if (other.id === bodyId || orbitCenterId(other, bodies) !== centerId || (other.kind === 'moon') !== (body.kind === 'moon')) continue;
     const oPos = positions.get(other.id);
     if (!oPos) continue;
     const oDist = Math.hypot(oPos.x - center.x, oPos.y - center.y);

@@ -69,7 +69,8 @@
       "zoom_in": "Vergrößern",
       "zoom_out": "Verkleinern",
       "fit": "Ganzes System zeigen",
-      "live": "{{online}} von {{total}} Geräten im Orbit · live"
+      "live": "{{online}} von {{total}} Geräten im Orbit · live",
+      "assigned_to": "Umkreist jetzt {{parent}}"
     },
     "lines": {
       "title": "Netz-Orbits",
@@ -152,6 +153,37 @@
       "flapping": "Instabil",
       "service_up": "Dienst wieder da",
       "service_down": "Dienst ausgefallen"
+    },
+    "orbit": {
+      "search": "Gerät suchen …",
+      "search_label": "Gerät in der Karte suchen",
+      "hint": "Klick: fokussieren · Doppelklick: Details · Esc: zurück · Mausrad oder Pinch: Zoom",
+      "kind": "Typ",
+      "status": "Status",
+      "orbits": "Umkreist",
+      "moons_beams": "Monde / Strahlen",
+      "role_star": "Stern (Router)",
+      "role_planet": "Planet (Hub)",
+      "role_moon": "Mond",
+      "state_online": "Online",
+      "state_degraded": "Eingeschränkt",
+      "state_offline": "Offline",
+      "open_details": "Details öffnen",
+      "to_hub": "Zum Hub",
+      "centre": "Zentrieren",
+      "trace": "Pfad verfolgen",
+      "trace_pick": "Von {{name}}: Ziel anklicken",
+      "trace_hops_one": "{{count}} Sprung",
+      "trace_hops_other": "{{count}} Sprünge",
+      "trace_none": "Kein Pfad gefunden",
+      "trace_none_hint": "Zwischen diesen Geräten gibt es keine Verbindung. Verbinde sie im Bearbeiten-Modus mit einem Lichtstrahl.",
+      "trace_broken": "Der Pfad führt über eine unterbrochene Verbindung (offline).",
+      "motion": "Bewegung: {{mode}}",
+      "motion_off": "aus",
+      "motion_subtle": "dezent",
+      "motion_lively": "lebhaft",
+      "drop_to": "Umlaufbahn → {{name}}",
+      "hub": "Umkreist (Planet oder Stern)"
     }
   }
 }

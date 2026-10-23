@@ -69,7 +69,8 @@
       "zoom_in": "Zoom in",
       "zoom_out": "Zoom out",
       "fit": "Show whole system",
-      "live": "{{online}} of {{total}} devices in orbit · live"
+      "live": "{{online}} of {{total}} devices in orbit · live",
+      "assigned_to": "Now orbits {{parent}}"
     },
     "lines": {
       "title": "Network orbits",
@@ -152,6 +153,37 @@
       "flapping": "Flapping",
       "service_up": "Service back",
       "service_down": "Service down"
+    },
+    "orbit": {
+      "search": "Find device …",
+      "search_label": "Find a device on the map",
+      "hint": "Click: focus · Double click: details · Esc: back · Wheel or pinch: zoom",
+      "kind": "Type",
+      "status": "Status",
+      "orbits": "Orbits",
+      "moons_beams": "Moons / beams",
+      "role_star": "Star (router)",
+      "role_planet": "Planet (hub)",
+      "role_moon": "Moon",
+      "state_online": "Online",
+      "state_degraded": "Degraded",
+      "state_offline": "Offline",
+      "open_details": "Open details",
+      "to_hub": "Go to hub",
+      "centre": "Centre",
+      "trace": "Trace path",
+      "trace_pick": "From {{name}}: click the destination",
+      "trace_hops_one": "{{count}} hop",
+      "trace_hops_other": "{{count}} hops",
+      "trace_none": "No path found",
+      "trace_none_hint": "These devices are not connected. Link them with a light beam in edit mode.",
+      "trace_broken": "The path runs over an interrupted (offline) link.",
+      "motion": "Motion: {{mode}}",
+      "motion_off": "off",
+      "motion_subtle": "subtle",
+      "motion_lively": "lively",
+      "drop_to": "Orbit → {{name}}",
+      "hub": "Orbits (planet or star)"
     }
   }
 }
