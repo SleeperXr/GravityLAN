@@ -218,14 +218,14 @@ export const api = {
     request<{ interval: number; disk_paths: string[]; enable_temp: boolean; enable_patch_check: boolean; enable_scanner_relay: boolean }>(`/api/agent/config/${deviceId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   adoptAgent: (deviceId: number) => 
     request<{ status: string }>(`/api/agent/adopt/${deviceId}`, { method: 'POST' }),
-  queryAgentPatches: (deviceId: number, data: { ssh_user: string; ssh_password?: string; ssh_key?: string; ssh_port?: number; key_id?: number | null; key_passphrase?: string; profile_id?: number | null }) =>
+  queryAgentPatches: (deviceId: number, data: { ssh_user: string; ssh_password?: string; sudo_password?: string; ssh_key?: string; ssh_port?: number; key_id?: number | null; key_passphrase?: string; profile_id?: number | null }) =>
     request<{
       device_id: number;
       patch_manager: string | null;
       packages: { package: string; current_version: string; new_version: string; repo?: string }[];
       major_upgrade_available: string | null;
     }>(`/api/agent/patches/${deviceId}/query`, { method: 'POST', body: JSON.stringify(data) }),
-  prepareAgentPatch: (deviceId: number, data: { ssh_user: string; ssh_password?: string; ssh_key?: string; ssh_port?: number; mode: string; key_id?: number | null; key_passphrase?: string; profile_id?: number | null }) =>
+  prepareAgentPatch: (deviceId: number, data: { ssh_user: string; ssh_password?: string; sudo_password?: string; ssh_key?: string; ssh_port?: number; mode: string; key_id?: number | null; key_passphrase?: string; profile_id?: number | null }) =>
     request<{ patch_token: string }>(`/api/agent/patches/${deviceId}/prepare`, { method: 'POST', body: JSON.stringify(data) }),
   getAgentsOverview: () => 
     request<{

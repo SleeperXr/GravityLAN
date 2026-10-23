@@ -3,6 +3,7 @@ type AuthType = 'password' | 'key' | 'stored_key';
 interface SshCreds {
   ssh_user: string;
   ssh_password: string;
+  sudo_password?: string;
   ssh_key: string;
   key_id: number | null;
   key_passphrase: string;
@@ -85,6 +86,7 @@ const diskTone = (pct: number) => (pct > 90 ? 'bg-danger' : pct > 75 ? 'bg-warn'
 // ── SSH credentials ──────────────────────────────────────────────────────────
 const sshUser = ref('root');
 const sshPassword = ref('');
+const sudoPassword = ref('');
 const sshKey = ref('');
 const sshPort = ref(22);
 const authType = ref<AuthType>('password');
@@ -100,6 +102,7 @@ onMounted(async () => {
   if (cached) {
     sshUser.value = cached.ssh_user || 'root';
     sshPassword.value = cached.ssh_password;
+    sudoPassword.value = cached.sudo_password || '';
     sshKey.value = cached.ssh_key;
     keyId.value = cached.key_id;
     keyPassphrase.value = cached.key_passphrase;
@@ -137,6 +140,7 @@ function payload() {
     sshCredCache.set(deviceId.value, {
       ssh_user: sshUser.value,
       ssh_password: auth === 'password' ? sshPassword.value : '',
+      sudo_password: sudoPassword.value,
       ssh_key: auth === 'key' ? sshKey.value : '',
       key_id: auth === 'stored_key' ? keyId.value : null,
       key_passphrase: auth === 'stored_key' ? keyPassphrase.value : '',
@@ -148,14 +152,26 @@ function payload() {
     sshCredCache.delete(deviceId.value);
     hasStored.value = false;
   }
-  return {
+  const body: {
+    ssh_user: string;
+    ssh_password?: string;
+    sudo_password?: string;
+    ssh_key?: string;
+    key_id?: number;
+    key_passphrase?: string;
+    ssh_port: number;
+  } = {
     ssh_user: sshUser.value,
-    ssh_password: auth === 'password' ? sshPassword.value : undefined,
-    ssh_key: auth === 'key' ? sshKey.value : undefined,
+    ssh_password: auth === 'password' ? (sshPassword.value || undefined) : (sudoPassword.value || undefined),
+    ssh_key: auth === 'key' ? (sshKey.value || undefined) : undefined,
     key_id: auth === 'stored_key' ? (keyId.value ?? undefined) : undefined,
     key_passphrase: auth === 'stored_key' && keyPassphrase.value ? keyPassphrase.value : undefined,
     ssh_port: sshPort.value,
   };
+  if (sudoPassword.value) {
+    body.sudo_password = sudoPassword.value;
+  }
+  return body;
 }
 
 // ── Patching ─────────────────────────────────────────────────────────────────
@@ -347,6 +363,9 @@ const tabs = computed(() => [
                   <Textarea :id="id" v-model="sshKey" mono rows="3" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
                 </Field>
               </div>
+              <Field v-if="authType !== 'password'" v-slot="{ id, describedBy }" :label="t('agent.sudo_password')" :hint="t('agent.sudo_password_hint')">
+                <Input :id="id" v-model="sudoPassword" type="password" autocomplete="off" :aria-describedby="describedBy" />
+              </Field>
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <label class="flex items-center gap-2 text-xs text-fg-muted">
                   <input v-model="saveCreds" type="checkbox" class="size-4 accent-[var(--gl-accent)]" />

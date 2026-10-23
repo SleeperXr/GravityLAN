@@ -44,6 +44,7 @@ type Telemetry = ReturnType<typeof useAgentHistory>;
 type SshCreds = {
   ssh_user: string;
   ssh_password?: string;
+  sudo_password?: string;
   ssh_key?: string;
   key_id?: number | null;
   key_passphrase?: string;
@@ -58,6 +59,7 @@ const sshCredCache = new Map<number, SshCreds>();
 function useSshCredentials(deviceId: number) {
   const [sshUser, setSshUser] = useState('root');
   const [sshPassword, setSshPassword] = useState('');
+  const [sudoPassword, setSudoPassword] = useState('');
   const [sshKey, setSshKey] = useState('');
   const [sshPort, setSshPort] = useState(22);
   const [authType, setAuthType] = useState<'password' | 'key' | 'stored_key'>('password');
@@ -94,6 +96,7 @@ function useSshCredentials(deviceId: number) {
     if (cached) {
       setSshUser(cached.ssh_user || 'root');
       setSshPassword(cached.ssh_password || '');
+      setSudoPassword(cached.sudo_password || '');
       setSshKey(cached.ssh_key || '');
       setKeyId(cached.key_id ?? null);
       setKeyPassphrase(cached.key_passphrase || '');
@@ -106,18 +109,30 @@ function useSshCredentials(deviceId: number) {
 
   /** The request body, remembering (or forgetting) the credentials as the checkbox says. */
   const payload = () => {
-    const body = {
+    const body: {
+      ssh_user: string;
+      ssh_password?: string;
+      sudo_password?: string;
+      ssh_key?: string;
+      key_id?: number;
+      key_passphrase?: string;
+      ssh_port: number;
+    } = {
       ssh_user: sshUser,
-      ssh_password: authType === 'password' ? sshPassword : undefined,
+      ssh_password: authType === 'password' ? sshPassword : (sudoPassword || undefined),
       ssh_key: authType === 'key' ? sshKey : undefined,
       key_id: authType === 'stored_key' ? (keyId ?? undefined) : undefined,
       key_passphrase: authType === 'stored_key' && keyPassphrase ? keyPassphrase : undefined,
       ssh_port: sshPort,
     };
+    if (sudoPassword) {
+      body.sudo_password = sudoPassword;
+    }
     if (saveCreds) {
       sshCredCache.set(deviceId, {
         ssh_user: sshUser,
         ssh_password: authType === 'password' ? sshPassword : '',
+        sudo_password: sudoPassword,
         ssh_key: authType === 'key' ? sshKey : '',
         key_id: authType === 'stored_key' ? keyId : null,
         key_passphrase: authType === 'stored_key' ? keyPassphrase : '',
@@ -131,7 +146,7 @@ function useSshCredentials(deviceId: number) {
   };
 
   return {
-    sshUser, setSshUser, sshPassword, setSshPassword, sshKey, setSshKey, sshPort,
+    sshUser, setSshUser, sshPassword, setSshPassword, sudoPassword, setSudoPassword, sshKey, setSshKey, sshPort,
     authType, setAuthType, keyId, setKeyId, keyPassphrase, setKeyPassphrase, storedKeys,
     saveCreds, setSaveCreds, showForm, setShowForm,
     hasStored: sshCredCache.has(deviceId),
@@ -461,6 +476,22 @@ function SshCredentialsForm({ deviceId, creds, querying, onQuery }: { deviceId: 
             </>
           )}
         </div>
+        {creds.authType !== 'password' && (
+          <div className="settings-field" style={{ gridColumn: '1 / -1' }}>
+            <label className="form-label" htmlFor={`ssh-sudo-${deviceId}`}>
+              {t('agent.sudo_password')}
+            </label>
+            <input
+              id={`ssh-sudo-${deviceId}`}
+              type="password"
+              className="input"
+              placeholder={t('agent.sudo_password_hint')}
+              value={creds.sudoPassword}
+              onChange={e => creds.setSudoPassword(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+        )}
       </div>
       <div className="agent-detail__panel-row">
         <label className="agent-detail__check">

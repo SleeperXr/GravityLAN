@@ -257,6 +257,28 @@ describe('AgentsView detail: updates', () => {
     }));
   });
 
+  it('passes sudo_password when non-root key authentication provides it', async () => {
+    m.queryAgentPatches.mockResolvedValue({ packages: [], major_upgrade_available: null, patch_manager: 'apt' } as never);
+    const { user } = await openUpdates({ device_id: 28, patch_available: 2 });
+
+    await user.clear(screen.getByLabelText('Username'));
+    await user.type(screen.getByLabelText('Username'), 'sleeper');
+    await user.selectOptions(screen.getByLabelText('Authentication'), 'key');
+    await user.type(screen.getByLabelText('Private key'), 'KEY');
+    await user.type(screen.getByLabelText('sudo password (optional)'), 'sudo-secret');
+    await user.click(screen.getByRole('button', { name: 'Fetch update list' }));
+
+    await waitFor(() => expect(m.queryAgentPatches).toHaveBeenCalledWith(28, {
+      ssh_user: 'sleeper',
+      ssh_password: 'sudo-secret',
+      sudo_password: 'sudo-secret',
+      ssh_key: 'KEY',
+      ssh_port: 22,
+      key_id: undefined,
+      key_passphrase: undefined,
+    }));
+  });
+
   it('reports a failed update check', async () => {
     m.queryAgentPatches.mockResolvedValue({ packages: [], major_upgrade_available: null, patch_manager: 'apt', error: 'sudo: password required' } as never);
     const { user } = await openUpdates({ device_id: 24 });

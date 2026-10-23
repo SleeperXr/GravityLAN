@@ -349,3 +349,31 @@ async def test_patch_run_survives_client_disconnect(monkeypatch):
     assert cleared == [5]
     assert ws.sent[-1] == "chunk 0\r\n"
     assert ws.close_code is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_patch_credentials_sudo_password():
+    from unittest.mock import AsyncMock, MagicMock
+    from app.api.agent_patches import _resolve_patch_credentials
+    from app.models.device import Device
+    from app.schemas.agent import PatchActionRequest
+
+    device = Device(id=1, ip="192.168.1.10")
+    db = AsyncMock()
+    exec_res = MagicMock()
+    exec_res.scalar_one_or_none.return_value = None
+    db.execute.return_value = exec_res
+    http_req = MagicMock()
+
+    req = PatchActionRequest(
+        ssh_user="sleeper",
+        ssh_key="dummy-key",
+        sudo_password="secret-sudo-pw",
+    )
+    host_ip, ssh_port, ssh_user, ssh_password, ssh_key, ssh_passphrase, pinned = (
+        await _resolve_patch_credentials(db, device, req, http_req)
+    )
+    assert host_ip == "192.168.1.10"
+    assert ssh_user == "sleeper"
+    assert ssh_password == "secret-sudo-pw"
+    assert ssh_key == "dummy-key"

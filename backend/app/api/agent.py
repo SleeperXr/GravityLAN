@@ -554,7 +554,8 @@ async def _ssh_login(db: AsyncSession, device: Device, req: AgentInstallRequest,
             await db.commit()
 
         return dict(
-            host_ip=device.ip, ssh_user=req.ssh_user, ssh_password=req.ssh_password,
+            host_ip=device.ip, ssh_user=req.ssh_user,
+            ssh_password=getattr(req, "sudo_password", None) or req.ssh_password,
             ssh_key=ssh_key, ssh_key_passphrase=ssh_passphrase, ssh_port=req.ssh_port, pinned_host_key=pinned,
         )
 

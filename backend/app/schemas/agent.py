@@ -132,6 +132,7 @@ class AgentDeployRequest(BaseModel):
 
     ssh_user: str = Field(..., min_length=1, max_length=50)
     ssh_password: str | None = Field(None, min_length=1)
+    sudo_password: str | None = None
     ssh_key: str | None = None
     ssh_port: int = Field(22, ge=1, le=65535)
     key_id: int | None = None
@@ -190,6 +191,7 @@ class PatchActionRequest(BaseModel):
     """Credentials and parameters for applying patches."""
     ssh_user: str = Field(..., min_length=1, max_length=50)
     ssh_password: str | None = Field(None, min_length=1)
+    sudo_password: str | None = None
     ssh_key: str | None = None
     ssh_port: int = Field(22, ge=1, le=65535)
     mode: str = Field("upgrade")  # "upgrade" or "security-only"

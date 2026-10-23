@@ -85,6 +85,8 @@ async def _resolve_patch_credentials(
     http_request: Request,
 ) -> tuple[str, int, str, str | None, str | None, str | None, PinnedHostKey | None]:
     """Resolve (host_ip, ssh_port, ssh_user, ssh_password, ssh_key, ssh_key_passphrase, pinned_host_key)."""
+    sudo_pwd = getattr(request, "sudo_password", None) or request.ssh_password
+
     if request.profile_id is not None:
         if not has_browser_session(http_request):
             raise HTTPException(
@@ -96,12 +98,12 @@ async def _resolve_patch_credentials(
         except StoredLoginError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         await db.commit()
-        return login.host, login.port, login.username, None, login.private_key, login.passphrase, login.pinned
+        return login.host, login.port, login.username, sudo_pwd, login.private_key, login.passphrase, login.pinned
 
     host_ip = device.ip
     ssh_port = request.ssh_port
     ssh_user = request.ssh_user
-    ssh_password = request.ssh_password
+    ssh_password = sudo_pwd
     ssh_key = request.ssh_key
     ssh_passphrase = request.key_passphrase
 
