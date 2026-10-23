@@ -127,7 +127,7 @@ const positions = computed(() => {
 const posOf = (id: number): Point => positions.value.get(id) ?? { x: 0, y: 0 };
 
 const orbitRings = computed(() => computeOrbitRings(bodies.value, positions.value));
-const lightBeams = computed(() => computeLightBeams(links.value, bodies.value));
+const lightBeams = computed(() => computeLightBeams(links.value, bodies.value, appearance.linkTypeColors));
 
 /** The star at the root of a body's system. */
 function rootOf(id: number): number {
@@ -625,10 +625,15 @@ onBeforeUnmount(() => {
   view.cancel();
 });
 
+// Fit once, when the map first has something to show. Saving a drag or a role replaces the device
+// list, and refitting then threw the user's zoom away mid-edit.
+let fitted = false;
 watch(
-  () => [loaded.value, store.devices.length] as const,
-  ([isLoaded, count]) => {
-    if (isLoaded && count > 0) window.setTimeout(() => fitView(), 60);
+  () => loaded.value && store.devices.length > 0,
+  (ready) => {
+    if (!ready || fitted) return;
+    fitted = true;
+    window.setTimeout(() => fitView(), 60);
   },
   { immediate: true },
 );

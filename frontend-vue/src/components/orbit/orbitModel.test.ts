@@ -131,6 +131,15 @@ describe('orbitModel hierarchy and mechanics', () => {
     expect(swapped.get(1)?.parentId).toBe(2);
   });
 
+  it('colours beams by link type unless the link has its own colour', () => {
+    const bodies = resolveOrbitSystem(devices, links, new Set([1]));
+    const own = [...links.slice(0, 2), { ...links[2], color: '#123456' } as OrbitLink];
+    const beams = computeLightBeams(own, bodies, { '10GbE': '#ff0000', '1GbE': '#00ff00' });
+    expect(beams.find((b) => b.id === 101)?.color).toBe('#ff0000');
+    expect(beams.find((b) => b.id === 102)?.color).toBe('var(--line-1)'); // 2.5GbE has no type colour
+    expect(beams.find((b) => b.id === 103)?.color).toBe('#123456');
+  });
+
   it('moves a planet together with all of its moons and sub-moons', () => {
     const bodies = resolveOrbitSystem(devices, links, new Set([1]));
     const layout = autoOrbitLayout(devices, links, new Set([1]));

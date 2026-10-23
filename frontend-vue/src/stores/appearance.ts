@@ -6,6 +6,7 @@ import type { OrbitRole, OrbitRoles } from '@/components/orbit/orbitModel';
 const SETTING_KEY = 'ui.line_colors';
 const ORBIT_KEY = 'ui.orbit_layout';
 const ROLES_KEY = 'ui.orbit_roles';
+const LINK_TYPE_KEY = 'ui.link_type_colors';
 const ROLES: OrbitRole[] = ['star', 'planet', 'dwarf', 'moon'];
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -23,6 +24,8 @@ export const useAppearance = defineStore('appearance', () => {
   const orbitCustom = ref(false);
   /** Orbit roles the user chose per device (`ui.orbit_roles`, JSON {deviceId: role}) */
   const orbitRoles = ref<OrbitRoles>({});
+  /** Beam colour per connection type (`ui.link_type_colors`, JSON {"10GbE": "#rrggbb"}); a link's own colour wins */
+  const linkTypeColors = ref<Record<string, string>>({});
   let loaded: Promise<void> | null = null;
 
   function load() {
@@ -34,6 +37,8 @@ export const useAppearance = defineStore('appearance', () => {
         lineColors.value = Object.fromEntries(Object.entries(parsed).filter(([, v]) => HEX.test(v)));
         orbitCustom.value = settings[ORBIT_KEY] === 'custom';
         const roles = settings[ROLES_KEY] ? (JSON.parse(settings[ROLES_KEY]) as Record<string, string>) : {};
+        const types = settings[LINK_TYPE_KEY] ? (JSON.parse(settings[LINK_TYPE_KEY]) as Record<string, string>) : {};
+        linkTypeColors.value = Object.fromEntries(Object.entries(types).filter(([, v]) => HEX.test(v)));
         orbitRoles.value = Object.fromEntries(Object.entries(roles).filter(([, r]) => ROLES.includes(r as OrbitRole))) as OrbitRoles;
       } catch {
         lineColors.value = {};
@@ -56,6 +61,14 @@ export const useAppearance = defineStore('appearance', () => {
     await api.updateSettings({ [ROLES_KEY]: JSON.stringify(next) });
   }
 
+  async function setLinkTypeColor(type: string, color: string | null) {
+    const next = { ...linkTypeColors.value };
+    if (color && HEX.test(color)) next[type] = color;
+    else delete next[type];
+    linkTypeColors.value = next;
+    await api.updateSettings({ [LINK_TYPE_KEY]: JSON.stringify(next) });
+  }
+
   async function setLineColor(subnetId: number, color: string | null) {
     const next = { ...lineColors.value };
     if (color && HEX.test(color)) next[String(subnetId)] = color;
@@ -64,5 +77,5 @@ export const useAppearance = defineStore('appearance', () => {
     await api.updateSettings({ [SETTING_KEY]: JSON.stringify(next) });
   }
 
-  return { lineColors, orbitCustom, orbitRoles, load, setLineColor, setOrbitCustom, setOrbitRole };
+  return { lineColors, linkTypeColors, orbitCustom, orbitRoles, load, setLineColor, setLinkTypeColor, setOrbitCustom, setOrbitRole };
 });

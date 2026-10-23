@@ -207,6 +207,14 @@
     "timeline": {
       "incidents": "Incidents over time",
       "history": "Status history"
+    },
+    "link_types": {
+      "title": "Connection type colours",
+      "desc": "Each connection type gets a fixed colour on the orbit map, for example 10GbE different from 1GbE. A colour you set on a single link wins. Without a type colour a link takes its network colour.",
+      "network": "Network colour",
+      "fiber": "Fibre",
+      "for": "Colour for {{type}}",
+      "reset": "Network colour"
     }
   }
 }

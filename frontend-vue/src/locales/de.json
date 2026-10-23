@@ -207,6 +207,14 @@
     "timeline": {
       "incidents": "Vorfälle im Zeitverlauf",
       "history": "Statusverlauf"
+    },
+    "link_types": {
+      "title": "Farben der Verbindungstypen",
+      "desc": "Jeder Verbindungstyp bekommt auf der Orbit-Karte eine feste Farbe, zum Beispiel 10GbE anders als 1GbE. Eine Farbe, die du an einer einzelnen Verbindung setzt, geht vor. Ohne Typfarbe nimmt eine Verbindung die Farbe ihres Netzes.",
+      "network": "Farbe des Netzes",
+      "fiber": "Glasfaser",
+      "for": "Farbe für {{type}}",
+      "reset": "Netzfarbe"
     }
   }
 }

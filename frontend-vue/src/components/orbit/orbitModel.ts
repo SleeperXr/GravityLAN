@@ -327,6 +327,7 @@ export function resolveOrbitSystem(
 export function computeLightBeams(
   links: OrbitLink[],
   bodies: Map<number, OrbitBody>,
+  typeColors: Record<string, string> = {},
 ): LightBeam[] {
   const beams: LightBeam[] = [];
   for (const l of links) {
@@ -334,7 +335,8 @@ export function computeLightBeams(
     const b = bodies.get(l.target_id);
     if (!a || !b) continue;
     const isPrimaryBridge = (a.kind !== 'moon' && b.kind !== 'moon') || a.kind === 'star' || b.kind === 'star';
-    const color = l.color || (b.kind !== 'star' ? b.color : a.color);
+    // The link's own colour, else the colour chosen for its type (10GbE, WLAN, ...), else its network
+    const color = l.color || typeColors[l.link_type || '1GbE'] || (b.kind !== 'star' ? b.color : a.color);
     beams.push({
       id: l.id,
       sourceId: l.source_id,

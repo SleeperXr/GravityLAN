@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
+
+### Fixed
+- GravityUI Orbit map no longer jumps: the view was refitted whenever the device list changed, including after saving a dragged position or a role. It now fits once, when the map first has devices.
+
 ## [0.5.0] - 2026-10-23
 
 ### Added
