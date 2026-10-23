@@ -35,6 +35,10 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - GravityUI showed values the backend never sends (device `name`, `os_info`, `device_role`, service `url`, subnet `color`); it now uses the React UI's types and API client directly.
 
+### Security
+- certifi is required at 2026.10.19 or newer (older bundles trust emSign roots whose intermediate CA keys were compromised); `backend/uv.lock` is refreshed and back in step with `pyproject.toml`.
+- Development tools only, not in the image: Vite 8.3.5 in the React UI (dev-server file access and launch-editor fixes), Vitest 4.1.12 in both UIs (mock-redirect path traversal, code injection; GravityUI drops the tinypool prototype-pollution chain with the move from Vitest 3).
+
 ## [0.4.1] - 2026-10-20
 
 ### Added
