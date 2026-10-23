@@ -62,8 +62,23 @@ const label = computed(() => {
   return `${props.tile.ip}, ${known.value ? `${name.value}, ` : ''}${state}`;
 });
 
+/**
+ * Device icons are stored either as an emoji or as an icon name of the classic UI ("server").
+ * Only an emoji can be drawn as text; a name would print the word into the tile.
+ */
+const emojiIcon = computed(() => {
+  const icon = device.value?.icon;
+  return icon && /\p{Extended_Pictographic}/u.test(icon) ? icon : null;
+});
+
+/** "22 SSH" for a named service, plain "8080" when the name only repeats the port. */
+function serviceText(s: { name?: string | null; port: number }): string {
+  const name = s.name?.replace('Service ', '').trim();
+  return name && name !== String(s.port) ? `${s.port} ${name}` : String(s.port);
+}
+
 const ports = computed(() => [
-  ...(device.value?.services ?? []).filter((s) => s.is_up).map((s) => ({ key: `s${s.id}`, text: s.name?.replace('Service ', '') || String(s.port), tone: 'info' })),
+  ...(device.value?.services ?? []).filter((s) => s.is_up).map((s) => ({ key: `s${s.id}`, text: serviceText(s), tone: 'info' })),
   ...(host.value?.ports ?? []).map((p) => ({ key: `p${p}`, text: String(p), tone: 'accent' })),
 ]);
 </script>
@@ -82,7 +97,7 @@ const ports = computed(() => [
         <span v-if="showAreaLabel && tile.group" class="absolute -top-2 left-1 z-[1] max-w-[calc(100%*3)] truncate rounded-[3px] px-1 text-[9px] leading-[14px] font-semibold text-black" :style="{ backgroundColor: tile.group.color }" aria-hidden="true">
           {{ tile.group.name }}
         </span>
-        <span v-if="device?.icon" class="text-[1.4em]" :class="!online && 'opacity-50'" aria-hidden="true">{{ device.icon }}</span>
+        <span v-if="emojiIcon" class="text-[1.4em]" :class="!online && 'opacity-50'" aria-hidden="true">{{ emojiIcon }}</span>
         <span v-else>{{ tile.i }}</span>
         <span class="absolute top-1 right-1 size-1.5 rounded-full" :class="online ? 'bg-accent' : 'bg-danger'" aria-hidden="true" />
         <Lock v-if="tile.isReserved" class="absolute right-0.5 bottom-0.5 size-2.5 text-info-text" aria-hidden="true" />
