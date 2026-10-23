@@ -5,7 +5,9 @@ GravityLAN contains code adapted from the projects below. Each keeps its own lic
 ## 8starlabs-ui
 
 - Source: https://github.com/8starlabs/ui
-- Used in: `frontend-vue/src/components/common/StatusMonitor.vue`, `frontend-vue/src/components/common/statusMonitor.ts` (Status Monitor block, rewritten for Vue)
+- Used in, rewritten for Vue:
+  - Status Monitor block: `frontend-vue/src/components/common/StatusMonitor.vue`, `frontend-vue/src/components/common/statusMonitor.ts`
+  - Timeline block: `frontend-vue/src/components/common/Timeline.vue`, `frontend-vue/src/components/common/timeline.ts`
 
 ```text
 MIT License

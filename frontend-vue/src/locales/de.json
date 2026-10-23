@@ -197,6 +197,10 @@
       "ago_days_other": "vor {{count}} Tagen",
       "now": "Jetzt",
       "summary": "{{title}}: {{uptime}} % Uptime, {{down}} Ausfälle und {{partial}} Störungen in {{count}} Abschnitten. Pfeiltasten zeigen einzelne Abschnitte."
+    },
+    "timeline": {
+      "incidents": "Vorfälle im Zeitverlauf",
+      "history": "Statusverlauf"
     }
   }
 }

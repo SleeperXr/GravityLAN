@@ -170,7 +170,7 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
 
       <section class="space-y-2">
         <h3 class="text-sm font-bold text-fg">{{ t('health_page.drawer_history') }}</h3>
-        <IncidentList layout="list" :incidents="detail?.device.id === dev.id ? detail.incidents : []" />
+        <IncidentList layout="list" :interactive="false" :incidents="detail?.device.id === dev.id ? detail.incidents : []" />
       </section>
     </div>
 

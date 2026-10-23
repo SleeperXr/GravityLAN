@@ -197,6 +197,10 @@
       "ago_days_other": "{{count}} days ago",
       "now": "Now",
       "summary": "{{title}}: {{uptime}}% uptime, {{down}} outages and {{partial}} disruptions in {{count}} slots. Arrow keys show single slots."
+    },
+    "timeline": {
+      "incidents": "Incidents over time",
+      "history": "Status history"
     }
   }
 }

@@ -7,7 +7,8 @@ import EmptyState from '@/components/ui/EmptyState.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
 import StatusMonitor from '@/components/common/StatusMonitor.vue';
-import { periodHours, statusWord } from '@/components/health/healthModel';
+import Timeline from '@/components/common/Timeline.vue';
+import { historyEntry, periodHours, statusWord } from '@/components/health/healthModel';
 import { t } from '@/i18n';
 
 type Period = '24h' | '7d' | '30d';
@@ -74,20 +75,15 @@ const isUp = (item: DeviceHistoryResponse) => item.status === 'online' || item.s
     </section>
 
     <EmptyState v-if="history.length === 0" compact :icon="History" :title="t('notifications.no_events')" />
-    <ol v-else class="relative space-y-0 border-l border-line pl-5">
-      <li v-for="item in history" :key="item.id" class="relative pb-4 last:pb-0">
-        <span
-          class="absolute top-1.5 -left-[25px] size-2.5 rounded-full ring-4 ring-surface"
-          :class="isUp(item) ? 'bg-accent' : 'bg-danger'"
-          aria-hidden="true"
-        />
+    <Timeline v-else :items="history.map(historyEntry)" :label="t('gv.timeline.history')" no-cards>
+      <template #default="{ item }">
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-[11px] font-semibold" :class="isUp(item) ? 'text-accent-text' : 'text-danger-text'">{{ statusWord(item.status) }}</span>
           <span v-if="item.service_id" class="rounded-sm bg-raised px-1.5 text-[10px] font-medium text-fg-muted">SERVICE</span>
           <span class="ml-auto text-xs text-fg-subtle"><RelativeTime :date="item.timestamp" /></span>
         </div>
         <p class="mt-0.5 text-sm text-fg">{{ item.message }}</p>
-      </li>
-    </ol>
+      </template>
+    </Timeline>
   </div>
 </template>

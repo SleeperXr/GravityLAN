@@ -1,5 +1,6 @@
 import type { BadgeTone } from '@/components/ui/Badge.vue';
-import type { DeviceHealthItem, ServiceHealthItem } from '@/types';
+import type { DeviceHealthItem, DeviceHistoryResponse, HealthIncident, ServiceHealthItem } from '@/types';
+import type { TimelineEntry } from '@/components/common/timeline';
 import { t } from '@/i18n';
 
 export type HealthStatus = DeviceHealthItem['health_status'];
@@ -50,3 +51,17 @@ export const ms = (value: number | null | undefined, digits = 1) => (value === n
 
 /** Hours covered by a health period, for the status monitor's time axis. */
 export const periodHours = (period: '24h' | '7d' | '30d') => ({ '24h': 24, '7d': 168, '30d': 720 })[period];
+
+const isRecovery = (status: string) => ['online', 'up', 'service_up'].includes(status.toLowerCase());
+
+/** Timeline dot of an incident: tone by severity, hollow when something came back. */
+export function incidentEntry(incident: HealthIncident): TimelineEntry<HealthIncident> {
+  const tone = isRecovery(incident.status) ? 'accent' : incident.status === 'flapping' || incident.severity === 'warn' ? 'warn' : incident.severity === 'critical' ? 'danger' : 'info';
+  return { key: incident.id, tone, hollow: isRecovery(incident.status), data: incident };
+}
+
+/** Timeline dot of a status history record: up is a hollow green dot, anything else a red one. */
+export function historyEntry(item: DeviceHistoryResponse): TimelineEntry<DeviceHistoryResponse> {
+  const up = isRecovery(item.status);
+  return { key: item.id, tone: up ? 'accent' : 'danger', hollow: up, data: item };
+}
