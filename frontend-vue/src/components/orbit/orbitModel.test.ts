@@ -7,6 +7,7 @@ import {
   findDropTargetBody,
   moveWithDescendants,
   resolveOrbitSystem,
+  roleOf,
   snapToOrbitRing,
   type OrbitLink,
 } from './orbitModel';
@@ -103,6 +104,31 @@ describe('orbitModel hierarchy and mechanics', () => {
     // Offline iPhone gets broken orbit style
     expect(bodies.get(7)?.parentId).toBe(4);
     expect(bodies.get(7)?.orbitStyle).toBe('broken');
+  });
+
+  it('makes small switches and APs dwarf planets and big ones full planets', () => {
+    const bodies = resolveOrbitSystem(devices, links, new Set([1]));
+    expect(roleOf(bodies.get(2)!)).toBe('dwarf'); // switch carrying two planets
+    expect(roleOf(bodies.get(4)!)).toBe('dwarf'); // AP with two WLAN moons
+    expect(roleOf(bodies.get(3)!)).toBe('planet'); // a host stays a planet
+    const many = [...devices, ...[8, 9, 10].map((id) => makeDevice({ id, ip: `192.168.1.${id + 100}` }))];
+    const manyLinks = [...links, ...[8, 9, 10].map((id) => ({ id: 200 + id, source_id: 2, target_id: id, link_type: '1GbE' }) as OrbitLink)];
+    expect(roleOf(resolveOrbitSystem(many, manyLinks, new Set([1])).get(2)!)).toBe('planet');
+  });
+
+  it('follows the roles the user chose', () => {
+    const bodies = resolveOrbitSystem(devices, links, new Set([1]), { '2': 'planet', '3': 'dwarf', '6': 'planet' });
+    expect(roleOf(bodies.get(2)!)).toBe('planet');
+    expect(roleOf(bodies.get(3)!)).toBe('dwarf');
+    expect(roleOf(bodies.get(6)!)).toBe('planet');
+    // A moon choice cannot hold while others orbit the body: it stays a small hub
+    expect(roleOf(resolveOrbitSystem(devices, links, new Set([1]), { '3': 'moon' }).get(3)!)).toBe('dwarf');
+    // Choosing a star makes a second system root; the gateway can be demoted
+    const swapped = resolveOrbitSystem(devices, links, new Set([1]), { '1': 'planet', '2': 'star' });
+    expect(swapped.get(2)?.kind).toBe('star');
+    expect(swapped.get(2)?.parentId).toBeNull();
+    expect(swapped.get(1)?.kind).toBe('planet');
+    expect(swapped.get(1)?.parentId).toBe(2);
   });
 
   it('moves a planet together with all of its moons and sub-moons', () => {

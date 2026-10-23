@@ -183,7 +183,13 @@
       "motion_subtle": "subtle",
       "motion_lively": "lively",
       "drop_to": "Orbit → {{name}}",
-      "hub": "Orbits (planet or star)"
+      "hub": "Orbits (planet or star)",
+      "role": "Orbit role",
+      "role_auto": "Automatic",
+      "role_auto_is": "Automatic: {{role}}",
+      "role_dwarf": "Dwarf planet (small hub)",
+      "role_moon_blocked": "Other devices orbit this one, so it cannot be a moon.",
+      "role_saved": "{{name}}: {{role}}"
     },
     "status_monitor": {
       "normal": "Reachable",

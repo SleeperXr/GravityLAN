@@ -11,7 +11,10 @@
  */
 import type { OrbitBody, Point } from './orbitModel';
 
-export const BODY_RADIUS = { star: 22, planet: 16, moon: 10.5 } as const;
+export const BODY_RADIUS = { star: 22, planet: 16, dwarf: 12.5, moon: 10.5 } as const;
+
+/** Drawn radius of a body; dwarf planets are smaller planets. */
+export const radiusOf = (body: Pick<OrbitBody, 'kind' | 'dwarf'>) => (body.kind === 'planet' && body.dwarf ? BODY_RADIUS.dwarf : BODY_RADIUS[body.kind]);
 
 const SLOT = 104; // arc (world px) one body plus its label needs on a ring
 const MOON_RING_MIN = 82;

@@ -20,6 +20,13 @@ export type OrbitLink = TopologyLink & {
 export const LINK_TYPES = ['10GbE', '2.5GbE', '1GbE', 'WLAN', 'Fiber'] as const;
 
 export type BodyKind = 'star' | 'planet' | 'moon';
+/** What the user can pick: a dwarf planet is a small planet (a switch or AP with few devices). */
+export type OrbitRole = 'star' | 'planet' | 'dwarf' | 'moon';
+/** Chosen roles per device id (setting `ui.orbit_roles`); a missing id means automatic. */
+export type OrbitRoles = Record<string, OrbitRole>;
+
+/** Switches and APs carrying fewer devices than this are dwarf planets unless chosen otherwise. */
+export const DWARF_MAX_CHILDREN = 4;
 export type BodyState = 'online' | 'degraded' | 'offline';
 export type OrbitStyle = 'solid' | 'dashed' | 'broken';
 
@@ -32,6 +39,8 @@ export interface OrbitBody {
   id: number;
   device: Device;
   kind: BodyKind;
+  /** A planet drawn small (dwarf planet) */
+  dwarf: boolean;
   state: BodyState;
   parentId: number | null;
   orbitStyle: OrbitStyle;
@@ -74,6 +83,18 @@ export function bodyState(device: Device): BodyState {
   return device.services.some((s) => !s.is_up) ? 'degraded' : 'online';
 }
 
+/** Switches and access points: network gear that is a dwarf planet while it carries few devices. */
+export function isNetworkGear(device: Device): boolean {
+  const dt = (device.device_type || '').toLowerCase();
+  const sub = (device.device_subtype || '').toLowerCase();
+  return device.is_ap || dt === 'switch' || dt === 'ap' || sub === 'switch' || sub === 'ap';
+}
+
+/** The role shown and offered to the user for a resolved body. */
+export function roleOf(body: OrbitBody): OrbitRole {
+  return body.kind === 'planet' && body.dwarf ? 'dwarf' : body.kind;
+}
+
 export function isPlanetCandidate(device: Device, degree: number, hasVmChildren: boolean): boolean {
   const dt = (device.device_type || '').toLowerCase();
   const sub = (device.device_subtype || '').toLowerCase();
@@ -93,7 +114,9 @@ export function resolveOrbitSystem(
   devices: Device[],
   links: OrbitLink[],
   gatewayIds: Set<number>,
+  roles: OrbitRoles = {},
 ): Map<number, OrbitBody> {
+  const chosen = (id: number): OrbitRole | undefined => roles[String(id)];
   const byId = new Map(devices.map((d) => [d.id, d]));
 
   // Build undirected adjacency list of valid topology links
@@ -110,10 +133,11 @@ export function resolveOrbitSystem(
     if (d.parent_id != null && byId.has(d.parent_id)) vmParentIds.add(d.parent_id);
   }
 
-  // Identify Stars (gateways or routers; fallback to highest-degree node if none)
+  // Identify Stars (chosen, else gateways or routers; fallback to highest-degree node if none)
   const starIds = new Set<number>();
   for (const d of devices) {
-    if (gatewayIds.has(d.id) || (d.device_type || '').toLowerCase() === 'router') {
+    const role = chosen(d.id);
+    if (role === 'star' || (!role && (gatewayIds.has(d.id) || (d.device_type || '').toLowerCase() === 'router'))) {
       starIds.add(d.id);
     }
   }
@@ -258,12 +282,15 @@ export function resolveOrbitSystem(
   for (const d of devices) {
     const info = rawParents.get(d.id)!;
     const degree = adj.get(d.id)?.length ?? 0;
-    const hasChildren = (childCount.get(d.id) ?? 0) > 0;
+    const children = childCount.get(d.id) ?? 0;
+    const role = chosen(d.id);
+    // A body others orbit cannot be a moon, so a chosen moon with children stays a dwarf planet.
     const kind: BodyKind = starIds.has(d.id)
       ? 'star'
-      : isPlanetCandidate(d, degree, vmParentIds.has(d.id) || hasChildren)
+      : role === 'planet' || role === 'dwarf' || children > 0 || (role !== 'moon' && isPlanetCandidate(d, degree, vmParentIds.has(d.id)))
         ? 'planet'
         : 'moon';
+    const dwarf = kind === 'planet' && (role === 'dwarf' || (role === 'moon' && children > 0) || (!role && isNetworkGear(d) && children < DWARF_MAX_CHILDREN));
 
     const state = bodyState(d);
     const orbitStyle: OrbitStyle = state === 'offline' ? 'broken' : info.wireless ? 'dashed' : 'solid';
@@ -280,6 +307,7 @@ export function resolveOrbitSystem(
       id: d.id,
       device: d,
       kind,
+      dwarf,
       state,
       parentId: info.parentId,
       orbitStyle,
@@ -397,8 +425,9 @@ export function autoOrbitLayout(
   devices: Device[],
   links: OrbitLink[],
   gatewayIds: Set<number>,
+  roles: OrbitRoles = {},
 ): Map<number, Point> {
-  return layoutOrbit(resolveOrbitSystem(devices, links, gatewayIds));
+  return layoutOrbit(resolveOrbitSystem(devices, links, gatewayIds, roles));
 }
 
 /**

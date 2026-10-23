@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { OrbitBody, Point } from './orbitModel';
-import { BODY_RADIUS, type LabelPlacement } from './orbitLayout';
+import { radiusOf, type LabelPlacement } from './orbitLayout';
 import { deviceLabel } from '@/lib/networks';
 import { t } from '@/i18n';
 
@@ -31,7 +31,7 @@ const emit = defineEmits<{
   beamStart: [e: PointerEvent];
 }>();
 
-const r = computed(() => BODY_RADIUS[props.body.kind]);
+const r = computed(() => radiusOf(props.body));
 const name = computed(() => deviceLabel(props.body.device));
 const stroke = computed(() => (props.body.state === 'offline' ? 'var(--gl-danger)' : props.body.state === 'degraded' ? 'var(--gl-warn)' : props.body.color));
 const halo = 'paint-order: stroke; stroke: var(--gl-canvas); stroke-linejoin: round';

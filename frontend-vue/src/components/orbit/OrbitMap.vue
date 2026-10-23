@@ -21,9 +21,10 @@ import {
   type LightBeam,
   type OrbitBody,
   type OrbitLink,
+  type OrbitRole,
   type Point,
 } from './orbitModel';
-import { BODY_RADIUS, labelSize, orbitCenterId, placeLabels } from './orbitLayout';
+import { labelSize, orbitCenterId, placeLabels, radiusOf } from './orbitLayout';
 import { computeFocusSet, findPath, focusSetFromIds, matchBodies, type FocusSet, type TracedPath } from './orbitFocus';
 import { useOrbitViewport } from './useOrbitViewport';
 import OrbitBodyNode from './OrbitBodyNode.vue';
@@ -104,9 +105,9 @@ async function load() {
 
 // ── Bodies and positions ────────────────────────────────────────────────────
 const devicesById = computed(() => new Map(store.devices.map((d) => [d.id, d])));
-const bodies = computed(() => resolveOrbitSystem(store.devices, links.value, gatewayIds.value));
+const bodies = computed(() => resolveOrbitSystem(store.devices, links.value, gatewayIds.value, appearance.orbitRoles));
 const bodyList = computed(() => [...bodies.value.values()]);
-const autoLayout = computed(() => autoOrbitLayout(store.devices, links.value, gatewayIds.value));
+const autoLayout = computed(() => autoOrbitLayout(store.devices, links.value, gatewayIds.value, appearance.orbitRoles));
 
 /**
  * Drag positions of this session first; then, once the user arranged the orbit themselves, the
@@ -164,7 +165,7 @@ function labelShown(b: OrbitBody): boolean {
   return Boolean(s?.strong && s.set.bodyIds.has(b.id));
 }
 const labels = computed(() => {
-  const obstacles = bodyList.value.map((b) => ({ id: b.id, pos: posOf(b.id), radius: BODY_RADIUS[b.kind] + (b.kind === 'planet' ? 7 : 0) }));
+  const obstacles = bodyList.value.map((b) => ({ id: b.id, pos: posOf(b.id), radius: radiusOf(b) + (b.kind === 'planet' ? 7 : 0) }));
   const items = bodyList.value.filter(labelShown).map((b) => ({
     ...obstacles.find((o) => o.id === b.id)!,
     size: labelSize(deviceLabel(b.device), b.device.ip, b.state !== 'online'),
@@ -332,7 +333,7 @@ async function onWindowPointerUp(e: PointerEvent) {
     const fromId = connectingFromId.value;
     connectingFromId.value = null;
     const world = view.screenToWorld(e.clientX, e.clientY);
-    const hit = bodyList.value.find((b) => b.id !== fromId && Math.hypot(world.x - posOf(b.id).x, world.y - posOf(b.id).y) <= BODY_RADIUS[b.kind] + 18);
+    const hit = bodyList.value.find((b) => b.id !== fromId && Math.hypot(world.x - posOf(b.id).x, world.y - posOf(b.id).y) <= radiusOf(b) + 18);
     if (hit) await createBeamBetween(fromId, hit.id);
     return;
   }
@@ -362,6 +363,18 @@ async function onWindowPointerUp(e: PointerEvent) {
         return api.updateDevice(devId, { topology_x: p.x, topology_y: p.y });
       }),
     );
+  } catch (err) {
+    showToast('error', t('notifications.save_failed'), (err as Error).message);
+  }
+}
+
+/** Pin the selected body's role (or back to automatic); an auto-laid-out map rearranges itself. */
+async function setRole(role: OrbitRole | null) {
+  const body = selectedBody.value;
+  if (!body) return;
+  try {
+    await appearance.setOrbitRole(body.id, role);
+    showToast('success', t('gv.orbit.role_saved', { name: deviceLabel(body.device), role: t(`gv.orbit.role_${role ?? 'auto'}`) }), '');
   } catch (err) {
     showToast('error', t('notifications.save_failed'), (err as Error).message);
   }
@@ -453,7 +466,7 @@ async function deleteLink() {
 async function arrange() {
   const ok = await confirm({ title: t('gv.plan.arrange'), message: t('gv.plan.arrange_confirm') });
   if (!ok) return;
-  const layout = autoOrbitLayout(store.devices, links.value, gatewayIds.value);
+  const layout = autoOrbitLayout(store.devices, links.value, gatewayIds.value, appearance.orbitRoles);
   localPositions.value = new Map(layout);
   await Promise.all([...layout].map(([id, p]) => api.updateDevice(id, { topology_x: p.x, topology_y: p.y }).catch(() => {})));
   await appearance.setOrbitCustom(true).catch(() => {});
@@ -696,14 +709,14 @@ watch(
             <circle
               :cx="posOf(dropTarget.id).x"
               :cy="posOf(dropTarget.id).y"
-              :r="BODY_RADIUS[dropTarget.kind] + 24"
+              :r="radiusOf(dropTarget) + 24"
               fill="none"
               stroke="var(--gl-accent)"
               stroke-width="2.5"
               stroke-dasharray="6 4"
               class="orbit-drop-ring"
             />
-            <circle :cx="posOf(dropTarget.id).x" :cy="posOf(dropTarget.id).y" :r="BODY_RADIUS[dropTarget.kind] + 14" fill="var(--gl-accent)" fill-opacity="0.16" />
+            <circle :cx="posOf(dropTarget.id).x" :cy="posOf(dropTarget.id).y" :r="radiusOf(dropTarget) + 14" fill="var(--gl-accent)" fill-opacity="0.16" />
           </g>
         </g>
 
@@ -839,6 +852,9 @@ watch(
       :device="selectedDevice"
       :body="selectedBody"
       :parents="assignableParents"
+      :chosen-role="appearance.orbitRoles[String(selectedBody.id)] ?? null"
+      :has-orbiters="bodyList.some((b) => b.parentId === selectedBody?.id)"
+      @role="setRole"
       @open="emit('openDevice', selectedDevice)"
       @close="selectedDeviceId = null"
       @assign="(targetId) => { const tgt = bodies.get(targetId); if (tgt && selectedBody) assignOrbitToTarget(selectedBody.id, tgt); }"

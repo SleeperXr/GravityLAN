@@ -183,7 +183,13 @@
       "motion_subtle": "dezent",
       "motion_lively": "lebhaft",
       "drop_to": "Umlaufbahn → {{name}}",
-      "hub": "Umkreist (Planet oder Stern)"
+      "hub": "Umkreist (Planet oder Stern)",
+      "role": "Rolle im Orbit",
+      "role_auto": "Automatisch",
+      "role_auto_is": "Automatisch: {{role}}",
+      "role_dwarf": "Zwergplanet (kleiner Hub)",
+      "role_moon_blocked": "Andere Geräte kreisen um dieses Gerät, daher kann es kein Mond sein.",
+      "role_saved": "{{name}}: {{role}}"
     },
     "status_monitor": {
       "normal": "Erreichbar",
