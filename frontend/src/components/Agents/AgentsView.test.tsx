@@ -270,13 +270,26 @@ describe('AgentsView detail: updates', () => {
 
     await waitFor(() => expect(m.queryAgentPatches).toHaveBeenCalledWith(28, {
       ssh_user: 'sleeper',
-      ssh_password: 'sudo-secret',
+      ssh_password: undefined,
       sudo_password: 'sudo-secret',
       ssh_key: 'KEY',
       ssh_port: 22,
       key_id: undefined,
       key_passphrase: undefined,
     }));
+  });
+
+  it('does not send a sudo password left over from key mode with a password login', async () => {
+    m.queryAgentPatches.mockResolvedValue({ packages: [], major_upgrade_available: null, patch_manager: 'apt' } as never);
+    const { user } = await openUpdates({ device_id: 29, patch_available: 2 });
+
+    await user.selectOptions(screen.getByLabelText('Authentication'), 'key');
+    await user.type(screen.getByLabelText('sudo password (optional)'), 'old-sudo');
+    await user.selectOptions(screen.getByLabelText('Authentication'), 'password');
+    await user.type(screen.getByLabelText('Password'), 'login-pw');
+    await user.click(screen.getByRole('button', { name: 'Fetch update list' }));
+
+    await waitFor(() => expect(m.queryAgentPatches).toHaveBeenCalledWith(29, expect.objectContaining({ ssh_password: 'login-pw', sudo_password: undefined })));
   });
 
   it('reports a failed update check', async () => {

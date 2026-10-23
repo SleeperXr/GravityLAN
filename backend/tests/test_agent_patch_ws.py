@@ -377,3 +377,37 @@ async def test_resolve_patch_credentials_sudo_password():
     assert ssh_user == "sleeper"
     assert ssh_password == "secret-sudo-pw"
     assert ssh_key == "dummy-key"
+
+
+@pytest.mark.asyncio
+async def test_resolve_patch_credentials_password_login_ignores_sudo_password():
+    """A sudo password left over from key mode must not replace the SSH login password."""
+    from unittest.mock import AsyncMock, MagicMock
+    from app.api.agent_patches import _resolve_patch_credentials
+    from app.models.device import Device
+    from app.schemas.agent import PatchActionRequest
+
+    db = AsyncMock()
+    exec_res = MagicMock()
+    exec_res.scalar_one_or_none.return_value = None
+    db.execute.return_value = exec_res
+
+    req = PatchActionRequest(ssh_user="sleeper", ssh_password="login-pw", sudo_password="old-sudo-pw")
+    _, _, _, ssh_password, ssh_key, _, _ = await _resolve_patch_credentials(
+        db, Device(id=1, ip="192.168.1.10"), req, MagicMock()
+    )
+    assert ssh_password == "login-pw"
+    assert ssh_key is None
+
+
+def test_runner_password_by_login_kind():
+    from app.schemas.agent import AgentInstallRequest, PatchActionRequest, runner_password
+
+    # Password login: always the login password (sudo gets the same one)
+    assert runner_password(PatchActionRequest(ssh_user="u", ssh_password="login")) == "login"
+    assert runner_password(PatchActionRequest(ssh_user="u", ssh_password="login", sudo_password="sudo")) == "login"
+    # Key, stored key or saved connection: the sudo password, else nothing
+    assert runner_password(PatchActionRequest(ssh_user="u", ssh_key="k", sudo_password="sudo")) == "sudo"
+    assert runner_password(PatchActionRequest(ssh_user="u", key_id=3, sudo_password="sudo")) == "sudo"
+    assert runner_password(AgentInstallRequest(profile_id=2, sudo_password="sudo")) == "sudo"
+    assert runner_password(PatchActionRequest(ssh_user="u", ssh_key="k")) is None

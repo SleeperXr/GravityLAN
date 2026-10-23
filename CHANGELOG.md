@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- Package updates for a non-root user who logs in with an SSH key or a saved connection: the update dialog (React and GravityUI) has an optional sudo password field, so updates no longer fail with "sudo: a password is required" when sudo asks for one. It is used for that request only, like the other credentials, and is ignored for a password login, which keeps its own login password for sudo.
 - GravityUI no longer reports a client device in standby as disrupted. A device not watched 24/7 (a TV, PC or phone) that still answers on the network with every port closed is asleep: it gets no "services disrupted" notice, the line overview does not count it as disrupted and the orbit map does not mark it, as the health page already shows it as standby. A device watched 24/7 with every port closed now reads "no services reachable" instead of "4 services disrupted".
 
 ## [0.5.0] - 2026-10-23

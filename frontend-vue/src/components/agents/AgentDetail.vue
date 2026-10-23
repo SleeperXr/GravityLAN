@@ -162,15 +162,14 @@ function payload() {
     ssh_port: number;
   } = {
     ssh_user: sshUser.value,
-    ssh_password: auth === 'password' ? (sshPassword.value || undefined) : (sudoPassword.value || undefined),
+    ssh_password: auth === 'password' ? (sshPassword.value || undefined) : undefined,
+    // Only with a key: a sudo password kept from key mode must not replace the login password
+    sudo_password: auth !== 'password' ? (sudoPassword.value || undefined) : undefined,
     ssh_key: auth === 'key' ? (sshKey.value || undefined) : undefined,
     key_id: auth === 'stored_key' ? (keyId.value ?? undefined) : undefined,
     key_passphrase: auth === 'stored_key' && keyPassphrase.value ? keyPassphrase.value : undefined,
     ssh_port: sshPort.value,
   };
-  if (sudoPassword.value) {
-    body.sudo_password = sudoPassword.value;
-  }
   return body;
 }
 

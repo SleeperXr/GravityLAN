@@ -119,15 +119,14 @@ function useSshCredentials(deviceId: number) {
       ssh_port: number;
     } = {
       ssh_user: sshUser,
-      ssh_password: authType === 'password' ? sshPassword : (sudoPassword || undefined),
+      ssh_password: authType === 'password' ? sshPassword || undefined : undefined,
+      // Only with a key: a sudo password kept from key mode must not replace the login password
+      sudo_password: authType !== 'password' ? sudoPassword || undefined : undefined,
       ssh_key: authType === 'key' ? sshKey : undefined,
       key_id: authType === 'stored_key' ? (keyId ?? undefined) : undefined,
       key_passphrase: authType === 'stored_key' && keyPassphrase ? keyPassphrase : undefined,
       ssh_port: sshPort,
     };
-    if (sudoPassword) {
-      body.sudo_password = sudoPassword;
-    }
     if (saveCreds) {
       sshCredCache.set(deviceId, {
         ssh_user: sshUser,

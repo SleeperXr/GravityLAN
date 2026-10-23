@@ -153,7 +153,20 @@ class AgentInstallRequest(AgentDeployRequest):
 
     ssh_user: str | None = Field(None, min_length=1, max_length=50)
     profile_id: int | None = None
-    sudo_password: str | None = None
+
+
+def runner_password(request: AgentDeployRequest | PatchActionRequest) -> str | None:
+    """The single password the SSH runner gets: login password without a key, sudo password with one.
+
+    The runner logs in with that password only when no key is given and otherwise
+    only answers sudo with it. So a key login (typed key, stored key or saved
+    connection) gets the sudo password, while a password login keeps its login
+    password even if a sudo password was sent along; sudo then gets the same one.
+    """
+    key_login = bool(request.ssh_key) or request.key_id is not None or request.profile_id is not None
+    if key_login:
+        return request.sudo_password or request.ssh_password
+    return request.ssh_password
 
 
 class AgentDeployResponse(BaseModel):

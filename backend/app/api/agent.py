@@ -45,6 +45,7 @@ from app.schemas.agent import (
     AgentDeployResponse,
     AgentEnrollmentResponse,
     AgentInstallRequest,
+    runner_password,
     AgentConfigUpdate,
     AgentConfigResponse,
     MetricsHistoryResponse,
@@ -555,7 +556,7 @@ async def _ssh_login(db: AsyncSession, device: Device, req: AgentInstallRequest,
 
         return dict(
             host_ip=device.ip, ssh_user=req.ssh_user,
-            ssh_password=getattr(req, "sudo_password", None) or req.ssh_password,
+            ssh_password=runner_password(req),
             ssh_key=ssh_key, ssh_key_passphrase=ssh_passphrase, ssh_port=req.ssh_port, pinned_host_key=pinned,
         )
 
