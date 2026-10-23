@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/logo-mark.png" alt="GravityLAN logo" width="132">
+<img src="./assets/logo.png" alt="GravityLAN logo" width="132">
 
 # GravityLAN
 
