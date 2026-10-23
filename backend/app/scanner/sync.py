@@ -424,10 +424,17 @@ async def _resolve_ip_conflict(db, ip: str, dev):
     logger.warning(f"Sync: Resolved IP conflict. Moved conflicting device {conflict_dev.id} to placeholder IP {conflict_dev.ip}")
 
 
-async def _update_dashboard_device(db, dev, disc, ip: str, mac: str | None, is_valid_mac: bool, dev_match_type: str | None):
+async def _update_dashboard_device(db, dev, disc, ip: str, mac: str | None, is_valid_mac: bool, dev_match_type: str | None, hostname: str | None = None):
     """Apply cross-sync updates to a monitored Device. Does NOT commit."""
     if not dev:
         return
+
+    # A name the scan found fills a device that has none yet, as Info-Refresh does; a known
+    # hostname and a name the user gave stay untouched.
+    if hostname and not is_ip_like(hostname) and is_ip_like(dev.hostname):
+        dev.hostname = hostname
+        if is_ip_like(dev.display_name):
+            dev.display_name = hostname.split('.')[0]
 
     dev.is_online = True
     dev.missed_scans = 0
@@ -566,7 +573,7 @@ async def _sync_host_internal(db, host: dict, ctx: SyncContext | None = None):
     disc = await _upsert_discovered_host(db, disc, dev, ip, mac, hostname, vendor, ports, is_valid_mac)
 
     # 4. Cross-Sync to Dashboard
-    await _update_dashboard_device(db, dev, disc, ip, mac, is_valid_mac, dev_match_type)
+    await _update_dashboard_device(db, dev, disc, ip, mac, is_valid_mac, dev_match_type, hostname)
 
     return disc
 

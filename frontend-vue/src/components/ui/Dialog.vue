@@ -10,8 +10,18 @@ import { t } from '@/i18n';
  */
 const open = defineModel<boolean>('open', { default: false });
 const props = withDefaults(
-  defineProps<{ title: string; description?: string; size?: 'sm' | 'md' | 'lg' | 'xl'; class?: string }>(),
-  { size: 'md' },
+  defineProps<{
+    title: string;
+    description?: string;
+    size?: 'sm' | 'md' | 'lg' | 'xl';
+    class?: string;
+    /**
+     * Above every other dialog and sheet (confirmations). A dialog mounted once at app start sits
+     * earlier in the DOM than a sheet opened later, so at the same z-index it would end up behind it.
+     */
+    top?: boolean;
+  }>(),
+  { size: 'md', top: false },
 );
 
 const widths = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl', xl: 'sm:max-w-4xl' };
@@ -20,11 +30,12 @@ const widths = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl', xl: '
 <template>
   <DialogRoot v-model:open="open">
     <DialogPortal>
-      <DialogOverlay class="gl-overlay fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px]" />
+      <DialogOverlay class="gl-overlay fixed inset-0 bg-black/55 backdrop-blur-[2px]" :class="props.top ? 'z-[55]' : 'z-50'" />
       <DialogContent
         :class="
           cn(
-            'gl-dialog fixed z-50 flex max-h-[92dvh] w-full flex-col border border-line bg-surface shadow-pop focus:outline-none',
+            props.top ? 'z-[55]' : 'z-50',
+            'gl-dialog fixed flex max-h-[92dvh] w-full flex-col border border-line bg-surface shadow-pop focus:outline-none',
             'inset-x-0 bottom-0 rounded-t-xl pb-[env(safe-area-inset-bottom)]',
             'sm:inset-x-auto sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:pb-0',
             widths[props.size],

@@ -9,6 +9,7 @@ from app.models.device import DiscoveredHost, Device
 from app.models.network import Subnet
 from app.scanner.discovery import discover_hosts_simple
 from app.scanner.arp import resolve_mac_addresses, get_local_arp_table
+from app.scanner.hostname import is_ip_like, resolve_hostnames
 from app.scanner.presence import (
     DEFAULT_OFFLINE_THRESHOLD,
     get_offline_threshold,
@@ -229,6 +230,15 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
 
         # 2. MAC Resolution & Batch Sync
         resolved_hosts = await resolve_mac_addresses(alive_hosts)
+
+        # 2b. Names nmap's reverse DNS missed: the same lookups as Info-Refresh (NetBIOS, mDNS,
+        # OS resolver, ping -a). Without them a TV or phone known only by mDNS stayed "Unknown"
+        # until the user refreshed it by hand.
+        nameless = [h for h in resolved_hosts if is_ip_like(h.get("hostname"))]
+        if nameless:
+            if progress_callback:
+                await progress_callback(f"Scanner: Resolving names of {len(nameless)} hosts...")
+            await resolve_hostnames(nameless, dns_server=dns_server, max_concurrent=10)
 
         if resolved_hosts:
             await sync_hosts_batch(resolved_hosts, is_planner_scan=True)

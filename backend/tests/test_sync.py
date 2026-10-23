@@ -374,3 +374,25 @@ def test_is_unraid_host_checks_names_and_vendor():
     assert _is_unraid_host(entity()) is False
     # Device has no custom_name, DiscoveredHost no display_name: missing attributes are fine
     assert _is_unraid_host(SimpleNamespace(hostname="unraid")) is True
+
+
+@pytest.mark.asyncio
+async def test_scan_name_fills_a_nameless_device_but_keeps_known_names(db):
+    nameless = Device(ip="192.168.1.80", mac="00:11:22:33:44:80", display_name="192.168.1.80", hostname=None, is_online=True)
+    named = Device(ip="192.168.1.81", mac="00:11:22:33:44:81", display_name="Wohnzimmer TV", hostname="lgwebostv", is_online=True)
+    db.add_all([nameless, named])
+    await db.commit()
+
+    scan_hosts = [
+        {"ip": "192.168.1.80", "mac": "00:11:22:33:44:80", "hostname": "macbook.local"},
+        {"ip": "192.168.1.81", "mac": "00:11:22:33:44:81", "hostname": "other-name.local"},
+    ]
+    with patch("app.scanner.sync.async_session", return_value=DBSessionContextMock(db)):
+        await sync_hosts_batch(scan_hosts)
+
+    filled = (await db.execute(select(Device).where(Device.id == nameless.id))).scalar_one()
+    assert filled.hostname == "macbook.local"
+    assert filled.display_name == "macbook"
+    kept = (await db.execute(select(Device).where(Device.id == named.id))).scalar_one()
+    assert kept.hostname == "lgwebostv"
+    assert kept.display_name == "Wohnzimmer TV"

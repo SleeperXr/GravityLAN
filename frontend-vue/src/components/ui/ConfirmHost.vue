@@ -14,7 +14,7 @@ const open = computed({
 </script>
 
 <template>
-  <Dialog v-model:open="open" :title="pendingConfirm?.title ?? ''" size="sm">
+  <Dialog v-model:open="open" :title="pendingConfirm?.title ?? ''" size="sm" top>
     <p v-if="pendingConfirm?.message" class="text-sm leading-relaxed whitespace-pre-line text-fg-muted">{{ pendingConfirm.message }}</p>
     <template #footer>
       <Button variant="ghost" @click="settleConfirm(false)">{{ pendingConfirm?.cancelLabel || t('common.cancel') }}</Button>

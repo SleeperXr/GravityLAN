@@ -270,6 +270,12 @@ async def test_run_planner_scan_end_to_end(monkeypatch, patch_async_session, db,
     monkeypatch.setattr(planner, "resolve_mac_addresses", AsyncMock(return_value=[
         {"ip": "192.168.1.10", "mac": "aa:bb:cc:dd:ee:10"}
     ]))
+    async def fake_resolve(hosts, **kwargs):
+        for h in hosts:
+            h["hostname"] = "nas.local"
+        return hosts
+    resolve_mock = AsyncMock(side_effect=fake_resolve)
+    monkeypatch.setattr(planner, "resolve_hostnames", resolve_mock)
     sync_mock = AsyncMock()
     monkeypatch.setattr("app.scanner.sync.sync_hosts_batch", sync_mock)
     webhook_mock = AsyncMock()
@@ -284,6 +290,10 @@ async def test_run_planner_scan_end_to_end(monkeypatch, patch_async_session, db,
     assert total == 1
     sync_mock.assert_awaited_once()
     assert sync_mock.await_args.kwargs["is_planner_scan"] is True
+    # The host nmap found without a name is looked up like Info-Refresh does, and the name reaches sync
+    resolve_mock.assert_awaited_once()
+    assert [h["ip"] for h in resolve_mock.await_args.args[0]] == ["192.168.1.10"]
+    assert sync_mock.await_args.args[0][0]["hostname"] == "nas.local"
     docker_service.get_local_containers.assert_not_called()
 
     remaining_hosts = (await db.execute(select(DiscoveredHost))).scalars().all()

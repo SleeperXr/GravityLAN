@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- GravityUI: deleting a device works again. The confirmation opened behind the device editor (both sat on the same layer, and the confirmation was mounted earlier), so it could not be clicked. Confirmations now always open above dialogs and sheets.
+- Network scan: devices whose name is only known through mDNS, NetBIOS or the system resolver (often TVs, phones and Macs) now get their hostname during the scan. Until now only names from reverse DNS were picked up and the rest stayed "Unknown" until an Info-Refresh by hand. A device on the dashboard without a hostname also takes over a name the scan finds; a name you gave it stays.
+
 ## [0.5.1] - 2026-10-24
 
 ### Fixed
