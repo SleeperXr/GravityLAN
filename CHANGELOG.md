@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- undici 7.30.1 in the React UI's test tooling (through jsdom; GHSA-xjj6-f33q-929c, denial of service on excessive content encodings). Development only, not part of the image.
+
 ## [0.5.3] - 2026-10-24
 
 ### Fixed
