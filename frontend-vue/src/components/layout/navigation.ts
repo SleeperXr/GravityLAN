@@ -1,5 +1,5 @@
 import type { Component } from 'vue';
-import { Activity, Grid3x3, LayoutDashboard, Network, ScrollText, Server, Settings, SquareTerminal } from 'lucide-vue-next';
+import { Activity, GraduationCap, Grid3x3, Info, LayoutDashboard, Network, ScrollText, Server, Settings, SquareTerminal } from 'lucide-vue-next';
 
 export interface NavItem {
   id: string;
@@ -21,6 +21,8 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'ssh', to: '/ssh', icon: SquareTerminal, label: 'sidebar.ssh', line: 6 },
   { id: 'logs', to: '/logs', icon: ScrollText, label: 'sidebar.logs', line: 9 },
   { id: 'settings', to: '/settings', icon: Settings, label: 'sidebar.settings', line: 8 },
+  { id: 'tutorials', to: '/tutorials', icon: GraduationCap, label: 'gv.tutorials.title', line: 7 },
+  { id: 'about', to: '/about', icon: Info, label: 'sidebar.about', line: 10 },
 ];
 
 export const lineVar = (item: Pick<NavItem, 'line'>) => `var(--line-${item.line})`;

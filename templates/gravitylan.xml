@@ -9,7 +9,17 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/SleeperXr/GravityLAN/issues</Support>
   <Project>https://github.com/SleeperXr/GravityLAN</Project>
+  <ReadMe>https://github.com/SleeperXr/GravityLAN#readme</ReadMe>
   <Overview>GravityLAN is a self-hosted network radar and homelab inventory dashboard: sweeps subnets, tracks devices and IP history, draws network topology and racks, and monitors Linux hosts via an optional lightweight agent.[br][br]
+[b]What you get[/b][br]
+- Network scans with hostnames, ports, services and vendors; scan subnets and VLANs can be imported from the router (SNMP or UniFi).[br]
+- Health and availability: uptime, latency, flapping, SSL expiry and pending security patches per device.[br]
+- Topology map, racks and an IP map of every subnet.[br]
+- Optional Linux agent: CPU, RAM, disks, temperature, package updates over SSH, and a browser SSH terminal with an encrypted key store.[br]
+- Read-only API tokens, Swagger UI at /docs and a Python client; a read-only token suits AI assistants and agents (it never gets SSH, agent configuration or admin endpoints).[br]
+- Two web interfaces: the classic React view and GravityUI, a preview of the new interface (in development), switchable in the sidebar or under Settings → Default interface.[br][br]
+[b]Unraid defaults[/b][br]
+PUID 99 and PGID 100 (nobody:users): on start the container makes the appdata directory writable for that user. No privileged mode needed.[br][br]
 [b]Which network type?[/b][br]
 - [b]Host[/b] (default, recommended): GravityLAN uses the server's own interfaces and sees every subnet Unraid is in at Layer 2 (ARP, real MAC addresses, vendors, mDNS). Web UI at http://SERVER-IP:8000; the port is set with "Internal Port", port mappings are ignored.[br]
 - [b]Custom: br0[/b] (macvlan or ipvlan): the container gets its own IP in your LAN (set a fixed IP) and scans that subnet at Layer 2. Unraid and the container cannot reach each other unless "Host access to custom networks" is on under Settings → Docker.[br]
@@ -23,6 +33,15 @@ Scheduled Nmap and ARP scans run over your scan subnets. The IP addresses page s
 The setup wizard detects your subnets; routed ones such as an IoT VLAN can be added there or later on the IP addresses page. Scanning needs NET_RAW and NET_ADMIN (already in Extra Parameters), not privileged mode.[br][br]
 [b]Deutsch[/b][br]
 GravityLAN ist ein selbst gehostetes Netzwerk-Radar und Homelab-Inventar: scannt Subnetze, verfolgt Geräte und IP-Verlauf, zeichnet Topologie und Racks und überwacht Linux-Hosts über einen optionalen schlanken Agenten.[br][br]
+[b]Was du bekommst[/b][br]
+- Netzwerk-Scans mit Hostnamen, Ports, Diensten und Herstellern; Scan-Subnetze und VLANs lassen sich vom Router importieren (SNMP oder UniFi).[br]
+- Health und Verfügbarkeit: Uptime, Latenz, Flackern, SSL-Ablauf und offene Sicherheits-Patches pro Gerät.[br]
+- Topologie-Karte, Racks und eine IP-Karte jedes Subnetzes.[br]
+- Optionaler Linux-Agent: CPU, RAM, Laufwerke, Temperatur, Paket-Updates per SSH, dazu ein SSH-Terminal im Browser mit verschlüsseltem Key-Store.[br]
+- Schreibgeschützte API-Token, Swagger UI unter /docs und ein Python-Client; ein schreibgeschütztes Token eignet sich für KI-Assistenten und Agenten (es bekommt nie SSH, Agent-Konfiguration oder Admin-Endpunkte).[br]
+- Zwei Weboberflächen: die klassische React-Ansicht und GravityUI, eine Vorschau der neuen Oberfläche (in Entwicklung), umschaltbar in der Seitenleiste oder unter Einstellungen → Standard-Oberfläche.[br][br]
+[b]Unraid-Vorgaben[/b][br]
+PUID 99 und PGID 100 (nobody:users): Beim Start macht der Container den Appdata-Ordner für diesen Benutzer beschreibbar. Kein Privileged-Modus nötig.[br][br]
 [b]Welcher Netzwerktyp?[/b][br]
 - [b]Host[/b] (Standard, empfohlen): GravityLAN nutzt die Schnittstellen des Servers und sieht jedes Subnetz, in dem Unraid hängt, auf Layer 2 (ARP, echte MAC-Adressen, Hersteller, mDNS). Weboberfläche unter http://SERVER-IP:8000; der Port wird über "Internal Port" gesetzt, Port-Mappings werden ignoriert.[br]
 - [b]Custom: br0[/b] (macvlan oder ipvlan): Der Container bekommt eine eigene IP im LAN (feste IP eintragen) und scannt dieses Subnetz auf Layer 2. Unraid und Container erreichen sich gegenseitig nur, wenn unter Settings → Docker "Host access to custom networks" eingeschaltet ist.[br]
@@ -43,18 +62,36 @@ Features:
 - Topology &amp; Racks: Visual interactive network map with link speeds and rack unit placement.
 - In-Browser SSH Terminal: Fast multi-tab web terminal with saved credentials and encrypted vault.
 - Linux Agent (optional): Single-script monitoring for CPU, RAM, disks, temperatures, and pending package updates.
+- API: Read-only tokens, Swagger UI and a Python client, suited to AI assistants and agents.
+- GravityUI: preview of the new interface, next to the classic view.
 
 Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
+  <Changes>
+### 0.5.3
+- Docker: PUID and PGID (template: 99/100); the container makes the data directory writable for them on start, so a fresh appdata directory no longer stops it with a permission error.
+
+### 0.5.2
+- Deleting a device in GravityUI works again; scans pick up hostnames from mDNS, NetBIOS and the system resolver.
+
+### 0.5.1
+- Package updates accept a sudo password for key logins; GravityUI no longer reports sleeping clients as disrupted.
+
+### 0.5.0
+- GravityUI, a preview of the new interface, with every page of the classic view, an orbit map and racks.
+
+Full changelog: https://github.com/SleeperXr/GravityLAN/blob/main/CHANGELOG.md
+  </Changes>
   <Category>Network:Management Network:Other Tools:Utilities Status:Stable</Category>
   <WebUI>http://[IP]:[PORT:8000]</WebUI>
   <TemplateURL/>
   <Icon>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/assets/logo.png</Icon>
   <ExtraParams>--cap-add=NET_RAW --cap-add=NET_ADMIN</ExtraParams>
-  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLanDashboard.png</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLanTopology.png</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLanSsh.png</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLANAgents.png</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/GravityLanNetwork-Planer.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/react/dashboard.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/react/health.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/react/topology.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/react/agents.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/react/ssh.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/vue/orbit.png</Screenshot>
 
   <!-- WebUI Port / Reference -->
   <Config Name="WebUI Port" Target="8000" Default="8000" Mode="tcp" Description="The HTTP port on which the GravityLAN WebUI and REST API are served." Type="Port" Display="always" Required="true" Mask="false">8000</Config>

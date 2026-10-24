@@ -8,6 +8,7 @@ import { Dashboard } from './components/Dashboard/Dashboard';
 import { SubnetView } from './components/Network/SubnetView';
 import { SettingsView } from './components/Settings/SettingsView';
 import { LogsPage } from './components/Settings/LogsPage';
+import { AboutPage } from './components/About/AboutPage';
 import { AgentsView } from './components/Agents/AgentsView';
 import { HealthView } from './components/Health/HealthView';
 
@@ -147,6 +148,7 @@ function App() {
                       <Route path="/ssh" element={null} />
                       <Route path="/settings" element={<SettingsView />} />
                       <Route path="/logs" element={<LogsPage />} />
+                      <Route path="/about" element={<AboutPage />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                     <PersistentSshView />

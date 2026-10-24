@@ -100,6 +100,17 @@ export function SystemSection({ form, setField }: FormSectionProps) {
             <option value="/health">{t('settings.start_page_health')}</option>
           </select>
         </Field>
+        <Field id="set-default-frontend" label={t('settings.default_frontend_label')} hint={t('settings.default_frontend_hint')}>
+          <select
+            id="set-default-frontend"
+            className="input"
+            value={form['ui.default_frontend']}
+            onChange={setField('ui.default_frontend')}
+          >
+            <option value="react">{t('settings.default_frontend_react')}</option>
+            <option value="vue">{t('settings.default_frontend_vue')}</option>
+          </select>
+        </Field>
       </div>
       <Field id="set-server-url" label={t('settings.server_url_override')} hint={t('settings.server_url_override_hint')}>
         <input
