@@ -17,7 +17,8 @@
     "navigation": "Main navigation",
     "open_menu": "Open menu",
     "gravity_ui": "GravityUI",
-    "gravity_ui_hint": "Switch to GravityUI (Vue + shadcn)"
+    "gravity_ui_hint": "Switch to GravityUI (Vue + shadcn)",
+    "about": "About"
   },
   "auth": {
     "required": "Authentication required",
@@ -635,7 +636,11 @@
     "token_revoked": "Token revoked.",
     "token_create_failed": "Could not create the token.",
     "token_revoke_failed": "Could not revoke the token.",
-    "copy_failed": "Copy failed – select the token and copy it manually."
+    "copy_failed": "Copy failed – select the token and copy it manually.",
+    "default_frontend_label": "Default interface",
+    "default_frontend_hint": "What the start address (/) opens. The other interface stays reachable through the switch in the sidebar; switching there keeps the choice in this browser.",
+    "default_frontend_react": "Classic view (React)",
+    "default_frontend_vue": "GravityUI (in development)"
   },
   "setup": {
     "welcome": "Welcome to GravityLAN",
@@ -1039,5 +1044,32 @@
     "alert_offline_client": "Non-24/7 (Client)",
     "alert_offline_hint": "Monitor offline alerts for this device (enable for 24/7 infrastructure, disable for PC/TV)",
     "filter_standby": "Standby"
+  },
+  "about": {
+    "title": "About GravityLAN",
+    "subtitle": "Versions, licence and where the project lives.",
+    "versions": "Versions",
+    "server": "Server",
+    "agent": "Agent",
+    "agent_hint": "Only changes when the agent script changes.",
+    "interface": "Interface",
+    "interface_dev": "in development",
+    "classic": "Classic view",
+    "project": "Project",
+    "project_text": "GravityLAN is an open-source project by SleeperXr on GitHub. Please report bugs and wishes as an issue.",
+    "link_repo": "Source code on GitHub",
+    "link_issues": "Report a bug, give feedback",
+    "link_issues_hint": "GitHub Issues",
+    "link_releases": "Releases",
+    "link_releases_hint": "Versions and notes",
+    "link_changelog": "Changelog",
+    "link_docker": "Docker Hub",
+    "license": "Licence",
+    "license_text": "MIT License, Copyright (c) 2026 SleeperXr. Third-party building blocks keep their own licences.",
+    "third_party": "Third-party notices",
+    "try_gravityui": "Try GravityUI (in development)",
+    "tutorials": "Tutorials and getting started",
+    "tutorials_hint": "Guides for every area, in GravityUI",
+    "tutorials_open": "Open"
   }
 }

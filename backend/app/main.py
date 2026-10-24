@@ -25,14 +25,15 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.config import settings
 from app.version import VERSION
-from app.database import init_db
+from app.database import get_db, init_db
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions import GravityLANError
 
 logger = logging.getLogger(__name__)
@@ -446,12 +447,45 @@ async def logs_websocket(websocket: WebSocket):
 INDEX_HEADERS = {"Cache-Control": "no-cache"}
 
 
+FRONTENDS = ("react", "vue")
+DEFAULT_FRONTEND_KEY = "ui.default_frontend"
+FRONTEND_COOKIE = "gl_ui"
+
+
+async def _default_frontend(db) -> str:
+    """The interface `/` opens when the browser made no choice: setting ``ui.default_frontend``, else React."""
+    try:
+        from app.models.setting import Setting
+        from sqlalchemy import select
+
+        row = (await db.execute(select(Setting).where(Setting.key == DEFAULT_FRONTEND_KEY))).scalar_one_or_none()
+        return row.value if row and row.value in FRONTENDS else "react"
+    except Exception:
+        return "react"
+
+
 @app.get("/")
-async def root():
-    """Root endpoint: Serve frontend if available, else status JSON."""
-    index_file = FRONTEND_DIR / "index.html"
-    if index_file.exists():
-        return FileResponse(str(index_file), headers=INDEX_HEADERS)
+async def root(request: Request, db: AsyncSession = Depends(get_db)):
+    """Root endpoint: the chosen frontend, else status JSON.
+
+    `/?ui=react` or `/?ui=vue` (the "switch interface" links) picks one for this browser and
+    remembers it in a cookie; without one the server setting decides. GravityUI is built for
+    /frontend-vue/, so it is reached by a redirect rather than served here.
+    """
+    asked = request.query_params.get("ui")
+    choice = asked if asked in FRONTENDS else request.cookies.get(FRONTEND_COOKIE)
+    if choice not in FRONTENDS:
+        choice = await _default_frontend(db)
+
+    if choice == "vue" and (_resolve_frontend_vue_dir() / "index.html").exists():
+        response = RedirectResponse("/frontend-vue/", status_code=307)
+    else:
+        index_file = FRONTEND_DIR / "index.html"
+        response = FileResponse(str(index_file), headers=INDEX_HEADERS) if index_file.exists() else None
+    if response is not None:
+        if asked in FRONTENDS:
+            response.set_cookie(FRONTEND_COOKIE, asked, max_age=365 * 24 * 3600, samesite="lax", path="/")
+        return response
     return {
         "app": "GravityLAN",
         "version": VERSION,

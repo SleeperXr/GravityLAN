@@ -71,15 +71,48 @@ DEVICES = [
     ("iPhone", "192.168.100.101", "unknown", "Clients", {"is_wlan": True, "offline": True}, [], None),
     ("Hue Bridge", "192.168.110.10", "webui", "Smart Home", {}, [("Hue API", "http", 80, True)], None),
     ("Shelly Plug Büro", "192.168.110.11", "webui", "Smart Home", {"is_wlan": True, "offline": True}, [("Web UI", "http", 80, False)], None),
+    # A home spread over floors: a switch per floor behind the gateway
+    ("Switch Keller", "192.168.100.30", "switch", "Netzwerk", {}, [("Web UI", "http", 80, True)], None),
+    ("Switch Obergeschoss", "192.168.100.31", "switch", "Netzwerk", {}, [("Web UI", "http", 80, True)], None),
+    ("Switch Wohnzimmer", "192.168.100.5", "switch", "Netzwerk", {}, [("Web UI", "http", 80, True)], None),
+    # More guests around the hosts and access points
+    ("Windows VM", "192.168.100.26", "webui", "Server", {"virtual_type": "vm", "parent": "Proxmox"}, [("RDP", "rdp", 3389, True)], None),
+    ("Uptime Kuma", "192.168.100.24", "webui", "Web Interfaces", {"virtual_type": "docker", "parent": "Docker VM"}, [("Uptime Kuma", "http", 3001, True)], None),
+    ("Traefik", "192.168.100.25", "webui", "Web Interfaces", {"virtual_type": "docker", "parent": "Docker VM"}, [("Dashboard", "http", 8080, True)], None),
+    ("Jellyfin", "192.168.100.40", "webui", "Web Interfaces", {"virtual_type": "docker", "parent": "Unraid"}, [("Jellyfin", "http", 8096, True)], None),
+    ("Immich", "192.168.100.41", "webui", "Web Interfaces", {"virtual_type": "docker", "parent": "Unraid"}, [("Immich", "http", 2283, True)], None),
+    ("Vaultwarden", "192.168.100.42", "webui", "Web Interfaces", {"virtual_type": "docker", "parent": "Unraid"}, [("Vaultwarden", "https", 443, True)], None),
+    ("Paperless", "192.168.100.43", "webui", "Web Interfaces", {"virtual_type": "docker", "parent": "Unraid"}, [("Paperless", "http", 8000, True)], None),
+    ("Pixel 8", "192.168.100.102", "unknown", "Clients", {"is_wlan": True}, [], None),
+    ("iPad", "192.168.100.103", "unknown", "Clients", {"is_wlan": True}, [], None),
+    ("Fernseher Wohnzimmer", "192.168.100.104", "unknown", "Clients", {"is_wlan": True}, [], None),
+    ("Echo Küche", "192.168.110.12", "webui", "Smart Home", {"is_wlan": True}, [], None),
 ]
+
+# Tidy tree for the React topology (column, row); GravityUI's orbit map lays itself out
+TOPOLOGY_GRID = {
+    "UniFi Gateway": (5.5, 0), "Core Switch": (2.5, 1), "Switch Keller": (9, 1),
+    "Proxmox": (0.5, 2), "Unraid": (2.5, 2), "Synology NAS": (4, 2), "Pi-hole": (5, 2), "Drucker": (6, 2),
+    "Switch Obergeschoss": (8, 2), "Switch Wohnzimmer": (10, 2),
+    "Docker VM": (0, 3), "Home Assistant": (1, 3), "Windows VM": (1, 4),
+    "Grafana": (0, 4), "Uptime Kuma": (0, 5), "Traefik": (0, 6),
+    "Nextcloud": (2, 3), "Jellyfin": (3, 3), "Immich": (2, 4), "Vaultwarden": (3, 4), "Paperless": (2.5, 5),
+    "AP Obergeschoss": (8, 3), "AP Erdgeschoss": (10, 3),
+    "MacBook": (7.5, 4), "iPhone": (8.5, 4), "Pixel 8": (9.5, 4), "iPad": (10.5, 4), "Fernseher Wohnzimmer": (10, 5),
+    "Hue Bridge": (11.5, 2), "Shelly Plug Büro": (11.5, 3), "Echo Küche": (11.5, 4),
+}
+GRID_X, GRID_Y = 250, 150
 
 ROUTER_MAC = "f4:e2:c6:00:00:01"  # one MAC on every VLAN, like most consumer and UniFi routers
 
 EXTRA_GROUPS = [("Netzwerk", "network", 1), ("Smart Home", "home", 5), ("Clients", "laptop", 6)]
 UNKNOWN_HOSTS = ["192.168.100.60", "192.168.100.61", "192.168.100.142", "192.168.110.30", "192.168.110.31"]
 LINKS = [("UniFi Gateway", "Core Switch", "10GbE"), ("Core Switch", "Proxmox", "10GbE"), ("Core Switch", "Unraid", "10GbE"),
-         ("Core Switch", "Synology NAS", "2.5GbE"), ("Core Switch", "Pi-hole", "1GbE"), ("Core Switch", "AP Obergeschoss", "1GbE"),
-         ("Core Switch", "AP Erdgeschoss", "1GbE"), ("Core Switch", "Drucker", "1GbE")]
+         ("Core Switch", "Synology NAS", "2.5GbE"), ("Core Switch", "Pi-hole", "1GbE"), ("Core Switch", "Drucker", "1GbE"),
+         # The floors: basement switch, then one switch upstairs and one in the living room
+         ("UniFi Gateway", "Switch Keller", "2.5GbE"), ("Switch Keller", "Switch Obergeschoss", "2.5GbE"),
+         ("Switch Keller", "Switch Wohnzimmer", "2.5GbE"), ("Switch Obergeschoss", "AP Obergeschoss", "2.5GbE"),
+         ("Switch Wohnzimmer", "AP Erdgeschoss", "1GbE"), ("Proxmox", "Docker VM", "10GbE")]
 
 
 def _utcnow() -> datetime:
@@ -124,11 +157,12 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
 
     from app.database import async_session, init_db
     from app.models.agent import AgentConfig, AgentToken, DeviceMetrics
-    from app.models.device import Device, DeviceGroup, DeviceHistory, DeviceInterface, DiscoveredHost, Service
+    from app.models.device import Device, DeviceGroup, DeviceHealthSample, DeviceHistory, DeviceInterface, DiscoveredHost, Service
     from app.models.network import Subnet
     from app.models.setting import Setting
     from app.models.topology import Rack, TopologyLink
     from app.scanner.utils import ensure_default_groups
+    from app.services.agent_tokens import hash_agent_token
     from app.services.auth_service import hash_password
 
     from app.database.migrations import run_migrations
@@ -141,7 +175,15 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
         if (await db.execute(select(Device).limit(1))).scalar_one_or_none():
             rows = (await db.execute(select(AgentToken, Device).join(Device, AgentToken.device_id == Device.id))).all()
             profiles = {d[0]: d[6] for d in DEVICES if d[6]}
-            return {dev.display_name: (dev.id, tok.token, profiles[dev.display_name]) for tok, dev in rows if dev.display_name in profiles}
+            # Only the hash of an agent token is stored, so the simulated agents get fresh tokens
+            agents = {}
+            for tok, dev in rows:
+                if dev.display_name in profiles:
+                    raw = secrets.token_hex(32)
+                    tok.token = hash_agent_token(raw)
+                    agents[dev.display_name] = (dev.id, raw, profiles[dev.display_name])
+            await db.commit()
+            return agents
 
         now = _utcnow()
         for key, value in {
@@ -151,6 +193,8 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
             "scan_interval": "0",
             "quick_scan_interval": "0",
             "server.url": f"http://{HOST}:{PORT}",
+            # One colour per link speed on the orbit map, as many homelabs set it up
+            "ui.link_type_colors": json.dumps({"10GbE": "#dfe6ee", "2.5GbE": "#3db8f5", "1GbE": "#a6e35b", "WLAN": "#2ec4a6"}),
         }.items():
             db.add(Setting(key=key, value=value, category="system"))
 
@@ -185,6 +229,9 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
             )
             if flags.get("parent"):
                 device.parent_id = by_name[flags["parent"]].id
+            if name in TOPOLOGY_GRID:
+                col, row = TOPOLOGY_GRID[name]
+                device.topology_x, device.topology_y = int(col * GRID_X), int(row * GRID_Y)
             if dtype in ("firewall", "server", "nas") and not flags.get("virtual_type"):
                 device.rack_id, device.rack_unit, device.rack_height = rack.id, 20 - index, 2 if flags.get("is_host") else 1
             db.add(device)
@@ -199,7 +246,7 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
 
             if profile:
                 token = secrets.token_hex(32)
-                db.add(AgentToken(device_id=device.id, token=token, agent_version=profile[3], last_seen=now,
+                db.add(AgentToken(device_id=device.id, token=hash_agent_token(token), agent_version=profile[3], last_seen=now,
                                   os_pretty=profile[0], os_arch="x86_64"))
                 db.add(AgentConfig(device_id=device.id))
                 agents[name] = (device.id, token, profile)
@@ -215,6 +262,26 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
                         patch_available=7 if profile[3] == "0.3.4" else 0, patch_security=2 if profile[3] == "0.3.4" else 0,
                         patch_manager="apt", reboot_required=name == "Unraid",
                     ))
+
+        # 24 h of health probes, one every 5 minutes, so uptime bars and latency charts have a history:
+        # wired gear answers in a few ms, WLAN clients slower; offline devices dropped 2 h ago and the
+        # upstairs access point had a short outage this morning.
+        outage = range(200, 204)
+        for name, ip, _dtype, _group, flags, services, _profile in DEVICES:
+            device = by_name[name]
+            base = random.uniform(8, 28) if flags.get("is_wlan") else random.uniform(0.4, 3.5)
+            for step in range(288):
+                ts = now - timedelta(minutes=5 * (288 - step))
+                online = not (flags.get("offline") and step >= 264) and not (name == "AP Obergeschoss" and step in outage)
+                db.add(DeviceHealthSample(
+                    device_id=device.id, timestamp=ts, is_online=online,
+                    latency_ms=round(base + random.uniform(-0.3, 0.3) * base, 2) if online else None,
+                    probe_type="icmp" if online else None,
+                    ports_up=sum(1 for s in services if s[3]) if online else 0, ports_total=len(services),
+                ))
+        ap = by_name["AP Obergeschoss"]
+        db.add(DeviceHistory(device_id=ap.id, status="offline", message="Device went offline", timestamp=now - timedelta(minutes=5 * 88)))
+        db.add(DeviceHistory(device_id=ap.id, status="online", message="Device is back online", timestamp=now - timedelta(minutes=5 * 84)))
 
         for ip in UNKNOWN_HOSTS:
             db.add(DiscoveredHost(ip=ip, vendor="Espressif Inc." if ip.startswith("192.168.110") else None, is_online=True))

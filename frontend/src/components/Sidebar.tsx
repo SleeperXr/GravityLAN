@@ -1,4 +1,4 @@
-import { LayoutDashboard, Activity, Settings, Network, X, Grid3x3, Server, ScrollText, SquareTerminal, Sparkles, type LucideIcon } from 'lucide-react';
+import { LayoutDashboard, Activity, Settings, Network, X, Grid3x3, Server, ScrollText, SquareTerminal, Sparkles, Info, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useLiveSshSessions } from './Ssh/sessionCount';
@@ -19,10 +19,11 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'ssh', to: '/ssh', icon: SquareTerminal, label: 'sidebar.ssh' },
   { id: 'logs', to: '/logs', icon: ScrollText, label: 'sidebar.logs' },
   { id: 'settings', to: '/settings', icon: Settings, label: 'sidebar.settings' },
+  { id: 'about', to: '/about', icon: Info, label: 'sidebar.about' },
 ];
 
-// Bottom bar on phones: five destinations; SSH and logs stay reachable via the menu drawer.
-const TAB_ITEMS = NAV_ITEMS.filter((item) => item.id !== 'logs' && item.id !== 'ssh');
+// Bottom bar on phones: six destinations; SSH, logs and About stay reachable via the menu drawer.
+const TAB_ITEMS = NAV_ITEMS.filter((item) => !["logs", "ssh", "about"].includes(item.id));
 
 export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: boolean, onClose?: () => void }) {
   const { t } = useTranslation();
@@ -63,7 +64,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
         </nav>
         <div className="sidebar-footer">
           <a
-            href="/frontend-vue/"
+            href="/?ui=vue"
             className="nav-item"
             title={t('sidebar.gravity_ui_hint')}
             style={{

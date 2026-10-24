@@ -65,7 +65,7 @@ async function submit() {
         </form>
       </div>
 
-      <a href="/" class="mt-4 inline-flex items-center gap-1.5 text-xs text-fg-subtle hover:text-fg">
+      <a href="/?ui=react" class="mt-4 inline-flex items-center gap-1.5 text-xs text-fg-subtle hover:text-fg">
         <ArrowLeftRight class="size-3.5" aria-hidden="true" />
         {{ t('gv.legacy.switch') }}
       </a>

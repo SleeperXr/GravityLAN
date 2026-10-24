@@ -38,18 +38,33 @@ Images bis 0.5.2 laufen als UID 1000 und können nicht in einen Appdata-Ordner s
 
 **Sofortlösung für ältere Images** im Unraid-Terminal: `chown -R 1000:1000 /mnt/user/appdata/gravitylan`, danach den Container neu starten. **Mit einem aktuellen Image** ist nichts zu tun: `PUID=99` und `PGID=100` (Vorgabe der Vorlage) lassen und neu starten. Wer per `--user` in *Extra Parameters* einen Benutzer festgelegt hat, entfernt das oder gibt den Ordner diesem Benutzer (`chown -R <uid>:<gid> /mnt/user/appdata/gravitylan`); das Container-Log nennt die UID/GID, mit der der Server läuft.
 
-## Submitting to Unraid CA (`ca.unraid.net/submit/new`)
+## Screenshots, icon and texts
 
-1. Ensure the latest changes (`ca_profile.xml`, `assets/logo.png`, and `templates/gravitylan.xml`) are pushed to `main` on GitHub:
-   ```bash
-   git add ca_profile.xml assets/logo.png assets/logo.svg templates/gravitylan.xml docs/unraid-template.md
-   git commit -m "feat(unraid): add Community Applications template and profile"
-   git push origin main
-   ```
+- `<Screenshot>` entries are absolute raw URLs on `main`: five of the classic view from `docs/screenshots/react/` and the GravityUI orbit map from `docs/screenshots/vue/`, all palette-compressed PNGs (85 to 475 KB). They only resolve once the branch that adds them is merged.
+- `<Icon>` is `assets/logo.png`, square (512×512) and transparent.
+- `<Overview>` (shown on the app page) has an English and a German part: features, the Unraid defaults (PUID 99, PGID 100, no privileged mode), the network types and how scanning works. `<Changes>` lists the last releases, `<ReadMe>` points to the README.
+- The older screenshots in the root of `docs/screenshots/` (`GravityLanDashboard.png` …) are no longer used by the README or the template. They stay until CA has picked up the new template, because CA caches screenshot URLs; after that they can be deleted.
 
-2. Visit **[ca.unraid.net/submit/new](https://ca.unraid.net/submit/new)**:
-   - Log in with your Unraid.net account.
-   - Enter your repository URL: `https://github.com/SleeperXr/GravityLAN`
-   - Select branch: `main`
-   - Click **Validate and Scan**.
-   - Review the validation check results and submit.
+After a change to the template, check it before it lands on `main`:
+
+```bash
+python -c "import xml.etree.ElementTree as E; E.parse('templates/gravitylan.xml')"
+```
+
+and once it is on `main`, that every `<Icon>` and `<Screenshot>` URL answers with 200:
+
+```bash
+grep -oE 'https://raw[^<]+' templates/gravitylan.xml | xargs -n1 curl -s -o /dev/null -w "%{http_code} %{url_effective}
+"
+```
+
+## How the template gets into Community Applications
+
+CA does not read this repository on its own. A maintainer submits it once; after that CA re-reads the template from `main` on its own schedule, so later changes to `templates/gravitylan.xml` reach the store after a while without a new submission.
+
+1. Make sure `ca_profile.xml`, `assets/logo.png` and `templates/gravitylan.xml` are on `main` and all URLs in them answer (see above).
+2. Open **[ca.unraid.net/submit/new](https://ca.unraid.net/submit/new)** and log in with the Unraid.net account that should own the listing.
+3. Enter the repository URL `https://github.com/SleeperXr/GravityLAN`, branch `main`, and click **Validate and Scan**.
+4. Go through the validation results (unknown categories, missing fields and dead URLs show up there) and submit.
+
+Submitting is done by the project owner by hand; this document only describes the steps.
