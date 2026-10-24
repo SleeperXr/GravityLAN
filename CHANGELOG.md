@@ -5,10 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- GravityUI IP overview: Info-Refresh for addresses that are not on the dashboard (the arrow button in the address popover). It looks up name, MAC and vendor again, like a device's Info-Refresh, and says when the device announces no name, with a hint about Docker bridge mode, where mDNS and NetBIOS do not reach the container.
-
 ### Changed
+- README (English and German) brought up to date: new screenshots from the demo data in `docs/screenshots/react/` (classic view) and `docs/screenshots/vue/` (GravityUI), compressed to about a quarter of the size; a section on GravityUI as a preview and how to switch to it; router import, measurement data in `telemetry.db`, default interface, About page and the Unraid defaults; and how to give an AI assistant or agent (Hermes, Clawdbot) a read-only API token, with an example and what such a token can never do. The GravityUI tutorial "API tokens and webhooks" says the same in short.
+- Unraid template: new screenshots (five of the classic view, the GravityUI orbit map), the overview in English and German lists the features, PUID/PGID 99/100, the GravityUI preview and the read-only API for AI agents, and the template now has `<Changes>` and `<ReadMe>`. `docs/unraid-template.md` describes how to check the template and how it gets into Community Applications.
 - Names of "Unknown" devices are retried by every quick scan (every 5 minutes by default) instead of once an hour: a failed name lookup is now remembered for 4 minutes, a found name still for an hour. A refresh you ask for always looks again.
+
+### Fixed
+- GravityUI orbit map on a phone: the map on the overview opened unscaled in one corner until you pressed "fit". Fitting it once (since the fix that keeps your zoom while editing) could happen before the map had a size, and then never came again; it now waits for the map to be measured.
+
+### Security
+- undici 7.30.1 in the React UI's test tooling (through jsdom; GHSA-xjj6-f33q-929c, denial of service on excessive content encodings). Development only, not part of the image.
 
 ## [0.5.3] - 2026-10-24
 
@@ -519,7 +525,6 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 - **Safari CSS Compatibility**: Added `-webkit-backdrop-filter` alongside `backdrop-filter: blur(...)` rules in `index.css` to fix glassmorphism rendering on Safari/iOS.
 - **Agent: CPU/RAM 0% Metrics**: Set default `root_path` to `/` for `CPUMetrics` and `RAMMetrics` to ensure system metrics are parsed correctly regardless of agent execution working directory (fixing 0% load reporting inside Docker containers).
 - **UI: Terminal Auto-scroll bouncing**: Replaced `scrollIntoView()` on inner terminal elements with direct container `scrollTop` assignment, preventing the entire page viewport from jumping during update progress.
-
 
 ## [0.3.1] - 2026-07-16
 
