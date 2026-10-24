@@ -4,17 +4,18 @@ import { ArrowRight, CheckCircle2 } from 'lucide-vue-next';
 import type { Device } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
-import { isAgentOutdated } from '@/lib/agent';
+import { isAgentOutdated, patchState } from '@/lib/agent';
 import { isClientStandby } from '@/lib/standby';
 import { deviceLabel, lineLabelFor, networkColor } from '@/lib/networks';
 import { t } from '@/i18n';
 
 /**
  * Service notices: everything that needs the operator, most urgent first. Offline devices
- * watched 24/7, new agent keys, services down (not for clients in standby), IP changes, agent updates.
+ * watched 24/7, new agent keys, services down (not for clients in standby), security updates and
+ * pending reboots reported by agents, IP changes, agent updates.
  */
 const props = defineProps<{ devices: Device[] }>();
-const emit = defineEmits<{ openDevice: [device: Device]; openUpdates: [] }>();
+const emit = defineEmits<{ openDevice: [device: Device]; openUpdates: []; openPatches: [device: Device] }>();
 
 interface Notice {
   key: string;
@@ -24,7 +25,7 @@ interface Notice {
   title: string;
   detail: string;
   since?: string | null;
-  action?: 'device' | 'updates';
+  action?: 'device' | 'updates' | 'patches';
 }
 
 const notices = computed<Notice[]>(() => {
@@ -43,6 +44,13 @@ const notices = computed<Notice[]>(() => {
       const title = down.length === d.services.length ? t('gv.notices.services_none', { name }) : t('gv.notices.services_down', { name, count: down.length });
       list.push({ key: `svc-${d.id}`, rank: 2, device: d, tone: 'warn', title, detail: down.map((s) => `${s.name} :${s.port}`).join(', '), action: 'device' });
     }
+    // Security updates the agent reports, or a pending reboot: the Agents page installs them
+    const patches = patchState(d);
+    if (patches && (patches.security > 0 || patches.reboot)) {
+      const parts = [t('gv.notices.updates_total', { count: patches.available }), patches.reboot ? t('gv.notices.reboot') : ''].filter(Boolean);
+      const title = patches.security > 0 ? t('gv.notices.security_updates', { name, count: patches.security }) : t('gv.notices.reboot_only', { name });
+      list.push({ key: `sec-${d.id}`, rank: 2, device: d, tone: patches.security > 0 ? 'warn' : 'info', title, detail: parts.join(' · '), action: 'patches' });
+    }
     if (d.old_ip) {
       list.push({ key: `ip-${d.id}`, rank: 3, device: d, tone: 'info', title: t('gv.notices.ip_changed', { name }), detail: `${d.old_ip} → ${d.ip}`, since: d.ip_changed_at, action: 'device' });
     }
@@ -57,6 +65,7 @@ const notices = computed<Notice[]>(() => {
 
 function open(n: Notice) {
   if (n.action === 'updates') emit('openUpdates');
+  else if (n.action === 'patches' && n.device) emit('openPatches', n.device);
   else if (n.device) emit('openDevice', n.device);
 }
 </script>

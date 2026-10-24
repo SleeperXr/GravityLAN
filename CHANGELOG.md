@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - GravityUI shows a slim notice that it is still in development, with a link to the classic view and to GitHub issues for feedback. Closing it is remembered in this browser.
 - Default interface setting (Settings, both interfaces): choose whether the start address `/` opens the classic React view (default) or GravityUI. The switch in each sidebar (and on the GravityUI login) now goes through `/?ui=react` or `/?ui=vue`, which keeps that choice in the browser, so switching works whatever the server default is. Both interfaces stay reachable: React at `/?ui=react`, GravityUI at `/frontend-vue/`.
 - GravityUI IP overview: Info-Refresh for addresses that are not on the dashboard (the arrow button in the address popover). It looks up name, MAC and vendor again, like a device's Info-Refresh, and says when the device announces no name, with a hint about Docker bridge mode, where mDNS and NetBIOS do not reach the container.
+- Security updates on the dashboard: a host whose agent reports pending security updates gets a badge on its device card (both interfaces), and GravityUI's system notices list it with the total number of updates and a pending reboot; clicking the notice opens the Agents page to install them.
 
 ### Changed
 - README (English and German) brought up to date: new screenshots from the demo data in `docs/screenshots/react/` (classic view) and `docs/screenshots/vue/` (GravityUI), compressed to about a quarter of the size; a section on GravityUI as a preview and how to switch to it; router import, measurement data in `telemetry.db`, default interface, About page and the Unraid defaults; and how to give an AI assistant or agent (Hermes, Clawdbot) a read-only API token, with an example and what such a token can never do. The GravityUI tutorial "API tokens and webhooks" says the same in short.
@@ -18,6 +19,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - GravityUI orbit map on a phone: the map on the overview opened unscaled in one corner until you pressed "fit". Fitting it once (since the fix that keeps your zoom while editing) could happen before the map had a size, and then never came again; it now waits for the map to be measured.
+- Demo backend (`scripts/dev_demo.py`): the simulated agents report again. Agent tokens are stored hashed since 0.4, but the demo saved them in plain text, so every report was refused; after a restart without `--reset` they now get fresh tokens.
 
 ### Security
 - undici 7.30.1 in the React UI's test tooling (through jsdom; GHSA-xjj6-f33q-929c, denial of service on excessive content encodings). Development only, not part of the image.

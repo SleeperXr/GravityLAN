@@ -195,13 +195,15 @@ function CardActions({ device, displayName, hasSsh, onEdit, onRefresh }: CardAct
   );
 }
 
-/** Agent update, new agent key (adopt) and IP change (dismiss) under the header. */
+/** Agent update, security updates, new agent key (adopt) and IP change (dismiss) under the header. */
 function CardFlags({ device, isEditMode, onRefresh }: { device: Device; isEditMode: boolean; onRefresh?: () => void }) {
   const { t } = useTranslation();
   const agent = device.agent_info;
   const hasAgentUpdate = !isEditMode && isAgentOutdated(agent?.agent_version, agent?.latest_version);
   const hasPendingKey = !isEditMode && !!device.has_pending_token;
-  if (!hasAgentUpdate && !hasPendingKey && !device.old_ip) return null;
+  const report = agent?.latest_metrics;
+  const securityUpdates = isEditMode ? 0 : report?.patch_security ?? 0;
+  if (!hasAgentUpdate && !hasPendingKey && !securityUpdates && !device.old_ip) return null;
 
   const adoptKey = (e: MouseEvent) => {
     e.stopPropagation();
@@ -218,6 +220,11 @@ function CardFlags({ device, isEditMode, onRefresh }: { device: Device; isEditMo
       {hasAgentUpdate && (
         <span className="device-tag device-tag--warn" title={t('common.update_available', { version: agent?.latest_version })}>
           <RefreshCw size={11} aria-hidden="true" /> {t('dashboard.agent_update')}
+        </span>
+      )}
+      {securityUpdates > 0 && (
+        <span className="device-tag device-tag--warn" title={t('dashboard.security_updates_title', { count: securityUpdates, total: report?.patch_available ?? securityUpdates })}>
+          <ShieldAlert size={11} aria-hidden="true" /> {t('dashboard.security_updates', { count: securityUpdates })}
         </span>
       )}
       {hasPendingKey && (

@@ -9,7 +9,7 @@ import Badge from '@/components/ui/Badge.vue';
 import DeviceMetrics from './DeviceMetrics.vue';
 import NetworkChips from './NetworkChips.vue';
 import ServiceBadge from './ServiceBadge.vue';
-import { isAgentOutdated } from '@/lib/agent';
+import { isAgentOutdated, patchState } from '@/lib/agent';
 import { deviceLabel } from '@/lib/networks';
 import { useConfirm } from '@/composables/useConfirm';
 import { t } from '@/i18n';
@@ -36,6 +36,8 @@ const agentUpdate = computed(
   () => !props.editMode && isAgentOutdated(props.device.agent_info?.agent_version, props.device.agent_info?.latest_version),
 );
 const pendingKey = computed(() => !props.editMode && !!props.device.has_pending_token);
+// Security updates the agent reports for this host
+const securityUpdates = computed(() => (props.editMode ? 0 : patchState(props.device)?.security ?? 0));
 
 async function refreshInfo() {
   refreshing.value = true;
@@ -136,7 +138,10 @@ async function clearIpChange() {
 
     <NetworkChips :device="device" />
 
-    <div v-if="agentUpdate || pendingKey || device.old_ip" class="flex flex-wrap gap-1.5">
+    <div v-if="agentUpdate || pendingKey || securityUpdates || device.old_ip" class="flex flex-wrap gap-1.5">
+      <Badge v-if="securityUpdates" tone="warn" :title="t('gv.dashboard.security_updates_title', { count: securityUpdates, total: patchState(device)?.available ?? securityUpdates })">
+        <ShieldAlert aria-hidden="true" />{{ t('gv.dashboard.security_updates', { count: securityUpdates }) }}
+      </Badge>
       <Badge v-if="agentUpdate" tone="warn" :title="t('common.update_available', { version: device.agent_info?.latest_version })">
         <RefreshCw aria-hidden="true" />{{ t('dashboard.agent_update') }}
       </Badge>

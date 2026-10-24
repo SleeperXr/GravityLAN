@@ -37,7 +37,10 @@
       "search": "Search name, IP, MAC or service",
       "clear_filter": "Clear filter",
       "matches": "{{count}} of {{total}} devices",
-      "no_match": "No device matches the filter."
+      "no_match": "No device matches the filter.",
+      "security_updates_one": "{{count}} security update",
+      "security_updates_other": "{{count}} security updates",
+      "security_updates_title": "{{count}} security updates of {{total}} pending updates; install them on the Agents page"
     },
     "network": {
       "free": "free",
@@ -102,7 +105,13 @@
       "ip_changed": "{{name}}: new IP address",
       "updates_one": "{{count}} agent update ready",
       "updates_other": "{{count}} agent updates ready",
-      "services_none": "{{name}}: no services reachable"
+      "services_none": "{{name}}: no services reachable",
+      "security_updates_one": "{{name}}: {{count}} security update",
+      "security_updates_other": "{{name}}: {{count}} security updates",
+      "reboot_only": "{{name}}: reboot required",
+      "updates_total_one": "{{count}} update in total",
+      "updates_total_other": "{{count}} updates in total",
+      "reboot": "reboot required"
     },
     "health": {
       "period": "Period",

@@ -37,7 +37,10 @@
       "search": "Name, IP, MAC oder Dienst suchen",
       "clear_filter": "Filter zurücksetzen",
       "matches": "{{count}} von {{total}} Geräten",
-      "no_match": "Kein Gerät passt zum Filter."
+      "no_match": "Kein Gerät passt zum Filter.",
+      "security_updates_one": "{{count}} Sicherheitsupdate",
+      "security_updates_other": "{{count}} Sicherheitsupdates",
+      "security_updates_title": "{{count}} Sicherheitsupdates von {{total}} anstehenden Updates; installieren auf der Agents-Seite"
     },
     "network": {
       "free": "frei",
@@ -102,7 +105,13 @@
       "ip_changed": "{{name}}: neue IP-Adresse",
       "updates_one": "{{count}} Agent-Update bereit",
       "updates_other": "{{count}} Agent-Updates bereit",
-      "services_none": "{{name}}: keine Dienste erreichbar"
+      "services_none": "{{name}}: keine Dienste erreichbar",
+      "security_updates_one": "{{name}}: {{count}} Sicherheitsupdate",
+      "security_updates_other": "{{name}}: {{count}} Sicherheitsupdates",
+      "reboot_only": "{{name}}: Neustart nötig",
+      "updates_total_one": "{{count}} Update insgesamt",
+      "updates_total_other": "{{count}} Updates insgesamt",
+      "reboot": "Neustart nötig"
     },
     "health": {
       "period": "Zeitraum",

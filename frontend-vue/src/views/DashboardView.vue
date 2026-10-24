@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useMediaQuery, useStorage } from '@vueuse/core';
+import { useRouter } from 'vue-router';
 import { Check, LayoutGrid, List, Pencil, Radar, RefreshCw, RotateCcw, Search, Server, Trash2, X } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
@@ -29,6 +30,7 @@ import type { EditorTab } from '@shared/components/Dashboard/editor/deviceForm';
 import { t } from '@/i18n';
 
 const store = useNetworkStore();
+const router = useRouter();
 const scan = useDashboardScan();
 const { showToast } = useToast();
 const { confirm } = useConfirm();
@@ -297,7 +299,7 @@ function clearFilters() {
             <Pencil class="size-3.5" aria-hidden="true" />{{ t('gv.plan.edit') }}
           </RouterLink>
         </div>
-        <ServiceNotices class="max-h-[30rem]" :devices="store.devices" @open-device="(d) => openEditor(d)" @open-updates="updateCenterOpen = true" />
+        <ServiceNotices class="max-h-[30rem]" :devices="store.devices" @open-device="(d) => openEditor(d)" @open-updates="updateCenterOpen = true" @open-patches="router.push('/agents')" />
       </div>
     </template>
 
