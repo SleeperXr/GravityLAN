@@ -12,6 +12,7 @@ export type SettingsForm = {
   server_url_override: string;
   'system.log_level': string;
   'ui.start_page': string;
+  'ui.default_frontend': string;
 };
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -28,6 +29,7 @@ const DEFAULT_FORM: SettingsForm = {
   server_url_override: '',
   'system.log_level': 'info',
   'ui.start_page': '/',
+  'ui.default_frontend': 'react',
 };
 
 const FORM_KEYS = Object.keys(DEFAULT_FORM) as (keyof SettingsForm)[];

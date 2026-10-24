@@ -16,6 +16,7 @@ async def test_setup_status_unauthorized(client):
     assert response.status_code == 200
     data = response.json()
     assert "is_setup_complete" in data
+    assert data["agent_version"]  # the About page shows it
 
 @pytest.mark.asyncio
 async def test_unauthorized_access(client, db):

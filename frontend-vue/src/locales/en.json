@@ -216,6 +216,13 @@
       "fiber": "Fibre",
       "for": "Colour for {{type}}",
       "reset": "Network colour"
+    },
+    "dev_notice": {
+      "title": "GravityUI is still in development.",
+      "text": "Some things may change or be missing.",
+      "classic": "Switch to the classic view",
+      "feedback": "Feedback on GitHub",
+      "dismiss": "Hide notice"
     }
   }
 }

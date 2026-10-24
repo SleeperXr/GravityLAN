@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models.device import Device
 from app.models.setting import Setting
 from app.version import VERSION
+from app.services.agent_deployer import get_latest_agent_version
 
 import logging
 logger = logging.getLogger(__name__)
@@ -37,7 +38,9 @@ async def get_setup_status(db: AsyncSession = Depends(get_db)) -> dict:
     res = {
         "is_setup_complete": is_complete,
         "device_count": device_count_val,
-        "version": VERSION
+        "version": VERSION,
+        # Shown on the About page; the agent has its own version (it only changes with agent/)
+        "agent_version": get_latest_agent_version(),
     }
     return res
 

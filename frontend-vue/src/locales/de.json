@@ -216,6 +216,13 @@
       "fiber": "Glasfaser",
       "for": "Farbe für {{type}}",
       "reset": "Netzfarbe"
+    },
+    "dev_notice": {
+      "title": "GravityUI ist noch in Entwicklung.",
+      "text": "Einiges kann sich ändern oder fehlen.",
+      "classic": "Zur klassischen Ansicht",
+      "feedback": "Feedback auf GitHub",
+      "dismiss": "Hinweis ausblenden"
     }
   }
 }
