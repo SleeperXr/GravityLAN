@@ -37,7 +37,10 @@ def mask_ip(ip: Optional[str]) -> str:
 # Simple in-memory cache for DNS resolutions
 # Format: {ip: (hostname, timestamp)}
 _dns_cache: dict[str, tuple[Optional[str], datetime]] = {}
-DNS_CACHE_TTL = 3600  # 1 hour
+DNS_CACHE_TTL = 3600  # 1 hour for a found name
+# A miss is remembered for less than the 5-minute quick scan, so every quick scan retries the
+# names of "Unknown" devices (a TV that was asleep, a phone that just joined) instead of hourly.
+DNS_NEGATIVE_CACHE_TTL = 240
 
 def _resolve_win32(ip: str) -> Optional[str]:
     """Try Win32 GetNameInfoW for fast local resolution."""
@@ -143,15 +146,19 @@ def _resolve_shell(ip: str, dns_server: str | None = None) -> Optional[str]:
         return _resolve_ping_win32(ip)
     return _resolve_linux_shell(ip, dns_server)
 
-async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None = None) -> str | None:
-    """Resolve an IP address to its hostname via reverse DNS (FQDN)."""
+async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None = None, use_cache: bool = True) -> str | None:
+    """Resolve an IP address to its hostname via reverse DNS (FQDN).
+
+    ``use_cache=False`` is for a refresh the user asked for: it always looks again.
+    """
     from datetime import datetime
-    
+
     # 0. Check Cache
     now = datetime.now(timezone.utc)
-    if ip in _dns_cache:
+    if use_cache and ip in _dns_cache:
         cached_name, cached_time = _dns_cache[ip]
-        if (now - cached_time).total_seconds() < DNS_CACHE_TTL:
+        ttl = DNS_CACHE_TTL if cached_name else DNS_NEGATIVE_CACHE_TTL
+        if (now - cached_time).total_seconds() < ttl:
             return cached_name
 
     loop = asyncio.get_running_loop()

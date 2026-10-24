@@ -9,6 +9,8 @@ import { t } from '@/i18n';
 export const useDiscoveryStore = defineStore('discovery', () => {
   const hosts = ref<DiscoveredHost[]>([]);
   const isDiscovering = ref(false);
+  /** Hosts whose name, MAC and vendor are being looked up right now */
+  const refreshing = ref(new Set<number>());
   const { showToast } = useToast();
 
   async function load() {
@@ -44,6 +46,23 @@ export const useDiscoveryStore = defineStore('discovery', () => {
     }
   }
 
+  /** Info-Refresh for a host that is not on the dashboard: name, MAC and vendor looked up again. */
+  async function refresh(id: number) {
+    refreshing.value = new Set(refreshing.value).add(id);
+    try {
+      const updated = await api.refreshDiscoveredHost(id);
+      hosts.value = hosts.value.map((h) => (h.id === id ? updated : h));
+      if (updated.hostname) showToast('success', t('gv.network.name_found', { name: updated.hostname }), updated.ip);
+      else showToast('info', t('gv.network.name_not_found'), t('gv.network.name_not_found_hint'));
+    } catch {
+      showToast('error', t('common.error'), t('notifications.device_update_failed'));
+    } finally {
+      const next = new Set(refreshing.value);
+      next.delete(id);
+      refreshing.value = next;
+    }
+  }
+
   async function remove(id: number, ip: string) {
     try {
       await api.deleteDiscoveredHost(id);
@@ -62,5 +81,5 @@ export const useDiscoveryStore = defineStore('discovery', () => {
     hosts.value = hosts.value.filter((h) => h.ip !== ip);
   }
 
-  return { hosts, isDiscovering, load, runDiscovery, update, remove, patchLocal, dropLocal };
+  return { hosts, isDiscovering, refreshing, load, runDiscovery, update, refresh, remove, patchLocal, dropLocal };
 });

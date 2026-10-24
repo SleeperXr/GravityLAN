@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- GravityUI IP overview: Info-Refresh for addresses that are not on the dashboard (the arrow button in the address popover). It looks up name, MAC and vendor again, like a device's Info-Refresh, and says when the device announces no name, with a hint about Docker bridge mode, where mDNS and NetBIOS do not reach the container.
+
+### Changed
+- Names of "Unknown" devices are retried by every quick scan (every 5 minutes by default) instead of once an hour: a failed name lookup is now remembered for 4 minutes, a found name still for an hour. A refresh you ask for always looks again.
+
 ## [0.5.3] - 2026-10-24
 
 ### Fixed

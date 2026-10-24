@@ -111,6 +111,8 @@ export const api = {
     request<import('../types').DiscoveredHost[]>(`/api/scanner/live-discovery?subnets=${data.subnets.join(',')}`),
   patchDiscoveredHost: (id: number, data: { custom_name?: string; is_monitored?: boolean; is_reserved?: boolean }) =>
     request<import('../types').DiscoveredHost>(`/api/scanner/discovered/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  refreshDiscoveredHost: (id: number) =>
+    request<import('../types').DiscoveredHost>(`/api/scanner/discovered/${id}/refresh-info`, { method: 'POST' }),
   deleteDiscoveredHost: (id: number) =>
     request<{ status: string; message: string }>(`/api/scanner/discovered/${id}`, { method: 'DELETE' }),
   quickSubnetScan: (subnets: string) =>
