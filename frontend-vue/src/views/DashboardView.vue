@@ -229,7 +229,8 @@ function clearFilters() {
   <div class="mx-auto max-w-[1800px] space-y-6 px-4 py-5 md:px-8 md:py-7">
     <PageHeader :title="t('sidebar.dashboard')" :description="t('dashboard.devices_sections', { devices: store.totalCount, groups: store.groups.length })">
       <template v-if="!editMode">
-        <label v-if="store.totalCount > 0" class="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
+        <!-- A row of its own on phones; squeezed between the buttons it shrank to its icon -->
+        <label v-if="store.totalCount > 0" class="relative w-full sm:w-64">
           <span class="sr-only">{{ t('gv.dashboard.search') }}</span>
           <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
           <input
@@ -289,17 +290,22 @@ function clearFilters() {
     <template v-if="store.loaded && store.totalCount > 0 && !editMode">
       <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
       <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div class="gl-card relative h-[22rem] overflow-hidden md:h-[30rem]">
-          <div class="pointer-events-none absolute top-3 left-4 z-10">
-            <p class="text-sm font-bold text-fg">{{ t('gv.plan.title') }}</p>
-            <p class="text-xs text-fg-subtle">{{ t('gv.plan.live', { online: store.onlineCount, total: store.totalCount }) }}</p>
+        <!-- Title and edit link sit above the map: on top of it the map's own search covered them -->
+        <div class="gl-card flex h-[24rem] flex-col overflow-hidden md:h-[32rem]">
+          <div class="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
+            <div class="min-w-0">
+              <p class="text-sm font-bold text-fg">{{ t('gv.plan.title') }}</p>
+              <p class="text-xs text-fg-subtle">{{ t('gv.plan.live', { online: store.onlineCount, total: store.totalCount }) }}</p>
+            </div>
+            <RouterLink to="/topology" class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg hover:border-line-strong">
+              <Pencil class="size-3.5" aria-hidden="true" />{{ t('gv.plan.edit') }}
+            </RouterLink>
           </div>
-          <OrbitMap flow-id="dashboard-plan" @open-device="(d) => openEditor(d)" />
-          <RouterLink to="/topology" class="absolute top-3 right-3 z-10 inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg shadow-pop hover:border-line-strong">
-            <Pencil class="size-3.5" aria-hidden="true" />{{ t('gv.plan.edit') }}
-          </RouterLink>
+          <div class="min-h-0 flex-1">
+            <OrbitMap flow-id="dashboard-plan" @open-device="(d) => openEditor(d)" />
+          </div>
         </div>
-        <ServiceNotices class="max-h-[30rem]" :devices="store.devices" @open-device="(d) => openEditor(d)" @open-updates="updateCenterOpen = true" @open-patches="router.push('/agents')" />
+        <ServiceNotices class="max-h-[32rem]" :devices="store.devices" @open-device="(d) => openEditor(d)" @open-updates="updateCenterOpen = true" @open-patches="router.push('/agents')" />
       </div>
     </template>
 

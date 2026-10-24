@@ -17,7 +17,8 @@ export interface ViewTransform {
   zoom: number;
 }
 
-export const MIN_ZOOM = 0.2;
+/** Low enough that a phone-sized map can show a whole system */
+export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 2.5;
 
 /**
@@ -101,7 +102,7 @@ export function fitTransform(
   const contentH = Math.max(240, maxY - minY);
   const zoom = Math.min(
     maxZoom,
-    Math.max(0.22, Math.min((width * padding) / contentW, (height * padding) / contentH)),
+    Math.max(MIN_ZOOM, Math.min((width * padding) / contentW, (height * padding) / contentH)),
   );
   return {
     zoom,

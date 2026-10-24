@@ -157,7 +157,8 @@ function roleBadge(device: Device): string | null {
  * Semantic zoom: labels are counter-scaled so they stay readable (about 11 px) when the whole
  * map is in view; moon labels join once zoomed in, or for the bodies under hover, focus or search.
  */
-const labelScale = computed(() => Math.min(2.4, Math.max(1, 0.95 / view.zoom.value)));
+const MAX_LABEL_SCALE = 2.4;
+const labelScale = computed(() => Math.min(MAX_LABEL_SCALE, Math.max(1, 0.95 / view.zoom.value)));
 const showMoonLabels = computed(() => view.zoom.value >= 0.7);
 function labelShown(b: OrbitBody): boolean {
   if (b.kind !== 'moon' || showMoonLabels.value || hoveredBodyId.value === b.id || selectedDeviceId.value === b.id) return true;
@@ -238,16 +239,25 @@ const linkEnds = computed(() => {
 });
 
 // ── Viewport ─────────────────────────────────────────────────────────────────
-/** Everything the whole-map view must show: bodies with room for labels and the outer rings. */
+/**
+ * Everything the whole-map view must show: bodies with room for their labels. Star and planet labels
+ * are drawn up to MAX_LABEL_SCALE times larger at that zoom, so they get boxes of that size; otherwise
+ * a small (phone) map cuts them off at its edges.
+ */
 function contentPoints(): Point[] {
   const pts: Point[] = [];
-  for (const d of store.devices) {
-    const p = posOf(d.id);
-    pts.push({ x: p.x - 70, y: p.y - 30 }, { x: p.x + 70, y: p.y + 60 });
+  for (const b of bodyList.value) {
+    const p = posOf(b.id);
+    const scale = b.kind === 'moon' ? 1 : MAX_LABEL_SCALE;
+    const size = labelSize(deviceLabel(b.device), b.device.ip, false);
+    const halfW = Math.max(70, (size.w * scale) / 2);
+    const reach = radiusOf(b) + 6 + size.h * scale;
+    pts.push({ x: p.x - halfW, y: p.y - reach }, { x: p.x + halfW, y: p.y + reach });
   }
   return pts;
 }
-const fitView = (animated = false) => view.fit(contentPoints(), animated);
+// The search field covers the top 48 px of the map; the whole-map view starts below it
+const fitView = (animated = false) => view.fit(contentPoints(), animated, 48);
 const flyToBodies = (ids: number[]) => view.flyTo(ids.map(posOf));
 
 function onCanvasPointerDown(e: PointerEvent) {
