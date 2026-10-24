@@ -23,7 +23,8 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 // Bottom bar on phones: five destinations; SSH and logs stay reachable via the menu drawer.
-const TAB_ITEMS = NAV_ITEMS.filter((item) => item.id !== 'logs' && item.id !== 'ssh');
+// Six tabs fit a phone; logs, SSH and About stay in the menu
+const TAB_ITEMS = NAV_ITEMS.filter((item) => !["logs", "ssh", "about"].includes(item.id));
 
 export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: boolean, onClose?: () => void }) {
   const { t } = useTranslation();
