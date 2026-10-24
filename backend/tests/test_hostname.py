@@ -109,3 +109,45 @@ def test_resolve_shell_win32_delegates(monkeypatch):
     monkeypatch.setattr(hostname.sys, "platform", "win32")
     monkeypatch.setattr(hostname, "_resolve_ping_win32", lambda ip: "win-name")
     assert hostname._resolve_shell("192.168.1.1") == "win-name"
+
+
+# --- cache: found names for an hour, misses only until the next quick scan ---
+
+import pytest
+from datetime import datetime, timedelta, timezone
+
+
+@pytest.fixture
+def fresh_lookup(monkeypatch):
+    """Every real lookup answers 'fresh-name' and is counted; the cache starts empty."""
+    calls = []
+    monkeypatch.setattr(hostname, "_dns_cache", {})
+    monkeypatch.setattr(hostname, "_resolve_win32", lambda ip: calls.append(ip) or "fresh-name")
+    return calls
+
+
+def _cached(name, seconds_ago):
+    return (name, datetime.now(timezone.utc) - timedelta(seconds=seconds_ago))
+
+
+@pytest.mark.asyncio
+async def test_a_miss_is_retried_after_the_negative_ttl(fresh_lookup):
+    hostname._dns_cache["10.0.0.5"] = _cached(None, hostname.DNS_NEGATIVE_CACHE_TTL + 5)
+    assert await hostname.resolve_hostname("10.0.0.5") == "fresh-name"
+    assert fresh_lookup == ["10.0.0.5"]
+
+
+@pytest.mark.asyncio
+async def test_a_recent_miss_and_a_found_name_come_from_the_cache(fresh_lookup):
+    hostname._dns_cache["10.0.0.5"] = _cached(None, 60)
+    hostname._dns_cache["10.0.0.6"] = _cached("nas.local", 30 * 60)
+    assert await hostname.resolve_hostname("10.0.0.5") is None
+    assert await hostname.resolve_hostname("10.0.0.6") == "nas.local"
+    assert fresh_lookup == []
+
+
+@pytest.mark.asyncio
+async def test_use_cache_false_always_looks_again(fresh_lookup):
+    hostname._dns_cache["10.0.0.5"] = _cached(None, 10)
+    assert await hostname.resolve_hostname("10.0.0.5", use_cache=False) == "fresh-name"
+    assert fresh_lookup == ["10.0.0.5"]

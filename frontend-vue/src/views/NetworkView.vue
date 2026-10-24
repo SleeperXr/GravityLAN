@@ -343,6 +343,8 @@ function openEditor(device: Device) {
           @scan-device="scanDevice"
           @scan-host="scanHost"
           @add-device="addDevice"
+          :refresh-busy="!!tile.discovered && discovery.refreshing.has(tile.discovered.id)"
+          @refresh-host="discovery.refresh"
           @delete-host="discovery.remove"
         />
       </div>

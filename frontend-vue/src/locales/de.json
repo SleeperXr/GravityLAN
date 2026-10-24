@@ -45,7 +45,10 @@
       "usage": "Adressbelegung",
       "legend_device": "In der Übersicht",
       "legend_discovered": "Nur entdeckt",
-      "legend_reserved": "Reserviert"
+      "legend_reserved": "Reserviert",
+      "name_found": "Name gefunden: {{name}}",
+      "name_not_found": "Kein Name gefunden",
+      "name_not_found_hint": "Das Gerät meldet keinen Namen über DNS, mDNS oder NetBIOS. Läuft GravityLAN im Docker-Bridge-Modus, erreichen mDNS und NetBIOS den Container nicht; mit Netzwerkmodus host klappt es eher. Ein eigener Name hilft immer."
     },
     "settings": {
       "appearance": "Sprache & Darstellung",
