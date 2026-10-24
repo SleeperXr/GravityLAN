@@ -14,6 +14,9 @@ All notable changes to this project will be documented in this file.
 - README (English and German) brought up to date: new screenshots from the demo data in `docs/screenshots/react/` (classic view) and `docs/screenshots/vue/` (GravityUI), compressed to about a quarter of the size; a section on GravityUI as a preview and how to switch to it; router import, measurement data in `telemetry.db`, default interface, About page and the Unraid defaults; and how to give an AI assistant or agent (Hermes, Clawdbot) a read-only API token, with an example and what such a token can never do. The GravityUI tutorial "API tokens and webhooks" says the same in short.
 - Unraid template: new screenshots (five of the classic view, the GravityUI orbit map), the overview in English and German lists the features, PUID/PGID 99/100, the GravityUI preview and the read-only API for AI agents, and the template now has `<Changes>` and `<ReadMe>`. `docs/unraid-template.md` describes how to check the template and how it gets into Community Applications.
 
+### Fixed
+- GravityUI orbit map on a phone: the map on the overview opened unscaled in one corner until you pressed "fit". Fitting it once (since the fix that keeps your zoom while editing) could happen before the map had a size, and then never came again; it now waits for the map to be measured.
+
 ## [0.5.3] - 2026-10-24
 
 ### Fixed
