@@ -1067,6 +1067,9 @@
     "license": "Licence",
     "license_text": "MIT License, Copyright (c) 2026 SleeperXr. Third-party building blocks keep their own licences.",
     "third_party": "Third-party notices",
-    "try_gravityui": "Try GravityUI (in development)"
+    "try_gravityui": "Try GravityUI (in development)",
+    "tutorials": "Tutorials and getting started",
+    "tutorials_hint": "Guides for every area, in GravityUI",
+    "tutorials_open": "Open"
   }
 }

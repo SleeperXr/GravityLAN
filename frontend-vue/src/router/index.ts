@@ -22,6 +22,7 @@ export const router = createRouter({
     { path: '/ssh', name: 'ssh', component: () => import('@/views/SshView.vue'), meta: { navId: 'ssh', titleKey: 'sidebar.ssh' } },
     { path: '/logs', name: 'logs', component: () => import('@/views/LogsView.vue'), meta: { navId: 'logs', titleKey: 'sidebar.logs' } },
     { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { navId: 'settings', titleKey: 'sidebar.settings' } },
+    { path: '/tutorials', name: 'tutorials', component: () => import('@/views/TutorialsView.vue'), meta: { navId: 'tutorials', titleKey: 'gv.tutorials.title' } },
     { path: '/about', name: 'about', component: () => import('@/views/AboutView.vue'), meta: { navId: 'about', titleKey: 'about.title' } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

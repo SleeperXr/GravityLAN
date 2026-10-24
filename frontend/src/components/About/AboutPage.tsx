@@ -62,6 +62,9 @@ export function AboutPage() {
           </SettingsSection>
 
           <SettingsSection id="about-project" title={t('about.project')} description={t('about.project_text')}>
+            <ActionRow title={t('about.tutorials')} description={t('about.tutorials_hint')}>
+              <a className="btn btn-secondary btn-sm" href="/frontend-vue/tutorials">{t('about.tutorials_open')}</a>
+            </ActionRow>
             {LINKS.map((link) => (
               <ActionRow key={link.href} title={t(link.label)} description={link.hint.startsWith('about.') ? t(link.hint) : link.hint}>
                 <OpenLink href={link.href} label={t(link.label)} />
