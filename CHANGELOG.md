@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
 - GravityUI shows a slim notice that it is still in development, with a link to the classic view and to GitHub issues for feedback. Closing it is remembered in this browser.
 - Default interface setting (Settings, both interfaces): choose whether the start address `/` opens the classic React view (default) or GravityUI. The switch in each sidebar (and on the GravityUI login) now goes through `/?ui=react` or `/?ui=vue`, which keeps that choice in the browser, so switching works whatever the server default is. Both interfaces stay reachable: React at `/?ui=react`, GravityUI at `/frontend-vue/`.
 
+### Changed
+- README (English and German) brought up to date: new screenshots from the demo data in `docs/screenshots/react/` (classic view) and `docs/screenshots/vue/` (GravityUI), compressed to about a quarter of the size; a section on GravityUI as a preview and how to switch to it; router import, measurement data in `telemetry.db`, default interface, About page and the Unraid defaults; and how to give an AI assistant or agent (Hermes, Clawdbot) a read-only API token, with an example and what such a token can never do. The GravityUI tutorial "API tokens and webhooks" says the same in short.
+- Unraid template: new screenshots (five of the classic view, the GravityUI orbit map), the overview in English and German lists the features, PUID/PGID 99/100, the GravityUI preview and the read-only API for AI agents, and the template now has `<Changes>` and `<ReadMe>`. `docs/unraid-template.md` describes how to check the template and how it gets into Community Applications.
+
 ## [0.5.3] - 2026-10-24
 
 ### Fixed

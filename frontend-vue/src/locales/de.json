@@ -297,8 +297,8 @@
       },
       "api": {
         "title": "API-Tokens und Webhooks",
-        "summary": "Daten über die REST-API abfragen und bei Ereignissen benachrichtigt werden.",
-        "steps": "Einstellungen → API-Tokens: Lege ein Token an. Tokens sind nur lesend; feinere Rechte vergibst du über die API.\nDie API-Dokumentation mit Swagger UI findest du unter /docs.\nWebhooks für device.offline und scan.complete legst du über die API an (/api/webhooks).\nFür Python gibt es den Client gravitylan_api (pip install ./gravitylan_api aus dem Repository).",
+        "summary": "Daten über die REST-API abfragen, einen KI-Assistenten anbinden und bei Ereignissen benachrichtigt werden.",
+        "steps": "Einstellungen → API-Tokens: Lege ein Token an. Tokens sind nur lesend; feinere Rechte vergibst du über die API.\nDie API-Dokumentation mit Swagger UI findest du unter /docs.\nFür einen KI-Assistenten oder Agenten (etwa Hermes oder Clawdbot) reicht ein schreibgeschütztes Token: Er liest Geräte, Topologie, Health und Agent-Metriken, bekommt aber nie SSH, Agent-Konfiguration oder Admin-Endpunkte.\nWebhooks für device.offline und scan.complete legst du über die API an (/api/webhooks).\nFür Python gibt es den Client gravitylan_api (pip install ./gravitylan_api aus dem Repository).",
         "hint": "Webhooks dürfen nicht auf GravityLAN selbst, link-lokale Adressen oder Cloud-Metadaten zeigen; Adressen im LAN funktionieren."
       },
       "backup": {

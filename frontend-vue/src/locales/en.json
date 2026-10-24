@@ -297,8 +297,8 @@
       },
       "api": {
         "title": "API tokens and webhooks",
-        "summary": "Query data through the REST API and get notified about events.",
-        "steps": "Settings → API tokens: create a token. Tokens are read-only; finer rights are granted through the API.\nThe API documentation with Swagger UI is at /docs.\nWebhooks for device.offline and scan.complete are created through the API (/api/webhooks).\nFor Python there is the gravitylan_api client (pip install ./gravitylan_api from the repository).",
+        "summary": "Query data through the REST API, connect an AI assistant and get notified about events.",
+        "steps": "Settings → API tokens: create a token. Tokens are read-only; finer rights are granted through the API.\nThe API documentation with Swagger UI is at /docs.\nFor an AI assistant or agent (for example Hermes or Clawdbot), a read-only token is enough: it reads devices, topology, health and agent metrics, but never gets SSH, agent configuration or admin endpoints.\nWebhooks for device.offline and scan.complete are created through the API (/api/webhooks).\nFor Python there is the gravitylan_api client (pip install ./gravitylan_api from the repository).",
         "hint": "Webhooks cannot target GravityLAN itself, link-local addresses or cloud metadata; LAN addresses work."
       },
       "backup": {
