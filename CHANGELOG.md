@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Default interface setting (Settings, both interfaces): choose whether the start address `/` opens the classic React view (default) or GravityUI. The switch in each sidebar (and on the GravityUI login) now goes through `/?ui=react` or `/?ui=vue`, which keeps that choice in the browser, so switching works whatever the server default is. Both interfaces stay reachable: React at `/?ui=react`, GravityUI at `/frontend-vue/`.
+
 ## [0.5.3] - 2026-10-24
 
 ### Fixed

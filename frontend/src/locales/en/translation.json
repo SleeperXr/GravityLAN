@@ -635,7 +635,11 @@
     "token_revoked": "Token revoked.",
     "token_create_failed": "Could not create the token.",
     "token_revoke_failed": "Could not revoke the token.",
-    "copy_failed": "Copy failed – select the token and copy it manually."
+    "copy_failed": "Copy failed – select the token and copy it manually.",
+    "default_frontend_label": "Default interface",
+    "default_frontend_hint": "What the start address (/) opens. The other interface stays reachable through the switch in the sidebar; switching there keeps the choice in this browser.",
+    "default_frontend_react": "Classic view (React)",
+    "default_frontend_vue": "GravityUI (in development)"
   },
   "setup": {
     "welcome": "Welcome to GravityLAN",

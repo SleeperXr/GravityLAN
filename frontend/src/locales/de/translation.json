@@ -632,7 +632,11 @@
     "token_revoked": "Token widerrufen.",
     "token_create_failed": "Token konnte nicht erstellt werden.",
     "token_revoke_failed": "Token konnte nicht widerrufen werden.",
-    "copy_failed": "Kopieren fehlgeschlagen – bitte den Token markieren und manuell kopieren."
+    "copy_failed": "Kopieren fehlgeschlagen – bitte den Token markieren und manuell kopieren.",
+    "default_frontend_label": "Standard-Oberfläche",
+    "default_frontend_hint": "Was die Startadresse (/) öffnet. Die andere Oberfläche bleibt über den Umschalter in der Seitenleiste erreichbar; wer dort wechselt, behält seine Wahl in diesem Browser.",
+    "default_frontend_react": "Klassische Ansicht (React)",
+    "default_frontend_vue": "GravityUI (in Entwicklung)"
   },
   "setup": {
     "welcome": "Willkommen bei GravityLAN",

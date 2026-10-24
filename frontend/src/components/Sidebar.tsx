@@ -63,7 +63,7 @@ export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: 
         </nav>
         <div className="sidebar-footer">
           <a
-            href="/frontend-vue/"
+            href="/?ui=vue"
             className="nav-item"
             title={t('sidebar.gravity_ui_hint')}
             style={{
