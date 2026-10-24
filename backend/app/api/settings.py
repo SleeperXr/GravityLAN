@@ -114,12 +114,22 @@ def _validate_start_page(value: str) -> None:
         )
 
 
+def _validate_default_frontend(value: str) -> None:
+    """Reject a default interface other than the React UI or GravityUI."""
+    if value not in ("react", "vue"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid default frontend: '{value}'. Must be 'react' or 'vue'."
+        )
+
+
 _VALIDATORS = {
     "server.url": _validate_server_url,
     "dns.server": _validate_dns_server,
     "scan_subnets": _validate_scan_subnets,
     "scanner.offline_threshold": _validate_offline_threshold,
     "ui.start_page": _validate_start_page,
+    "ui.default_frontend": _validate_default_frontend,
 }
 
 

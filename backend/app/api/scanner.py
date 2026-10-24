@@ -31,7 +31,8 @@ from app.scanner.utils import get_local_subnets
 from app.scanner.port_scanner import nmap_scan, scan_ports
 from app.scanner.discovery import discover_hosts_simple
 from app.scanner.arp import resolve_mac_addresses
-from app.scanner.hostname import resolve_hostnames
+from app.scanner.hostname import resolve_hostname, resolve_hostnames
+from app.scanner.vendor import get_vendor
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/scanner", tags=["scanner"])
@@ -174,6 +175,31 @@ async def patch_discovered_host(host_id: int, update: DiscoveredHostUpdate) -> D
         discovery_cache.invalidate()
         await db.refresh(host)
         return host
+
+@router.post("/discovered/{host_id}/refresh-info", response_model=DiscoveredHostResponse, dependencies=[Depends(get_current_admin)])
+async def refresh_discovered_host(host_id: int) -> DiscoveredHost:
+    """Look up name, MAC and vendor of a host that is not on the dashboard, like a device's Info-Refresh."""
+    async with async_session() as db:
+        host = await db.get(DiscoveredHost, host_id)
+        if not host:
+            raise HTTPException(status_code=404, detail="Host not found")
+
+        dns_row = (await db.execute(select(Setting).where(Setting.key == "dns.server"))).scalar_one_or_none()
+        hostname = await resolve_hostname(host.ip, dns_server=dns_row.value if dns_row else None, use_cache=False)
+        if hostname:
+            host.hostname = hostname
+        if not host.mac:
+            found = [{"ip": host.ip, "mac": None}]
+            await resolve_mac_addresses(found)
+            host.mac = found[0]["mac"] or host.mac
+        if host.mac:
+            host.vendor = get_vendor(host.mac) or host.vendor
+
+        await db.commit()
+        discovery_cache.invalidate()
+        await db.refresh(host)
+        return host
+
 
 @router.delete("/discovered/{host_id}", dependencies=[Depends(get_current_admin)])
 async def delete_discovered_host(host_id: int) -> Dict[str, str]:

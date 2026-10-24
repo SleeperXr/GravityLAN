@@ -48,7 +48,10 @@
       "usage": "Adressbelegung",
       "legend_device": "In der Übersicht",
       "legend_discovered": "Nur entdeckt",
-      "legend_reserved": "Reserviert"
+      "legend_reserved": "Reserviert",
+      "name_found": "Name gefunden: {{name}}",
+      "name_not_found": "Kein Name gefunden",
+      "name_not_found_hint": "Das Gerät meldet keinen Namen über DNS, mDNS oder NetBIOS. Läuft GravityLAN im Docker-Bridge-Modus, erreichen mDNS und NetBIOS den Container nicht; mit Netzwerkmodus host klappt es eher. Ein eigener Name hilft immer."
     },
     "settings": {
       "appearance": "Sprache & Darstellung",
@@ -225,6 +228,133 @@
       "fiber": "Glasfaser",
       "for": "Farbe für {{type}}",
       "reset": "Netzfarbe"
+    },
+    "dev_notice": {
+      "title": "GravityUI ist noch in Entwicklung.",
+      "text": "Einiges kann sich ändern oder fehlen.",
+      "classic": "Zur klassischen Ansicht",
+      "feedback": "Feedback auf GitHub",
+      "dismiss": "Hinweis ausblenden"
+    },
+    "tutorials": {
+      "title": "Tutorials",
+      "subtitle": "Erste Schritte und Anleitungen für alle Bereiche von GravityLAN.",
+      "index": "Themen",
+      "group_start": "Erste Schritte",
+      "group_network": "Netzwerk",
+      "group_hosts": "Hosts und Agents",
+      "group_operate": "Betrieb",
+      "open": "Zur Seite",
+      "copy": "Kopieren",
+      "missing": "Fehlt etwas? Auf GitHub melden",
+      "setup": {
+        "title": "Setup und Scan-Subnetze",
+        "summary": "Beim ersten Start führt ein Assistent durch alles Nötige: Netze, erster Scan, Admin-Passwort.",
+        "steps": "Öffne http://<host>:8000 und schließe den Einrichtungsassistenten direkt nach dem ersten Start ab.\nDer Assistent erkennt die Netze des Hosts und speichert sie als Scan-Subnetze. Netze hinter dem Router, etwa ein IoT-VLAN, trägst du im selben Schritt dazu ein.\nEr setzt das Admin-Passwort und startet den ersten Scan.\nSpäter verwaltest du die Liste unter Einstellungen → Scan-Subnetze: hinzufügen, pausieren, entfernen.",
+        "hint": "Bis der Assistent abgeschlossen ist, legt der erste Besucher der Seite das Admin-Passwort fest. Schließe ihn deshalb gleich nach dem Start ab."
+      },
+      "dashboard": {
+        "title": "Übersicht und Gruppen",
+        "summary": "Alle Geräte in eigenen Bereichen, als Kacheln oder Liste, mit Live-Werten vom Agenten.",
+        "steps": "Neue Geräte erscheinen zuerst in der IP-Übersicht; mit „Im Dashboard“ holst du sie in die Übersicht.\nGruppen legst du unter Einstellungen → Gruppen an, benennst und sortierst sie. Im Geräte-Editor ordnest du ein Gerät einer Gruppe zu.\nIm Bearbeiten-Modus verschiebst und vergrößerst du Kacheln; React und GravityUI teilen sich die Positionen.\nDie Suche (Strg+K) findet Geräte nach Name, IP, MAC oder Dienst.",
+        "hint": "Dienst-Badges öffnen die Weboberfläche eines Geräts mit einem Klick; bei SMB wird der Pfad kopiert."
+      },
+      "ip": {
+        "title": "IP-Übersicht, VLANs und Gateways",
+        "summary": "Jedes Subnetz als Karte seiner Adressen, und wie GravityLAN es erreicht.",
+        "steps": "Jedes Scan-Subnetz hat einen eigenen Tab mit allen Adressen: belegt, frei, online, offline, reserviert.\nEin Klick auf eine Adresse öffnet Details und Aktionen: reservieren, überwachen, umbenennen, ins Dashboard holen, Port-Scan.\nDas Abzeichen am Subnetz zeigt den Weg: L2 Direct (eigenes Interface), L3 Routed (über den Router) oder L2 Probe (über einen Agenten im Netz).\nIn den Subnetz-Einstellungen hinterlegst du Gateway und VLAN-Tag. Ein Router, der Gateway mehrerer VLANs ist, bleibt ein Gerät mit einer Schnittstelle pro Netz.",
+        "hint": "In gerouteten Netzen sieht ein Scan keine MAC-Adressen. Für echte MACs und Hersteller hilft ein Agent als Layer-2-Probe oder die Multi-VLAN-Variante von Docker Compose."
+      },
+      "router": {
+        "title": "Netze vom Router importieren",
+        "summary": "Scan-Subnetze und VLANs direkt aus dem Router übernehmen.",
+        "steps": "Einstellungen → Scan-Subnetze → Vom Router importieren.\nWähle den Weg: SNMP (v1, v2c oder v3, nur lesend) passt für OPNsense, pfSense, OpenWrt, MikroTik und die meisten Business-Router; dazu gibt es die offizielle UniFi-Network-API.\nDie Vorschau zeigt jedes Netz mit Gateway, Name und VLAN. Übernommen wird nur, was du auswählst.\nBei Subnetzen, die es schon gibt, werden nur leere Felder für Gateway oder VLAN ergänzt.",
+        "hint": "Namen und Werte, die du selbst gesetzt hast, überschreibt der Import nie."
+      },
+      "topology": {
+        "title": "Topologie und Racks",
+        "summary": "Wie alles zusammenhängt: als Orbit-Karte oder im Rack.",
+        "steps": "Die Topologie zeigt dein Netz als Sonnensystem: Der Router ist der Stern, Switches und Hosts kreisen als Planeten, Endgeräte als Monde.\nMit „Orbit bearbeiten“ ziehst du Geräte, verbindest sie per Light-Beam und legst Verbindungstyp und Farbe fest.\nIm Inspektor wählst du die Rolle eines Geräts (Stern, Planet, Zwergplanet, Mond) und den Hub, um den es kreist.\nDie „Rack-Ansicht“ zeigt deine Racks. Rack und Höheneinheit legst du im Geräte-Editor fest; ein Klick auf ein Gerät öffnet ihn.",
+        "hint": "Eine feste Farbe pro Verbindungstyp (10GbE, 1GbE, WLAN …) stellst du unter Einstellungen ein."
+      },
+      "agent": {
+        "title": "Agent installieren und aktualisieren",
+        "summary": "Ein Python-Skript pro Linux-Host liefert CPU, RAM, Platten, Netz und Temperatur.",
+        "steps": "Öffne das Gerät im Geräte-Editor, Tab „Agent“.\nÜber SSH: Wähle eine gespeicherte Schlüssel-Verbindung oder gib Benutzer und Passwort ein. Eingegebene Zugangsdaten werden nur für diese Anfrage genutzt.\nOder kopiere den Einzeiler-Installer und führe ihn auf dem Host aus. Er enthält einen Einmalcode, der 30 Minuten gilt.\nUpdates: Das Agent-Update-Center aktualisiert alle veralteten Agents zusammen, und ein offenes SSH-Terminal bietet einen Button „Agent-Update“.",
+        "hint": "Die Agent-Version ändert sich nur, wenn sich das Agent-Skript ändert. Nicht jedes Server-Update braucht ein Agent-Update."
+      },
+      "updates": {
+        "title": "Paket-Updates",
+        "summary": "Der Agent zählt anstehende Updates (apt, dnf, yum); installiert wird über SSH mit Live-Ausgabe.",
+        "steps": "Agents-Seite → Zeile eines Hosts öffnen → Updates.\nMelde dich per Passwort, Schlüssel oder gespeichertem Schlüssel an.\nPrüfe die Paketliste und installiere dann nur Sicherheitsupdates oder alle; die Ausgabe läuft live mit.\nAls Benutzer ohne root-Rechte mit Schlüssel trägst du das sudo-Passwort in das eigene Feld ein, falls sudo danach fragt.",
+        "hint": "Ohne sudo-Passwort klappt es nur, wenn sudo für den Benutzer passwortlos eingerichtet ist (NOPASSWD). Sonst bricht das Update sofort mit einer klaren Meldung ab."
+      },
+      "ssh": {
+        "title": "SSH-Terminal und gespeicherte Schlüssel",
+        "summary": "Shells auf deinen Geräten im Browser, auch auf dem Handy.",
+        "steps": "Auf der SSH-Seite wählst du eine gespeicherte Verbindung, öffnest eine kürzliche wieder oder gibst einen Host direkt ein.\nBeim ersten Verbinden prüfst du den Host-Schlüssel. Ändert er sich später, warnt GravityLAN und blockiert die Verbindung.\nIm Schlüsselspeicher importierst oder erzeugst du Schlüssel (OpenSSH, PEM, PuTTY .ppk); sie liegen verschlüsselt auf dem Server.\nTabs bleiben offen, während du andere Seiten nutzt. Ein Rechtsklick bietet Kopieren, Einfügen und „letzten Befehl kopieren“.",
+        "hint": "Sichere data/ssh_vault.key (oder GRAVITYLAN_VAULT_KEY) separat: Ohne diese Datei lassen sich gespeicherte Schlüssel nicht mehr entschlüsseln."
+      },
+      "health": {
+        "title": "Health-Dashboard",
+        "summary": "Verfügbarkeit, Latenz und Vorfälle aller Geräte auf einen Blick.",
+        "steps": "Wähle den Zeitraum: 24 Stunden, 7 oder 30 Tage.\nDie Tabelle zeigt pro Gerät Status, Score, Uptime-Balken, Latenz mit Jitter und Dienste; ein Klick öffnet die Details.\nIm Detail siehst du den Latenzverlauf, Dienste mit SSL-Ablauf, Agent-Werte und Vorfälle.\nSchalte für Clients wie Fernseher oder Laptop die 24/7-Überwachung aus. Dann gelten sie im Ruhezustand als Standby statt als Ausfall.",
+        "hint": "Die Vorfälle der letzten 7 Tage stehen unten als Zeitleiste; ein Klick auf eine Karte öffnet das Gerät."
+      },
+      "telemetry": {
+        "title": "Messdaten und Aufbewahrung",
+        "summary": "Messwerte liegen in einer eigenen telemetry.db und werden mit der Zeit verdichtet.",
+        "steps": "Rohwerte (Health-Proben und Agent-Berichte) bleiben standardmäßig 48 Stunden.\nDanach werden sie zu Stundenwerten (30 Tage) und Tageswerten (365 Tage) zusammengefasst.\nEinstellungen → Messdaten zeigt die Datenbankgrößen und die Aufbewahrung je Stufe.\nLöschen kannst du Werte älter als N Tage, die eines Geräts oder alles; der Platz geht an das Dateisystem zurück.",
+        "hint": "Messdaten stecken nicht in Backups und Exporten. Dadurch bleibt das Inventar klein."
+      },
+      "api": {
+        "title": "API-Tokens und Webhooks",
+        "summary": "Daten über die REST-API abfragen, einen KI-Assistenten anbinden und bei Ereignissen benachrichtigt werden.",
+        "steps": "Einstellungen → API-Tokens: Lege ein Token an. Tokens sind nur lesend; feinere Rechte vergibst du über die API.\nDie API-Dokumentation mit Swagger UI findest du unter /docs.\nFür einen KI-Assistenten oder Agenten (etwa Hermes oder Clawdbot) reicht ein schreibgeschütztes Token: Er liest Geräte, Topologie, Health und Agent-Metriken, bekommt aber nie SSH, Agent-Konfiguration oder Admin-Endpunkte.\nWebhooks für device.offline und scan.complete legst du über die API an (/api/webhooks).\nFür Python gibt es den Client gravitylan_api (pip install ./gravitylan_api aus dem Repository).",
+        "hint": "Webhooks dürfen nicht auf GravityLAN selbst, link-lokale Adressen oder Cloud-Metadaten zeigen; Adressen im LAN funktionieren."
+      },
+      "backup": {
+        "title": "Backup und Wiederherstellung",
+        "summary": "Geräte, Gruppen und Einstellungen als JSON sichern und zurückspielen.",
+        "steps": "Einstellungen → Backup & Wiederherstellung → Export lädt eine JSON-Datei herunter.\nZiehe vor jedem Update ein Backup.\nDer Import spielt Geräte, Gruppen und Einstellungen zurück.\nAdmin-Passwort, Master-Token und Setup-Status bleiben beim Import unangetastet.",
+        "hint": "SSH-Schlüssel, gespeicherte Passwörter und Agent-Tokens sind nicht im Backup. Sichere data/ssh_vault.key separat."
+      },
+      "unraid": {
+        "title": "Unraid, PUID und PGID",
+        "summary": "Der Container richtet sein Datenverzeichnis selbst ein.",
+        "steps": "Die Unraid-Vorlage setzt PUID=99 und PGID=100 (nobody:users, der Standard für appdata).\nBeim Start übergibt der Container /app/data diesem Benutzer und startet den Server als dieser Benutzer.\nEin frischer appdata-Ordner, der root gehört, funktioniert ohne chown.\nWer per --user einen Benutzer festlegt, gibt den Ordner diesem Benutzer oder entfernt --user; das Container-Log nennt UID und GID.",
+        "hint": "Images bis 0.5.2 laufen fest als UID 1000. Dort hilft einmal chown -R 1000:1000 /mnt/user/appdata/gravitylan und ein Neustart."
+      },
+      "diagram": {
+        "setup_label": "Ablauf der Einrichtung",
+        "setup_1": "Assistent",
+        "setup_2": "Scan-Subnetze",
+        "setup_3": "Erster Scan",
+        "setup_4": "Übersicht",
+        "routing_label": "Wie GravityLAN ein Subnetz erreicht",
+        "routing_l2": "L2 Direct",
+        "routing_l2_how": "eigenes Interface",
+        "routing_l2_mac": "MAC-Adressen sichtbar",
+        "routing_l3": "L3 Routed",
+        "routing_l3_how": "über den Router",
+        "routing_l3_mac": "keine MAC-Adressen",
+        "routing_probe": "L2 Probe",
+        "routing_probe_how": "Agent im Netz",
+        "routing_probe_mac": "MACs vom Agenten",
+        "agent_label": "Agent: Installation über SSH, danach eigene Berichte",
+        "agent_browser": "Browser",
+        "agent_host": "Linux-Host",
+        "agent_click": "Installieren",
+        "agent_ssh": "SSH: Install/Update",
+        "agent_report": "Berichte alle 30 s",
+        "telemetry_label": "Stufen der Messdaten",
+        "telemetry_raw": "Rohwerte",
+        "telemetry_raw_keep": "48 Stunden",
+        "telemetry_hourly": "Stundenwerte",
+        "telemetry_hourly_keep": "30 Tage",
+        "telemetry_daily": "Tageswerte",
+        "telemetry_daily_keep": "365 Tage"
+      }
     }
   }
 }

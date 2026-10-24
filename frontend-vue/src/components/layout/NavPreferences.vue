@@ -59,7 +59,7 @@ async function logout() {
     </div>
     <div class="flex gap-2">
       <a
-        href="/"
+        href="/?ui=react"
         :title="t('gv.legacy.switch_hint')"
         class="flex h-9 flex-1 items-center gap-2 rounded-md border border-line bg-control px-3 text-xs font-medium text-fg-muted transition-colors hover:border-line-strong hover:text-fg"
       >

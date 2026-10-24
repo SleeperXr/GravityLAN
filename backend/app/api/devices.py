@@ -364,7 +364,7 @@ async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db)
     if dns_s:
         dns_server = dns_s.value
 
-    new_hostname = await resolve_hostname(device.ip, dns_server=dns_server)
+    new_hostname = await resolve_hostname(device.ip, dns_server=dns_server, use_cache=False)
     if new_hostname:
         device.hostname = new_hostname
         # Update display name if it's currently just an IP or generic name

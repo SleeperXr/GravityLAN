@@ -32,6 +32,7 @@ const DEFAULT_FORM = {
   server_url_override: '',
   'system.log_level': 'info',
   'ui.start_page': '/',
+  'ui.default_frontend': 'react',
 };
 type SettingsForm = typeof DEFAULT_FORM;
 const KEYS = Object.keys(DEFAULT_FORM) as (keyof SettingsForm)[];
@@ -155,6 +156,9 @@ const languages: { value: Locale; key: string }[] = [
             </Field>
             <Field v-slot="{ id, describedBy }" :label="t('settings.start_page_label')" :hint="t('settings.start_page_hint')">
               <Select :id="id" v-model="form['ui.start_page']" :aria-describedby="describedBy" :options="[{ value: '/', label: t('settings.start_page_dashboard') }, { value: '/health', label: t('settings.start_page_health') }]" />
+            </Field>
+            <Field v-slot="{ id, describedBy }" :label="t('settings.default_frontend_label')" :hint="t('settings.default_frontend_hint')">
+              <Select :id="id" v-model="form['ui.default_frontend']" :aria-describedby="describedBy" :options="[{ value: 'react', label: t('settings.default_frontend_react') }, { value: 'vue', label: t('settings.default_frontend_vue') }]" />
             </Field>
           </div>
           <Field v-slot="{ id, describedBy }" :label="t('settings.server_url_override')" :hint="t('settings.server_url_override_hint')">

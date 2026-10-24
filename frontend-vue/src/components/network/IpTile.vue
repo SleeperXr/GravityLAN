@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { Activity, Eye, EyeOff, Info, Lock, LockOpen, Plus, Save, Trash2 } from 'lucide-vue-next';
+import { Activity, Eye, EyeOff, Info, Lock, LockOpen, Plus, RefreshCw, Save, Trash2 } from 'lucide-vue-next';
 import { PopoverArrow, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui';
 import type { Device } from '@/types';
 import type { Tile } from '@shared/components/Network/subnet/model';
@@ -12,7 +12,7 @@ import { t } from '@/i18n';
  * One address of the /24 map. Known addresses open a popover with details and actions on
  * click or Enter (works on touch and keyboard, unlike the hover tooltip of the React UI).
  */
-const props = defineProps<{ tile: Tile; scanBusy: boolean; addBusy: boolean; showAreaLabel: boolean; lineColor?: string }>();
+const props = defineProps<{ tile: Tile; scanBusy: boolean; addBusy: boolean; refreshBusy?: boolean; showAreaLabel: boolean; lineColor?: string }>();
 const emit = defineEmits<{
   openDevice: [device: Device];
   updateDevice: [id: number, data: Partial<Device>];
@@ -21,6 +21,7 @@ const emit = defineEmits<{
   scanHost: [ip: string];
   addDevice: [ip: string];
   deleteHost: [id: number, ip: string];
+  refreshHost: [id: number];
 }>();
 
 const open = ref(false);
@@ -105,7 +106,7 @@ const ports = computed(() => [
       </button>
     </PopoverTrigger>
     <PopoverPortal>
-      <PopoverContent :side-offset="6" :collision-padding="12" class="z-50 w-72 rounded-lg border border-line bg-surface p-4 shadow-pop">
+      <PopoverContent :side-offset="6" :collision-padding="12" class="z-50 w-80 max-w-[calc(100vw-1.5rem)] rounded-lg border border-line bg-surface p-4 shadow-pop">
         <PopoverArrow class="fill-[var(--gl-surface)] stroke-[var(--gl-line)]" />
         <div class="flex items-start gap-2">
           <div class="min-w-0 flex-1">
@@ -118,6 +119,9 @@ const ports = computed(() => [
             </Button>
           </template>
           <template v-else-if="host">
+            <Button size="icon-sm" variant="ghost" :loading="refreshBusy" :aria-label="t('editor.refresh_info')" :title="t('editor.refresh_info')" @click="emit('refreshHost', host.id)">
+              <RefreshCw v-if="!refreshBusy" aria-hidden="true" />
+            </Button>
             <Button size="icon-sm" variant="ghost" :aria-pressed="!!host.is_reserved" :aria-label="host.is_reserved ? t('network.unreserve') : t('network.reserve')" :title="host.is_reserved ? t('network.unreserve') : t('network.reserve')" @click="emit('updateHost', host.id, { is_reserved: !host.is_reserved })">
               <Lock v-if="host.is_reserved" class="text-info-text" aria-hidden="true" /><LockOpen v-else aria-hidden="true" />
             </Button>
