@@ -17,6 +17,9 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - GravityUI orbit map on a phone: the map on the overview opened unscaled in one corner until you pressed "fit". Fitting it once (since the fix that keeps your zoom while editing) could happen before the map had a size, and then never came again; it now waits for the map to be measured.
 
+### Security
+- undici 7.30.1 in the React UI's test tooling (through jsdom; GHSA-xjj6-f33q-929c, denial of service on excessive content encodings). Development only, not part of the image.
+
 ## [0.5.3] - 2026-10-24
 
 ### Fixed
@@ -526,7 +529,6 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 - **Safari CSS Compatibility**: Added `-webkit-backdrop-filter` alongside `backdrop-filter: blur(...)` rules in `index.css` to fix glassmorphism rendering on Safari/iOS.
 - **Agent: CPU/RAM 0% Metrics**: Set default `root_path` to `/` for `CPUMetrics` and `RAMMetrics` to ensure system metrics are parsed correctly regardless of agent execution working directory (fixing 0% load reporting inside Docker containers).
 - **UI: Terminal Auto-scroll bouncing**: Replaced `scrollIntoView()` on inner terminal elements with direct container `scrollTop` assignment, preventing the entire page viewport from jumping during update progress.
-
 
 ## [0.3.1] - 2026-07-16
 
