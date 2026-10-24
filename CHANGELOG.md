@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Docker: a fresh install no longer stops with "PERMISSION ERROR: Cannot write to data directory '/app/data'" when the host directory belongs to root or to another user, as Unraid creates appdata (`nobody:users`, 99:100). The container now starts as root only long enough to give its internal user the IDs from the new variables `PUID` and `PGID` (default 1000:1000) and hand the data directory to it, then runs the server as that user. Other mounts below `/app/data` stay untouched, and Nmap scans keep working with `NET_RAW`/`NET_ADMIN`. Started with `--user`, nothing is changed and the container stops with a clear message if it can't write to the data directory. The Unraid template sets `PUID=99` and `PGID=100`, the compose files have both variables, and [docs/unraid-template.md](docs/unraid-template.md) explains the quick fix for older images (`chown -R 1000:1000 /mnt/user/appdata/gravitylan`).
+- The permission error at startup and the vendor cache warning now name the UID/GID the server actually runs as and the matching `chown` line, instead of always 1000:1000.
+
 ## [0.5.2] - 2026-10-24
 
 ### Fixed

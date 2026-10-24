@@ -192,11 +192,13 @@ def test_save_cache_permission_error(monkeypatch, caplog):
     monkeypatch.setattr("builtins.open", raise_perm_error)
     monkeypatch.setattr(vendor, "_permission_warned", False)
     monkeypatch.setattr(vendor, "_vendor_cache", {"00:11:22": "Test"})
+    # The hint names the IDs the process really runs as (Unraid: 99:100)
+    monkeypatch.setattr(vendor, "process_ids", lambda: (99, 100))
 
     with caplog.at_level(logging.WARNING):
         vendor._save_cache()
 
-    assert any("chown -R 1000:1000" in record.message for record in caplog.records)
+    assert any("chown -R 99:100" in record.message for record in caplog.records)
 
 
 def test_is_locally_administered_mac():

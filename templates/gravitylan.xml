@@ -65,5 +65,7 @@ Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 A
   <!-- Environment Variables -->
   <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Description="Container timezone (e.g. Europe/Berlin, UTC, America/New_York)." Type="Variable" Display="advanced" Required="false" Mask="false">Europe/Berlin</Config>
   <Config Name="Internal Port" Target="GRAVITYLAN_PORT" Default="8000" Description="Container internal listening port (matches WebUI port)." Type="Variable" Display="advanced" Required="false" Mask="false">8000</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Description="User ID the server runs as. On start the container makes the Data Storage directory writable for it. Unraid default: 99 (nobody)." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Description="Group ID the server runs as. Unraid default: 100 (users)." Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
   <Config Name="Debug Mode" Target="GRAVITYLAN_DEBUG" Default="false" Description="Enable detailed logging for debugging scanner and backend issues." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
 </Container>

@@ -12,6 +12,9 @@ services:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      # UID/GID the server runs as; on start the container hands ./data to this owner
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - GRAVITYLAN_PORT=8080
       - GRAVITYLAN_DATA_DIR=/app/data
       - TZ=Europe/Berlin

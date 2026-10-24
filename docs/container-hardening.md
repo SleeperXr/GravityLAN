@@ -71,11 +71,12 @@ This forces Docker to pull down the latest officially patched Python base image 
 To prevent container breakouts or host-level compromise, the following boundary controls are enforced:
 
 1. **Non-Root Execution**: 
-   The container does **not** execute as `root`. A dedicated user, `gravitylan`, is created:
+   The server does **not** execute as `root`. A dedicated user, `gravitylan`, is created:
    ```dockerfile
    RUN useradd -m -s /bin/bash gravitylan
-   USER gravitylan
+   ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
    ```
+   The entrypoint ([`scripts/docker-entrypoint.sh`](../scripts/docker-entrypoint.sh)) starts as root only to give `gravitylan` the IDs from `PUID`/`PGID` (default 1000:1000) and to hand `/app/data` to it, then replaces itself with the server via `setpriv --reuid --regid --clear-groups`. The server keeps no capabilities of its own; Nmap gets its capabilities from the file (see 2). Started with `--user`, the entrypoint changes nothing and runs the server as that user.
 2. **Granular Capabilities (`setcap`)**:
    Standard Docker containers run with limited privileges, preventing `nmap` from issuing raw socket commands unless executed as `root`. Rather than running the entire FastAPI application as root, we use `setcap` to grant only the absolute minimum required privileges directly to the `nmap` binary:
    ```dockerfile

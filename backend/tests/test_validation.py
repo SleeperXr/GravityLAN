@@ -136,11 +136,15 @@ async def test_lifespan_permission_error():
     from unittest.mock import patch
     
     app = FastAPI()
-    with patch("pathlib.Path.touch", side_effect=PermissionError("Permission denied")):
+    with patch("pathlib.Path.touch", side_effect=PermissionError("Permission denied")), \
+            patch("app.config.process_ids", return_value=(99, 100)):
         with pytest.raises(RuntimeError) as exc_info:
             async with lifespan(app):
                 pass
         assert "PERMISSION ERROR" in str(exc_info.value)
+        # The hint names the process's real UID/GID and the matching chown line
+        assert "UID 99 / GID 100" in str(exc_info.value)
+        assert "chown -R 99:100" in str(exc_info.value)
 
     # lifespan read the log level through the real engine before failing; close its
     # connection (gravitylan.db + telemetry.db in the temp data dir) in this event loop,

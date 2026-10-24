@@ -181,15 +181,16 @@ async def lifespan(app: FastAPI):
         test_file.touch()
         test_file.unlink()
     except PermissionError as e:
-        logger.critical(
-            "PERMISSION ERROR: Cannot write to data directory '%s'. "
-            "If using Docker, ensure the volume has correct permissions (e.g., chown -R 1000:1000 ./data on the host).",
-            settings.data_dir
+        from app.config import process_ids
+        uid, gid = process_ids()
+        message = (
+            f"PERMISSION ERROR: Cannot write to data directory '{settings.data_dir}' as UID {uid} / GID {gid}. "
+            f"Make the host directory of the volume writable, e.g. 'chown -R {uid}:{gid} ./data' "
+            f"(Unraid: 'chown -R {uid}:{gid} /mnt/user/appdata/gravitylan'), "
+            "or start the container as root with PUID/PGID set to the owner of that directory."
         )
-        raise RuntimeError(
-            f"PERMISSION ERROR: Cannot write to data directory '{settings.data_dir}'. "
-            "If using Docker, ensure the volume has correct permissions (e.g., chown -R 1000:1000 ./data on the host)."
-        ) from e
+        logger.critical(message)
+        raise RuntimeError(message) from e
     except Exception as e:
         logger.critical("Failed to initialize data directory '%s': %s", settings.data_dir, e)
         raise RuntimeError(f"Failed to initialize data directory '{settings.data_dir}': {e}") from e
