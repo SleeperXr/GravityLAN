@@ -223,6 +223,126 @@
       "classic": "Switch to the classic view",
       "feedback": "Feedback on GitHub",
       "dismiss": "Hide notice"
+    },
+    "tutorials": {
+      "title": "Tutorials",
+      "subtitle": "Getting started and guides for every part of GravityLAN.",
+      "index": "Topics",
+      "group_start": "Getting started",
+      "group_network": "Network",
+      "group_hosts": "Hosts and agents",
+      "group_operate": "Operation",
+      "open": "Open page",
+      "copy": "Copy",
+      "missing": "Something missing? Tell us on GitHub",
+      "setup": {
+        "title": "Setup and scan subnets",
+        "summary": "On the first start a wizard walks you through what is needed: networks, first scan, admin password.",
+        "steps": "Open http://<host>:8000 and finish the setup wizard right after the first start.\nThe wizard detects the host's networks and saves them as scan subnets. Networks behind the router, such as an IoT VLAN, can be added in the same step.\nIt sets the admin password and runs the first scan.\nLater you manage the list under Settings → Scan subnets: add, pause, remove.",
+        "hint": "Until the wizard is finished, whoever opens the page first chooses the admin password. So finish it right after the start."
+      },
+      "dashboard": {
+        "title": "Overview and groups",
+        "summary": "All devices in your own sections, as tiles or a list, with live values from the agent.",
+        "steps": "New devices show up in the IP overview first; \"On dashboard\" brings them into the overview.\nCreate, rename and sort groups under Settings → Groups. In the device editor you put a device into a group.\nIn edit mode you move and resize tiles; React and GravityUI share the positions.\nSearch (Ctrl+K) finds devices by name, IP, MAC or service.",
+        "hint": "Service badges open a device's web UI in one click; for SMB the path is copied."
+      },
+      "ip": {
+        "title": "IP overview, VLANs and gateways",
+        "summary": "Every subnet as a map of its addresses, and how GravityLAN reaches it.",
+        "steps": "Every scan subnet has its own tab with all addresses: used, free, online, offline, reserved.\nClicking an address opens details and actions: reserve, monitor, rename, bring to the dashboard, port scan.\nThe badge on a subnet shows the way: L2 Direct (own interface), L3 Routed (through the router) or L2 Probe (through an agent inside it).\nIn the subnet settings you store gateway and VLAN tag. A router that is the gateway of several VLANs stays one device with one interface per network.",
+        "hint": "In routed networks a scan cannot see MAC addresses. For real MACs and vendors use an agent as a Layer-2 probe or the multi-VLAN Docker Compose variant."
+      },
+      "router": {
+        "title": "Import networks from the router",
+        "summary": "Take scan subnets and VLANs straight from your router.",
+        "steps": "Settings → Scan subnets → Import from router.\nPick the way: SNMP (v1, v2c or v3, read-only) fits OPNsense, pfSense, OpenWrt, MikroTik and most business routers; there is also the official UniFi Network API.\nThe preview lists every network with gateway, name and VLAN. Only what you select is added.\nFor subnets you already have, only an empty gateway or VLAN is filled in.",
+        "hint": "The import never overwrites names and values you set yourself."
+      },
+      "topology": {
+        "title": "Topology and racks",
+        "summary": "How everything connects: as an orbit map or in the rack.",
+        "steps": "The topology shows your network as a solar system: the router is the star, switches and hosts orbit as planets, endpoints as moons.\n\"Edit orbit\" lets you drag devices, connect them with light beams and set link type and colour.\nIn the inspector you choose a device's role (star, planet, dwarf planet, moon) and the hub it orbits.\nThe \"Rack view\" shows your racks. Rack and height unit are set in the device editor; clicking a device opens it.",
+        "hint": "A fixed colour per connection type (10GbE, 1GbE, WLAN …) is set in Settings."
+      },
+      "agent": {
+        "title": "Install and update the agent",
+        "summary": "One Python script per Linux host reports CPU, RAM, disks, network and temperature.",
+        "steps": "Open the device in the device editor, tab \"Agent\".\nOver SSH: pick a saved key connection or type in user and password. Typed-in credentials are used for that request only.\nOr copy the one-line installer and run it on the host. It carries a one-time code valid for 30 minutes.\nUpdates: the Agent Update Center updates all outdated agents together, and an open SSH terminal offers an \"Agent update\" button.",
+        "hint": "The agent version only changes when the agent script changes. Not every server update needs an agent update."
+      },
+      "updates": {
+        "title": "Package updates",
+        "summary": "The agent counts pending updates (apt, dnf, yum); they are installed over SSH with live output.",
+        "steps": "Agents page → open a host's row → Updates.\nSign in with a password, a key or a stored key.\nCheck the package list, then install security updates only or all of them; the output runs live.\nAs a non-root user with a key, enter the sudo password in its own field if sudo asks for one.",
+        "hint": "Without a sudo password it only works when sudo is passwordless for that user (NOPASSWD). Otherwise the update stops right away with a clear message."
+      },
+      "ssh": {
+        "title": "SSH terminal and stored keys",
+        "summary": "Shells on your devices in the browser, also on phones.",
+        "steps": "On the SSH page pick a saved connection, reopen a recent one or enter a host directly.\nOn the first connect you check the host key. If it changes later, GravityLAN warns and blocks the connection.\nIn the key store you import or generate keys (OpenSSH, PEM, PuTTY .ppk); they are stored encrypted on the server.\nTabs stay open while you use other pages. Right-click offers copy, paste and \"copy last command\".",
+        "hint": "Back up data/ssh_vault.key (or GRAVITYLAN_VAULT_KEY) on its own: without it, stored keys can no longer be decrypted."
+      },
+      "health": {
+        "title": "Health dashboard",
+        "summary": "Availability, latency and incidents of all devices at a glance.",
+        "steps": "Pick the period: 24 hours, 7 or 30 days.\nThe table shows status, score, uptime bars, latency with jitter and services per device; a click opens the details.\nThe details show the latency history, services with SSL expiry, agent values and incidents.\nTurn off 24/7 monitoring for clients like a TV or laptop. Asleep, they then count as standby instead of an outage.",
+        "hint": "Incidents of the last 7 days are listed below as a timeline; clicking a card opens the device."
+      },
+      "telemetry": {
+        "title": "Measurement data and retention",
+        "summary": "Measurements live in their own telemetry.db and are condensed over time.",
+        "steps": "Raw values (health probes and agent reports) are kept 48 hours by default.\nThen they are folded into hourly values (30 days) and daily values (365 days).\nSettings → Measurement data shows the database sizes and the retention per tier.\nYou can delete values older than N days, those of one device or everything; the space goes back to the file system.",
+        "hint": "Measurement data is not part of backups and exports, which keeps the inventory small."
+      },
+      "api": {
+        "title": "API tokens and webhooks",
+        "summary": "Query data through the REST API and get notified about events.",
+        "steps": "Settings → API tokens: create a token. Tokens are read-only; finer rights are granted through the API.\nThe API documentation with Swagger UI is at /docs.\nWebhooks for device.offline and scan.complete are created through the API (/api/webhooks).\nFor Python there is the gravitylan_api client (pip install ./gravitylan_api from the repository).",
+        "hint": "Webhooks cannot target GravityLAN itself, link-local addresses or cloud metadata; LAN addresses work."
+      },
+      "backup": {
+        "title": "Backup and restore",
+        "summary": "Save devices, groups and settings as JSON and restore them.",
+        "steps": "Settings → Backup & restore → Export downloads a JSON file.\nTake a backup before every update.\nImport restores devices, groups and settings.\nThe admin password, the master token and the setup state are never touched by an import.",
+        "hint": "SSH keys, stored passwords and agent tokens are not in the backup. Back up data/ssh_vault.key on its own."
+      },
+      "unraid": {
+        "title": "Unraid, PUID and PGID",
+        "summary": "The container prepares its data directory itself.",
+        "steps": "The Unraid template sets PUID=99 and PGID=100 (nobody:users, the appdata default).\nOn start the container hands /app/data to that user and starts the server as it.\nA fresh appdata folder owned by root works without chown.\nIf you set a user with --user, give the folder to that user or remove --user; the container log names the UID and GID.",
+        "hint": "Images up to 0.5.2 run as UID 1000. There, a one-time chown -R 1000:1000 /mnt/user/appdata/gravitylan and a restart help."
+      },
+      "diagram": {
+        "setup_label": "Setup flow",
+        "setup_1": "Wizard",
+        "setup_2": "Scan subnets",
+        "setup_3": "First scan",
+        "setup_4": "Overview",
+        "routing_label": "How GravityLAN reaches a subnet",
+        "routing_l2": "L2 Direct",
+        "routing_l2_how": "own interface",
+        "routing_l2_mac": "MAC addresses visible",
+        "routing_l3": "L3 Routed",
+        "routing_l3_how": "through the router",
+        "routing_l3_mac": "no MAC addresses",
+        "routing_probe": "L2 Probe",
+        "routing_probe_how": "agent in the subnet",
+        "routing_probe_mac": "MACs from the agent",
+        "agent_label": "Agent: installed over SSH, then reports on its own",
+        "agent_browser": "Browser",
+        "agent_host": "Linux host",
+        "agent_click": "Install",
+        "agent_ssh": "SSH: install/update",
+        "agent_report": "Reports every 30 s",
+        "telemetry_label": "Measurement data tiers",
+        "telemetry_raw": "Raw values",
+        "telemetry_raw_keep": "48 hours",
+        "telemetry_hourly": "Hourly values",
+        "telemetry_hourly_keep": "30 days",
+        "telemetry_daily": "Daily values",
+        "telemetry_daily_keep": "365 days"
+      }
     }
   }
 }
