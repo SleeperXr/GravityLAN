@@ -9,42 +9,42 @@ All notable changes to this project will be documented in this file.
 ### Added
 - GravityUI Tutorials page (sidebar "Tutorials", also linked from the React About page): getting started and guides for setup and scan subnets, overview and groups, IP overview with VLANs and gateways, router import, topology and racks, installing and updating the agent, package updates, SSH terminal and stored keys, health dashboard, measurement data and retention, API tokens and webhooks, backup and restore, and Unraid with PUID/PGID. Each guide has steps, a hint, a link to its page, examples to copy where useful, and diagrams for setup, subnet reach (L2 direct, L3 routed, L2 probe), agent rollout and measurement tiers that follow light and dark mode. German and English.
 - About page in both interfaces (sidebar "About"): server and agent version, the MIT licence and third-party notices, and links to the GitHub repository, issues, releases, changelog and Docker Hub. The setup status now also reports the agent version for it.
-- GravityUI shows a slim notice that it is still in development, with a link to the classic view and to GitHub issues for feedback. Closing it is remembered in this browser.
+- GravityUI in-development notice: shows a slim notice that it is still in development, with a link to the classic view and to GitHub issues for feedback. Closing it is remembered in this browser.
 - Default interface setting (Settings, both interfaces): choose whether the start address `/` opens the classic React view (default) or GravityUI. The switch in each sidebar (and on the GravityUI login) now goes through `/?ui=react` or `/?ui=vue`, which keeps that choice in the browser, so switching works whatever the server default is. Both interfaces stay reachable: React at `/?ui=react`, GravityUI at `/frontend-vue/`.
-- GravityUI IP overview: Info-Refresh for addresses that are not on the dashboard (the arrow button in the address popover). It looks up name, MAC and vendor again, like a device's Info-Refresh, and says when the device announces no name, with a hint about Docker bridge mode, where mDNS and NetBIOS do not reach the container.
+- GravityUI IP overview Info-Refresh: for addresses that are not on the dashboard (the arrow button in the address popover). It looks up name, MAC and vendor again, like a device's Info-Refresh, and says when the device announces no name, with a hint about Docker bridge mode, where mDNS and NetBIOS do not reach the container.
 - Security updates on the dashboard: a host whose agent reports pending security updates gets a badge on its device card (both interfaces), and GravityUI's system notices list it with the total number of updates and a pending reboot; clicking the notice opens the Agents page to install them.
 
 ### Changed
 - README (English and German) brought up to date: new screenshots from the demo data in `docs/screenshots/react/` (classic view) and `docs/screenshots/vue/` (GravityUI), compressed to about a quarter of the size; a section on GravityUI as a preview and how to switch to it; router import, measurement data in `telemetry.db`, default interface, About page and the Unraid defaults; and how to give an AI assistant or agent (Hermes, Clawdbot) a read-only API token, with an example and what such a token can never do. The GravityUI tutorial "API tokens and webhooks" says the same in short.
-- Unraid template: new screenshots (five of the classic view, the GravityUI orbit map), the overview in English and German lists the features, PUID/PGID 99/100, the GravityUI preview and the read-only API for AI agents, and the template now has `<Changes>` and `<ReadMe>`. `docs/unraid-template.md` describes how to check the template and how it gets into Community Applications.
-- Names of "Unknown" devices are retried by every quick scan (every 5 minutes by default) instead of once an hour: a failed name lookup is now remembered for 4 minutes, a found name still for an hour. A refresh you ask for always looks again.
+- Unraid template update: new screenshots (five of the classic view, the GravityUI orbit map), the overview in English and German lists the features, PUID/PGID 99/100, the GravityUI preview and the read-only API for AI agents, and the template now has `<Changes>` and `<ReadMe>`. `docs/unraid-template.md` describes how to check the template and how it gets into Community Applications.
+- Unknown device name lookup retries: names of "Unknown" devices are retried by every quick scan (every 5 minutes by default) instead of once an hour: a failed name lookup is now remembered for 4 minutes, a found name still for an hour. A refresh you ask for always looks again.
 
 ### Fixed
 - GravityUI overview on a phone: the search field gets a row of its own instead of shrinking to its icon behind the gateways button, and the network map's title and "Edit orbit" link sit above the map, where the map's own search no longer covers them.
-- GravityUI orbit map: the whole-map view now fits every star and planet label inside the map. On a phone the system was cut off at the edges, because the map could not zoom out further than 22 % and left too little room for the enlarged labels; it now leaves out the strip under the search field as well.
-- GravityUI orbit map on a phone: the map on the overview opened unscaled in one corner until you pressed "fit". Fitting it once (since the fix that keeps your zoom while editing) could happen before the map had a size, and then never came again; it now waits for the map to be measured.
-- Demo backend (`scripts/dev_demo.py`): the simulated agents report again. Agent tokens are stored hashed since 0.4, but the demo saved them in plain text, so every report was refused; after a restart without `--reset` they now get fresh tokens.
+- GravityUI orbit map whole-map view: now fits every star and planet label inside the map. On a phone the system was cut off at the edges, because the map could not zoom out further than 22 % and left too little room for the enlarged labels; it now leaves out the strip under the search field as well.
+- GravityUI orbit map phone initialization: fixed the map on the overview opening unscaled in one corner until you pressed "fit". Fitting it once (since the fix that keeps your zoom while editing) could happen before the map had a size, and then never came again; it now waits for the map to be measured.
+- Demo backend simulated agent authentication (`scripts/dev_demo.py`): the simulated agents report again. Agent tokens are stored hashed since 0.4, but the demo saved them in plain text, so every report was refused; after a restart without `--reset` they now get fresh tokens.
 
 ### Security
-- undici 7.30.1 in the React UI's test tooling (through jsdom; GHSA-xjj6-f33q-929c, denial of service on excessive content encodings). Development only, not part of the image.
+- React UI test tooling (`undici`): updated to 7.30.1 in the React UI's test tooling (through jsdom; GHSA-xjj6-f33q-929c, denial of service on excessive content encodings). Development only, not part of the image.
 
 ## [0.5.3] - 2026-10-24
 
 ### Fixed
-- Docker: a fresh install no longer stops with "PERMISSION ERROR: Cannot write to data directory '/app/data'" when the host directory belongs to root or to another user, as Unraid creates appdata (`nobody:users`, 99:100). The container now starts as root only long enough to give its internal user the IDs from the new variables `PUID` and `PGID` (default 1000:1000) and hand the data directory to it, then runs the server as that user. Other mounts below `/app/data` stay untouched, and Nmap scans keep working with `NET_RAW`/`NET_ADMIN`. Started with `--user`, nothing is changed and the container stops with a clear message if it can't write to the data directory. The Unraid template sets `PUID=99` and `PGID=100`, the compose files have both variables, and [docs/unraid-template.md](docs/unraid-template.md) explains the quick fix for older images (`chown -R 1000:1000 /mnt/user/appdata/gravitylan`).
-- The permission error at startup and the vendor cache warning now name the UID/GID the server actually runs as and the matching `chown` line, instead of always 1000:1000.
+- Docker PUID and PGID user mapping: a fresh install no longer stops with "PERMISSION ERROR: Cannot write to data directory '/app/data'" when the host directory belongs to root or to another user, as Unraid creates appdata (`nobody:users`, 99:100). The container now starts as root only long enough to give its internal user the IDs from the new variables `PUID` and `PGID` (default 1000:1000) and hand the data directory to it, then runs the server as that user. Other mounts below `/app/data` stay untouched, and Nmap scans keep working with `NET_RAW`/`NET_ADMIN`. Started with `--user`, nothing is changed and the container stops with a clear message if it can't write to the data directory. The Unraid template sets `PUID=99` and `PGID=100`, the compose files have both variables, and [docs/unraid-template.md](docs/unraid-template.md) explains the quick fix for older images (`chown -R 1000:1000 /mnt/user/appdata/gravitylan`).
+- Diagnostic permission messages: the permission error at startup and the vendor cache warning now name the UID/GID the server actually runs as and the matching `chown` line, instead of always 1000:1000.
 
 ## [0.5.2] - 2026-10-24
 
 ### Fixed
-- GravityUI: deleting a device works again. The confirmation opened behind the device editor (both sat on the same layer, and the confirmation was mounted earlier), so it could not be clicked. Confirmations now always open above dialogs and sheets.
-- Network scan: devices whose name is only known through mDNS, NetBIOS or the system resolver (often TVs, phones and Macs) now get their hostname during the scan. Until now only names from reverse DNS were picked up and the rest stayed "Unknown" until an Info-Refresh by hand. A device on the dashboard without a hostname also takes over a name the scan finds; a name you gave it stays.
+- GravityUI device deletion: deleting a device works again. The confirmation opened behind the device editor (both sat on the same layer, and the confirmation was mounted earlier), so it could not be clicked. Confirmations now always open above dialogs and sheets.
+- Network scan hostname resolution: devices whose name is only known through mDNS, NetBIOS or the system resolver (often TVs, phones and Macs) now get their hostname during the scan. Until now only names from reverse DNS were picked up and the rest stayed "Unknown" until an Info-Refresh by hand. A device on the dashboard without a hostname also takes over a name the scan finds; a name you gave it stays.
 
 ## [0.5.1] - 2026-10-24
 
 ### Fixed
-- Package updates for a non-root user who logs in with an SSH key or a saved connection: the update dialog (React and GravityUI) has an optional sudo password field, so updates no longer fail with "sudo: a password is required" when sudo asks for one. It is used for that request only, like the other credentials, and is ignored for a password login, which keeps its own login password for sudo.
-- GravityUI no longer reports a client device in standby as disrupted. A device not watched 24/7 (a TV, PC or phone) that still answers on the network with every port closed is asleep: it gets no "services disrupted" notice, the line overview does not count it as disrupted and the orbit map does not mark it, as the health page already shows it as standby. A device watched 24/7 with every port closed now reads "no services reachable" instead of "4 services disrupted".
+- Package updates with sudo password (SSH key and saved connections): the update dialog (React and GravityUI) has an optional sudo password field, so updates no longer fail with "sudo: a password is required" when sudo asks for one. It is used for that request only, like the other credentials, and is ignored for a password login, which keeps its own login password for sudo.
+- GravityUI standby detection: client devices in standby are no longer reported as disrupted. A device not watched 24/7 (a TV, PC or phone) that still answers on the network with every port closed is asleep: it gets no "services disrupted" notice, the line overview does not count it as disrupted and the orbit map does not mark it, as the health page already shows it as standby. A device watched 24/7 with every port closed now reads "no services reachable" instead of "4 services disrupted".
 
 ## [0.5.0] - 2026-10-23
 
@@ -96,7 +96,6 @@ All notable changes to this project will be documented in this file.
 ## [0.4.1] - 2026-10-20
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - **Import scan subnets and VLANs from the router**: Settings → Scan subnets → Import from router asks the router which networks it routes and lists them with gateway, name and VLAN in a preview. Only the networks you pick are added. For subnets you already have, only an empty gateway or VLAN is filled in; names and values you set are never overwritten. Two ways that work for most setups: read-only **SNMP** (v1/v2c/v3; IP-MIB for addresses and masks, IF-MIB for names, VLAN IDs from interface names such as `br10`, `eth0.10` or `vlan10`, Q-BRIDGE-MIB VLAN names), which covers OPNsense, pfSense, OpenWrt, MikroTik, Sophos and most business routers, and the official **UniFi Network API** of UniFi consoles (Cloud Gateway, UDM, UXG) with an API key. The UniFi console's self-signed certificate is pinned by its SHA-256 fingerprint, which you confirm on the first fetch; the API key is only sent after the certificate check. Community, SNMPv3 passwords and API key are stored encrypted like the SSH keys, never returned or logged, and only used for the router they were entered for. The import only contacts private LAN addresses. Guide: `docs/multi-vlan-setup.md`.
 - Measurement data moved into a separate `telemetry.db` next to the inventory database (attached as schema `telemetry`): health probes, agent metrics and their rollups no longer bloat the inventory, backups or exports, and can be cleared on their own. Existing data is moved on the first start (repeatable), then the inventory file is vacuumed.
 - Rollups: raw probes and agent reports are kept 48 h by default, then folded into hourly values (30 days) and daily values (365 days) with uptime, latency min/avg/max/jitter, CPU/RAM/temperature/disk/network avg/max. Runs hourly and once at startup, also for existing data.
@@ -112,7 +111,6 @@ All notable changes to this project will be documented in this file.
 ## [0.4.0] - 2026-10-19
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Health & Availability Dashboard (`/health`)**:
   - Dedicated network SLA radar combining real-time ICMP ping latency, jitter, uptime percentage, flapping frequency, SSL certificate validity, and pending security updates into an overall Network Health Score ($0-100$).
@@ -149,14 +147,12 @@ All notable changes to this project will be documented in this file.
 ## [0.3.23] - 2026-10-17
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Group Renaming**: Device groups can now be renamed directly in Settings → Manage Groups via an inline edit button with keyboard support (Enter to save, Escape to cancel). Duplicate and empty group names are validated and rejected gracefully.
 
 ## [0.3.22] - 2026-10-17
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **One device for a router that is the gateway of several VLANs**: A device can now carry further addresses as interfaces (new `device_interfaces` table: address, MAC, subnet, VLAN, label, own online state). Scans that see an interface address update the interface; no second device appears and no IP change is reported. When an address is the gateway of its subnet and answers with the MAC of a known device in another subnet, it is attached to that device automatically (history entry "Interface … attached"). Interfaces go offline silently with the usual miss threshold, so offline events and webhooks stay once per device.
 - **Subnet gateway and VLAN tag**: Subnets store an optional `gateway_ip` (must lie inside the subnet) and `vlan_id` (1–4094), edited in Settings → Scan subnets (router button per row) and in the network overview's subnet dialog. Where no gateway is entered, GravityLAN uses the container's default route for the local network, else the first host address (`.1`); the field shows that automatic value as placeholder. Changing a subnet's VLAN tag also applies to the interfaces in it.
@@ -226,7 +222,6 @@ All notable changes to this project will be documented in this file.
 This release introduces remote Layer-2 subnet scanning via agent probes, allowing Linux hosts with the GravityLAN agent installed to act as remote network probes for routed VLANs.
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Agent Layer-2 Scanner Probe (Relay)**: The GravityLAN agent (v0.3.8) can now be toggled as a remote L2 probe (`enable_scanner_relay`) in the Device Editor. The agent probes broadcast neighbors and reads the kernel ARP table (`/proc/net/arp`), reporting neighbor MAC and IP pairs to GravityLAN.
 - **Remote ARP Ingestion & Device MAC Resolution**: The backend ingests remote ARP tables, updating devices and discovered hosts in routed subnets with their native MAC addresses and vendor OUIs.
@@ -241,7 +236,6 @@ This release introduces remote Layer-2 subnet scanning via agent probes, allowin
 This release hardens the first-run Setup Wizard with atomic session cookie issuance and full multi-subnet adoption, resolves gateway and proxy-ARP MAC collisions across routed VLANs, adds live Layer-2 vs. Layer-3 reachability indicators to the Network Planner, and provides a multi-VLAN Docker Compose template.
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Layer-2 Direct vs. Layer-3 Routed Subnet Badges**: The Network Planner tabs, header, and settings dialog now dynamically detect whether a subnet is directly attached to a host interface (`L2 Direct`) or routed through a firewall/gateway (`L3 Routed`). Clear tooltips explain why routed subnets cannot resolve MAC addresses via ARP broadcasts and recommend using the host agent or multi-VLAN Docker Compose.
 - **Multi-VLAN Docker Compose Template & Guide**: Added `docker-compose.multi-vlan.yml` demonstrating IEEE 802.1Q tagged macvlan interfaces (`eth0.10`, `eth0.20`, etc.) along with comprehensive documentation in `docs/multi-vlan-setup.md`.
@@ -265,7 +259,6 @@ Agents can now be updated straight from the SSH terminal, and the agent install 
 - API: `POST /api/agent/deploy/{id}` and `/api/agent/uninstall/{id}` without `ssh_user` (and without `profile_id`) now answer HTTP 400 instead of 422.
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Agent update from the SSH terminal**: when the device a terminal is connected to runs an older agent than the server ships, the terminal toolbar shows an "Agent update" button. It types the same one-line installer as the device's Agent tab into the input line, with a fresh one-time install code (valid for 30 minutes, usable once), but does not run it: review it and press Enter yourself, sudo may ask for a password. The command starts with a space, so shells that leave such lines out of their history (`HISTCONTROL=ignorespace` or `ignoreboth`, as in the default user `~/.bashrc` on Debian and Ubuntu) do not keep it; where it is kept, the code stops working once the installer has used it, or after 30 minutes. Only sessions opened for a device or through a saved connection of a device get the button; a plain host address is never matched to a device.
 
@@ -370,7 +363,6 @@ A maintenance release: one security fix, fixes for the dashboard and the topolog
 Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published the same day while testing; their changes are all included here.
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Change the admin password** (Settings → Access): enter the current password and the new one twice (at least 8 characters). Only a logged-in browser session can change it; all other sessions are logged out, yours stays signed in.
 - **SSH terminal**
@@ -408,7 +400,6 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 ## [0.3.6] - 2026-10-10
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **SSH terminal in the browser** (new menu entry "SSH"): open shells on your devices from GravityLAN – like an integrated PuTTY, also on phones. Several sessions side by side in tabs, sessions stay open while you switch between Terminal, Keys and Known hosts. Device cards with an SSH service get a terminal button.
 - **SSH key store**: import private keys (OpenSSH/PEM: Ed25519, ECDSA, RSA, optionally with passphrase) or generate a new Ed25519 key and copy its public half to `authorized_keys`. Keys are stored encrypted (key file `data/ssh_vault.key` or `GRAVITYLAN_VAULT_KEY`) and never sent back to the browser.
@@ -448,7 +439,6 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 - **Device editor, Agent tab**: SSH access and the manual install/uninstall commands are restyled like the rest of the app; the install command is the same component as in the Update Center (fresh single-use code, copy button).
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Demo backend for UI work** (`scripts/dev_demo.py`): demo data and simulated agents, no scans, no SSH, separate database. `--fresh` starts like a new install (empty throw-away database) to work on the setup wizard.
 
@@ -480,7 +470,6 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 - **CI: lint and agent test failures**: Removed an unused `global` declaration that newer flake8 reports as F824, and made `test_orchestrator_collect_all` deterministic — it no longer runs the real package manager on Linux runners.
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Agent enrollment codes**: New `POST /api/agent/enroll/{device_id}` (admin) issues single-use codes for the manual installer. The Agent tab shows the code's expiry time and a "New code" button.
 
@@ -497,7 +486,6 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 - **Backend: apt-get update over SSH hung forever**: Rewrote the cache-refresh step in `patch_service.py` to use a PTY with a continuous read loop (no more full-buffer deadlock), send the SSH password only when sudo actually asks for it, fail fast when no password is available, and enforce a 90-second deadline. Failures now surface as a visible error in the Agents tab instead of an endless hang.
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Agent OS display**: Agents report their installed OS (parsed from `/etc/os-release`). The server stores it per agent token (new auto-migrated `os_*` columns) and the Agents view shows it as a badge next to the agent version.
 
@@ -520,7 +508,6 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 ## [0.3.2] - 2026-07-17
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 
 - **Linux Package Patching**: Integrated a package patching manager directly into the Agents tab.
   - The Python agent reports update counts passively (without root/sudo privileges) for Debian/Ubuntu (apt) and Fedora/CentOS/RHEL (dnf/yum) hosts.
@@ -546,13 +533,11 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 - **Schema: ServiceUpdate Port Validation**: Added `ge=1, le=65535` constraint to `ServiceUpdate.port` field. `ServiceCreate` already had this, but `ServiceUpdate` allowed arbitrary integers which could cause socket errors in the port scanner.
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - **Scanner Integration Tests**: New `test_scanner_logic.py` with integration tests covering the Planner service guard (PR #7), Dashboard hybrid health-check transitions, and service port validation.
 
 ## [0.3.0] - 2026-05-24
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - **Schreibgeschützte API-Token (Read-Only)**: Einführung von Personal Access Tokens (API Keys) für externe Automatisierungen (z.B. Home Assistant) und LLM-Agenten. Diese erlauben ausschließlich sichere GET-Leseanfragen und blockieren alle verändernden Operationen (POST, PUT, DELETE, PATCH).
 - **SHA-256 Token-Hashing**: API-Token werden kryptografisch gehasht in der neuen `api_tokens`-Tabelle gespeichert. Der Klartext-Token wird dem Administrator nur einmal bei der Generierung angezeigt.
 - **WebSocket-Support**: Unterstützung der API-Token bei Echtzeit-Verbindungen für System-Logs, Agenten-Metriken und den Scanner-Status.
@@ -573,7 +558,6 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 ## [0.2.5] - 2026-05-17
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - Added retention-aware historical time ranges for agent metrics (`6h`, `24h`, `7d`, `30d`).
 - Added server-side downsampling for longer agent metric history views to keep SQLite-backed installations responsive.
 - Added API metadata for metrics history retention and available time ranges.
@@ -657,7 +641,6 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 ## [0.2.1] - 2026-05-13
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - **Infrastructure Hardening:** Upgraded backend to Python 3.12-slim and implemented a non-root user security model for the container.
 - **Central Versioning:** Implemented a single source of truth via root `VERSION` file, with a Python sync script and dynamic API/UI versioning.
 - **Security:** Added `SECURITY.md`, `SOUL.md`, `AGENT.md`, and `CONTRIBUTING.md`. Configured conditional `Secure` flag for authentication cookies.
@@ -673,7 +656,6 @@ Everything since 0.3.6 in one place. The builds 0.3.7–0.3.11 were published th
 ## [0.2.0] - 2026-05-12
 
 ### Added
-- GravityUI link type colours (Settings, new section): a fixed colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, Fiber), saved as the setting `ui.link_type_colors`. The Orbit map uses it for every light beam without a colour of its own.
 - **Authentication & Setup:** Added password configuration step to Setup Wizard and backend support. Dashboard authentication is now fully enforced.
 - **WebSockets:** Token-gated websockets with fallback allowance during the setup phase.
 - **Topology Designer:** Re-enabled dragging and dropping with live API synchronization.

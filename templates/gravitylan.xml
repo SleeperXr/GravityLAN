@@ -67,6 +67,9 @@ Features:
 
 Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
   <Changes>
+### 0.5.4
+- Tutorials page (DE/EN) for setup, VLANs, agents, SSH and Unraid; About page; default UI switch (React or GravityUI); security patch badges on the dashboard; phone and orbit map fixes.
+
 ### 0.5.3
 - Docker: PUID and PGID (template: 99/100); the container makes the data directory writable for them on start, so a fresh appdata directory no longer stops it with a permission error.
 
