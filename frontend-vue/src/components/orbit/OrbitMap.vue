@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useStorage } from '@vueuse/core';
+import { useResizeObserver, useStorage } from '@vueuse/core';
 import { Check, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, Sparkles, Wand2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
@@ -627,16 +627,15 @@ onBeforeUnmount(() => {
 
 // Fit once, when the map first has something to show. Saving a drag or a role replaces the device
 // list, and refitting then threw the user's zoom away mid-edit.
+// On a phone the map may have no size yet at that moment, so the first fit counts only once it
+// happened, and the map tries again as soon as it gets one.
 let fitted = false;
-watch(
-  () => loaded.value && store.devices.length > 0,
-  (ready) => {
-    if (!ready || fitted) return;
-    fitted = true;
-    window.setTimeout(() => fitView(), 60);
-  },
-  { immediate: true },
-);
+const ready = computed(() => loaded.value && store.devices.length > 0);
+function initialFit() {
+  if (!fitted && ready.value) fitted = fitView();
+}
+watch(ready, (isReady) => isReady && window.setTimeout(initialFit, 60), { immediate: true });
+useResizeObserver(svgRef, initialFit);
 </script>
 
 <template>

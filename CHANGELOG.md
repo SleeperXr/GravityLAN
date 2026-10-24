@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- GravityUI orbit map on a phone: the map on the overview opened unscaled in one corner until you pressed "fit". Fitting it once (since the fix that keeps your zoom while editing) could happen before the map had a size, and then never came again; it now waits for the map to be measured.
+
 ## [0.5.3] - 2026-10-24
 
 ### Fixed
