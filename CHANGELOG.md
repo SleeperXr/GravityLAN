@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- About page in both interfaces (sidebar "About"): server and agent version, the MIT licence and third-party notices, and links to the GitHub repository, issues, releases, changelog and Docker Hub. The setup status now also reports the agent version for it.
+- GravityUI shows a slim notice that it is still in development, with a link to the classic view and to GitHub issues for feedback. Closing it is remembered in this browser.
 - Default interface setting (Settings, both interfaces): choose whether the start address `/` opens the classic React view (default) or GravityUI. The switch in each sidebar (and on the GravityUI login) now goes through `/?ui=react` or `/?ui=vue`, which keeps that choice in the browser, so switching works whatever the server default is. Both interfaces stay reachable: React at `/?ui=react`, GravityUI at `/frontend-vue/`.
 
 ## [0.5.3] - 2026-10-24

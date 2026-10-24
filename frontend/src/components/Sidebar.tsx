@@ -1,4 +1,4 @@
-import { LayoutDashboard, Activity, Settings, Network, X, Grid3x3, Server, ScrollText, SquareTerminal, Sparkles, type LucideIcon } from 'lucide-react';
+import { LayoutDashboard, Activity, Settings, Network, X, Grid3x3, Server, ScrollText, SquareTerminal, Sparkles, Info, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useLiveSshSessions } from './Ssh/sessionCount';
@@ -19,6 +19,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'ssh', to: '/ssh', icon: SquareTerminal, label: 'sidebar.ssh' },
   { id: 'logs', to: '/logs', icon: ScrollText, label: 'sidebar.logs' },
   { id: 'settings', to: '/settings', icon: Settings, label: 'sidebar.settings' },
+  { id: 'about', to: '/about', icon: Info, label: 'sidebar.about' },
 ];
 
 // Bottom bar on phones: five destinations; SSH and logs stay reachable via the menu drawer.

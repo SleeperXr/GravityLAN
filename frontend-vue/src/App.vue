@@ -7,6 +7,7 @@ import { useNetworkStore } from '@/stores/network';
 import { useAppearance } from '@/stores/appearance';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
 import MobileNav from '@/components/layout/MobileNav.vue';
+import DevNotice from '@/components/layout/DevNotice.vue';
 import ToastHost from '@/components/ui/ToastHost.vue';
 import ConfirmHost from '@/components/ui/ConfirmHost.vue';
 import Button from '@/components/ui/Button.vue';
@@ -94,6 +95,8 @@ onBeforeUnmount(() => store.disconnectScanStream());
         <span class="text-fg-subtle" aria-hidden="true">/</span>
         <span class="truncate text-sm font-semibold text-fg">{{ pageTitle }}</span>
       </header>
+
+      <DevNotice />
 
       <!-- Live scan strip: visible on every page while the scanner runs -->
       <div

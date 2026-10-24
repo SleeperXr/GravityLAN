@@ -17,7 +17,8 @@
     "navigation": "Hauptnavigation",
     "open_menu": "Menü öffnen",
     "gravity_ui": "GravityUI",
-    "gravity_ui_hint": "Zu GravityUI (Vue + shadcn) wechseln"
+    "gravity_ui_hint": "Zu GravityUI (Vue + shadcn) wechseln",
+    "about": "Über"
   },
   "auth": {
     "required": "Anmeldung erforderlich",
@@ -1040,5 +1041,29 @@
     "alert_offline_client": "Nicht 24/7 (Client)",
     "alert_offline_hint": "Offline-Meldungen für dieses Gerät überwachen (für 24/7 Server aktivieren, für PC/TV deaktivieren)",
     "filter_standby": "Standby"
+  },
+  "about": {
+    "title": "Über GravityLAN",
+    "subtitle": "Versionen, Lizenz und wo das Projekt zu Hause ist.",
+    "versions": "Versionen",
+    "server": "Server",
+    "agent": "Agent",
+    "agent_hint": "Ändert sich nur, wenn sich das Agent-Skript ändert.",
+    "interface": "Oberfläche",
+    "interface_dev": "in Entwicklung",
+    "classic": "Klassische Ansicht",
+    "project": "Projekt",
+    "project_text": "GravityLAN ist ein Open-Source-Projekt von SleeperXr auf GitHub. Fehler und Wünsche bitte als Issue melden.",
+    "link_repo": "Quellcode auf GitHub",
+    "link_issues": "Fehler melden und Feedback",
+    "link_issues_hint": "GitHub Issues",
+    "link_releases": "Releases",
+    "link_releases_hint": "Versionen und Hinweise",
+    "link_changelog": "Changelog",
+    "link_docker": "Docker Hub",
+    "license": "Lizenz",
+    "license_text": "MIT-Lizenz, Copyright (c) 2026 SleeperXr. Eingebundene Bausteine Dritter stehen unter ihren eigenen Lizenzen.",
+    "third_party": "Hinweise zu Drittanbietern",
+    "try_gravityui": "GravityUI ausprobieren (in Entwicklung)"
   }
 }
