@@ -12,7 +12,7 @@ import urllib.request
 import urllib.error
 from typing import Dict, Optional
 
-from app.config import settings
+from app.config import process_ids, settings
 
 # Standard Logger setup
 logger = logging.getLogger(__name__)
@@ -119,10 +119,11 @@ def _save_cache() -> None:
         _permission_warned = False
     except PermissionError as e:
         if not _permission_warned:
+            uid, gid = process_ids()
             logger.warning(
                 f"Failed to persist vendor cache to {CACHE_FILE}: {e}. "
-                "Ensure the container user has write permissions on the data volume "
-                "(e.g., run 'sudo chown -R 1000:1000 ./data' on the host). "
+                f"Ensure UID {uid} / GID {gid} can write to the data volume "
+                f"(e.g., run 'sudo chown -R {uid}:{gid} ./data' on the host). "
                 "In-memory caching remains active."
             )
             _permission_warned = True

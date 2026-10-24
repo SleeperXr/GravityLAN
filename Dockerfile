@@ -86,8 +86,13 @@ ENV GRAVITYLAN_DEBUG=false
 # Expose port
 EXPOSE 8000
 
-# Run as non-root user
-USER gravitylan
+# The entrypoint starts as root, applies PUID/PGID (default 1000:1000) to the
+# gravitylan user, makes /app/data writable for it and then drops to that user,
+# so the server itself never runs as root. CRs are stripped for Windows checkouts.
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && \
+    chmod 755 /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Healthcheck (utilizes Python natively to completely avoid curl dependency and CVEs)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \

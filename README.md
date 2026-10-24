@@ -82,6 +82,7 @@ Everything runs in **one container** with **one SQLite file**: a FastAPI backend
 docker run -d --name gravitylan \
   -p 8000:8000 \
   -v gravitylan-data:/app/data \
+  -e PUID=1000 -e PGID=1000 \
   --cap-add=NET_RAW --cap-add=NET_ADMIN \
   --restart unless-stopped \
   sleeperxr/gravitylan:latest
@@ -100,7 +101,9 @@ Open `http://<your-host>:8000` and go through the setup wizard: it detects your 
 - [`docker-compose.multi-vlan.yml`](docker-compose.multi-vlan.yml): macvlan on 802.1Q-tagged VLAN interfaces, so the container gets its own address in each VLAN and sees real MAC addresses in all of them. The template has three (main, IoT, server); the host needs the VLAN interfaces (`eth0.10` …, on Unraid `br0.10` …). Set `VLAN_*_IFACE`, `VLAN_*_SUBNET`, `VLAN_*_GATEWAY` and `GRAVITYLAN_*_IP`. Guide: [docs/multi-vlan-setup.md](docs/multi-vlan-setup.md).
 - [`docker-compose.unraid.yml`](docker-compose.unraid.yml): host network for Unraid; builds the image from a checkout of this repository.
 
-The image is multi-stage (Vite build, then a slim Python runtime) and runs as a non-root user; Nmap gets only the capabilities it needs. To build it yourself: `docker build -t gravitylan:local .`
+**Data directory permissions.** The container starts as root only to prepare `/app/data`: it gives its internal user the IDs from `PUID` and `PGID` (default `1000`/`1000`, the Unraid template sets `99`/`100`), hands the data directory to that user and then starts the server as it. A fresh host directory that belongs to root works without `chown`; other mounts below `/app/data` are left alone. Started with `--user`, the container changes nothing and stops with a clear message if it can't write to the data directory.
+
+The image is multi-stage (Vite build, then a slim Python runtime) and the server runs as a non-root user; Nmap gets only the capabilities it needs. To build it yourself: `docker build -t gravitylan:local .`
 
 ## The agent
 
@@ -293,6 +296,7 @@ Alles läuft in **einem Container** mit **einer SQLite-Datei**: ein FastAPI-Back
 docker run -d --name gravitylan \
   -p 8000:8000 \
   -v gravitylan-data:/app/data \
+  -e PUID=1000 -e PGID=1000 \
   --cap-add=NET_RAW --cap-add=NET_ADMIN \
   --restart unless-stopped \
   sleeperxr/gravitylan:latest
@@ -311,7 +315,9 @@ docker run -d --name gravitylan \
 - [`docker-compose.multi-vlan.yml`](docker-compose.multi-vlan.yml): Macvlan auf 802.1Q-getaggten VLAN-Schnittstellen, der Container bekommt in jedem VLAN eine eigene Adresse und sieht überall echte MAC-Adressen. Die Vorlage hat drei (Main, IoT, Server); der Host braucht die VLAN-Schnittstellen (`eth0.10` …, auf Unraid `br0.10` …). `VLAN_*_IFACE`, `VLAN_*_SUBNET`, `VLAN_*_GATEWAY` und `GRAVITYLAN_*_IP` anpassen. Anleitung: [docs/multi-vlan-setup.md](docs/multi-vlan-setup.md#deutsch).
 - [`docker-compose.unraid.yml`](docker-compose.unraid.yml): Host-Netzwerk für Unraid; baut das Image aus einem Checkout dieses Repositorys.
 
-Das Image ist mehrstufig gebaut (Vite-Build, dann eine schlanke Python-Laufzeit) und läuft als Nicht-root-Benutzer; Nmap bekommt nur die Capabilities, die es braucht. Selbst bauen: `docker build -t gravitylan:local .`
+**Rechte im Datenordner.** Der Container startet nur als root, um `/app/data` vorzubereiten: Er gibt seinem internen Benutzer die IDs aus `PUID` und `PGID` (Standard `1000`/`1000`, die Unraid-Vorlage setzt `99`/`100`), übergibt ihm den Datenordner und startet dann den Server als dieser Benutzer. Ein frischer Host-Ordner, der root gehört, funktioniert so ohne `chown`; andere Mounts unterhalb von `/app/data` bleiben unberührt. Mit `--user` gestartet, ändert der Container nichts und bricht mit einer klaren Meldung ab, wenn er nicht in den Datenordner schreiben kann.
+
+Das Image ist mehrstufig gebaut (Vite-Build, dann eine schlanke Python-Laufzeit), und der Server läuft als Nicht-root-Benutzer; Nmap bekommt nur die Capabilities, die es braucht. Selbst bauen: `docker build -t gravitylan:local .`
 
 ### Der Agent
 

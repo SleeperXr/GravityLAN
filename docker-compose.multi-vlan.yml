@@ -17,6 +17,9 @@ services:
       - NET_RAW
       - NET_ADMIN
     environment:
+      # UID/GID the server runs as; on start the container hands ./data to this owner
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - TZ=${TZ:-Europe/Berlin}
       - GRAVITYLAN_PORT=8000
       - GRAVITYLAN_DEBUG=false

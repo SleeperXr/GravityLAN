@@ -16,6 +16,9 @@ services:
     volumes:
       - ./data:/app/data
     environment:
+      # Unraid appdata belongs to nobody:users (99:100)
+      - PUID=99
+      - PGID=100
       - TZ=Europe/Berlin
       - GRAVITYLAN_DEBUG=false
       - GRAVITYLAN_PORT=8000

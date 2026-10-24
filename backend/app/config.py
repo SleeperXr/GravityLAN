@@ -1,5 +1,6 @@
 """Application configuration via environment variables and Pydantic Settings."""
 
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
@@ -13,6 +14,16 @@ def _default_data_dir() -> Path:
     if Path("/app").is_dir():
         return Path("/app/data")
     return Path("./data")
+
+
+def process_ids() -> tuple[int, int]:
+    """Return the UID and GID this process runs as, for permission hints.
+
+    Platforms without POSIX IDs (Windows) get the image default 1000:1000.
+    """
+    uid = os.getuid() if hasattr(os, "getuid") else 1000
+    gid = os.getgid() if hasattr(os, "getgid") else 1000
+    return uid, gid
 
 
 class Settings(BaseSettings):
