@@ -22,8 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'about', to: '/about', icon: Info, label: 'sidebar.about' },
 ];
 
-// Bottom bar on phones: five destinations; SSH and logs stay reachable via the menu drawer.
-// Six tabs fit a phone; logs, SSH and About stay in the menu
+// Bottom bar on phones: six destinations; SSH, logs and About stay reachable via the menu drawer.
 const TAB_ITEMS = NAV_ITEMS.filter((item) => !["logs", "ssh", "about"].includes(item.id));
 
 export function Sidebar({ active, isOpen, onClose }: { active: string, isOpen?: boolean, onClose?: () => void }) {
