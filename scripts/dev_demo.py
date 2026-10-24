@@ -89,6 +89,20 @@ DEVICES = [
     ("Echo Küche", "192.168.110.12", "webui", "Smart Home", {"is_wlan": True}, [], None),
 ]
 
+# Tidy tree for the React topology (column, row); GravityUI's orbit map lays itself out
+TOPOLOGY_GRID = {
+    "UniFi Gateway": (5.5, 0), "Core Switch": (2.5, 1), "Switch Keller": (9, 1),
+    "Proxmox": (0.5, 2), "Unraid": (2.5, 2), "Synology NAS": (4, 2), "Pi-hole": (5, 2), "Drucker": (6, 2),
+    "Switch Obergeschoss": (8, 2), "Switch Wohnzimmer": (10, 2),
+    "Docker VM": (0, 3), "Home Assistant": (1, 3), "Windows VM": (1, 4),
+    "Grafana": (0, 4), "Uptime Kuma": (0, 5), "Traefik": (0, 6),
+    "Nextcloud": (2, 3), "Jellyfin": (3, 3), "Immich": (2, 4), "Vaultwarden": (3, 4), "Paperless": (2.5, 5),
+    "AP Obergeschoss": (8, 3), "AP Erdgeschoss": (10, 3),
+    "MacBook": (7.5, 4), "iPhone": (8.5, 4), "Pixel 8": (9.5, 4), "iPad": (10.5, 4), "Fernseher Wohnzimmer": (10, 5),
+    "Hue Bridge": (11.5, 2), "Shelly Plug Büro": (11.5, 3), "Echo Küche": (11.5, 4),
+}
+GRID_X, GRID_Y = 250, 150
+
 ROUTER_MAC = "f4:e2:c6:00:00:01"  # one MAC on every VLAN, like most consumer and UniFi routers
 
 EXTRA_GROUPS = [("Netzwerk", "network", 1), ("Smart Home", "home", 5), ("Clients", "laptop", 6)]
@@ -148,6 +162,7 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
     from app.models.setting import Setting
     from app.models.topology import Rack, TopologyLink
     from app.scanner.utils import ensure_default_groups
+    from app.services.agent_tokens import hash_agent_token
     from app.services.auth_service import hash_password
 
     from app.database.migrations import run_migrations
@@ -160,7 +175,15 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
         if (await db.execute(select(Device).limit(1))).scalar_one_or_none():
             rows = (await db.execute(select(AgentToken, Device).join(Device, AgentToken.device_id == Device.id))).all()
             profiles = {d[0]: d[6] for d in DEVICES if d[6]}
-            return {dev.display_name: (dev.id, tok.token, profiles[dev.display_name]) for tok, dev in rows if dev.display_name in profiles}
+            # Only the hash of an agent token is stored, so the simulated agents get fresh tokens
+            agents = {}
+            for tok, dev in rows:
+                if dev.display_name in profiles:
+                    raw = secrets.token_hex(32)
+                    tok.token = hash_agent_token(raw)
+                    agents[dev.display_name] = (dev.id, raw, profiles[dev.display_name])
+            await db.commit()
+            return agents
 
         now = _utcnow()
         for key, value in {
@@ -206,6 +229,9 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
             )
             if flags.get("parent"):
                 device.parent_id = by_name[flags["parent"]].id
+            if name in TOPOLOGY_GRID:
+                col, row = TOPOLOGY_GRID[name]
+                device.topology_x, device.topology_y = int(col * GRID_X), int(row * GRID_Y)
             if dtype in ("firewall", "server", "nas") and not flags.get("virtual_type"):
                 device.rack_id, device.rack_unit, device.rack_height = rack.id, 20 - index, 2 if flags.get("is_host") else 1
             db.add(device)
@@ -220,7 +246,7 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
 
             if profile:
                 token = secrets.token_hex(32)
-                db.add(AgentToken(device_id=device.id, token=token, agent_version=profile[3], last_seen=now,
+                db.add(AgentToken(device_id=device.id, token=hash_agent_token(token), agent_version=profile[3], last_seen=now,
                                   os_pretty=profile[0], os_arch="x86_64"))
                 db.add(AgentConfig(device_id=device.id))
                 agents[name] = (device.id, token, profile)
