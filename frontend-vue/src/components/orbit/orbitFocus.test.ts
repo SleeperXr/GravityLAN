@@ -70,6 +70,12 @@ describe('fitTransform', () => {
     expect(v.x + 100 * v.zoom).toBeCloseTo(400, 0);
     expect(v.y + 100 * v.zoom).toBeCloseTo(300, 0);
   });
+  it('zooms out far enough to fit a wide system into a phone-sized map', () => {
+    const v = fitTransform([{ x: -1200, y: 0 }, { x: 1200, y: 0 }], 340, 300)!;
+    expect(v.zoom).toBeLessThan(0.22);
+    expect(v.x + -1200 * v.zoom).toBeGreaterThanOrEqual(0);
+    expect(v.x + 1200 * v.zoom).toBeLessThanOrEqual(340);
+  });
   it('returns null without points or size', () => {
     expect(fitTransform([], 800, 600)).toBeNull();
     expect(fitTransform([{ x: 0, y: 0 }], 0, 600)).toBeNull();

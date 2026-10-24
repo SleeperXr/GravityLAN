@@ -54,12 +54,16 @@ export function useOrbitViewport(svgRef: Ref<SVGSVGElement | null>, reducedMotio
     return { x: (clientX - rect.left - viewX.value) / zoom.value, y: (clientY - rect.top - viewY.value) / zoom.value };
   }
 
-  /** Show all of `points` (the whole map). False when there is nothing to fit or no size yet. */
-  function fit(points: Point[], animated = false): boolean {
+  /**
+   * Show all of `points` (the whole map) below a `top` strip of overlays such as the search field.
+   * False when there is nothing to fit or no size yet.
+   */
+  function fit(points: Point[], animated = false, top = 0): boolean {
     const s = size();
     if (!s || points.length === 0) return false;
-    const target = fitTransform(points, s.width, s.height, { padding: 0.9 });
+    const target = fitTransform(points, s.width, s.height - top, { padding: 0.9 });
     if (!target) return false;
+    target.y += top;
     if (animated) animateTo(target);
     else apply(target);
     return true;

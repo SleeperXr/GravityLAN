@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 - Names of "Unknown" devices are retried by every quick scan (every 5 minutes by default) instead of once an hour: a failed name lookup is now remembered for 4 minutes, a found name still for an hour. A refresh you ask for always looks again.
 
 ### Fixed
+- GravityUI overview on a phone: the search field gets a row of its own instead of shrinking to its icon behind the gateways button, and the network map's title and "Edit orbit" link sit above the map, where the map's own search no longer covers them.
+- GravityUI orbit map: the whole-map view now fits every star and planet label inside the map. On a phone the system was cut off at the edges, because the map could not zoom out further than 22 % and left too little room for the enlarged labels; it now leaves out the strip under the search field as well.
 - GravityUI orbit map on a phone: the map on the overview opened unscaled in one corner until you pressed "fit". Fitting it once (since the fix that keeps your zoom while editing) could happen before the map had a size, and then never came again; it now waits for the map to be measured.
 - Demo backend (`scripts/dev_demo.py`): the simulated agents report again. Agent tokens are stored hashed since 0.4, but the demo saved them in plain text, so every report was refused; after a restart without `--reset` they now get fresh tokens.
 
