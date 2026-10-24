@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-10-24
+
 ### Added
 - GravityUI Tutorials page (sidebar "Tutorials", also linked from the React About page): getting started and guides for setup and scan subnets, overview and groups, IP overview with VLANs and gateways, router import, topology and racks, installing and updating the agent, package updates, SSH terminal and stored keys, health dashboard, measurement data and retention, API tokens and webhooks, backup and restore, and Unraid with PUID/PGID. Each guide has steps, a hint, a link to its page, examples to copy where useful, and diagrams for setup, subnet reach (L2 direct, L3 routed, L2 probe), agent rollout and measurement tiers that follow light and dark mode. German and English.
 - About page in both interfaces (sidebar "About"): server and agent version, the MIT licence and third-party notices, and links to the GitHub repository, issues, releases, changelog and Docker Hub. The setup status now also reports the agent version for it.
