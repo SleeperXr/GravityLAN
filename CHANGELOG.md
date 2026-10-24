@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Security updates on the dashboard: a host whose agent reports pending security updates gets a badge on its device card (both interfaces), and GravityUI's system notices list it with the total number of updates and a pending reboot; clicking the notice opens the Agents page to install them.
+
+### Fixed
+- Demo backend (`scripts/dev_demo.py`): the simulated agents report again. Agent tokens are stored hashed since 0.4, but the demo saved them in plain text, so every report was refused; after a restart without `--reset` they now get fresh tokens.
+
 ## [0.5.3] - 2026-10-24
 
 ### Fixed

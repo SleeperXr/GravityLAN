@@ -4,6 +4,13 @@ import type { Device, SshProfile } from '@/types';
 
 export { isAgentOutdated } from '@shared/utils/version';
 
+/** Pending package updates of a host from its agent's latest report, or null without an agent report. */
+export function patchState(device: Pick<Device, 'agent_info'>): { available: number; security: number; reboot: boolean } | null {
+  const m = device.agent_info?.latest_metrics;
+  if (!m) return null;
+  return { available: m.patch_available ?? 0, security: m.patch_security ?? 0, reboot: !!m.reboot_required };
+}
+
 /** Server address as the browser sees it; the Vite dev servers (5173/5174) talk to the API on 8000. */
 export function serverOrigin(): string {
   const { protocol, hostname, port } = window.location;

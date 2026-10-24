@@ -157,7 +157,10 @@
     "delete_selected": "{{count}} löschen",
     "bulk_delete_confirm": "Möchten Sie wirklich {{count}} Geräte dauerhaft löschen?",
     "ip_changed_hint": "IP-Adresse hat sich geändert. Klicken zum Ausblenden.",
-    "refresh_info": "Geräteinfos aktualisieren"
+    "refresh_info": "Geräteinfos aktualisieren",
+    "security_updates_one": "{{count}} Sicherheitsupdate",
+    "security_updates_other": "{{count}} Sicherheitsupdates",
+    "security_updates_title": "{{count}} Sicherheitsupdates von {{total}} anstehenden Updates; installieren auf der Agents-Seite"
   },
   "network": {
     "title": "Netzwerk-Planer",

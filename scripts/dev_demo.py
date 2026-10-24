@@ -129,6 +129,7 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
     from app.models.setting import Setting
     from app.models.topology import Rack, TopologyLink
     from app.scanner.utils import ensure_default_groups
+    from app.services.agent_tokens import hash_agent_token
     from app.services.auth_service import hash_password
 
     from app.database.migrations import run_migrations
@@ -141,7 +142,15 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
         if (await db.execute(select(Device).limit(1))).scalar_one_or_none():
             rows = (await db.execute(select(AgentToken, Device).join(Device, AgentToken.device_id == Device.id))).all()
             profiles = {d[0]: d[6] for d in DEVICES if d[6]}
-            return {dev.display_name: (dev.id, tok.token, profiles[dev.display_name]) for tok, dev in rows if dev.display_name in profiles}
+            # Only the hash of an agent token is stored, so the simulated agents get fresh tokens
+            agents = {}
+            for tok, dev in rows:
+                if dev.display_name in profiles:
+                    raw = secrets.token_hex(32)
+                    tok.token = hash_agent_token(raw)
+                    agents[dev.display_name] = (dev.id, raw, profiles[dev.display_name])
+            await db.commit()
+            return agents
 
         now = _utcnow()
         for key, value in {
@@ -199,7 +208,7 @@ async def _seed() -> dict[str, tuple[int, str, tuple]]:
 
             if profile:
                 token = secrets.token_hex(32)
-                db.add(AgentToken(device_id=device.id, token=token, agent_version=profile[3], last_seen=now,
+                db.add(AgentToken(device_id=device.id, token=hash_agent_token(token), agent_version=profile[3], last_seen=now,
                                   os_pretty=profile[0], os_arch="x86_64"))
                 db.add(AgentConfig(device_id=device.id))
                 agents[name] = (device.id, token, profile)

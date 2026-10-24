@@ -157,7 +157,10 @@
     "delete_selected": "Delete {{count}}",
     "bulk_delete_confirm": "Do you really want to permanently delete {{count}} devices?",
     "ip_changed_hint": "IP address changed. Click to hide.",
-    "refresh_info": "Refresh device info"
+    "refresh_info": "Refresh device info",
+    "security_updates_one": "{{count}} security update",
+    "security_updates_other": "{{count}} security updates",
+    "security_updates_title": "{{count}} security updates of {{total}} pending updates; install them on the Agents page"
   },
   "network": {
     "title": "Network Planner",

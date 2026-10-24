@@ -51,6 +51,13 @@ export interface Device {
       memory_usage: number;
       disk_usage: number;
     };
+    /** The agent's latest report as cached by the server; empty until it reports after a restart */
+    latest_metrics?: {
+      patch_available?: number;
+      patch_security?: number;
+      reboot_required?: boolean;
+      [key: string]: unknown;
+    } | null;
   };
   services: Service[];
   old_ip: string | null;

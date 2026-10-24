@@ -116,6 +116,18 @@ describe('DeviceCard', () => {
     await waitFor(() => expect(m.updateDevice).toHaveBeenCalledWith(5, { old_ip: null, ip_changed_at: null }));
   });
 
+  it('flags security updates the agent reports', () => {
+    const device = makeDevice({ agent_info: { agent_version: '0.3.5', latest_version: '0.3.5', latest_metrics: { patch_available: 7, patch_security: 2 } } } as Partial<Device>);
+    renderCard({ device });
+    expect(screen.getByText('2 security updates')).toBeInTheDocument();
+  });
+
+  it('hides the security update flag in edit mode', () => {
+    const device = makeDevice({ agent_info: { agent_version: '0.3.5', latest_version: '0.3.5', latest_metrics: { patch_available: 7, patch_security: 2 } } } as Partial<Device>);
+    renderCard({ device, isEditMode: true });
+    expect(screen.queryByText('2 security updates')).not.toBeInTheDocument();
+  });
+
   it('does not adopt without confirmation', async () => {
     vi.mocked(window.confirm).mockReturnValue(false);
     const { user } = renderCard({ device: makeDevice({ has_pending_token: true }) });
