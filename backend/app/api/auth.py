@@ -38,6 +38,10 @@ def _required_scope_for(path: str, method: str) -> str | None:
     if path.startswith("/api/backup"):
         return "backup:read" if method in read_methods else "backup:write"
     if path.startswith("/api/scanner"):
+        # GETs that start active scans: live discovery sweeps subnets and stores what it
+        # finds, scan-ip runs nmap against an address (#43)
+        if path.rstrip("/") in ("/api/scanner/live-discovery", "/api/scanner/scan-ip"):
+            return "scanner:start"
         return "scanner:read" if method in read_methods else "scanner:start"
     if path.startswith("/api/webhooks"):
         # /test posts to every subscriber, so even its GET variant needs write access
