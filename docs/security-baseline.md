@@ -33,9 +33,12 @@ GravityLAN is designed as a centralized, high-performance network intelligence d
 
 GravityLAN allows remote deployment of system agents to Linux hosts using SSH. With typed-in credentials, this process supports two distinct validation policies (saved key connections use a pinned host key instead, see below):
 
-### Warning Mode (Default Policy)
-*   **Behavior**: Setting `GRAVITYLAN_SSH_STRICT_MODE=False` (default) configures the deployer with Paramiko's `WarningPolicy`. If the host key of the remote host is unknown, a warning is logged, and the deployment proceeds.
-*   **Use Case**: Ideal for dynamic Homelabs with frequently changing internal virtual machines, containers, or DHCP addresses where strict key pre-sharing is impractical.
+### Trust on First Use (Default Policy)
+*   **Behavior**: With `GRAVITYLAN_SSH_STRICT_MODE=False` (default) the deployer pins the key stored for the host in `ssh_known_hosts`. Without an entry, the first key the host presents is accepted and stored (TOFU), as for the SSH terminal and package updates. A changed key aborts the connection after the key exchange and before authentication, so no credential is sent; the user removes the entry under SSH → Known hosts and confirms the new key in the terminal (ADR-002, decision 10). Until 0.5.4 this mode used Paramiko's `WarningPolicy` and accepted any key (issue #45).
+*   **Use Case**: Homelabs where pre-sharing host keys is impractical, while still noticing a key that changes later.
+
+### Docker Host Bypass
+*   **Behavior**: Only an SSH login to the address in `GRAVITYLAN_DOCKER_HOST_IP` (the machine running the container) is retried over the Docker bridge gateway when the direct connection fails. For every other device a failed connection stays failed; until 0.5.4 any failure was retried on the gateway, so an action meant for a switched-off device could run on the Docker host (issue #46).
 
 ### Strict Mode (Hardened Policy)
 *   **Behavior**: Setting `GRAVITYLAN_SSH_STRICT_MODE=True` configures the deployer with Paramiko's `RejectPolicy`. The deployer loads system-wide known hosts (`/home/gravitylan/.ssh/known_hosts` inside the container). If the host key of the remote machine is not pre-registered in the known hosts list, the connection is instantly rejected. Additionally, patch management and terminal connections leverage automated DB-backed Trust-On-First-Use (TOFU) host-key pinning in the `ssh_known_hosts` SQLite table.

@@ -204,6 +204,7 @@ Most options live in the database and are changed in the setup wizard and on the
 | `GRAVITYLAN_DEBUG` | Verbose logging | `false` |
 | `GRAVITYLAN_SECURE_COOKIES` | Mark the session cookie `Secure`; turn on behind HTTPS | `false` |
 | `GRAVITYLAN_SSH_STRICT_MODE` | Refuse unknown SSH host keys when deploying agents or installing updates | `false` |
+| `GRAVITYLAN_DOCKER_HOST_IP` | LAN IP of the machine running the container. Only SSH logins to this address may retry over the Docker bridge gateway (when the container can't reach its own host, e.g. with macvlan) | empty |
 | `GRAVITYLAN_SSH_IDLE_TIMEOUT_MINUTES` | Close terminal sessions without input after N minutes (0 = never) | `30` |
 | `GRAVITYLAN_SSH_MAX_SESSIONS` | Maximum number of open terminal sessions | `10` |
 | `GRAVITYLAN_VAULT_KEY` | Key for the encrypted SSH key store; otherwise generated as `data/ssh_vault.key` | empty |
@@ -491,6 +492,7 @@ Die meisten Optionen liegen in der Datenbank und werden im Setup-Wizard und in d
 | `GRAVITYLAN_DEBUG` | Ausführliche Logs | `false` |
 | `GRAVITYLAN_SECURE_COOKIES` | Session-Cookie als `Secure` markieren; hinter HTTPS einschalten | `false` |
 | `GRAVITYLAN_SSH_STRICT_MODE` | Unbekannte SSH-Host-Keys beim Agent-Deploy und bei Updates ablehnen | `false` |
+| `GRAVITYLAN_DOCKER_HOST_IP` | LAN-IP des Rechners, auf dem der Container läuft. Nur SSH-Logins auf diese Adresse dürfen es erneut über das Docker-Bridge-Gateway versuchen (wenn der Container den eigenen Host nicht erreicht, z. B. mit macvlan) | leer |
 | `GRAVITYLAN_SSH_IDLE_TIMEOUT_MINUTES` | Terminal-Sitzungen ohne Eingabe nach N Minuten schließen (0 = nie) | `30` |
 | `GRAVITYLAN_SSH_MAX_SESSIONS` | Maximal gleichzeitig offene Terminal-Sitzungen | `10` |
 | `GRAVITYLAN_VAULT_KEY` | Schlüssel für den verschlüsselten SSH-Key-Store; sonst erzeugt als `data/ssh_vault.key` | leer |

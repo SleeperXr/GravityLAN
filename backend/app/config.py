@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     debug: bool = False
     secure_cookies: bool = False
     ssh_strict_mode: bool = False
+    # LAN IP of the machine running the container. Only SSH logins to exactly this address may
+    # retry on the Docker bridge gateway (#46); empty = never (DOCKER_HOST_IP is read as well).
+    docker_host_ip: str = ""
     history_retention_days: int = 30
 
     # SSH terminal / secret vault

@@ -76,15 +76,15 @@ def clamp_size(cols: int, rows: int) -> tuple[int, int]:
 
 
 def _open_socket(host: str, port: int) -> socket.socket:
-    """Open the TCP connection, with the Docker bridge-gateway fallback used elsewhere for SSH."""
+    """Open the TCP connection; only the Docker host itself is retried on the bridge gateway (#46)."""
     try:
         return socket.create_connection((host, port), timeout=CONNECT_TIMEOUT)
     except OSError as exc:
         first_error = exc
 
-    from app.services.docker_service import docker_service
-    gateway = docker_service.get_bridge_gateway()
-    if gateway and gateway != host:
+    from app.services.ssh_utils import host_bypass_gateway
+    gateway = host_bypass_gateway(host)
+    if gateway:
         logger.info("SSH terminal: direct connection to %s failed, trying bridge gateway %s", host, gateway)
         try:
             return socket.create_connection((gateway, port), timeout=CONNECT_TIMEOUT)
