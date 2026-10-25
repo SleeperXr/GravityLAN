@@ -61,6 +61,23 @@ def test_config_save_roundtrip(agent_mod, tmp_path):
     assert loaded.interval == 15
 
 
+def test_config_save_is_private_and_leaves_no_temp_file(agent_mod, tmp_path):
+    cfg = tmp_path / "agent.conf"
+    agent_mod.AgentConfig(server_url="http://x", token="t", device_id=1, config_path=cfg).save()
+    assert cfg.stat().st_mode & 0o777 == 0o600
+    assert [p.name for p in tmp_path.iterdir()] == ["agent.conf"]
+
+
+def test_config_save_failure_keeps_old_file(agent_mod, tmp_path, monkeypatch):
+    cfg = tmp_path / "agent.conf"
+    agent_mod.AgentConfig(server_url="http://x", token="old", device_id=1, config_path=cfg).save()
+    monkeypatch.setattr(agent_mod.json, "dump", MagicMock(side_effect=OSError("disk full")))
+    agent_mod.AgentConfig(server_url="http://x", token="new", device_id=1, config_path=cfg).save()
+    monkeypatch.undo()
+    assert agent_mod.AgentConfig.load(cfg).token == "old"
+    assert [p.name for p in tmp_path.iterdir()] == ["agent.conf"]
+
+
 # --- is_lxc_container / get_lxc_cpu_count -----------------------------------
 
 def test_is_lxc_container_false(agent_mod, tmp_path):

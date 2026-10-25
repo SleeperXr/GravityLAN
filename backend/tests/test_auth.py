@@ -315,3 +315,8 @@ async def test_read_only_token_cannot_fire_test_webhooks(client, db, admin_token
 
     assert (await client.get("/api/webhooks", headers=headers)).status_code == 200
     assert (await client.get("/api/webhooks/test", headers=headers)).status_code == 403
+
+
+def test_interface_routes_map_to_device_scopes():
+    assert auth_api._required_scope_for("/api/interfaces/suggestions", "GET") == "devices:read"
+    assert auth_api._required_scope_for("/api/interfaces/suggestions/dismiss", "POST") == "devices:write"

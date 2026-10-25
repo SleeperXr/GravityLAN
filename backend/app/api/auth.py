@@ -23,7 +23,7 @@ from app.services.agent_telemetry import _setting_cache
 def _required_scope_for(path: str, method: str) -> str | None:
     """Map an API path/method to the scope a read-only token needs."""
     read_methods = ("GET", "HEAD")
-    if path.startswith("/api/devices") or path.startswith("/api/groups") or path.startswith("/api/services"):
+    if path.startswith(("/api/devices", "/api/groups", "/api/services", "/api/interfaces")):
         return "devices:read" if method in read_methods else "devices:write"
     if path.startswith("/api/topology"):
         return "topology:read" if method in read_methods else "topology:write"

@@ -80,3 +80,28 @@ async def test_group_details_batch_loads_agent_tokens(db):
 
     assert by_id[102].has_agent is False
     assert by_id[102].agent_info is None
+
+
+@pytest.mark.asyncio
+async def test_service_and_group_changes_clear_dashboard_cache(client, db, admin_token):
+    from app.models.device import Device
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    db.add(Device(id=1, ip="10.0.0.9"))
+    await db.commit()
+
+    def changed(response, status=200):
+        assert response.status_code == status, response.text
+        cleared = len(dashboard_cache) == 0
+        dashboard_cache["list_devices:False:None"] = ["stale"]
+        return cleared
+
+    dashboard_cache["list_devices:False:None"] = ["stale"]
+    svc = await client.post("/api/devices/1/services", json={"name": "Web", "port": 80, "protocol": "http"}, headers=headers)
+    assert changed(svc)
+    service_id = svc.json()["id"]
+    assert changed(await client.patch(f"/api/services/{service_id}", json={"name": "Web UI"}, headers=headers))
+    assert changed(await client.delete(f"/api/services/{service_id}", headers=headers), 204)
+    group = await client.post("/api/groups", json={"name": "Lab"}, headers=headers)
+    assert changed(group, 201)
+    assert changed(await client.patch(f"/api/groups/{group.json()['id']}", json={"name": "Lab 2"}, headers=headers))
+    assert changed(await client.delete(f"/api/groups/{group.json()['id']}", headers=headers), 204)
