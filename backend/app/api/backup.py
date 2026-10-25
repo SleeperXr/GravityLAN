@@ -182,11 +182,57 @@ def _clean_rows(cursor, table: str, rows: list[dict]) -> list[dict]:
     return valid_rows
 
 
-def _write_db(db_path: str, data: dict) -> dict[str, int]:
+# Rows outside the backup that belong to one device (#47): when a device id names another
+# device after the import, these are deleted, the saved SSH connections are only unbound.
+DEVICE_BOUND_DELETE = ("agent_tokens", "device_interfaces", "device_history")
+DEVICE_BOUND_UNLINK = ("ssh_profiles", "ssh_history")
+
+
+def _device_identities(cursor) -> dict[int, tuple[str, str]]:
+    """Device id -> (MAC in lower case, IP) of the devices table."""
+    cursor.execute("SELECT id, mac, ip FROM devices")
+    return {row[0]: ((row[1] or "").strip().lower(), (row[2] or "").strip()) for row in cursor.fetchall()}
+
+
+def _same_device(before: tuple[str, str], after: tuple[str, str]) -> bool:
+    """Same device when the MACs match; the IP decides only if one side has no MAC."""
+    if before[0] and after[0]:
+        return before[0] == after[0]
+    return before[1] == after[1]
+
+
+def _detach_reassigned_devices(cursor, before: dict[int, tuple[str, str]]) -> list[int]:
+    """Drop what the old devices left behind under ids that now name another (or no) device.
+
+    Agent tokens, interfaces and history are deleted, so an agent of the old device can no
+    longer report as the new one; it has to be enrolled again. Saved SSH connections and
+    their history stay, but lose the device binding. Returns the affected device ids.
+    """
+    after = _device_identities(cursor)
+    reassigned = sorted(
+        device_id for device_id, identity in before.items()
+        if device_id not in after or not _same_device(identity, after[device_id])
+    )
+    if not reassigned:
+        return []
+    cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    existing = {row[0] for row in cursor.fetchall()}
+    placeholders = ", ".join("?" * len(reassigned))
+    for table in DEVICE_BOUND_DELETE:
+        if table in existing:
+            cursor.execute(f"DELETE FROM {table} WHERE device_id IN ({placeholders})", reassigned)
+    for table in DEVICE_BOUND_UNLINK:
+        if table in existing:
+            cursor.execute(f"UPDATE {table} SET device_id = NULL WHERE device_id IN ({placeholders})", reassigned)
+    return reassigned
+
+
+def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str, int]:
     """Replace the allowed tables with the backup rows in a single transaction.
 
     Any error rolls everything back, so a failed import never leaves a
-    half-deleted database behind.
+    half-deleted database behind. ``report`` receives ``agent_tokens_revoked``
+    and ``reassigned_device_ids`` (see :func:`_detach_reassigned_devices`).
     """
     # isolation_level=None: no implicit transactions, BEGIN/COMMIT are explicit below
     conn = _open_sqlite_connection(db_path, isolation_level=None)
@@ -196,6 +242,9 @@ def _write_db(db_path: str, data: dict) -> dict[str, int]:
         cursor.execute("PRAGMA foreign_keys = OFF")
         cursor.execute("BEGIN IMMEDIATE")
         protected_before = _read_protected_settings(cursor)
+        devices_before = _device_identities(cursor)
+        cursor.execute("SELECT COUNT(*) FROM agent_tokens")
+        tokens_before = cursor.fetchone()[0]
         imported: dict[str, int] = {}
 
         for key, rows in data.items():
@@ -226,6 +275,12 @@ def _write_db(db_path: str, data: dict) -> dict[str, int]:
 
         if _read_protected_settings(cursor) != protected_before:
             raise RuntimeError("Backup import would change protected settings")
+
+        reassigned = _detach_reassigned_devices(cursor, devices_before)
+        if report is not None:
+            cursor.execute("SELECT COUNT(*) FROM agent_tokens")
+            report["agent_tokens_revoked"] = tokens_before - cursor.fetchone()[0]
+            report["reassigned_device_ids"] = reassigned
 
         conn.commit()
         return imported
@@ -268,8 +323,9 @@ async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends
     _validate_backup_shape(data)
 
     db_path = settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
+    report: dict = {}
     try:
-        imported = await asyncio.to_thread(_write_db, db_path, data)
+        imported = await asyncio.to_thread(_write_db, db_path, data, report)
     except Exception as e:
         logger.error(f"Backup: Import failed, all changes rolled back: {e}")
         raise HTTPException(status_code=500, detail=f"Backup import failed, no changes were made: {e}")
@@ -277,6 +333,38 @@ async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends
     for table, count in imported.items():
         logger.info(f"Backup: Imported {count} rows into {table}")
 
+    reassigned = report.get("reassigned_device_ids", [])
+    revoked = report.get("agent_tokens_revoked", 0)
+    if reassigned:
+        await _purge_telemetry(db, reassigned)
+        logger.warning(
+            "Backup: %d device id(s) now name other devices; removed their agent tokens (%d), interfaces and "
+            "measurement data", len(reassigned), revoked,
+        )
+
     invalidate_all_runtime_caches()
 
-    return {"status": "ok", "message": "Backup successfully imported"}
+    message = "Backup successfully imported"
+    if revoked:
+        message += f". {revoked} agent(s) belonged to devices that are different now and must be enrolled again"
+    return {
+        "status": "ok",
+        "message": message,
+        "agent_tokens_revoked": revoked,
+        "reassigned_devices": len(reassigned),
+    }
+
+
+async def _purge_telemetry(db: AsyncSession, device_ids: list[int]) -> None:
+    """Delete measurement data (telemetry.db) recorded under device ids that changed meaning (#47)."""
+    from sqlalchemy import delete
+    from app.database import Base, TELEMETRY_SCHEMA
+
+    for table in Base.metadata.sorted_tables:
+        if table.schema != TELEMETRY_SCHEMA or "device_id" not in table.c:
+            continue
+        try:
+            await db.execute(delete(table).where(table.c.device_id.in_(device_ids)))
+        except Exception as e:
+            logger.warning(f"Backup: Could not clean {table.fullname}: {e}")
+    await db.commit()

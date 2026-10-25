@@ -578,6 +578,7 @@
     "export_failed": "Export failed: ",
     "import_confirm_warning": "Are you sure? All existing data will be overwritten!",
     "import_success": "Backup successfully imported! The page will be reloaded.",
+    "import_agents_revoked": "{{count}} agent(s) belonged to devices that are different after the import. Their tokens were revoked so they can't report under other devices. Enroll these agents again in the device's Agent tab.",
     "import_failed": "Import failed: ",
     "dns_custom_title": "Custom DNS Server",
     "dns_custom_desc": "If set, the scanner will use this server to resolve hostnames instead of the system default.",

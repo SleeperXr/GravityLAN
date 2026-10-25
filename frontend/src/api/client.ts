@@ -85,6 +85,15 @@ export type TelemetryPurge =
   | { scope: 'device'; device_id: number }
   | { scope: 'all' };
 
+/** Result of a backup import. */
+export type BackupImportResult = {
+  status: string;
+  message: string;
+  /** Agents of devices whose id names another device after the import; they must be enrolled again */
+  agent_tokens_revoked?: number;
+  reassigned_devices?: number;
+};
+
 /** Result of an agent deploy/uninstall over SSH. */
 export type AgentSshResult = {
   status: string;
@@ -197,7 +206,7 @@ export const api = {
   importBackup: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return fetch('/api/backup/import', { method: 'POST', body: formData }).then(res => res.json());
+    return fetch('/api/backup/import', { method: 'POST', body: formData }).then(res => res.json() as Promise<BackupImportResult>);
   },
 
   // Agent

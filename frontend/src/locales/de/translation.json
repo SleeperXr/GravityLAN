@@ -575,6 +575,7 @@
     "export_failed": "Export fehlgeschlagen: ",
     "import_confirm_warning": "Bist du sicher? Alle bestehenden Daten werden überschrieben!",
     "import_success": "Backup erfolgreich importiert! Die Seite wird neu geladen.",
+    "import_agents_revoked": "{{count}} Agent(s) gehörten zu Geräten, die nach dem Import andere sind. Ihre Tokens wurden widerrufen, damit sie keine Messwerte unter fremden Geräten melden. Binde diese Agents im Agent-Tab des Geräts neu ein.",
     "import_failed": "Import fehlgeschlagen: ",
     "dns_custom_desc": "Wenn gesetzt, verwendet der Scanner diesen DNS-Server zur Namensauflösung statt des System-Standards.",
     "password": {
