@@ -104,6 +104,8 @@ def build_install_script(
     quoted_server_url = shlex.quote(server_url)
     quoted_device_id = shlex.quote(str(device_id))
     quoted_enroll_code = shlex.quote(enroll_code or "")
+    # From an HTTPS server, curl must not follow a redirect down to plain HTTP (#44)
+    https_only = "--proto '=https' " if server_url.lower().startswith("https://") else ""
 
     return f"""#!/bin/bash
 set -e
@@ -134,7 +136,7 @@ esac
 if [ "$(id -u)" -ne 0 ]; then
   echo "Error: This script must be run as root to install the agent."
   echo "Please run the command with sudo bash:"
-  echo "curl -sSL '$SERVER_URL/api/agent/download/install-sh/$DEVICE_ID?code=$ENROLL_CODE' | sudo ${{ALLOW_INSECURE:+env ALLOW_INSECURE=$ALLOW_INSECURE }}bash"
+  echo "curl {https_only}-sSL '$SERVER_URL/api/agent/download/install-sh/$DEVICE_ID?code=$ENROLL_CODE' | sudo ${{ALLOW_INSECURE:+env ALLOW_INSECURE=$ALLOW_INSECURE }}bash"
   exit 1
 fi
 
@@ -157,11 +159,11 @@ fi
 echo "1. Downloading agent and config..."
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
-curl -fsSL "$SERVER_URL/api/agent/download/agent" -o "$TMP_DIR/gravitylan-agent.py" || {{
+curl {https_only}-fsSL "$SERVER_URL/api/agent/download/agent" -o "$TMP_DIR/gravitylan-agent.py" || {{
   echo "Error: could not download the agent from $SERVER_URL - is the GravityLAN server reachable from this host?" >&2
   exit 1
 }}
-curl -fsSL "$SERVER_URL/api/agent/download/config/$DEVICE_ID?code=$ENROLL_CODE" -o "$TMP_DIR/agent.conf" || {{
+curl {https_only}-fsSL "$SERVER_URL/api/agent/download/config/$DEVICE_ID?code=$ENROLL_CODE" -o "$TMP_DIR/agent.conf" || {{
   echo "Error: the install code is invalid, expired or was already used." >&2
   echo "Copy a fresh install command from the device's Agent tab in the GravityLAN UI." >&2
   exit 1

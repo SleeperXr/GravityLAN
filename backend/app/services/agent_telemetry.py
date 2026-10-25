@@ -264,17 +264,19 @@ async def _broadcast_metrics(payload: Any, device_id: int) -> None:
     snapshot = _build_metrics_snapshot(payload, device_id)
     _latest_metrics[device_id] = snapshot
 
-    if device_id not in _ws_subscribers:
+    subscribers = _ws_subscribers.get(device_id)
+    if not subscribers:
         return
 
     dead_links = set()
-    for ws in _ws_subscribers[device_id]:
+    # A snapshot: dashboards connect and disconnect (or get closed on revocation) while we await
+    for ws in list(subscribers):
         try:
             await ws.send_json({"type": "metrics", "data": snapshot})
         except Exception as e:
             logger.debug(f"Metrics WebSocket error for device {device_id}: {e}")
             dead_links.add(ws)
-    _ws_subscribers[device_id] -= dead_links
+    subscribers -= dead_links
 
 
 def downsample_metrics(metrics: list, range_str: str) -> list[dict]:

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 from sqlalchemy import or_, select
 from fastapi import Depends
 
@@ -24,7 +25,7 @@ from app.schemas.device import DiscoveredHostResponse, DiscoveredHostUpdate
 from app.schemas.scan import ScanProgress, ScanRequest, ScanStatus, SubnetInfo
 from app.scanner.planner import run_planner_scan
 from app.scanner.dashboard import run_dashboard_scan
-from app.scanner.subnets import get_scan_subnets
+from app.scanner.subnets import get_scan_subnets, scan_target_ips
 from app.scanner.sync import sync_host_to_db
 from app.services.cache_service import discovery_cache
 from app.scanner.utils import get_local_subnets
@@ -64,6 +65,13 @@ class ScanStateManager:
         async with self._lock:
             if ws in self.ws_clients:
                 self.ws_clients.remove(ws)
+
+    async def detach_all_clients(self) -> List[WebSocket]:
+        """Stop sending progress to every client and return them, so the caller can close them."""
+        async with self._lock:
+            detached = list(self.ws_clients)
+            self.ws_clients.clear()
+        return detached
 
     async def broadcast(self, data: ScanProgress) -> None:
         """Sends scan progress updates to all connected clients."""
@@ -123,10 +131,22 @@ async def scan_ip(ip: str) -> Dict[str, Any]:
     
     return {"ip": ip, "ports": ports, "timestamp": datetime.now(timezone.utc).isoformat()}
 
+def _subnets_param(subnets: str) -> list[str]:
+    """Subnets of a comma-separated query parameter, bounded like a ScanRequest body (#43).
+
+    Bare prefixes such as ``192.168.1`` mean the /24 behind them.
+    """
+    entries = [_normalize_subnet_input(s.strip()) for s in subnets.split(",") if s.strip()]
+    try:
+        return ScanRequest(subnets=entries).subnets
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()[0]["msg"]) from None
+
+
 @router.post("/quick-subnet-scan", dependencies=[Depends(get_current_admin)])
 async def quick_subnet_scan(subnets: str) -> Dict[str, str]:
     """Turbo-fast subnet refresh (ARP + ICMP) via Planner scan."""
-    subnet_list = [s.strip() for s in subnets.split(",") if s.strip()]
+    subnet_list = _subnets_param(subnets)
     await run_planner_scan(subnet_list)
     return {"status": "ok", "message": "Quick scan triggered"}
 
@@ -310,8 +330,7 @@ async def _discover_and_sync_subnet(db, subnet: str, global_dns: str | None) -> 
     sub_obj = res_sub.scalar_one_or_none()
     dns_server = sub_obj.dns_server if sub_obj and sub_obj.dns_server else global_dns
 
-    net = ipaddress.ip_network(subnet, strict=False)
-    target_ips = [str(ip) for ip in net.hosts()]
+    target_ips = scan_target_ips(subnet)
 
     alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server, timeout=2.0)
     if alive_hosts:
@@ -331,7 +350,7 @@ async def _discover_and_sync_subnet(db, subnet: str, global_dns: str | None) -> 
 @router.get("/live-discovery", dependencies=[Depends(get_current_admin)])
 async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
     """Perform a fast ICMP/ARP discovery and sync results to DB."""
-    subnet_list = [s.strip() for s in subnets.split(",") if s.strip()]
+    subnet_list = _subnets_param(subnets)
     all_hosts = []
     
     async with async_session() as db:
@@ -341,7 +360,7 @@ async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
 
         for subnet in subnet_list:
             try:
-                all_hosts.extend(await _discover_and_sync_subnet(db, _normalize_subnet_input(subnet), global_dns))
+                all_hosts.extend(await _discover_and_sync_subnet(db, subnet, global_dns))
             except Exception as e:
                 logger.error("Live-discovery error for %s: %s", subnet, e)
             

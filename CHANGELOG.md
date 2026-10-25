@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- Manual agent install command fetches its script from the server URL (#44 follow-up). The command both interfaces offer used the address the browser opened the UI with. With an HTTPS server URL but the UI opened over `http://`, the install script itself, which runs as root, still came over plain HTTP, where its HTTP check can be replaced as well. The command now uses the server URL the script downloads from, and from an HTTPS address curl may not follow a redirect down to HTTP (`--proto '=https'`, inside the script too).
+- Plain HTTP agent installs need an explicit opt-in again (#44 follow-up). Both interfaces added `ALLOW_INSECURE=1` to the copied command on their own whenever the server address was `http://`, so the installer's check never stopped anyone. The command now leaves it out, and the installer stops with its explanation, until the user ticks "Install unencrypted anyway" under the warning. The agent update button in the SSH terminal never adds it, and a toast says why the command stops. `GRAVITYLAN_ALLOW_INSECURE_INSTALL=true` still allows it for every install.
+- Live discovery is bounded like the other scans (#43 follow-up). `GET /api/scanner/live-discovery` and `POST /api/scanner/quick-subnet-scan` took their subnets from a query parameter that skipped the scan request check, so `0.0.0.0/0` still built a list of four billion addresses. Both now take up to 64 IPv4 subnets of `/16` or smaller (`422` otherwise). Live discovery also stores the hosts it finds, and `GET /api/scanner/scan-ip` runs nmap against an address, so API tokens now need `scanner:start` for both instead of `scanner:read`.
+- Backup import revokes install codes and closes metric streams of re-assigned devices (#47 follow-up). An install command issued for server A before the import could still be redeemed afterwards and enrolled an agent token for server B under the same id. Package update tickets and open dashboard metric streams of that id followed it too. They are now revoked or closed for every id that names another device.
+- Database reset closes open log, scan and metric streams (#48 follow-up). These WebSockets authenticate only when they open, so a stream opened with a leaked session or token kept receiving logs and measurements after the reset. The reset now closes them.
+
+### Fixed
+- Backup import keeps the target of saved SSH connections (#47 follow-up). A saved connection or history entry bound to a device has no address of its own. When the import unbound it from an id that now names another device, it was left without any target ("The profile has no reachable host"). It now keeps the old device's address.
+
 ## [0.5.5] - 2026-10-25
 
 ### Security

@@ -223,7 +223,12 @@ def _detach_reassigned_devices(cursor, before: dict[int, tuple[str, str]]) -> li
             cursor.execute(f"DELETE FROM {table} WHERE device_id IN ({placeholders})", reassigned)
     for table in DEVICE_BOUND_UNLINK:
         if table in existing:
-            cursor.execute(f"UPDATE {table} SET device_id = NULL WHERE device_id IN ({placeholders})", reassigned)
+            # A connection bound to a device may have no host of its own: keep the old
+            # device's address as its target, or it would point nowhere after the unlink
+            cursor.executemany(
+                f"UPDATE {table} SET host = COALESCE(NULLIF(host, ''), ?), device_id = NULL WHERE device_id = ?",
+                [(before[device_id][1] or None, device_id) for device_id in reassigned],
+            )
     return reassigned
 
 
@@ -336,6 +341,9 @@ async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends
     reassigned = report.get("reassigned_device_ids", [])
     revoked = report.get("agent_tokens_revoked", 0)
     if reassigned:
+        # Revoke first: the import is committed, and an old install code must not be redeemed
+        # while the measurement data is still being deleted
+        await _revoke_device_grants(reassigned)
         await _purge_telemetry(db, reassigned)
         logger.warning(
             "Backup: %d device id(s) now name other devices; removed their agent tokens (%d), interfaces and "
@@ -353,6 +361,26 @@ async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends
         "agent_tokens_revoked": revoked,
         "reassigned_devices": len(reassigned),
     }
+
+
+async def _revoke_device_grants(device_ids: list[int]) -> None:
+    """Revoke what still names the old devices outside the database (#47).
+
+    Install codes and package update tickets carry a device id, and open metric streams
+    of the dashboard follow one. After the import that id belongs to another device.
+    """
+    from app.api.agent_patches import _temp_patch_tokens
+    from app.services.enrollment_service import enrollment_store
+    from app.services.stream_revocation import close_metric_streams
+
+    ids = set(device_ids)
+    codes = enrollment_store.revoke_devices(ids)
+    for token in [t for t, entry in _temp_patch_tokens.items() if entry["device_id"] in ids]:
+        del _temp_patch_tokens[token]
+    streams = await close_metric_streams(ids)
+    logger.warning(
+        "Backup: revoked %d install code(s) and closed %d metric stream(s) of re-assigned devices", codes, streams,
+    )
 
 
 async def _purge_telemetry(db: AsyncSession, device_ids: list[int]) -> None:

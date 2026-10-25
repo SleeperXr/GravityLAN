@@ -17,7 +17,7 @@ import re
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict
+from typing import Callable, Dict, Iterable
 
 CODE_TTL_SECONDS = 30 * 60
 
@@ -41,6 +41,18 @@ class EnrollmentStore:
     def clear(self) -> None:
         """Forget every code (database reset)."""
         self._codes.clear()
+
+    def revoke_devices(self, device_ids: Iterable[int]) -> int:
+        """Forget the codes issued for ``device_ids``; returns how many were dropped.
+
+        A backup import can give an id to another device (#47): a code issued for the old
+        one would otherwise enroll an agent token for the new one.
+        """
+        ids = set(device_ids)
+        stale = [code for code, entry in self._codes.items() if entry.device_id in ids]
+        for code in stale:
+            del self._codes[code]
+        return len(stale)
 
     def issue(self, device_id: int) -> str:
         """Create a new code for ``device_id`` and return it."""

@@ -10,7 +10,7 @@ import Button from '@/components/ui/Button.vue';
 import TerminalSettings from './TerminalSettings.vue';
 import { FONT_OPTIONS, fontCss, loadTerminalFont, resolveTheme, setTerminalPrefs, terminalPrefs } from './terminalPrefs';
 import { hostKeyFile, lastCommandText, type AgentUpdate, type HostKeyPrompt, type TerminalStatus } from './sshModel';
-import { buildInstallCommand, requestInstallCode } from '@/lib/agent';
+import { buildInstallCommand, needsInsecureOptIn, requestInstallCode } from '@/lib/agent';
 import { copyText } from '@/lib/clipboard';
 import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
@@ -221,14 +221,17 @@ async function insertUpdate() {
   if (!update?.available || updateInert.value) return;
   updating.value = true;
   try {
-    const { code, expiresAt, insecure } = await requestInstallCode(update.deviceId);
-    const command = ` ${buildInstallCommand(update.deviceId, code, insecure)}`;
+    const installCode = await requestInstallCode(update.deviceId);
+    const { code, expiresAt, serverUrl, insecure } = installCode;
+    // Never opted in from here: over plain HTTP the command stops with the installer's explanation (#44)
+    const command = ` ${buildInstallCommand(update.deviceId, code, serverUrl)}`;
     if (/[\r\n]/.test(command)) throw new Error('Line break in the update command');
     if (!term) return;
     term.paste(command);
     term.focus();
     showToast('success', t('ssh.terminal.agent_update_inserted'), t('ssh.terminal.agent_update_inserted_text', { time: expiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }));
-    if (insecure) showToast('info', t('agent.insecure_install_title'), t('agent.insecure_install_warning'));
+    if (needsInsecureOptIn(installCode)) showToast('info', t('agent.insecure_install_title'), t('agent.insecure_install_terminal'));
+    else if (insecure) showToast('info', t('agent.insecure_install_title'), t('agent.insecure_install_warning'));
   } catch {
     showToast('error', t('ssh.terminal.agent_update'), t('agent.install_code_failed'));
   } finally {
