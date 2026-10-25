@@ -17,6 +17,10 @@ All notable changes to this project will be documented in this file.
 - GravityUI orbit map shows what needs attention at overview zoom. Offline and degraded devices keep their name label when the whole map is in view (other moons still get theirs once you zoom in), get a halo in their state colour that keeps them visible and tappable when the whole map is in view, are drawn above their neighbours, and their name is no longer struck through. A new control above the zoom buttons counts them and focuses one after the other with its focus card. On phones the map controls are 44 px and sit in a row along the bottom of the map. When every side of a body is taken, a label now moves further out instead of lying on top of another one.
 - GravityUI orbit map works with screen readers: the map was marked as an image, which hid every device button inside it from assistive technology. It is a group now, each device's name includes "Offline" or "Degraded" when it applies, and Space opens a device like Enter.
 
+### Changed
+- GravityUI overview answers "is everything all right?" in its first line. A status line above the networks names what is wrong ("2 devices offline: NAS, Pi-hole", or the topics of open warnings, or "No disruptions"), shows how many devices are online and when the data was last loaded, and opens the most urgent notice with one click. When the overview has not been refreshed for 90 seconds it says the data is stale; coming back from another page or a hidden tab reloads it first. It replaces the "x of y devices in orbit · live" line above the map.
+- GravityUI system notices come before the orbit map on phones, tablets and laptops below 1280 px, and grow with the page instead of scrolling in a box of their own; beyond five, the rest is behind "Show all". From 1280 px they stay beside the map, which is now a little lower (28 rem) and at 1024 px uses the full width instead of about 270 px.
+
 ## [0.5.5] - 2026-10-25
 
 ### Security
