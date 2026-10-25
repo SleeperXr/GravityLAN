@@ -57,3 +57,59 @@ async def test_reset_revokes_tokens_sessions_keys_and_webhooks(client, db, admin
     client.cookies.clear()
     res = await client.get("/api/devices", headers={"Authorization": f"Bearer {leaked_token}"})
     assert res.status_code == 401
+
+
+class _FakeSocket:
+    def __init__(self):
+        self.closed_with = None
+
+    async def close(self, code: int = 1000, reason: str | None = None):
+        self.closed_with = code
+
+    async def send_text(self, text: str):
+        pass
+
+    async def send_json(self, data):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_reset_closes_open_log_scan_and_metric_streams(client, admin_token, monkeypatch):
+    # These streams authenticate once when they open: logging sessions out does not reach them
+    from app.api.scanner import state as scan_state
+    from app.services.agent_telemetry import _ws_subscribers
+    from app.services.log_streamer import log_handler
+
+    log_stream, scan_stream, metric_stream = _FakeSocket(), _FakeSocket(), _FakeSocket()
+    log_handler.subscribe(log_stream)
+    await scan_state.add_client(scan_stream)
+    monkeypatch.setitem(_ws_subscribers, 7, {metric_stream})
+
+    res = await client.post("/api/settings/reset-db", headers=HEADERS)
+    assert res.status_code == 200, res.text
+
+    assert [s.closed_with for s in (log_stream, scan_stream, metric_stream)] == [4003, 4003, 4003]
+    assert log_stream not in log_handler.subscribers
+    assert scan_stream not in scan_state.ws_clients
+    assert 7 not in _ws_subscribers
+
+
+@pytest.mark.asyncio
+async def test_a_stalled_stream_does_not_hold_up_the_revocation(monkeypatch):
+    import asyncio
+
+    from app.services import stream_revocation
+    from app.services.agent_telemetry import _ws_subscribers
+
+    class _Stalled(_FakeSocket):
+        async def close(self, code: int = 1000, reason: str | None = None):
+            await asyncio.sleep(60)
+
+    answering = _FakeSocket()
+    monkeypatch.setattr(stream_revocation, "CLOSE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setitem(_ws_subscribers, 8, {_Stalled(), answering})
+
+    closed = await asyncio.wait_for(stream_revocation.close_metric_streams([8]), timeout=5)
+
+    assert closed == 1 and answering.closed_with == 4003
+    assert 8 not in _ws_subscribers

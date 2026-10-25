@@ -275,7 +275,8 @@ async def _push_metrics_to_subscribers(device_id: int) -> None:
     """Push the current snapshot to all WebSocket subscribers (best-effort)."""
     if device_id not in _ws_subscribers or device_id not in _latest_metrics:
         return
-    for ws in _ws_subscribers[device_id]:
+    # A snapshot: dashboards connect and disconnect (or get closed on revocation) while we await
+    for ws in list(_ws_subscribers.get(device_id, ())):
         try:
             await ws.send_json({"type": "metrics", "data": _latest_metrics[device_id]})
         except Exception:

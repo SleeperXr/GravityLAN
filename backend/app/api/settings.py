@@ -280,7 +280,10 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
         await db.commit()
         logger.info("Database objects deleted and changes committed.")
         _drop_runtime_credentials()
-        
+        from app.services.stream_revocation import close_all_streams
+        closed_streams = await close_all_streams()
+        logger.warning("Database reset: %d open log, scan or metric stream(s) closed", closed_streams)
+
         # 3. Restart scheduler
         try:
             await scheduler.start()

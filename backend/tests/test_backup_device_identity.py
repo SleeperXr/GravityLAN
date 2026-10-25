@@ -117,3 +117,86 @@ async def test_purge_telemetry_removes_measurements_of_reassigned_ids(db):
 
     remaining = (await db.execute(select(DeviceMetrics.device_id, func.count()).group_by(DeviceMetrics.device_id))).all()
     assert remaining == [(2, 1)]
+
+
+def test_unlinked_connections_keep_the_old_device_address(instance_db):
+    # A connection or history entry bound to a device has no host of its own (#47 follow-up)
+    conn = sqlite3.connect(instance_db)
+    conn.execute("UPDATE ssh_profiles SET host = NULL")
+    conn.execute("INSERT INTO ssh_history (device_id, host, port, username, auth_method) VALUES (1, NULL, 22, 'root', 'password')")
+    conn.commit()
+    conn.close()
+
+    backup._write_db(instance_db, {"devices": [
+        {"id": 1, "ip": "10.0.0.1", "mac": "cc:cc:cc:cc:cc:01", "display_name": "server-b"},
+        {"id": 2, "ip": "10.0.0.2", "mac": "", "display_name": "nas"},
+    ]}, {})
+
+    assert sorted(_rows(instance_db, "SELECT name, device_id, host FROM ssh_profiles")) == [
+        ("login-1", None, "10.0.0.1"), ("login-2", 2, None),
+    ]
+    assert _rows(instance_db, "SELECT device_id, host FROM ssh_history") == [(None, "10.0.0.1")]
+
+
+def test_unlinking_keeps_an_explicit_host(instance_db):
+    conn = sqlite3.connect(instance_db)
+    conn.execute("UPDATE ssh_profiles SET host = 'server-a.lan' WHERE device_id = 1")
+    conn.commit()
+    conn.close()
+
+    backup._write_db(instance_db, {"devices": [{"id": 1, "ip": "10.0.0.9", "mac": "cc:cc:cc:cc:cc:01"}]}, {})
+
+    assert _rows(instance_db, "SELECT host FROM ssh_profiles WHERE name = 'login-1'") == [("server-a.lan",)]
+
+
+class _FakeSocket:
+    def __init__(self):
+        self.closed_with = None
+
+    async def close(self, code: int = 1000, reason: str | None = None):
+        self.closed_with = code
+
+    async def send_text(self, text: str):
+        pass
+
+    async def send_json(self, data):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_import_revokes_install_codes_and_streams_of_reassigned_ids(monkeypatch):
+    from app.api.agent_patches import _temp_patch_tokens
+    from app.services.agent_telemetry import _ws_subscribers
+    from app.services.enrollment_service import enrollment_store
+
+    old_code, kept_code = enrollment_store.issue(1), enrollment_store.issue(2)
+    monkeypatch.setitem(_temp_patch_tokens, "patch-1", {"device_id": 1, "created_at": 0})
+    monkeypatch.setitem(_temp_patch_tokens, "patch-2", {"device_id": 2, "created_at": 0})
+    stream_1, stream_2 = _FakeSocket(), _FakeSocket()
+    monkeypatch.setitem(_ws_subscribers, 1, {stream_1})
+    monkeypatch.setitem(_ws_subscribers, 2, {stream_2})
+
+    await backup._revoke_device_grants([1])
+
+    # A code issued for server A must not enroll an agent token for server B
+    assert not enrollment_store.is_valid(old_code, 1)
+    assert enrollment_store.is_valid(kept_code, 2)
+    assert "patch-1" not in _temp_patch_tokens and "patch-2" in _temp_patch_tokens
+    assert stream_1.closed_with == 4003 and 1 not in _ws_subscribers
+    assert stream_2.closed_with is None and _ws_subscribers[2] == {stream_2}
+    enrollment_store.consume(kept_code, 2)
+
+
+@pytest.mark.asyncio
+async def test_import_endpoint_revokes_install_codes_of_reassigned_ids(client, admin_token, import_endpoint_db):
+    from app.services.enrollment_service import enrollment_store
+
+    old_code = enrollment_store.issue(1)
+    payload = json.dumps({"devices": [{"id": 1, "ip": "10.0.0.9", "display_name": "other host"}]}).encode()
+
+    response = await _post_backup(client, admin_token, payload)
+
+    assert response.status_code == 200
+    assert response.json()["reassigned_devices"] == 1
+    # The install command issued for the old device 1 no longer enrolls an agent for the new one
+    assert not enrollment_store.is_valid(old_code, 1)

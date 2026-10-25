@@ -67,7 +67,8 @@ class LogStreamerHandler(logging.Handler):
                 dead_links.add(ws)
         
         for ws in dead_links:
-            self.subscribers.remove(ws)
+            # discard: detach_all may have emptied the set while we were sending
+            self.subscribers.discard(ws)
 
     def subscribe(self, websocket: WebSocket):
         self.subscribers.add(websocket)
@@ -80,6 +81,12 @@ class LogStreamerHandler(logging.Handler):
     def unsubscribe(self, websocket: WebSocket):
         if websocket in self.subscribers:
             self.subscribers.remove(websocket)
+
+    def detach_all(self) -> list[WebSocket]:
+        """Stop streaming to every subscriber and return them, so the caller can close them."""
+        detached = list(self.subscribers)
+        self.subscribers.clear()
+        return detached
 
     def get_history(self):
         return list(self.buffer)
