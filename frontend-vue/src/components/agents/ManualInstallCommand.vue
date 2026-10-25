@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { AlertTriangle, Copy, RefreshCw } from 'lucide-vue-next';
 import Button from '@/components/ui/Button.vue';
-import { buildInstallCommand, buildUninstallCommand, requestInstallCode, type InstallCode } from '@/lib/agent';
+import { buildInstallCommand, buildUninstallCommand, needsInsecureOptIn, requestInstallCode, type InstallCode } from '@/lib/agent';
 import { copyText } from '@/lib/clipboard';
 import { useToast } from '@/composables/useToast';
 import { formatDateTime, t } from '@/i18n';
@@ -16,6 +16,8 @@ const { showToast } = useToast();
 const installCode = ref<InstallCode | null>(null);
 const failed = ref(false);
 const request = ref(0);
+/** The user agreed to install over plain HTTP: only then the command carries ALLOW_INSECURE=1 (#44) */
+const insecureOptIn = ref(false);
 
 watch(
   () => [props.deviceId, props.mode, request.value] as const,
@@ -23,6 +25,7 @@ watch(
     if (mode !== 'install') return;
     installCode.value = null;
     failed.value = false;
+    insecureOptIn.value = false;
     try {
       installCode.value = await requestInstallCode(id);
     } catch {
@@ -32,9 +35,12 @@ watch(
   { immediate: true },
 );
 
+const needsOptIn = computed(() => !!installCode.value && needsInsecureOptIn(installCode.value));
+
 const command = computed(() => {
   if (props.mode === 'uninstall') return buildUninstallCommand(props.deviceId);
-  return installCode.value ? buildInstallCommand(props.deviceId, installCode.value.code, installCode.value.insecure) : '';
+  const code = installCode.value;
+  return code ? buildInstallCommand(props.deviceId, code.code, code.serverUrl, needsOptIn.value && insecureOptIn.value) : '';
 });
 
 async function copy() {
@@ -55,7 +61,14 @@ async function copy() {
       role="note"
     >
       <AlertTriangle class="mt-0.5 size-4 shrink-0 text-warn-text" aria-hidden="true" />
-      <p><strong>{{ t('agent.insecure_install_title') }}:</strong> {{ t('agent.insecure_install_warning') }}</p>
+      <div class="space-y-2">
+        <p><strong>{{ t('agent.insecure_install_title') }}:</strong> {{ t('agent.insecure_install_warning') }}</p>
+        <label v-if="needsOptIn" class="flex items-center gap-2 text-fg-muted">
+          <input v-model="insecureOptIn" type="checkbox" class="size-4 shrink-0 accent-[var(--gl-accent)]" />
+          {{ t('agent.insecure_install_opt_in') }}
+        </label>
+        <p v-else class="text-fg-muted">{{ t('agent.insecure_install_allowed') }}</p>
+      </div>
     </div>
     <div class="flex items-stretch gap-2">
       <code

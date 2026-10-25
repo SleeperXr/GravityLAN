@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../../../context/ToastContext';
-import { buildInstallCommand, requestInstallCode } from '../../Agents/ManualInstallCommand';
+import { buildInstallCommand, needsInsecureOptIn, requestInstallCode } from '../../Agents/ManualInstallCommand';
 import type { XtermHandles } from './useXterm';
 
 /** The agent of the device a terminal is connected to, and whether an update for it is available. */
@@ -29,8 +29,10 @@ export function useAgentUpdateCommand({ termRef }: XtermHandles, update: AgentUp
     if (!update?.available || busy) return;
     setBusy(true);
     try {
-      const { code, expiresAt, insecure } = await requestInstallCode(update.deviceId);
-      const command = ` ${buildInstallCommand(update.deviceId, code, insecure)}`;
+      const installCode = await requestInstallCode(update.deviceId);
+      const { code, expiresAt, serverUrl, insecure } = installCode;
+      // Never opted in from here: over plain HTTP the command stops with the installer's explanation (#44)
+      const command = ` ${buildInstallCommand(update.deviceId, code, serverUrl)}`;
       // A line break would run the command right away
       if (/[\r\n]/.test(command)) throw new Error('Line break in the update command');
       const term = termRef.current;
@@ -40,7 +42,11 @@ export function useAgentUpdateCommand({ termRef }: XtermHandles, update: AgentUp
       showToast('success', t('ssh.terminal.agent_update_inserted'), t('ssh.terminal.agent_update_inserted_text', {
         time: expiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }));
-      if (insecure) showToast('info', t('agent.insecure_install_title'), t('agent.insecure_install_warning'));
+      if (needsInsecureOptIn(installCode)) {
+        showToast('info', t('agent.insecure_install_title'), t('agent.insecure_install_terminal'));
+      } else if (insecure) {
+        showToast('info', t('agent.insecure_install_title'), t('agent.insecure_install_warning'));
+      }
     } catch (err) {
       console.error('Failed to prepare the agent update command:', err);
       showToast('error', t('ssh.terminal.agent_update'), t('agent.install_code_failed'));

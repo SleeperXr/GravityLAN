@@ -462,7 +462,9 @@ async def create_enrollment_code(
     return AgentEnrollmentResponse(
         code=code,
         expires_in=int(enrollment_store.ttl_seconds),
+        server_url=server_url,
         insecure=not server_url.lower().startswith("https://"),
+        insecure_allowed=settings.allow_insecure_install,
     )
 
 

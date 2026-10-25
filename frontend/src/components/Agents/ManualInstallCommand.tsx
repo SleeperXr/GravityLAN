@@ -11,24 +11,48 @@ function serverOrigin(): string {
   return `${protocol}//${hostname}${apiPort}`;
 }
 
+/** A server URL that may go into a root shell command: scheme, host, port and a plain path only. */
+const SAFE_SERVER_URL = /^https?:\/\/[A-Za-z0-9.\-[\]:]+(\/[A-Za-z0-9._~\-/]*)?$/;
+
 /**
- * The one-line installer. Over plain HTTP the script refuses to run unless ALLOW_INSECURE=1
- * is set (#44); `env` passes it through sudo whatever the sudoers env policy says.
+ * The one-line installer. It fetches the script from the address the script itself downloads
+ * from, so an HTTPS server URL protects this first download too, and curl may not follow a
+ * redirect down to HTTP (#44). Over plain HTTP the script refuses to run unless ALLOW_INSECURE=1
+ * is set: ``optInInsecure`` adds it, only after the user agreed. `env` passes it through sudo
+ * whatever the sudoers env policy says.
  */
-export function buildInstallCommand(deviceId: number, code: string, insecure = false): string {
-  const shell = insecure ? 'sudo env ALLOW_INSECURE=1 bash' : 'sudo bash';
-  return `curl -sSL "${serverOrigin()}/api/agent/download/install-sh/${deviceId}?code=${code}" | ${shell}`;
+export function buildInstallCommand(deviceId: number, code: string, serverUrl = serverOrigin(), optInInsecure = false): string {
+  const base = serverUrl.replace(/\/+$/, '');
+  const curl = base.toLowerCase().startsWith('https://') ? "curl --proto '=https' -sSL" : 'curl -sSL';
+  const shell = optInInsecure ? 'sudo env ALLOW_INSECURE=1 bash' : 'sudo bash';
+  return `${curl} "${base}/api/agent/download/install-sh/${deviceId}?code=${code}" | ${shell}`;
 }
 
-/** ``insecure``: the script downloads over plain HTTP, so the command needs ALLOW_INSECURE=1 */
-export interface InstallCode { code: string; expiresAt: Date; insecure: boolean }
+/**
+ * ``insecure``: the script downloads over plain HTTP. ``insecureAllowed``: the server allows
+ * that for every install (GRAVITYLAN_ALLOW_INSECURE_INSTALL), so the command needs no opt-in.
+ */
+export interface InstallCode { code: string; expiresAt: Date; serverUrl: string; insecure: boolean; insecureAllowed: boolean }
+
+/** Over plain HTTP the installer stops unless the user opts in (or the server allows it). */
+export function needsInsecureOptIn(installCode: InstallCode): boolean {
+  return installCode.insecure && !installCode.insecureAllowed;
+}
 
 /** A fresh single-use enrollment code for the install command of one device. */
 export async function requestInstallCode(deviceId: number): Promise<InstallCode> {
-  const { code, expires_in, insecure } = await api.createAgentEnrollment(deviceId);
-  // The code ends up in a root shell command: accept only the backend's token_urlsafe alphabet.
+  const { code, expires_in, server_url, insecure, insecure_allowed } = await api.createAgentEnrollment(deviceId);
+  // Code and server URL end up in a root shell command: accept only what they can legitimately contain.
   if (!/^[A-Za-z0-9_-]+$/.test(code)) throw new Error('Unexpected install code format');
-  return { code, expiresAt: new Date(Date.now() + expires_in * 1000), insecure: !!insecure };
+  const serverUrl = server_url || serverOrigin();
+  if (!SAFE_SERVER_URL.test(serverUrl)) throw new Error('Unexpected server URL format');
+  return {
+    code,
+    expiresAt: new Date(Date.now() + expires_in * 1000),
+    serverUrl,
+    insecure: !!insecure,
+    insecureAllowed: !!insecure_allowed,
+  };
 }
 
 export function buildUninstallCommand(deviceId: number): string {
@@ -98,11 +122,13 @@ export function ManualInstallCommand({ deviceId }: { deviceId: number }) {
   const [installCode, setInstallCode] = useState<InstallCode | null>(null);
   const [failed, setFailed] = useState(false);
   const [request, setRequest] = useState(0);
+  const [insecureOptIn, setInsecureOptIn] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setInstallCode(null);
     setFailed(false);
+    setInsecureOptIn(false);
     requestInstallCode(deviceId)
       .then((result) => {
         if (!cancelled) setInstallCode(result);
@@ -114,7 +140,10 @@ export function ManualInstallCommand({ deviceId }: { deviceId: number }) {
     return () => { cancelled = true; };
   }, [deviceId, request]);
 
-  const command = installCode ? buildInstallCommand(deviceId, installCode.code, installCode.insecure) : '';
+  const needsOptIn = !!installCode && needsInsecureOptIn(installCode);
+  const command = installCode
+    ? buildInstallCommand(deviceId, installCode.code, installCode.serverUrl, needsOptIn && insecureOptIn)
+    : '';
 
   const handleCopy = async () => {
     if (!command) return;
@@ -131,9 +160,19 @@ export function ManualInstallCommand({ deviceId }: { deviceId: number }) {
       {installCode?.insecure && (
         <div className="callout callout--warning" role="note">
           <AlertTriangle size={16} className="callout__icon" aria-hidden="true" />
-          <p className="callout__body">
-            <strong>{t('agent.insecure_install_title')}:</strong> {t('agent.insecure_install_warning')}
-          </p>
+          <div className="callout__body">
+            <p>
+              <strong>{t('agent.insecure_install_title')}:</strong> {t('agent.insecure_install_warning')}
+            </p>
+            {needsOptIn ? (
+              <label className="agent-detail__check">
+                <input type="checkbox" checked={insecureOptIn} onChange={(e) => setInsecureOptIn(e.target.checked)} />
+                {t('agent.insecure_install_opt_in')}
+              </label>
+            ) : (
+              <p>{t('agent.insecure_install_allowed')}</p>
+            )}
+          </div>
         </div>
       )}
       <div className="manual-command__box">

@@ -62,6 +62,32 @@ async def test_enrollment_reports_insecure_server_url(client, db, admin_token, s
     res = await client.post(f"/api/agent/enroll/{device.id}", headers=HEADERS)
     assert res.status_code == 200
     assert res.json()["insecure"] is insecure
+    # The UI fetches the install script from the same address the script downloads from
+    assert res.json()["server_url"] == server_url
+    assert res.json()["insecure_allowed"] is False
+
+
+@pytest.mark.asyncio
+async def test_enrollment_reports_server_wide_opt_in(client, db, admin_token, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "allow_insecure_install", True)
+    device = Device(ip="192.168.1.91", display_name="Pi", is_online=True)
+    db.add(device)
+    await db.commit()
+
+    res = await client.post(f"/api/agent/enroll/{device.id}", headers=HEADERS)
+    assert res.json()["insecure_allowed"] is True
+
+
+def test_https_install_does_not_follow_redirects_to_http():
+    script = build_install_script("https://gravity.example", 3, "abc")
+    # Both downloads (agent and its token) stay on HTTPS, also across redirects
+    assert script.count("curl --proto '=https' -fsSL \"$SERVER_URL/api/agent/download/") == 2
+
+
+def test_http_install_script_has_no_https_restriction():
+    assert "--proto" not in build_install_script("http://h:8000", 1, "c")
 
 
 @needs_bash

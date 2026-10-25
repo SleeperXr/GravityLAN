@@ -184,8 +184,14 @@ class AgentEnrollmentResponse(BaseModel):
 
     code: str
     expires_in: int  # seconds
-    # The install script would download over plain HTTP: the UI adds ALLOW_INSECURE=1 and warns (#44)
+    # Address the install script downloads from; the copied command fetches the script from it too,
+    # so an HTTPS server URL also protects that first download (#44)
+    server_url: str = ""
+    # The install script would download over plain HTTP: the UI warns and adds ALLOW_INSECURE=1
+    # only when the user opts in (#44)
     insecure: bool = False
+    # GRAVITYLAN_ALLOW_INSECURE_INSTALL: the server already allows HTTP installs, no opt-in needed
+    insecure_allowed: bool = False
 
 
 class PackageUpdateInfo(BaseModel):
