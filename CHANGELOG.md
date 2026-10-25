@@ -1,4 +1,5 @@
 # Changelog
+- GravityUI status line names the devices and leads to them. Next to the counts it lists the first two offline or disrupted devices ("2 devices offline: NAS, Pi-hole", further ones as "+n"), and "Go to problem" opens the first of them, offline before disrupted, in the device editor. Coming back to the overview from another page, from layout editing or from a hidden tab reloads data that is older than the 30-second refresh right away, instead of showing it until the next refresh.
 
 All notable changes to this project will be documented in this file.
 

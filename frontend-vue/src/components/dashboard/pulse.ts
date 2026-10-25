@@ -28,3 +28,20 @@ export function networkPulse(devices: Pick<Device, 'is_online' | 'alert_offline'
   }
   return pulse;
 }
+
+/** The devices behind the pulse counts, in list order: the status line names them and opens the first. */
+export function attentionDevices<T extends Pick<Device, 'is_online' | 'alert_offline' | 'services'>>(devices: T[]): { offline: T[]; degraded: T[] } {
+  return {
+    offline: devices.filter((d) => deviceAttention(d) === 'offline'),
+    degraded: devices.filter((d) => deviceAttention(d) === 'degraded'),
+  };
+}
+
+/** Names spelled out in the status line before the rest is counted as "+n". */
+const NAMED_DEVICES = 2;
+
+/** "NAS, Pi-hole +2": the first names, then how many more. */
+export function nameList(names: string[]): string {
+  const shown = names.slice(0, NAMED_DEVICES).join(', ');
+  return names.length > NAMED_DEVICES ? `${shown} +${names.length - NAMED_DEVICES}` : shown;
+}

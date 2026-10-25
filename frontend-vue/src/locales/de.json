@@ -99,7 +99,10 @@
     "pulse": {
       "all_clear": "Alles in Ordnung · {{online}} von {{total}} Geräten online",
       "updated": "Stand",
-      "failed": "Aktualisierung fehlgeschlagen"
+      "failed": "Aktualisierung fehlgeschlagen",
+      "named": "{{text}}: {{names}}",
+      "jump": "Zum Problem",
+      "jump_label": "Zum Problem: {{name}}"
     },
     "notices": {
       "title": "Systemmeldungen",
