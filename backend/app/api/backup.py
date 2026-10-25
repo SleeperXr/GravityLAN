@@ -258,6 +258,12 @@ def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str,
         tokens_before = cursor.fetchone()[0]
         imported: dict[str, int] = {}
 
+        if data.get("devices") and not data.get("device_interfaces"):
+            try:
+                cursor.execute("DELETE FROM device_interfaces")
+            except sqlite3.OperationalError:
+                pass
+
         for key, rows in data.items():
             if key == "metadata" or not rows:
                 continue

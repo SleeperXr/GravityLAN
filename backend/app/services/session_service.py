@@ -81,6 +81,10 @@ class SessionStore:
         for sid in expired_ids:
             self.delete_session(sid)
 
+    def clear(self) -> None:
+        """Remove all active browser sessions (e.g. after a database factory reset)."""
+        self._sessions.clear()
+
 
 # Global single-process store instance
 session_store = SessionStore()

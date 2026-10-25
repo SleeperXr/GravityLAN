@@ -86,3 +86,18 @@ async def test_refresh_discovered_host_unknown_id_is_404(monkeypatch, db):
     with pytest.raises(HTTPException) as exc:
         await scanner.refresh_discovered_host(99999)
     assert exc.value.status_code == 404
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_subnet", ["10.0.0.0/8", "fd00::/64", "not-a-cidr"])
+async def test_quick_subnet_scan_and_live_discovery_reject_invalid_or_huge_subnets(bad_subnet):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_quick:
+        await scanner.quick_subnet_scan(bad_subnet)
+    assert exc_quick.value.status_code == 422
+
+    with pytest.raises(HTTPException) as exc_live:
+        await scanner.live_discovery(bad_subnet)
+    assert exc_live.value.status_code == 422

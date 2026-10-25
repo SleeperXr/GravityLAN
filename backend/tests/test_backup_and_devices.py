@@ -105,3 +105,35 @@ async def test_service_and_group_changes_clear_dashboard_cache(client, db, admin
     assert changed(group, 201)
     assert changed(await client.patch(f"/api/groups/{group.json()['id']}", json={"name": "Lab 2"}, headers=headers))
     assert changed(await client.delete(f"/api/groups/{group.json()['id']}", headers=headers), 204)
+
+
+
+@pytest.mark.asyncio
+async def test_reset_database_wipes_interfaces_caches_and_sessions(db, monkeypatch):
+    """Befund 2: reset_database clears device_interfaces, runtime caches, and active browser sessions."""
+    from unittest.mock import AsyncMock
+    from sqlalchemy import select
+    from app.api.settings import reset_database
+    from app.models.device import DeviceInterface
+    from app.scanner.scheduler import scheduler
+    from app.services.session_service import session_store
+
+    monkeypatch.setattr(scheduler, "stop", AsyncMock())
+    monkeypatch.setattr(scheduler, "start", AsyncMock())
+
+    dev = Device(id=601, ip="192.168.1.60", display_name="Router", is_online=True)
+    db.add(dev)
+    await db.commit()
+    db.add(DeviceInterface(device_id=601, ip="192.168.110.1", label="VLAN 110"))
+    await db.commit()
+
+    dashboard_cache.set("list_devices:False:None", ["stale"])
+    sid = session_store.create_session(user_agent="pytest")
+    assert session_store.get_session(sid) is not None
+
+    await reset_database(db=db)
+
+    remaining_ifaces = (await db.execute(select(DeviceInterface))).scalars().all()
+    assert remaining_ifaces == []
+    assert dashboard_cache.get("list_devices:False:None") is None
+    assert session_store.get_session(sid) is None

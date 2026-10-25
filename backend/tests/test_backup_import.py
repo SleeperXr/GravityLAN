@@ -173,3 +173,31 @@ async def test_import_endpoint_failure_leaves_database_unchanged(client, admin_t
     assert response.status_code == 500
     assert "no changes were made" in response.json()["detail"]
     assert _query(import_endpoint_db, "SELECT name FROM device_groups") == [("Servers",)]
+
+
+
+@pytest.mark.asyncio
+async def test_export_and_import_preserves_device_interfaces_and_clears_stale_ones(client, admin_token, import_endpoint_db):
+    conn = sqlite3.connect(import_endpoint_db)
+    try:
+        conn.execute(
+            "INSERT INTO device_interfaces (id, device_id, ip, mac, label, is_online) VALUES (1, 1, '192.168.110.1', 'aa:bb:cc:00:00:01', 'VLAN 110', 1)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    exported = await client.get("/api/backup/export", headers={"Authorization": f"Bearer {admin_token}"})
+    assert exported.status_code == 200
+    body = exported.json()
+    assert body["metadata"]["version"] == app_config.app_version
+    assert len(body["device_interfaces"]) == 1
+    assert body["device_interfaces"][0]["ip"] == "192.168.110.1"
+
+    # Importing a backup that replaces devices without interfaces clears stale device_interfaces
+    backup._write_db(import_endpoint_db, {"devices": [{"id": 2, "ip": "10.0.0.99", "display_name": "router"}]})
+    assert _query(import_endpoint_db, "SELECT ip FROM device_interfaces") == []
+
+    # Importing the exported backup restores the device and its interface
+    backup._write_db(import_endpoint_db, body)
+    assert _query(import_endpoint_db, "SELECT device_id, ip, label FROM device_interfaces") == [(1, "192.168.110.1", "VLAN 110")]

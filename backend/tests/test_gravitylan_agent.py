@@ -64,7 +64,8 @@ def test_config_save_roundtrip(agent_mod, tmp_path):
 def test_config_save_is_private_and_leaves_no_temp_file(agent_mod, tmp_path):
     cfg = tmp_path / "agent.conf"
     agent_mod.AgentConfig(server_url="http://x", token="t", device_id=1, config_path=cfg).save()
-    assert cfg.stat().st_mode & 0o777 == 0o600
+    if sys.platform != "win32":
+        assert cfg.stat().st_mode & 0o777 == 0o600
     assert [p.name for p in tmp_path.iterdir()] == ["agent.conf"]
 
 
@@ -619,3 +620,4 @@ def test_orchestrator_process_response_updates_config(agent_mod):
     assert orch.config.interval == 60
     assert orch.config.enable_temp is False
     orch.config.save.assert_called_once()
+
