@@ -38,6 +38,10 @@ class EnrollmentStore:
         self.ttl_seconds = ttl_seconds
         self._clock = clock
 
+    def clear(self) -> None:
+        """Forget every code (database reset)."""
+        self._codes.clear()
+
     def issue(self, device_id: int) -> str:
         """Create a new code for ``device_id`` and return it."""
         self.prune_expired()

@@ -231,6 +231,17 @@ def active_session_count() -> int:
     return len(_active_sessions)
 
 
+def close_all_sessions() -> int:
+    """Close every open terminal (database reset); returns how many were open."""
+    sessions = list(_active_sessions)
+    for session in sessions:
+        try:
+            session.close()
+        except Exception as exc:
+            logger.warning("SSH terminal: closing a session failed: %s", exc)
+    return len(sessions)
+
+
 async def _send_control(websocket: WebSocket, payload: dict) -> None:
     try:
         await websocket.send_text(json.dumps(payload))
