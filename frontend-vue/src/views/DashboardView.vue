@@ -22,9 +22,11 @@ import GatewaysPopover from '@/components/dashboard/GatewaysPopover.vue';
 import NotificationCenter from '@/components/dashboard/NotificationCenter.vue';
 import ScanDialog from '@/components/dashboard/ScanDialog.vue';
 import AgentUpdateCenter from '@/components/dashboard/AgentUpdateCenter.vue';
+import OverviewMoreMenu from '@/components/dashboard/OverviewMoreMenu.vue';
 import DeviceEditor from '@/components/editor/DeviceEditor.vue';
 import LineStatusBoard from '@/components/dashboard/LineStatusBoard.vue';
 import ServiceNotices from '@/components/dashboard/ServiceNotices.vue';
+import NetworkPulse from '@/components/dashboard/NetworkPulse.vue';
 import OrbitMap from '@/components/orbit/OrbitMap.vue';
 import type { EditorTab } from '@shared/components/Dashboard/editor/deviceForm';
 import { t } from '@/i18n';
@@ -36,6 +38,9 @@ const { showToast } = useToast();
 const { confirm } = useConfirm();
 
 const isMobile = useMediaQuery('(max-width: 767px)');
+/** Map and notices sit side by side from xl; stacked below, the notices come first and do not scroll inside */
+const isWide = useMediaQuery('(min-width: 1280px)');
+const STACKED_NOTICES = 4;
 const storedView = useStorage<'grid' | 'list'>('gravityui.dashboard.view', 'grid');
 const viewMode = computed(() => (isMobile.value ? 'list' : storedView.value));
 const collapsed = useStorage<(number | 'none')[]>('gravityui.dashboard.collapsed', []);
@@ -238,7 +243,7 @@ function clearFilters() {
             v-model="query"
             type="search"
             :placeholder="t('gv.dashboard.search')"
-            class="h-9 w-full rounded-md border border-line bg-sunken pr-14 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none"
+            class="h-9 w-full rounded-md max-md:h-11 border border-line bg-sunken pr-14 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none"
           />
           <kbd class="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle sm:inline">
             Ctrl K
@@ -261,15 +266,26 @@ function clearFilters() {
         </div>
         <GatewaysPopover @open-device="(id, tab) => openDeviceById(id, tab)" />
         <NotificationCenter />
-        <Button v-if="outdatedAgents > 0" class="border-warn/40 text-warn-text" @click="updateCenterOpen = true">
-          <RefreshCw aria-hidden="true" />{{ outdatedAgents }}<span class="hidden sm:inline">{{ t('dashboard.agent_updates') }}</span>
-        </Button>
-        <Button :aria-label="t('dashboard.edit_layout')" :title="t('dashboard.edit_layout')" @click="toggleEdit">
-          <Pencil aria-hidden="true" /><span class="hidden xl:inline">{{ t('dashboard.edit_layout') }}</span>
-        </Button>
-        <Button :disabled="refreshingAll || store.isScanning" :aria-label="t('dashboard.refresh_all')" @click="refreshAll">
-          <RefreshCw :class="refreshingAll && 'animate-spin'" aria-hidden="true" /><span class="hidden xl:inline">{{ refreshingAll ? t('dashboard.refreshing') : t('dashboard.refresh_all') }}</span>
-        </Button>
+        <OverviewMoreMenu
+          v-if="isMobile"
+          :updates="outdatedAgents"
+          :refreshing="refreshingAll"
+          :scanning="store.isScanning"
+          @updates="updateCenterOpen = true"
+          @edit="toggleEdit"
+          @refresh="refreshAll"
+        />
+        <template v-else>
+          <Button v-if="outdatedAgents > 0" class="border-warn/40 text-warn-text" @click="updateCenterOpen = true">
+            <RefreshCw aria-hidden="true" />{{ outdatedAgents }}<span class="hidden sm:inline">{{ t('dashboard.agent_updates') }}</span>
+          </Button>
+          <Button :aria-label="t('dashboard.edit_layout')" :title="t('dashboard.edit_layout')" @click="toggleEdit">
+            <Pencil aria-hidden="true" /><span class="hidden xl:inline">{{ t('dashboard.edit_layout') }}</span>
+          </Button>
+          <Button :disabled="refreshingAll || store.isScanning" :aria-label="t('dashboard.refresh_all')" @click="refreshAll">
+            <RefreshCw :class="refreshingAll && 'animate-spin'" aria-hidden="true" /><span class="hidden xl:inline">{{ refreshingAll ? t('dashboard.refreshing') : t('dashboard.refresh_all') }}</span>
+          </Button>
+        </template>
         <Button variant="primary" :disabled="store.isScanning" @click="scan.openDialog()">
           <Radar :class="store.isScanning && 'animate-spin'" aria-hidden="true" />{{ store.isScanning ? t('dashboard.scanning') : t('dashboard.scan') }}
         </Button>
@@ -286,10 +302,22 @@ function clearFilters() {
       </template>
     </PageHeader>
 
-    <!-- Status board and the live gravitational orbit map with system notices -->
+    <!-- Status first: the one-line answer, the status board, what needs attention, then the orbit map -->
     <template v-if="store.loaded && store.totalCount > 0 && !editMode">
-      <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
-      <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div class="space-y-3">
+        <NetworkPulse :devices="store.devices" :updated="store.lastUpdated" :failed="!!store.error" />
+        <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
+      </div>
+      <!-- Notices left of the map from xl, so reading, tab and screen order are the same -->
+      <div class="grid gap-4 xl:grid-cols-[22rem_minmax(0,1fr)]">
+        <ServiceNotices
+          :class="isWide && 'max-h-[32rem]'"
+          :limit="isWide ? undefined : STACKED_NOTICES"
+          :devices="store.devices"
+          @open-device="(d) => openEditor(d)"
+          @open-updates="updateCenterOpen = true"
+          @open-patches="router.push('/agents')"
+        />
         <!-- Title and edit link sit above the map: on top of it the map's own search covered them -->
         <div class="gl-card flex h-[24rem] flex-col overflow-hidden md:h-[32rem]">
           <div class="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
@@ -297,7 +325,7 @@ function clearFilters() {
               <p class="text-sm font-bold text-fg">{{ t('gv.plan.title') }}</p>
               <p class="text-xs text-fg-subtle">{{ t('gv.plan.live', { online: store.onlineCount, total: store.totalCount }) }}</p>
             </div>
-            <RouterLink to="/topology" class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg hover:border-line-strong">
+            <RouterLink to="/topology" class="inline-flex h-8 shrink-0 items-center max-md:h-11 gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg hover:border-line-strong">
               <Pencil class="size-3.5" aria-hidden="true" />{{ t('gv.plan.edit') }}
             </RouterLink>
           </div>
@@ -305,7 +333,6 @@ function clearFilters() {
             <OrbitMap flow-id="dashboard-plan" @open-device="(d) => openEditor(d)" />
           </div>
         </div>
-        <ServiceNotices class="max-h-[32rem]" :devices="store.devices" @open-device="(d) => openEditor(d)" @open-updates="updateCenterOpen = true" @open-patches="router.push('/agents')" />
       </div>
     </template>
 

@@ -30,7 +30,7 @@ const widths = { md: 'md:max-w-md', lg: 'md:max-w-2xl', xl: 'md:max-w-4xl' };
             <slot name="meta" />
           </div>
           <DialogClose
-            class="-mt-1 -mr-2 inline-flex size-9 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg"
+            class="-mt-1 -mr-2 inline-flex size-9 max-md:size-11 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg"
             :aria-label="t('common.close')"
           >
             <X class="size-4" aria-hidden="true" />

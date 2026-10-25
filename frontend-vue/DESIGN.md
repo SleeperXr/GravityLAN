@@ -367,6 +367,7 @@ Sachlich und kompakt.
 - **Sternbild-Vektoren (`LightBeam`):** Zweischichtige leuchtende Sternbild-Linien (Stardust-Aura + laser-scharfer Vektorkern + wandernde Photonen-Pulse + Spektral-Etikett `10GbE`/`2.5GbE`/`1GbE`/`WLAN`/`Fiber`).
 - **Deep-Space Starfield & Nebulae:** Hintergrund mit mikroskopischem Sternenfeld (twinkling stars mit unterschiedlicher Magnitude) und weichen, lokalen kosmischen Gasnebeln pro Subnetz-Hub, ohne störende Gitterlinien.
 - **Kontextuelle Orbit-Bahnen:** Umlaufbahnen werden gezielt nur um den aktuell fokussierten oder gehoverten Hub eingeblendet – dadurch entfallen die vorherigen 20+ globalen, sich überkreuzenden Drahtkreise vollständig.
+- **Aufmerksamkeit zuerst:** Offline und gestörte Körper behalten ihr Label auch in der Gesamtansicht, tragen einen mit dem Zoom gegenskalierten Halo in Zustandsfarbe (offline gestrichelt) und liegen über ihren Nachbarn. Der Knopf über den Zoom-Steuerelementen zählt sie und fokussiert sie nacheinander. Labels weichen bei Platzmangel weiter nach außen aus, statt sich zu überlagern.
 - **Komplett anpassbar (Bearbeitungsmodus):**
   - **Gruppenbewegung:** Wird ein Planet oder Stern verschoben, wandern alle seine Monde (inkl. Kind-Hierarchie) synchron mit (`moveWithDescendants`).
   - **Orbit-Zuweisung per Drag & Drop:** Zieht man ein Gerät auf einen anderen Planeten/Switch/AP/Stern, erscheint ein **visueller Drop-Highlight-Ring** sowie das Banner `Orbit → <Ziel>`. Beim Loslassen wird der Topologie-Link automatisch umgehängt bzw. angelegt und das Gerät auf einer freien Umlaufbahn um das neue Elternobjekt platziert (mit Zyklusschutz).
@@ -375,7 +376,9 @@ Sachlich und kompakt.
   - **Galaktische Dynamik (`vitalityMode`):** Über den Sparkles-Button unten rechts umschaltbar zwischen `Aus`, `Dezent` (Standard) und `Lebendig`.
 
 ### Netz-Statusboard und Betriebsmeldungen
-Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rundes Netzschild, Name (700), Zustandstext in Zustandsfarbe, rechts „online/gesamt“ in Mono; ein Klick filtert die Übersicht. Betriebsmeldungen (`ServiceNotices.vue`) zeigen das Netzschild des betroffenen Geräts, Titel in Zustandsfarbe, Detail in Mono und relative Zeit.
+Die Übersicht beginnt mit der Statuszeile (`NetworkPulse.vue`): „Alles in Ordnung · 29 von 31 Geräten online“ in Akzent oder die Zahl der offline bzw. gestörten Geräte in Zustandsfarbe, dahinter „Stand vor …“ (nach einem fehlgeschlagenen Neuladen in Bernstein). Die Zählregel steht in `components/dashboard/pulse.ts` und gilt für Statuszeile und Statusboard. Danach folgen Statusboard, Betriebsmeldungen und Orbit-Karte; ab 1280 px stehen die Meldungen links neben der Karte (22 rem, innen scrollend), darunter über ihr mit den vier dringendsten und „Alle anzeigen“.
+
+Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rundes Netzschild, Name (700), Zustandstext in Zustandsfarbe („Keine Geräte“ in `fg-subtle` für ein leeres Netz), rechts „online/gesamt“ in Mono; ein Klick filtert die Übersicht. Betriebsmeldungen (`ServiceNotices.vue`) zeigen das Netzschild des betroffenen Geräts, Titel in Zustandsfarbe, Detail in Mono und relative Zeit.
 
 ### Weitere Netzfarbträger
 - **IP-Kacheln:** belegt und online = Rahmen 55 % und Fläche 14 % in der Netzfarbe; offline rot getönt; frei Haarlinie; reserviert gestrichelt. Adressen in Mono.

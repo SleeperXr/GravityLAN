@@ -139,7 +139,7 @@ defineExpose({ compact });
     <div class="flex items-center gap-2">
       <button
         type="button"
-        class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left"
+        class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left max-md:min-h-11"
         :aria-expanded="!collapsed"
         :aria-controls="`${sectionId}-body`"
         @click="emit('toggle')"
@@ -153,7 +153,7 @@ defineExpose({ compact });
       <div v-if="editMode && group" class="flex gap-1">
         <button
           type="button"
-          class="inline-flex size-7 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg disabled:opacity-30"
+          class="inline-flex size-7 max-md:size-11 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg disabled:opacity-30"
           :disabled="isFirst"
           :aria-label="t('dashboard.move_group_up')"
           :title="t('dashboard.move_group_up')"
@@ -163,7 +163,7 @@ defineExpose({ compact });
         </button>
         <button
           type="button"
-          class="inline-flex size-7 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg disabled:opacity-30"
+          class="inline-flex size-7 max-md:size-11 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg disabled:opacity-30"
           :disabled="isLast"
           :aria-label="t('dashboard.move_group_down')"
           :title="t('dashboard.move_group_down')"

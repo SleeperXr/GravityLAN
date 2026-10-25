@@ -121,7 +121,7 @@ const sortOptions = computed(() => [
           v-for="p in periods"
           :key="p"
           type="button"
-          class="h-8 rounded-[7px] px-3 font-mono text-xs font-semibold transition-colors"
+          class="h-8 rounded-[7px] px-3 font-mono text-xs font-semibold transition-colors max-md:h-11"
           :class="period === p ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
           :aria-pressed="period === p"
           @click="period = p"
@@ -169,14 +169,15 @@ const sortOptions = computed(() => [
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('health_page.search_placeholder') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input v-model="search" type="search" :placeholder="t('health_page.search_placeholder')" class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-accent focus:outline-none" />
+        <input v-model="search" type="search" :placeholder="t('health_page.search_placeholder')" class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 max-md:h-11 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-accent focus:outline-none" />
       </label>
-      <div class="flex max-w-full overflow-x-auto rounded-md border border-line bg-sunken p-0.5 [scrollbar-width:none]" role="group" :aria-label="t('gv.health.filter')">
+      <!-- Wraps on phones: scrolled sideways, "Critical / Offline" sat out of view with no hint it was there -->
+      <div class="flex max-w-full flex-wrap rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('gv.health.filter')">
         <button
           v-for="f in filters"
           :key="f"
           type="button"
-          class="h-8 shrink-0 rounded-[7px] px-3 text-xs font-semibold transition-colors"
+          class="h-8 shrink-0 rounded-[7px] px-3 text-xs font-semibold transition-colors max-md:h-11"
           :class="filter === f ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
           :aria-pressed="filter === f"
           @click="filter = f"
@@ -197,15 +198,16 @@ const sortOptions = computed(() => [
     <div v-else-if="rows.length === 0" class="gl-card"><EmptyState compact :icon="Search" :title="t('health_page.no_devices_found')" /></div>
 
     <template v-else>
-      <div class="gl-card hidden overflow-x-auto md:block">
+      <!-- The fixed columns take 46 rem; below xl that left the device names no room, so the cards take over -->
+      <div class="gl-card hidden overflow-x-auto xl:block">
         <table class="w-full table-fixed text-left">
           <thead>
             <tr class="border-b border-line text-xs font-semibold text-fg-subtle">
-              <th class="w-[32%] px-5 py-3">{{ t('health_page.table_device') }}</th>
-              <th class="w-44 px-4 py-3">{{ t('health_page.table_status') }}</th>
-              <th class="w-56 px-4 py-3">{{ t('health_page.table_uptime') }}</th>
-              <th class="w-56 px-4 py-3">{{ t('health_page.table_latency') }}</th>
-              <th class="w-40 px-4 py-3">{{ t('health_page.table_services') }}</th>
+              <th class="px-5 py-3">{{ t('health_page.table_device') }}</th>
+              <th class="w-40 px-4 py-3">{{ t('health_page.table_status') }}</th>
+              <th class="w-48 px-4 py-3">{{ t('health_page.table_uptime') }}</th>
+              <th class="w-48 px-4 py-3">{{ t('health_page.table_latency') }}</th>
+              <th class="w-36 px-4 py-3">{{ t('health_page.table_services') }}</th>
               <th class="w-12" />
             </tr>
           </thead>
@@ -214,7 +216,7 @@ const sortOptions = computed(() => [
               <td class="px-5 py-3">
                 <button type="button" class="block max-w-full truncate text-left text-sm font-bold text-fg group-hover:text-accent-text" @click.stop="select(d)">{{ d.display_name }}</button>
                 <p class="mt-0.5 flex items-center gap-2 truncate font-mono text-xs text-fg-subtle">
-                  {{ d.ip }}<span v-if="d.group_name" class="rounded-sm bg-raised px-1.5 font-sans text-[10px] text-fg-muted">{{ d.group_name }}</span>
+                  {{ d.ip }}<span v-if="d.group_name" class="rounded-sm bg-raised px-1.5 font-sans text-[11px] text-fg-muted">{{ d.group_name }}</span>
                 </p>
               </td>
               <td class="px-4 py-3">
@@ -234,7 +236,7 @@ const sortOptions = computed(() => [
                 <div class="flex items-center justify-between gap-3">
                   <div class="font-mono text-xs">
                     <p class="font-semibold text-fg">{{ ms(d.latency.current_ms) }}</p>
-                    <p class="text-[10px] text-fg-subtle">Ø {{ ms(d.latency.avg_ms) }}<span v-if="d.latency.jitter_ms !== null"> ±{{ d.latency.jitter_ms.toFixed(1) }}</span></p>
+                    <p class="text-[11px] text-fg-subtle">Ø {{ ms(d.latency.avg_ms) }}<span v-if="d.latency.jitter_ms !== null"> ±{{ d.latency.jitter_ms.toFixed(1) }}</span></p>
                   </div>
                   <Sparkline :values="d.latency.sparkline" />
                 </div>
@@ -253,9 +255,9 @@ const sortOptions = computed(() => [
         </table>
       </div>
 
-      <ul class="space-y-2.5 md:hidden">
+      <ul class="grid gap-2.5 lg:grid-cols-2 xl:hidden">
         <li v-for="d in rows" :key="d.id">
-          <button type="button" class="gl-card w-full space-y-3 p-4 text-left" @click="select(d)">
+          <button type="button" class="gl-card h-full w-full space-y-3 p-4 text-left" @click="select(d)">
             <div class="flex items-start gap-3">
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm font-bold text-fg">{{ d.display_name }}</p>
@@ -268,6 +270,12 @@ const sortOptions = computed(() => [
               <span class="font-mono text-fg">{{ d.uptime.uptime_pct.toFixed(1) }}% <span class="text-fg-subtle">· {{ ms(d.latency.current_ms) }}</span></span>
             </div>
             <StatusMonitor compact size="sm" :focusable="false" :bars="d.uptime.history_bars" :span-hours="periodHours(period)" :uptime="d.uptime.uptime_pct" />
+            <!-- The same warnings the table shows, now that the cards stand in for it up to 1280 px -->
+            <div v-if="d.services.length || sslWarnings(d.services) > 0 || hasAgentWarning(d)" class="flex flex-wrap items-center gap-1.5">
+              <Badge v-if="d.services.length" mono><Layers aria-hidden="true" />{{ d.services.filter((s) => s.is_up).length }}/{{ d.services.length }}</Badge>
+              <Badge v-if="sslWarnings(d.services) > 0" tone="warn"><Lock aria-hidden="true" />SSL</Badge>
+              <Badge v-if="hasAgentWarning(d)" tone="danger"><ShieldAlert aria-hidden="true" />{{ d.agent?.reboot_required ? 'Reboot' : 'Patch' }}</Badge>
+            </div>
           </button>
         </li>
       </ul>

@@ -47,7 +47,7 @@ const emit = defineEmits<{ edit: [device: Device] }>();
 
       <button
         type="button"
-        class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg"
+        class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg max-md:size-11"
         :aria-label="`${t('dashboard.edit_device')}: ${deviceLabel(device)}`"
         @click.stop="emit('edit', device)"
       >

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Device } from '@/types';
 import { resolveOrbitSystem, type OrbitLink } from './orbitModel';
-import { BODY_RADIUS, beamPath, labelSize, layoutOrbit, orbitCenterId, placeLabels } from './orbitLayout';
+import { BODY_RADIUS, beamPath, labelRank, labelSize, layoutOrbit, orbitCenterId, placeLabels, problemBodyIds } from './orbitLayout';
 
 vi.mock('@/lib/networks', () => ({
   networkColor: (subnetId: number | null | undefined) => `var(--line-${subnetId ?? 1})`,
@@ -102,5 +102,41 @@ describe('orbit beams', () => {
   it('keeps short beams and beams to the star straight', () => {
     expect(beamPath({ x: 0, y: -300 }, { x: 20, y: -320 }, { x: 0, y: 0 }).d).not.toContain('Q');
     expect(beamPath({ x: 0, y: 0 }, { x: 0, y: -300 }, { x: 0, y: 0 }).d).not.toContain('Q');
+  });
+});
+
+describe('problem bodies', () => {
+  const system = resolveOrbitSystem(devices, links, new Set([1]));
+  const list = [...system.values()];
+
+  it('labels a moon that is not online before the healthy moons', () => {
+    const offlineMoon = system.get(21)!;
+    const healthyMoon = system.get(20)!;
+    expect(labelRank(system.get(1)!)).toBe(0);
+    expect(labelRank(system.get(2)!)).toBe(1);
+    expect(labelRank(offlineMoon)).toBeLessThan(labelRank(healthyMoon));
+    expect(labelRank(offlineMoon)).toBeGreaterThan(labelRank(system.get(2)!));
+  });
+
+  it('lists offline bodies before degraded ones and leaves healthy ones out', () => {
+    const degraded = { ...system.get(7)!, state: 'degraded' as const };
+    expect(problemBodyIds([...list.filter((b) => b.id !== 7), degraded])).toEqual([21, 7]);
+    expect(problemBodyIds(list.filter((b) => b.state === 'online'))).toEqual([]);
+  });
+});
+
+describe('placeLabels in a crowded spot', () => {
+  it('moves a label further out instead of stacking it on a taken side', () => {
+    const neighbours = [
+      { id: 2, pos: { x: 0, y: 30 }, radius: 10 },
+      { id: 3, pos: { x: 0, y: -30 }, radius: 10 },
+      { id: 4, pos: { x: 60, y: 0 }, radius: 10 },
+      { id: 5, pos: { x: -60, y: 0 }, radius: 10 },
+    ];
+    const item = { id: 1, pos: { x: 0, y: 0 }, radius: 10, size: { w: 40, h: 20 }, rank: 2 };
+    const place = placeLabels([item], 1, [item, ...neighbours]).get(1)!;
+    // Below the neighbour at y = 30 (radius 10), not on top of it
+    expect(place.side).toBe('below');
+    expect(place.y).toBeGreaterThan(40);
   });
 });

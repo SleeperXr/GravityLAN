@@ -184,6 +184,21 @@ export function labelSize(name: string, ip: string, extraLine: boolean): { w: nu
   return { w: Math.max(name.length * 7.1, ip.length * 6.2) + 8, h: BASE_LINE * (extraLine ? 3 : 2) + 2 };
 }
 
+/**
+ * Order in which labels claim their space: stars, then planets, then moons that need attention,
+ * then healthy moons. A moon that is offline or degraded keeps its label at overview zoom.
+ */
+export function labelRank(body: Pick<OrbitBody, 'kind' | 'state'>): number {
+  if (body.kind === 'star') return 0;
+  if (body.kind === 'planet') return 1;
+  return body.state === 'online' ? 3 : 2;
+}
+
+/** Bodies that need attention, offline before degraded (map order otherwise). */
+export function problemBodyIds(bodies: Pick<OrbitBody, 'id' | 'state'>[]): number[] {
+  return [...bodies.filter((b) => b.state === 'offline'), ...bodies.filter((b) => b.state === 'degraded')].map((b) => b.id);
+}
+
 function boxFor(p: Point, r: number, size: { w: number; h: number }, side: LabelSide, scale = 1): { box: Box; place: LabelPlacement } {
   const gap = 6;
   const LINE = BASE_LINE * scale;
@@ -208,7 +223,8 @@ const hitsCircle = (b: Box, c: Point, r: number) => {
 
 /**
  * Put every label where it collides with nothing: below the body if free, else above, right or
- * left (stars first, then planets, then moons). Falls back to below when every side is taken.
+ * left (stars first, then planets, then moons). When every side is taken it tries the same sides
+ * a label height further out, up to three times, and only then falls back to below.
  */
 export function placeLabels(
   items: { id: number; pos: Point; radius: number; size: { w: number; h: number }; rank: number }[],
@@ -223,12 +239,14 @@ export function placeLabels(
   for (const item of order) {
     const size = { w: item.size.w * scale, h: item.size.h * scale };
     let chosen: { box: Box; place: LabelPlacement } | null = null;
-    for (const side of ['below', 'above', 'right', 'left'] as LabelSide[]) {
-      const candidate = boxFor(item.pos, item.radius, size, side, scale);
-      const blocked = placed.some((b) => overlaps(b, candidate.box)) || obstacles.some((o) => o.id !== item.id && hitsCircle(candidate.box, o.pos, o.radius));
-      if (!blocked) {
-        chosen = candidate;
-        break;
+    for (let ring = 0; ring < 4 && !chosen; ring++) {
+      for (const side of ['below', 'above', 'right', 'left'] as LabelSide[]) {
+        const candidate = boxFor(item.pos, item.radius + ring * size.h, size, side, scale);
+        const blocked = placed.some((b) => overlaps(b, candidate.box)) || obstacles.some((o) => o.id !== item.id && hitsCircle(candidate.box, o.pos, o.radius));
+        if (!blocked) {
+          chosen = candidate;
+          break;
+        }
       }
     }
     chosen ??= boxFor(item.pos, item.radius, size, 'below', scale);
