@@ -18,8 +18,13 @@ export function serverOrigin(): string {
   return `${protocol}//${hostname}${apiPort}`;
 }
 
-export function buildInstallCommand(deviceId: number, code: string): string {
-  return `curl -sSL "${serverOrigin()}/api/agent/download/install-sh/${deviceId}?code=${code}" | sudo bash`;
+/**
+ * The one-line installer. Over plain HTTP the script refuses to run unless ALLOW_INSECURE=1
+ * is set (#44); `env` passes it through sudo whatever the sudoers env policy says.
+ */
+export function buildInstallCommand(deviceId: number, code: string, insecure = false): string {
+  const shell = insecure ? 'sudo env ALLOW_INSECURE=1 bash' : 'sudo bash';
+  return `curl -sSL "${serverOrigin()}/api/agent/download/install-sh/${deviceId}?code=${code}" | ${shell}`;
 }
 
 export function buildUninstallCommand(deviceId: number): string {
@@ -29,14 +34,16 @@ export function buildUninstallCommand(deviceId: number): string {
 export interface InstallCode {
   code: string;
   expiresAt: Date;
+  /** The script downloads over plain HTTP, so the command needs ALLOW_INSECURE=1 */
+  insecure: boolean;
 }
 
 /** A fresh single-use enrollment code for the install command of one device. */
 export async function requestInstallCode(deviceId: number): Promise<InstallCode> {
-  const { code, expires_in } = await api.createAgentEnrollment(deviceId);
+  const { code, expires_in, insecure } = await api.createAgentEnrollment(deviceId);
   // The code ends up in a root shell command: accept only the backend's token_urlsafe alphabet.
   if (!/^[A-Za-z0-9_-]+$/.test(code)) throw new Error('Unexpected install code format');
-  return { code, expiresAt: new Date(Date.now() + expires_in * 1000) };
+  return { code, expiresAt: new Date(Date.now() + expires_in * 1000), insecure: !!insecure };
 }
 
 /**

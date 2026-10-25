@@ -29,8 +29,8 @@ export function useAgentUpdateCommand({ termRef }: XtermHandles, update: AgentUp
     if (!update?.available || busy) return;
     setBusy(true);
     try {
-      const { code, expiresAt } = await requestInstallCode(update.deviceId);
-      const command = ` ${buildInstallCommand(update.deviceId, code)}`;
+      const { code, expiresAt, insecure } = await requestInstallCode(update.deviceId);
+      const command = ` ${buildInstallCommand(update.deviceId, code, insecure)}`;
       // A line break would run the command right away
       if (/[\r\n]/.test(command)) throw new Error('Line break in the update command');
       const term = termRef.current;
@@ -40,6 +40,7 @@ export function useAgentUpdateCommand({ termRef }: XtermHandles, update: AgentUp
       showToast('success', t('ssh.terminal.agent_update_inserted'), t('ssh.terminal.agent_update_inserted_text', {
         time: expiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }));
+      if (insecure) showToast('info', t('agent.insecure_install_title'), t('agent.insecure_install_warning'));
     } catch (err) {
       console.error('Failed to prepare the agent update command:', err);
       showToast('error', t('ssh.terminal.agent_update'), t('agent.install_code_failed'));

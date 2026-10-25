@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { Copy, RefreshCw } from 'lucide-vue-next';
+import { AlertTriangle, Copy, RefreshCw } from 'lucide-vue-next';
 import Button from '@/components/ui/Button.vue';
 import { buildInstallCommand, buildUninstallCommand, requestInstallCode, type InstallCode } from '@/lib/agent';
 import { copyText } from '@/lib/clipboard';
@@ -34,7 +34,7 @@ watch(
 
 const command = computed(() => {
   if (props.mode === 'uninstall') return buildUninstallCommand(props.deviceId);
-  return installCode.value ? buildInstallCommand(props.deviceId, installCode.value.code) : '';
+  return installCode.value ? buildInstallCommand(props.deviceId, installCode.value.code, installCode.value.insecure) : '';
 });
 
 async function copy() {
@@ -49,6 +49,14 @@ async function copy() {
     <p class="text-xs leading-relaxed text-fg-muted">
       {{ mode === 'install' ? t('agent.manual_update_desc') : t('agent.manual_uninstall_desc') }}
     </p>
+    <div
+      v-if="mode === 'install' && installCode?.insecure"
+      class="flex gap-2 rounded-md border border-warn/40 bg-warn/[0.07] p-3 text-xs leading-relaxed text-fg"
+      role="note"
+    >
+      <AlertTriangle class="mt-0.5 size-4 shrink-0 text-warn-text" aria-hidden="true" />
+      <p><strong>{{ t('agent.insecure_install_title') }}:</strong> {{ t('agent.insecure_install_warning') }}</p>
+    </div>
     <div class="flex items-stretch gap-2">
       <code
         class="min-w-0 flex-1 overflow-x-auto rounded-md border border-line bg-sunken px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all"

@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # LAN IP of the machine running the container. Only SSH logins to exactly this address may
     # retry on the Docker bridge gateway (#46); empty = never (DOCKER_HOST_IP is read as well).
     docker_host_ip: str = ""
+    # Let the manual installer run over plain HTTP without ALLOW_INSECURE=1 on the device (#44)
+    allow_insecure_install: bool = False
     history_retention_days: int = 30
 
     # SSH terminal / secret vault

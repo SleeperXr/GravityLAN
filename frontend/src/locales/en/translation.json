@@ -429,6 +429,8 @@
     "deployed_title": "Agent installed!",
     "deploy_failed_title": "Installation failed",
     "connection_failed": "Connection failed",
+    "insecure_install_title": "Unencrypted installation",
+    "insecure_install_warning": "The server address is http://. The agent runs as root and is downloaded together with its token without encryption, so anyone on the network could replace or read both. That's why the command contains ALLOW_INSECURE=1. Better: set an HTTPS server URL in the settings (e.g. behind a reverse proxy) or install the agent via SSH.",
     "host_key_changed": "{{ip}} presented a different SSH host key than on first contact. GravityLAN stopped before sending any credentials. If this is expected (e.g. after a reinstall), delete the old entry under SSH → Known hosts, connect once in the SSH terminal and confirm the new key. Otherwise someone on the network may be intercepting the connection.",
     "uninstalling": "Uninstalling...",
     "removing": "Removing agent from {{ip}}...",

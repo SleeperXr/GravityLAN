@@ -184,6 +184,8 @@ class AgentEnrollmentResponse(BaseModel):
 
     code: str
     expires_in: int  # seconds
+    # The install script would download over plain HTTP: the UI adds ALLOW_INSECURE=1 and warns (#44)
+    insecure: bool = False
 
 
 class PackageUpdateInfo(BaseModel):

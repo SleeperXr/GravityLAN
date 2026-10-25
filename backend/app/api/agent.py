@@ -458,7 +458,12 @@ async def create_enrollment_code(
         raise HTTPException(status_code=404, detail="Device not found")
 
     code = enrollment_store.issue(device_id)
-    return AgentEnrollmentResponse(code=code, expires_in=int(enrollment_store.ttl_seconds))
+    server_url = await _detect_server_url(db)
+    return AgentEnrollmentResponse(
+        code=code,
+        expires_in=int(enrollment_store.ttl_seconds),
+        insecure=not server_url.lower().startswith("https://"),
+    )
 
 
 @router.get("/download/config/{device_id}")
