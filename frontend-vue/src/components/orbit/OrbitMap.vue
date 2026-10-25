@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useResizeObserver, useStorage } from '@vueuse/core';
-import { Check, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, Sparkles, Wand2 } from 'lucide-vue-next';
+import { Check, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, Sparkles, TriangleAlert, Wand2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
 import { useNetworkStore } from '@/stores/network';
@@ -24,7 +24,7 @@ import {
   type OrbitRole,
   type Point,
 } from './orbitModel';
-import { labelSize, orbitCenterId, placeLabels, radiusOf } from './orbitLayout';
+import { labelRank, labelSize, orbitCenterId, placeLabels, problemBodyIds, radiusOf } from './orbitLayout';
 import { computeFocusSet, findPath, focusSetFromIds, matchBodies, type FocusSet, type TracedPath } from './orbitFocus';
 import { useOrbitViewport } from './useOrbitViewport';
 import OrbitBodyNode from './OrbitBodyNode.vue';
@@ -156,21 +156,24 @@ function roleBadge(device: Device): string | null {
 /**
  * Semantic zoom: labels are counter-scaled so they stay readable (about 11 px) when the whole
  * map is in view; moon labels join once zoomed in, or for the bodies under hover, focus or search.
+ * A moon that is offline or degraded always keeps its label: that is what the overview is for.
  */
 const MAX_LABEL_SCALE = 2.4;
 const labelScale = computed(() => Math.min(MAX_LABEL_SCALE, Math.max(1, 0.95 / view.zoom.value)));
 const showMoonLabels = computed(() => view.zoom.value >= 0.7);
 function labelShown(b: OrbitBody): boolean {
-  if (b.kind !== 'moon' || showMoonLabels.value || hoveredBodyId.value === b.id || selectedDeviceId.value === b.id) return true;
+  if (b.kind !== 'moon' || b.state !== 'online' || showMoonLabels.value || hoveredBodyId.value === b.id || selectedDeviceId.value === b.id) return true;
   const s = spotlight.value;
   return Boolean(s?.strong && s.set.bodyIds.has(b.id));
 }
 const labels = computed(() => {
-  const obstacles = bodyList.value.map((b) => ({ id: b.id, pos: posOf(b.id), radius: radiusOf(b) + (b.kind === 'planet' ? 7 : 0) }));
+  // A body that needs attention is as large as its halo, so labels keep clear of that ring
+  const reach = (b: OrbitBody) => (b.state !== 'online' ? Math.max(radiusOf(b), (radiusOf(b) + 5) * labelScale.value) : radiusOf(b) + (b.kind === 'planet' ? 7 : 0));
+  const obstacles = bodyList.value.map((b) => ({ id: b.id, pos: posOf(b.id), radius: reach(b) }));
   const items = bodyList.value.filter(labelShown).map((b) => ({
     ...obstacles.find((o) => o.id === b.id)!,
     size: labelSize(deviceLabel(b.device), b.device.ip, b.state !== 'online'),
-    rank: b.kind === 'star' ? 0 : b.kind === 'planet' ? 1 : 2,
+    rank: labelRank(b),
   }));
   return placeLabels(items, labelScale.value, obstacles);
 });
@@ -248,8 +251,9 @@ function contentPoints(): Point[] {
   const pts: Point[] = [];
   for (const b of bodyList.value) {
     const p = posOf(b.id);
-    const scale = b.kind === 'moon' ? 1 : MAX_LABEL_SCALE;
-    const size = labelSize(deviceLabel(b.device), b.device.ip, false);
+    const problem = b.state !== 'online';
+    const scale = b.kind === 'moon' && !problem ? 1 : MAX_LABEL_SCALE;
+    const size = labelSize(deviceLabel(b.device), b.device.ip, problem);
     const halfW = Math.max(70, (size.w * scale) / 2);
     const reach = radiusOf(b) + 6 + size.h * scale;
     pts.push({ x: p.x - halfW, y: p.y - reach }, { x: p.x + halfW, y: p.y + reach });
@@ -552,6 +556,22 @@ const traceStartLabel = computed(() => {
   return b ? deviceLabel(b.device) : '?';
 });
 
+const problemIds = computed(() => problemBodyIds(bodyList.value));
+/** Bodies that need attention are drawn last, so their halo lies on top rather than under a neighbour */
+const paintOrder = computed(() => [...bodyList.value.filter((b) => b.state === 'online'), ...bodyList.value.filter((b) => b.state !== 'online')]);
+/**
+ * Each press focuses the body after the focused one among those that need attention (offline
+ * first), with its focus card. A search or a path trace would keep their own spotlight, so they end.
+ */
+function focusNextProblem() {
+  const ids = problemIds.value;
+  if (!ids.length) return;
+  const id = ids[(ids.indexOf(focusedId.value ?? -1) + 1) % ids.length];
+  if (traceFromId.value != null) cancelTrace();
+  searchQuery.value = '';
+  focusedId.value = id;
+  flyToBodies([...computeFocusSet(id, bodies.value, lightBeams.value).bodyIds]);
+}
 const searchHits = computed(() => matchBodies(searchQuery.value, bodyList.value, (b) => deviceLabel(b.device)));
 function submitSearch() {
   const ids = searchHits.value.map((b) => b.id);
@@ -654,7 +674,8 @@ useResizeObserver(svgRef, initialFit);
     class="cosmic-canvas relative h-full w-full overflow-hidden select-none"
     :class="[editing && 'is-editing', vitalityMode === 'subtle' && 'vitality-subtle', vitalityMode === 'lively' && 'vitality-lively']"
   >
-    <svg ref="svgRef" class="h-full w-full touch-none" role="img" :aria-label="t('gv.plan.title')" @wheel="view.onWheel" @pointerdown="onCanvasPointerDown" @dblclick="onCanvasDoubleClick">
+    <!-- A group, not an image: the bodies inside are buttons that assistive technology must reach -->
+    <svg ref="svgRef" class="h-full w-full touch-none" role="group" :aria-label="t('gv.plan.title')" @wheel="view.onWheel" @pointerdown="onCanvasPointerDown" @dblclick="onCanvasDoubleClick">
       <defs>
         <radialGradient v-for="body in bodyList" :id="`${flowId}-nebula-${body.id}`" :key="`nebula-${body.id}`" cx="50%" cy="50%" r="50%">
           <stop offset="0%" :stop-color="body.color" stop-opacity="0.32" />
@@ -748,7 +769,7 @@ useResizeObserver(svgRef, initialFit);
 
         <g>
           <OrbitBodyNode
-            v-for="(body, idx) in bodyList"
+            v-for="(body, idx) in paintOrder"
             :key="body.id"
             :body="body"
             :pos="posOf(body.id)"
@@ -789,7 +810,7 @@ useResizeObserver(svgRef, initialFit);
       <input
         v-model="searchQuery"
         type="search"
-        class="min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-fg-subtle focus:outline-none"
+        class="min-w-0 flex-1 bg-transparent text-sm text-ellipsis text-fg placeholder:text-fg-subtle focus:outline-none"
         :placeholder="t('gv.orbit.search')"
         :aria-label="t('gv.orbit.search_label')"
         @keydown.enter.prevent="submitSearch"
@@ -820,11 +841,21 @@ useResizeObserver(svgRef, initialFit);
 
     <OrbitTracePanel v-if="!editing && traceFromId != null" :start-label="traceStartLabel" :has-target="traceToId != null" :path="tracedPath" :hops="traceHops" @close="cancelTrace" />
 
-    <!-- Motion and zoom controls -->
-    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-surface shadow-pop">
+    <!-- Motion and zoom controls; a row on phones, where a column of 44 px buttons covered the map height -->
+    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-surface shadow-pop max-md:flex-row">
+      <button
+        v-if="problemIds.length && !editing"
+        type="button"
+        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 max-md:h-11 max-md:min-w-11 max-md:border-r max-md:border-b-0 px-1 font-mono text-[11px] font-semibold text-danger-text hover:bg-danger/20"
+        :title="t('gv.orbit.problems_label', { count: problemIds.length })"
+        :aria-label="t('gv.orbit.problems_label', { count: problemIds.length })"
+        @click="focusNextProblem"
+      >
+        <TriangleAlert class="size-3.5 shrink-0" aria-hidden="true" />{{ problemIds.length }}
+      </button>
       <button
         type="button"
-        class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg"
+        class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11"
         :class="vitalityMode !== 'off' && 'text-accent-text'"
         :title="t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) })"
         :aria-label="t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) })"
@@ -832,13 +863,13 @@ useResizeObserver(svgRef, initialFit);
       >
         <Sparkles class="size-3.5" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
         <Plus class="size-4" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg" :aria-label="t('gv.plan.zoom_out')" @click="view.zoomBy(0.82)">
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_out')" @click="view.zoomBy(0.82)">
         <Minus class="size-4" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
         <Maximize class="size-3.5" />
       </button>
     </div>

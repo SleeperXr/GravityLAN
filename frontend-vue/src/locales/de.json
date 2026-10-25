@@ -170,6 +170,8 @@
     "orbit": {
       "search": "Gerät suchen …",
       "search_label": "Gerät in der Karte suchen",
+      "problems_label_one": "Nächstes Problem zeigen ({{count}} Gerät braucht Aufmerksamkeit)",
+      "problems_label_other": "Nächstes Problem zeigen ({{count}} Geräte brauchen Aufmerksamkeit)",
       "hint": "Klick: fokussieren · Doppelklick: Details · Esc: zurück · Mausrad oder Pinch: Zoom",
       "kind": "Typ",
       "status": "Status",
