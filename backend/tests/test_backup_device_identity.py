@@ -200,3 +200,28 @@ async def test_import_endpoint_revokes_install_codes_of_reassigned_ids(client, a
     assert response.json()["reassigned_devices"] == 1
     # The install command issued for the old device 1 no longer enrolls an agent for the new one
     assert not enrollment_store.is_valid(old_code, 1)
+
+
+def test_backup_restores_device_interfaces_of_reassigned_ids(instance_db):
+    report: dict = {}
+    # Foreign backup: id 1 is server B and brings its own interface
+    backup._write_db(instance_db, {
+        "devices": [
+            {"id": 1, "ip": "10.0.0.1", "mac": "cc:cc:cc:cc:cc:01", "display_name": "server-b"},
+            {"id": 2, "ip": "10.0.0.2", "mac": "", "display_name": "nas"},
+        ],
+        "device_interfaces": [{"id": 7, "device_id": 1, "ip": "10.0.20.1", "mac": "cc:cc:cc:cc:cc:02"}],
+    }, report)
+
+    assert report["reassigned_device_ids"] == [1]
+    assert _rows(instance_db, "SELECT device_id, ip FROM device_interfaces") == [(1, "10.0.20.1")]
+
+
+def test_export_contains_device_interfaces_and_app_version(instance_db, monkeypatch):
+    import asyncio
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "database_url", f"sqlite+aiosqlite:///{instance_db}")
+    data = json.loads(asyncio.run(backup.export_backup()).body)
+    assert data["metadata"]["version"] == settings.app_version
+    assert sorted(r["ip"] for r in data["device_interfaces"]) == ["10.0.0.1", "10.0.0.2"]

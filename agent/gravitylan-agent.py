@@ -116,8 +116,22 @@ class AgentConfig:
         try:
             data = asdict(self)
             data.pop("config_path", None) # Don't save the path inside the file
-            with open(self.config_path, "w", encoding="utf-8") as fh:
-                json.dump(data, fh, indent=2)
+            # Write a 0600 temp file next to the config and swap it in: an interrupted
+            # write must not leave an empty agent.conf (the token lives only there).
+            tmp_path = f"{self.config_path}.tmp"
+            fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(data, fh, indent=2)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp_path, self.config_path)
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
             logger.info("Configuration persisted to %s", self.config_path)
         except OSError as e:
             logger.error("Failed to save configuration: %s", e)
