@@ -203,6 +203,24 @@ async def update_settings(settings: SettingsUpdate, db: AsyncSession = Depends(g
     return {"status": "success"}
 
 
+def _drop_runtime_credentials() -> None:
+    """Forget what grants access outside the database: sessions, codes, tickets, open terminals (#48)."""
+    from app.services.session_service import session_store
+    from app.services.enrollment_service import enrollment_store
+    from app.services.ssh_terminal import close_all_sessions
+    from app.api.agent_patches import _temp_patch_tokens
+    from app.api.ssh import _tickets
+    from app.api.backup import invalidate_all_runtime_caches
+
+    logged_out = session_store.delete_all_except(None)
+    enrollment_store.clear()
+    _temp_patch_tokens.clear()
+    _tickets.clear()
+    closed = close_all_sessions()
+    invalidate_all_runtime_caches()
+    logger.warning("Database reset: %d browser session(s) logged out, %d terminal session(s) closed", logged_out, closed)
+
+
 @router.post("/reset-db", status_code=200, dependencies=[Depends(get_current_admin)])
 async def reset_database(db: AsyncSession = Depends(get_db)):
     """Wipe all devices, services, and reset setup status for a fresh start."""
@@ -230,8 +248,12 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
             
             # List of tables to clear in order (Leaf to Root)
             # Using raw table names to be independent of model mapping issues
+            # Credentials of the old setup go too (#48): after a reset because something leaked,
+            # an old API token, webhook or stored SSH key must not work for the new setup.
             tables = [
-                "topology_links", "agent_tokens", "agent_configs",
+                "api_tokens", "webhook_subscriptions",
+                "ssh_history", "ssh_profiles", "ssh_known_hosts", "ssh_keys",
+                "topology_links", "agent_tokens", "agent_configs", "device_interfaces",
                 # Measurement data in the attached telemetry.db
                 "telemetry.device_metrics", "telemetry.device_health_samples",
                 "telemetry.device_health_rollups", "telemetry.device_metrics_rollups",
@@ -257,6 +279,7 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
         await db.run_sync(sync_wipe)
         await db.commit()
         logger.info("Database objects deleted and changes committed.")
+        _drop_runtime_credentials()
         
         # 3. Restart scheduler
         try:
