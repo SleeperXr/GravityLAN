@@ -19,7 +19,7 @@ const props = defineProps<{
       v-model="model"
       v-bind="$attrs"
       :aria-invalid="props.invalid || undefined"
-      class="h-9 w-full appearance-none rounded-md border border-line bg-sunken pr-8 pl-3 text-sm text-fg transition-colors hover:border-line-strong focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none focus-visible:outline-none disabled:opacity-60"
+      class="h-9 max-md:h-11 w-full appearance-none rounded-md border border-line bg-sunken pr-8 pl-3 text-sm text-fg transition-colors hover:border-line-strong focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none focus-visible:outline-none disabled:opacity-60"
     >
       <option v-for="opt in props.options" :key="String(opt.value)" :value="opt.value" :disabled="opt.disabled">
         {{ opt.label }}

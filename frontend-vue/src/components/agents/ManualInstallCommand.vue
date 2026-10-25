@@ -75,7 +75,7 @@ async function copy() {
         class="min-w-0 flex-1 overflow-x-auto rounded-md border border-line bg-sunken px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all"
         :class="mode === 'uninstall' ? 'text-danger-text' : 'text-fg'"
       >{{ command || t(failed ? 'agent.install_code_failed' : 'common.loading') }}</code>
-      <Button size="sm" class="h-auto" :disabled="!command" @click="copy">
+      <Button size="sm" class="h-auto max-md:h-auto" :disabled="!command" @click="copy">
         <Copy aria-hidden="true" />
         {{ t('common.copy') }}
       </Button>
