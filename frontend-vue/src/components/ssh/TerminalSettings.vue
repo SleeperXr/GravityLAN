@@ -36,7 +36,7 @@ const themeId = computed({ get: () => terminalPrefs.theme, set: (v: string) => s
       >
         <div class="flex items-center justify-between">
           <h3 :id="`${id}-title`" class="text-sm font-semibold text-fg">{{ t('ssh.terminal.settings.title') }}</h3>
-          <PopoverClose class="inline-flex size-7 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg" :aria-label="t('common.close')">
+          <PopoverClose class="inline-flex size-7 max-md:size-11 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg" :aria-label="t('common.close')">
             <X class="size-4" aria-hidden="true" />
           </PopoverClose>
         </div>

@@ -121,7 +121,7 @@ const sortOptions = computed(() => [
           v-for="p in periods"
           :key="p"
           type="button"
-          class="h-8 rounded-[7px] px-3 font-mono text-xs font-semibold transition-colors"
+          class="h-8 rounded-[7px] px-3 font-mono text-xs font-semibold transition-colors max-md:h-11"
           :class="period === p ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
           :aria-pressed="period === p"
           @click="period = p"
@@ -169,14 +169,15 @@ const sortOptions = computed(() => [
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('health_page.search_placeholder') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input v-model="search" type="search" :placeholder="t('health_page.search_placeholder')" class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-accent focus:outline-none" />
+        <input v-model="search" type="search" :placeholder="t('health_page.search_placeholder')" class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 max-md:h-11 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-accent focus:outline-none" />
       </label>
-      <div class="flex max-w-full overflow-x-auto rounded-md border border-line bg-sunken p-0.5 [scrollbar-width:none]" role="group" :aria-label="t('gv.health.filter')">
+      <!-- Wraps on phones: scrolled sideways, "Critical / Offline" sat out of view with no hint it was there -->
+      <div class="flex max-w-full flex-wrap rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('gv.health.filter')">
         <button
           v-for="f in filters"
           :key="f"
           type="button"
-          class="h-8 shrink-0 rounded-[7px] px-3 text-xs font-semibold transition-colors"
+          class="h-8 shrink-0 rounded-[7px] px-3 text-xs font-semibold transition-colors max-md:h-11"
           :class="filter === f ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
           :aria-pressed="filter === f"
           @click="filter = f"

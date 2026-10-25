@@ -26,12 +26,13 @@ const variants: Record<Variant, string> = {
   'danger-ghost': 'text-danger-text hover:bg-danger/10 border border-transparent',
 };
 
+// Phones (below md, where the mobile tab bar shows) get 44 px targets in every size
 const sizes: Record<Size, string> = {
-  sm: 'h-8 px-2.5 text-xs gap-1.5',
-  md: 'h-9 px-3.5 text-sm gap-2',
+  sm: 'h-8 px-2.5 text-xs gap-1.5 max-md:h-11',
+  md: 'h-9 px-3.5 text-sm gap-2 max-md:h-11',
   lg: 'h-11 px-5 text-sm gap-2',
-  icon: 'h-9 w-9',
-  'icon-sm': 'h-8 w-8',
+  icon: 'h-9 w-9 max-md:size-11',
+  'icon-sm': 'h-8 w-8 max-md:size-11',
 };
 
 const classes = computed(() =>

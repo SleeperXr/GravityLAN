@@ -35,6 +35,7 @@
       "services_down": "Dienste gestört",
       "services_down_hint": "Nicht erreichbare Ports auf Online-Geräten",
       "search": "Name, IP, MAC oder Dienst suchen",
+      "more_actions": "Weitere Aktionen",
       "clear_filter": "Filter zurücksetzen",
       "matches": "{{count}} von {{total}} Geräten",
       "no_match": "Kein Gerät passt zum Filter.",
