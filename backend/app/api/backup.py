@@ -11,6 +11,7 @@ from app.database import get_db
 from app.config import settings
 
 from app.api.auth import get_current_admin
+from app.schemas.device import is_safe_url_template
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/backup", tags=["backup"])
@@ -173,6 +174,10 @@ def _clean_rows(cursor, table: str, rows: list[dict]) -> list[dict]:
                     clean_row[col] = 0
                 else:
                     clean_row[col] = ""
+        if table == "services" and not is_safe_url_template(clean_row.get("url_template") or ""):
+            # A tampered backup must not smuggle javascript: links into the dashboard (#42)
+            logger.warning(f"Backup: Dropping unsafe url_template of service {clean_row.get('name')!r}")
+            clean_row["url_template"] = ""
         valid_rows.append(clean_row)
     return valid_rows
 

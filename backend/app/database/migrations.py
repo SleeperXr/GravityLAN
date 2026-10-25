@@ -262,4 +262,26 @@ async def run_migrations(db: AsyncSession):
     except Exception as e:
         await db.rollback()
         logger.error(f"Migration error while upgrading agent tokens: {e}")
+
+    try:
+        await _clear_unsafe_service_links(db)
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Migration error while clearing unsafe service links: {e}")
     logger.info("Schema migration complete.")
+
+
+async def _clear_unsafe_service_links(db: AsyncSession):
+    """Empty url_template values with a scheme outside the allow-list, e.g. javascript: (#42)."""
+    from app.models.device import Service
+    from app.schemas.device import is_safe_url_template
+
+    result = await db.execute(select(Service).where(Service.url_template != ""))
+    cleared = 0
+    for service in result.scalars():
+        if not is_safe_url_template(service.url_template):
+            logger.warning(f"Migration: Clearing unsafe link of service id={service.id} ({service.name!r})")
+            service.url_template = ""
+            cleared += 1
+    if cleared:
+        await db.commit()

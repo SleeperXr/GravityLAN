@@ -50,6 +50,7 @@ import ipaddress
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.network import normalize_dns_server
+from app.schemas.device import safe_url_template
 
 MAX_SETUP_SUBNETS = 64
 
@@ -149,7 +150,7 @@ async def _process_discovered_host(host, group_map, existing_ips, adoption_netwo
         for svc_data in classified["services"]:
             services.append(Service(
                 name=svc_data["name"], protocol=svc_data["protocol"], port=svc_data["port"],
-                url_template=svc_data["url_template"], color=svc_data.get("color"),
+                url_template=safe_url_template(svc_data["url_template"]), color=svc_data.get("color"),
                 is_auto_detected=True, is_up=True
             ))
 
