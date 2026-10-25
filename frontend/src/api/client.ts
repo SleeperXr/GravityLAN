@@ -206,7 +206,12 @@ export const api = {
   importBackup: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return fetch('/api/backup/import', { method: 'POST', body: formData }).then(res => res.json() as Promise<BackupImportResult>);
+    return fetch('/api/backup/import', { method: 'POST', body: formData }).then(async (res) => {
+      const body = await res.json().catch(() => ({}));
+      // A refused or rolled-back import must not read as success
+      if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : res.statusText);
+      return body as BackupImportResult;
+    });
   },
 
   // Agent
