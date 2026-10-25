@@ -104,6 +104,26 @@ async def test_detect_server_url_from_setting(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_detect_server_url_from_server_url_override_strips_trailing_slash(monkeypatch):
+    class FakeResult:
+        def scalars(self):
+            class _Scalars:
+                def all(self):
+                    return [
+                        type("S", (), {"key": "server_url_override", "value": "https://gravity.it-ott.com/"})()
+                    ]
+            return _Scalars()
+
+    class FakeDB:
+        async def execute(self, stmt):
+            return FakeResult()
+
+    monkeypatch.setattr("app.scanner.utils.get_local_subnets", None)
+    url = await agent_module._detect_server_url(FakeDB())
+    assert url == "https://gravity.it-ott.com"
+
+
+@pytest.mark.asyncio
 async def test_detect_server_url_detects_local_ip(monkeypatch):
     class FakeResult:
         def scalar_one_or_none(self):

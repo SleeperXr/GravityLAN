@@ -53,7 +53,12 @@ async def get_all_settings(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Setting))
     settings = result.scalars().all()
     # Filter out sensitive keys to prevent credentials leakage (P0 security fix)
-    return {s.key: s.value for s in settings if s.key not in SENSITIVE_KEYS}
+    data = {s.key: s.value for s in settings if s.key not in SENSITIVE_KEYS}
+    if "server.url" in data and "server_url_override" not in data:
+        data["server_url_override"] = data["server.url"]
+    elif "server_url_override" in data and "server.url" not in data:
+        data["server.url"] = data["server_url_override"]
+    return data
 
 SettingsUpdate = RootModel[dict[str, str]]
 
@@ -150,6 +155,7 @@ def _validate_default_frontend(value: str) -> None:
 
 _VALIDATORS = {
     "server.url": _validate_server_url,
+    "server_url_override": _validate_server_url,
     "dns.server": _validate_dns_server,
     "scan_subnets": _validate_scan_subnets,
     "scanner.offline_threshold": _validate_offline_threshold,
@@ -173,6 +179,12 @@ async def update_settings(settings: SettingsUpdate, db: AsyncSession = Depends(g
             status_code=400,
             detail=f"{', '.join(rejected)} cannot be changed through /api/settings.",
         )
+    # Mirror server_url_override and server.url so UI and backend are always in sync
+    if "server_url_override" in settings.root and "server.url" not in settings.root:
+        settings.root["server.url"] = settings.root["server_url_override"]
+    elif "server.url" in settings.root and "server_url_override" not in settings.root:
+        settings.root["server_url_override"] = settings.root["server.url"]
+
     for key, value in settings.root.items():
         # Validate known keys before persisting
         validator = _VALIDATORS.get(key)

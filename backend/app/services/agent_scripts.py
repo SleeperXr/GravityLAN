@@ -60,14 +60,26 @@ async def _detect_server_url(db: AsyncSession) -> str:
     from app.models.setting import Setting
     from app.api.settings import check_server_url
 
-    res = await db.execute(select(Setting).where(Setting.key == "server.url"))
-    setting = res.scalar_one_or_none()
-    if setting and setting.value:
+    # Check for server_url_override (used by the settings UI) or server.url (used in API/tests)
+    res = await db.execute(select(Setting).where(Setting.key.in_(("server_url_override", "server.url"))))
+    setting_val = None
+    if hasattr(res, "scalars"):
         try:
-            check_server_url(setting.value)
-            return setting.value
+            settings_map = {s.key: s.value for s in res.scalars().all() if s and s.value}
+            setting_val = settings_map.get("server_url_override") or settings_map.get("server.url")
+        except Exception:
+            pass
+    if not setting_val and hasattr(res, "scalar_one_or_none"):
+        mock_setting = res.scalar_one_or_none()
+        if mock_setting:
+            setting_val = getattr(mock_setting, "value", None)
+
+    if setting_val:
+        try:
+            check_server_url(setting_val)
+            return setting_val.rstrip("/")
         except ValueError as e:
-            logger.warning("Ignoring unsafe server.url setting (%s); falling back to auto-detection", e)
+            logger.warning("Ignoring unsafe server URL setting (%s); falling back to auto-detection", e)
 
     from app.scanner.utils import get_local_subnets
     best = _pick_best_subnet(get_local_subnets())
