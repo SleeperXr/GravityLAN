@@ -841,12 +841,12 @@ useResizeObserver(svgRef, initialFit);
 
     <OrbitTracePanel v-if="!editing && traceFromId != null" :start-label="traceStartLabel" :has-target="traceToId != null" :path="tracedPath" :hops="traceHops" @close="cancelTrace" />
 
-    <!-- Motion and zoom controls -->
-    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-surface shadow-pop">
+    <!-- Motion and zoom controls; a row on phones, where a column of 44 px buttons covered the map height -->
+    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-surface shadow-pop max-md:flex-row">
       <button
         v-if="problemIds.length && !editing"
         type="button"
-        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 max-md:h-11 px-1 font-mono text-[11px] font-semibold text-danger-text hover:bg-danger/20"
+        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 max-md:h-11 max-md:min-w-11 max-md:border-r max-md:border-b-0 px-1 font-mono text-[11px] font-semibold text-danger-text hover:bg-danger/20"
         :title="t('gv.orbit.problems_label', { count: problemIds.length })"
         :aria-label="t('gv.orbit.problems_label', { count: problemIds.length })"
         @click="focusNextProblem"
@@ -863,13 +863,13 @@ useResizeObserver(svgRef, initialFit);
       >
         <Sparkles class="size-3.5" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
         <Plus class="size-4" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11" :aria-label="t('gv.plan.zoom_out')" @click="view.zoomBy(0.82)">
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_out')" @click="view.zoomBy(0.82)">
         <Minus class="size-4" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
         <Maximize class="size-3.5" />
       </button>
     </div>
