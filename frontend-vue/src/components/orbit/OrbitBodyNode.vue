@@ -8,7 +8,8 @@ import { t } from '@/i18n';
 /**
  * One body on the orbit map. Star: filled core with diffraction spikes. Planet: ring with halo
  * and role pill (SW / AP / HOST). Moon: small ring. Offline is struck through and labelled,
- * degraded carries a "!" badge, so state never rides on colour alone.
+ * degraded carries a "!" badge, so state never rides on colour alone. Both get a halo that keeps
+ * them findable at overview zoom, and the state is part of the accessible name.
  */
 const props = defineProps<{
   body: OrbitBody;
@@ -35,6 +36,8 @@ const r = computed(() => radiusOf(props.body));
 const name = computed(() => deviceLabel(props.body.device));
 const stroke = computed(() => (props.body.state === 'offline' ? 'var(--gl-danger)' : props.body.state === 'degraded' ? 'var(--gl-warn)' : props.body.color));
 const halo = 'paint-order: stroke; stroke: var(--gl-canvas); stroke-linejoin: round';
+const stateText = computed(() => (props.body.state === 'offline' ? t('gv.orbit.state_offline') : props.body.state === 'degraded' ? t('gv.orbit.state_degraded') : ''));
+const ariaLabel = computed(() => `${name.value} (${props.body.device.ip})${stateText.value ? `, ${stateText.value}` : ''}`);
 </script>
 
 <template>
@@ -45,7 +48,7 @@ const halo = 'paint-order: stroke; stroke: var(--gl-canvas); stroke-linejoin: ro
     :style="{ opacity: dim * (body.state === 'offline' ? 0.7 : 1) }"
     role="button"
     tabindex="0"
-    :aria-label="`${name} (${body.device.ip})`"
+    :aria-label="ariaLabel"
     @pointerdown="emit('down', $event)"
     @click="emit('click', $event)"
     @dblclick="emit('dblclick', $event)"
@@ -54,6 +57,18 @@ const halo = 'paint-order: stroke; stroke: var(--gl-canvas); stroke-linejoin: ro
     @keydown.enter.prevent="emit('click', $event as unknown as MouseEvent)"
   >
     <g class="orbit-float-node" :style="{ animationDelay: `${(index % 7) * -0.85}s` }">
+      <!-- Attention halo: counter-scaled like the labels, so an offline or degraded body stays a visible
+           (and tappable) target when the whole map is in view -->
+      <circle
+        v-if="body.state !== 'online'"
+        :r="(r + 5) * labelScale"
+        :fill="stroke"
+        fill-opacity="0.14"
+        :stroke="stroke"
+        :stroke-width="1.5 * labelScale"
+        stroke-opacity="0.55"
+        :stroke-dasharray="body.state === 'offline' ? `${3 * labelScale} ${3 * labelScale}` : undefined"
+      />
       <!-- Star: diffraction spikes and corona -->
       <g v-if="body.kind === 'star'" class="star-diffraction pointer-events-none" :stroke="body.color">
         <line x1="-32" y1="0" x2="32" y2="0" stroke-width="1.2" stroke-opacity="0.8" />
@@ -97,7 +112,7 @@ const halo = 'paint-order: stroke; stroke: var(--gl-canvas); stroke-linejoin: ro
 
       <!-- Label on the free side chosen by placeLabels() -->
       <g v-if="label" :transform="`translate(${label.x}, ${label.y}) scale(${labelScale})`" class="pointer-events-none">
-        <text :text-anchor="label.anchor" fill="var(--gl-fg)" class="text-[12px] font-bold tracking-tight" :class="body.state === 'offline' && 'line-through opacity-75'" :style="`${halo}; stroke-width: 4px`">
+        <text :text-anchor="label.anchor" fill="var(--gl-fg)" class="text-[12px] font-bold tracking-tight" :style="`${halo}; stroke-width: 4px`">
           {{ name }}
         </text>
         <text y="13" :text-anchor="label.anchor" fill="var(--gl-fg-muted)" class="font-mono text-[10px]" :style="`${halo}; stroke-width: 3.5px`">{{ body.device.ip }}</text>

@@ -170,6 +170,8 @@
     "orbit": {
       "search": "Find device …",
       "search_label": "Find a device on the map",
+      "problems_label_one": "Show next problem ({{count}} device needs attention)",
+      "problems_label_other": "Show next problem ({{count}} devices need attention)",
       "hint": "Click: focus · Double click: details · Esc: back · Wheel or pinch: zoom",
       "kind": "Type",
       "status": "Status",
