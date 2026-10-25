@@ -110,15 +110,16 @@ export function useAgentPanel(device: Ref<Device>, active: Ref<boolean>) {
     try {
       const login = sshLogin(form);
       const result = kind === 'deploy' ? await api.deployAgent(device.value.id, login) : await api.uninstallAgent(device.value.id, login);
-      log(result.message);
+      const message = result.error_code === 'host_key_changed' ? t('agent.host_key_changed', { ip: device.value.ip }) : result.message;
+      log(message);
       if (result.status === 'success') {
-        showToast('success', t(keys.ok), result.message);
+        showToast('success', t(keys.ok), message);
         form.ssh_password = '';
         form.ssh_key = '';
         form.sudo_password = '';
         await loadStatus();
       } else {
-        showToast('error', t(keys.failed), result.message);
+        showToast('error', t(keys.failed), message);
       }
     } catch (err) {
       const msg = (err as Error).message || t('agent.connection_failed');

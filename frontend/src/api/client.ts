@@ -85,6 +85,14 @@ export type TelemetryPurge =
   | { scope: 'device'; device_id: number }
   | { scope: 'all' };
 
+/** Result of an agent deploy/uninstall over SSH. */
+export type AgentSshResult = {
+  status: string;
+  message: string;
+  /** "host_key_changed": refused before logging in, the host presented another SSH key than stored */
+  error_code?: string | null;
+};
+
 export const api = {
   // Setup
   getSetupStatus: () => request<{ is_setup_complete: boolean; device_count: number; version?: string; agent_version?: string }>('/api/setup/status'),
@@ -194,9 +202,9 @@ export const api = {
 
   // Agent
   deployAgent: (deviceId: number, data: import('../types').AgentSshLogin) =>
-    request<{ status: string; message: string; agent_version?: string }>(`/api/agent/deploy/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
+    request<AgentSshResult & { agent_version?: string }>(`/api/agent/deploy/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
   uninstallAgent: (deviceId: number, data: import('../types').AgentSshLogin) =>
-    request<{ status: string; message: string }>(`/api/agent/uninstall/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
+    request<AgentSshResult>(`/api/agent/uninstall/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
   createAgentEnrollment: (deviceId: number) =>
     request<{ code: string; expires_in: number }>(`/api/agent/enroll/${deviceId}`, { method: 'POST' }),
   getAgentStatus: (deviceId: number) =>

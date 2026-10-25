@@ -429,6 +429,7 @@
     "deployed_title": "Agent installed!",
     "deploy_failed_title": "Installation failed",
     "connection_failed": "Connection failed",
+    "host_key_changed": "{{ip}} presented a different SSH host key than on first contact. GravityLAN stopped before sending any credentials. If this is expected (e.g. after a reinstall), delete the old entry under SSH → Known hosts, connect once in the SSH terminal and confirm the new key. Otherwise someone on the network may be intercepting the connection.",
     "uninstalling": "Uninstalling...",
     "removing": "Removing agent from {{ip}}...",
     "uninstalled_title": "Agent uninstalled!",

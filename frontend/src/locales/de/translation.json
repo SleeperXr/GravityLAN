@@ -426,6 +426,7 @@
     "deployed_title": "Agent installiert!",
     "deploy_failed_title": "Installation fehlgeschlagen",
     "connection_failed": "Verbindung fehlgeschlagen",
+    "host_key_changed": "{{ip}} hat einen anderen SSH-Host-Key gezeigt als beim ersten Kontakt. GravityLAN hat abgebrochen, bevor Zugangsdaten gesendet wurden. Ist das erwartet (z. B. nach einer Neuinstallation), lösche unter SSH → Bekannte Hosts den alten Eintrag, verbinde dich einmal im SSH-Terminal und bestätige den neuen Key. Sonst kann jemand im Netz die Verbindung abfangen.",
     "uninstalling": "Deinstallation...",
     "removing": "Agent von {{ip}} wird entfernt...",
     "uninstalled_title": "Agent deinstalliert!",
