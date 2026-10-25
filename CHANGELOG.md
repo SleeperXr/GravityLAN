@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-25
+
 ### Security
 Thanks to [@schaefer-informationstechnik](https://github.com/schaefer-informationstechnik) for reporting these issues.
 - API tokens with `settings:write` can no longer reopen the setup wizard (#41, GHSA-cwcv-4vrx-xpxv, high). `POST /api/settings` used to write any key except the credentials, including `setup.complete`. With `setup.complete=false` the unauthenticated `POST /api/setup/complete` accepted a new admin password and signed the caller in as admin. The endpoint now writes only the keys the settings pages use (scan, DNS, retention, server URL, log level, start page, interface, appearance and topology settings) and answers `400` for any other key, before anything is stored. Only the setup wizard and the database reset (which API tokens can't call) change the setup state.

@@ -67,6 +67,9 @@ Features:
 
 Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
   <Changes>
+### 0.5.5
+- Security fixes from an external review (thanks @schaefer-informationstechnik): settings tokens can no longer reopen setup, safe service links, bounded scans, SSH host keys checked on agent deploy, no SSH fallback to the Docker host, clean backup imports, database reset revokes old access. The manual agent install needs HTTPS or ALLOW_INSECURE=1; new options Allow Insecure Agent Install and Docker Host IP.
+
 ### 0.5.4
 - Tutorials page (DE/EN) for setup, VLANs, agents, SSH and Unraid; About page; default UI switch (React or GravityUI); security patch badges on the dashboard; phone and orbit map fixes.
 
