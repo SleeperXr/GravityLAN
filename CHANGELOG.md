@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+Thanks to [@schaefer-informationstechnik](https://github.com/schaefer-informationstechnik) for reporting these issues.
+- API tokens with `settings:write` can no longer reopen the setup wizard (#41, GHSA-cwcv-4vrx-xpxv, high). `POST /api/settings` used to write any key except the credentials, including `setup.complete`. With `setup.complete=false` the unauthenticated `POST /api/setup/complete` accepted a new admin password and signed the caller in as admin. The endpoint now writes only the keys the settings pages use (scan, DNS, retention, server URL, log level, start page, interface, appearance and topology settings) and answers `400` for any other key, before anything is stored. Only the setup wizard and the database reset (which API tokens can't call) change the setup state.
+- Service links accept only `http`, `https`, `ssh`, `sftp`, `scp`, `ftp`, `smb`, `rdp` and `vnc` (#42, GHSA-f8v7-pmx7-g85w, high). A `url_template` such as `javascript:…` used to run in the dashboard when the service badge was clicked, so a `devices:write` token or a tampered backup could act with the admin's session. The scheme is now checked when a service is created or changed (`422`), when services are detected and when a backup is imported (an unsafe link is emptied). On startup a migration empties unsafe links that are already stored. Both interfaces check the link again before they open it. Placeholders like `{ip}` and `{port}` work as before.
+- Scan requests are bounded like the scan subnets in the settings (#43, GHSA-wc49-p8xv-hq2x, medium). `POST /api/scanner/start` and `/start-dashboard` accepted any subnet, and `0.0.0.0/0` built a list of four billion addresses in the server process. Before setup this route needs no login. A scan request now takes up to 64 IPv4 subnets of `/16` or smaller (`422` otherwise). The scanners only build host lists through the same check, so a detected local interface larger than `/16` is skipped with a log line instead of scanned.
+- Agent deploy and removal with a typed-in password check the SSH host key (#45, medium). Until now the server accepted any host key and stored none. A man-in-the-middle could receive the SSH and sudo password. The first key a host presents is now stored under SSH → Known hosts (trust on first use, like the SSH terminal and package updates), and later deploys, updates and removals only log in to that key. If the key changes, GravityLAN stops before it sends any credentials, and both interfaces explain how to confirm the new key. With `GRAVITYLAN_SSH_STRICT_MODE` nothing changes.
+
 ## [0.5.4] - 2026-10-24
 
 ### Added
