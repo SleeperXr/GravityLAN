@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useMediaQuery, useStorage } from '@vueuse/core';
+import { useEventListener, useMediaQuery, useStorage } from '@vueuse/core';
 import { useRouter } from 'vue-router';
 import { Check, LayoutGrid, List, Pencil, Radar, RefreshCw, RotateCcw, Search, Server, Trash2, X } from 'lucide-vue-next';
 import { api } from '@/api/client';
@@ -70,15 +70,27 @@ function onGlobalKeyDown(e: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', onGlobalKeyDown));
 
 // Keep the overview current outside edit mode: every 10 s during a scan, 30 s otherwise.
+const POLL_MS = 30000;
 let timer: number | undefined;
+
+/** Back from another page, from edit mode or a hidden tab: reload now instead of showing old data until the next tick. */
+function refreshIfOld() {
+  const updated = store.lastUpdated?.getTime();
+  if (updated !== undefined && Date.now() - updated > POLL_MS) void store.loadData(true);
+}
+
 watch(
   () => [editMode.value, store.isScanning] as const,
   ([editing, scanning]) => {
     window.clearInterval(timer);
-    timer = editing ? undefined : window.setInterval(() => void store.loadData(true), scanning ? 10000 : 30000);
+    timer = editing ? undefined : window.setInterval(() => void store.loadData(true), scanning ? 10000 : POLL_MS);
+    if (!editing) refreshIfOld();
   },
   { immediate: true },
 );
+useEventListener(document, 'visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !editMode.value) refreshIfOld();
+});
 onBeforeUnmount(() => {
   window.clearInterval(timer);
   window.removeEventListener('keydown', onGlobalKeyDown);
@@ -305,7 +317,7 @@ function clearFilters() {
     <!-- Status first: the one-line answer, the status board, what needs attention, then the orbit map -->
     <template v-if="store.loaded && store.totalCount > 0 && !editMode">
       <div class="space-y-3">
-        <NetworkPulse :devices="store.devices" :updated="store.lastUpdated" :failed="!!store.error" />
+        <NetworkPulse :devices="store.devices" :updated="store.lastUpdated" :failed="!!store.error" @open="(d) => openEditor(d)" />
         <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
       </div>
       <!-- Notices left of the map from xl, so reading, tab and screen order are the same -->

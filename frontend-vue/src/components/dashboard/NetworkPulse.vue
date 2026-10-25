@@ -1,23 +1,39 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { CircleAlert, CircleCheck, CloudOff } from 'lucide-vue-next';
+import { ArrowRight, CircleAlert, CircleCheck, CloudOff } from 'lucide-vue-next';
 import type { Device } from '@/types';
+import Button from '@/components/ui/Button.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
-import { networkPulse } from './pulse';
+import { deviceLabel } from '@/lib/networks';
+import { attentionDevices, nameList, networkPulse } from './pulse';
 import { t } from '@/i18n';
 
 /**
- * One line above the status board: is the network fine, and how fresh is that answer.
- * Counts follow the status board and the notices (offline only for devices watched 24/7).
+ * One line above the status board: is the network fine, which devices are not, and how fresh
+ * that answer is. Counts follow the status board and the notices (offline only for devices
+ * watched 24/7); the button opens the first device that needs attention, offline before degraded.
  */
 const props = defineProps<{ devices: Device[]; updated: Date | null; failed: boolean }>();
+const emit = defineEmits<{ open: [device: Device] }>();
 
 const pulse = computed(() => networkPulse(props.devices));
+const attention = computed(() => attentionDevices(props.devices));
 const problems = computed(() => pulse.value.offline + pulse.value.degraded);
+const first = computed(() => attention.value.offline[0] ?? attention.value.degraded[0] ?? null);
+
+function named(text: string, devices: Device[]) {
+  return t('gv.pulse.named', { text, names: nameList(devices.map(deviceLabel)) });
+}
 const summary = computed(() => {
   const p = pulse.value;
   if (!problems.value) return t('gv.pulse.all_clear', { online: p.online, total: p.total });
-  return [p.offline ? t('gv.lines.dropped', { count: p.offline }) : '', p.degraded ? t('gv.lines.degraded', { count: p.degraded }) : ''].filter(Boolean).join(' · ');
+  const { offline, degraded } = attention.value;
+  return [
+    offline.length ? named(t('gv.lines.dropped', { count: offline.length }), offline) : '',
+    degraded.length ? named(t('gv.lines.degraded', { count: degraded.length }), degraded) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 });
 </script>
 
@@ -36,5 +52,8 @@ const summary = computed(() => {
       </span>
       <span>{{ t('gv.pulse.updated') }} <RelativeTime :date="updated" /></span>
     </p>
+    <Button v-if="first" size="sm" class="sm:ml-auto" :aria-label="t('gv.pulse.jump_label', { name: deviceLabel(first) })" @click="emit('open', first)">
+      {{ t('gv.pulse.jump') }}<ArrowRight aria-hidden="true" />
+    </Button>
   </div>
 </template>

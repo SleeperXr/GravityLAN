@@ -99,7 +99,10 @@
     "pulse": {
       "all_clear": "All good · {{online}} of {{total}} devices online",
       "updated": "Updated",
-      "failed": "Could not refresh"
+      "failed": "Could not refresh",
+      "named": "{{text}}: {{names}}",
+      "jump": "Go to problem",
+      "jump_label": "Go to problem: {{name}}"
     },
     "notices": {
       "title": "System notices",
