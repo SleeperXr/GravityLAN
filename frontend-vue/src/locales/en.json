@@ -75,12 +75,13 @@
       "zoom_in": "Zoom in",
       "zoom_out": "Zoom out",
       "fit": "Show whole system",
-      "live": "{{online}} of {{total}} devices in orbit · live",
+      "live": "{{online}} of {{total}} devices online",
       "assigned_to": "Now orbits {{parent}}"
     },
     "lines": {
       "title": "Network orbits",
       "normal": "Stable in orbit",
+      "empty": "No devices",
       "paused": "Paused, not scanned",
       "dropped_one": "{{count}} device offline",
       "dropped_other": "{{count}} devices offline",
@@ -93,6 +94,11 @@
       "custom": "Custom colour",
       "reset": "Network colour",
       "slot": "Orbit {{n}}"
+    },
+    "pulse": {
+      "all_clear": "All good · {{online}} of {{total}} devices online",
+      "updated": "Updated",
+      "failed": "Could not refresh"
     },
     "notices": {
       "title": "System notices",
@@ -111,7 +117,9 @@
       "reboot_only": "{{name}}: reboot required",
       "updates_total_one": "{{count}} update in total",
       "updates_total_other": "{{count}} updates in total",
-      "reboot": "reboot required"
+      "reboot": "reboot required",
+      "show_all": "Show all ({{count}} more)",
+      "show_less": "Show fewer"
     },
     "health": {
       "period": "Period",

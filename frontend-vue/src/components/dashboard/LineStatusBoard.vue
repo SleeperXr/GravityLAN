@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import type { Device, Subnet } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import { lineLabel, networkColor } from '@/lib/networks';
-import { isClientStandby } from '@/lib/standby';
+import { deviceAttention } from './pulse';
 import { t } from '@/i18n';
 
 /**
@@ -37,8 +37,8 @@ const rows = computed<LineRow[]>(() =>
       color: networkColor(s.id, s.cidr),
       total: members.length,
       online: members.filter((d) => d.is_online).length,
-      dropped: members.filter((d) => !d.is_online && d.alert_offline !== false).length,
-      degraded: members.filter((d) => d.is_online && !isClientStandby(d) && d.services.some((x) => !x.is_up)).length,
+      dropped: members.filter((d) => deviceAttention(d) === 'offline').length,
+      degraded: members.filter((d) => deviceAttention(d) === 'degraded').length,
       paused: s.is_enabled === false,
     };
   }),
@@ -46,6 +46,8 @@ const rows = computed<LineRow[]>(() =>
 
 function statusText(row: LineRow) {
   if (row.paused) return { text: t('gv.lines.paused'), tone: 'text-fg-subtle' };
+  // A network without devices is not "stable", it is empty
+  if (row.total === 0) return { text: t('gv.lines.empty'), tone: 'text-fg-subtle' };
   if (row.dropped > 0) return { text: t('gv.lines.dropped', { count: row.dropped }), tone: 'text-danger-text' };
   if (row.degraded > 0) return { text: t('gv.lines.degraded', { count: row.degraded }), tone: 'text-warn-text' };
   return { text: t('gv.lines.normal'), tone: 'text-accent-text' };
