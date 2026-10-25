@@ -1,12 +1,14 @@
 # Changelog
-- GravityUI status line names the devices and leads to them. Next to the counts it lists the first two offline or disrupted devices ("2 devices offline: NAS, Pi-hole", further ones as "+n"), and "Go to problem" opens the first of them, offline before disrupted, in the device editor. Coming back to the overview from another page, from layout editing or from a hidden tab reloads data that is older than the 30-second refresh right away, instead of showing it until the next refresh.
 
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-10-25
+
 ### Changed
 - GravityUI overview puts the status first. A line above the status board answers whether the network is fine ("All good · 29 of 31 devices online", or how many devices are offline or have a service down, counted like the status board) and says how fresh that is ("Updated 2 minutes ago", with a note when the last refresh failed). The system notices now come before the orbit map: from 1280 px (was 1024 px) in a column left of the map, so reading and tab order match; below that stacked above the map with the four most urgent notices and a "Show all" / "Show fewer" toggle instead of a list that scrolls inside the page. The map's subtitle says "29 of 31 devices online" instead of "in orbit · live", and a network without devices says "No devices" on the status board instead of "Stable in orbit".
+- GravityUI status line names the devices and leads to them. Next to the counts it lists the first two offline or disrupted devices ("2 devices offline: NAS, Pi-hole", further ones as "+n"), and "Go to problem" opens the first of them, offline before disrupted, in the device editor. Coming back to the overview from another page, from layout editing or from a hidden tab reloads data that is older than the 30-second refresh right away, instead of showing it until the next refresh.
 
 ### Security
 - Manual agent install command fetches its script from the server URL (#44 follow-up). The command both interfaces offer used the address the browser opened the UI with. With an HTTPS server URL but the UI opened over `http://`, the install script itself, which runs as root, still came over plain HTTP, where its HTTP check can be replaced as well. The command now uses the server URL the script downloads from, and from an HTTPS address curl may not follow a redirect down to HTTP (`--proto '=https'`, inside the script too).
@@ -25,6 +27,9 @@ All notable changes to this project will be documented in this file.
 - Backups now contain device interfaces (`device_interfaces`), so a restore keeps multi-VLAN addresses and merged duplicates. Interfaces that come from the backup are kept even when the device id names another device after the import. The backup metadata carries the real app version instead of `0.1.0`. Older backups without interfaces import as before.
 - Adding, changing or deleting a service or a group refreshes the dashboard and topology right away instead of after the cache expires.
 - The Linux agent writes `agent.conf` atomically with mode `0600` (temp file, `fsync`, rename). An interrupted write (restart, full disk) no longer leaves an empty config without the token.
+
+### Agent
+- Agent 0.3.10: writes `agent.conf` atomically with mode `0600`. The web interface offers the update; until then agents keep working as before.
 
 ## [0.5.5] - 2026-10-25
 
