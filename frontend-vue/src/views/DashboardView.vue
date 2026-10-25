@@ -296,9 +296,9 @@ function clearFilters() {
         <NetworkPulse :devices="store.devices" :updated="store.lastUpdated" :failed="!!store.error" />
         <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
       </div>
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <!-- Notices left of the map from xl, so reading, tab and screen order are the same -->
+      <div class="grid gap-4 xl:grid-cols-[22rem_minmax(0,1fr)]">
         <ServiceNotices
-          class="xl:order-last"
           :class="isWide && 'max-h-[32rem]'"
           :limit="isWide ? undefined : STACKED_NOTICES"
           :devices="store.devices"

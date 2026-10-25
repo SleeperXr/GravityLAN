@@ -22,14 +22,18 @@ const summary = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center gap-x-4 gap-y-1" role="status">
-    <p class="flex min-w-0 items-center gap-2 text-sm font-semibold" :class="problems ? (pulse.offline ? 'text-danger-text' : 'text-warn-text') : 'text-accent-text'">
+  <!-- Only the summary and a failed refresh are live regions; the ticking "updated" time would be read out every minute -->
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+    <p class="flex min-w-0 items-center gap-2 text-sm font-semibold" :class="problems ? (pulse.offline ? 'text-danger-text' : 'text-warn-text') : 'text-accent-text'" role="status">
       <component :is="problems ? CircleAlert : CircleCheck" class="size-4 shrink-0" aria-hidden="true" />
       <span>{{ summary }}</span>
     </p>
     <p class="flex items-center gap-1.5 text-xs" :class="failed ? 'text-warn-text' : 'text-fg-subtle'">
-      <CloudOff v-if="failed" class="size-3.5 shrink-0" aria-hidden="true" />
-      <span v-if="failed">{{ t('gv.pulse.failed') }}</span>
+      <span role="status" class="contents">
+        <template v-if="failed">
+          <CloudOff class="size-3.5 shrink-0" aria-hidden="true" /><span>{{ t('gv.pulse.failed') }}</span><span aria-hidden="true">·</span>
+        </template>
+      </span>
       <span>{{ t('gv.pulse.updated') }} <RelativeTime :date="updated" /></span>
     </p>
   </div>

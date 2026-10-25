@@ -98,7 +98,7 @@
     "pulse": {
       "all_clear": "All good · {{online}} of {{total}} devices online",
       "updated": "Updated",
-      "failed": "Could not refresh ·"
+      "failed": "Could not refresh"
     },
     "notices": {
       "title": "System notices",
@@ -118,7 +118,8 @@
       "updates_total_one": "{{count}} update in total",
       "updates_total_other": "{{count}} updates in total",
       "reboot": "reboot required",
-      "show_all": "Show all ({{count}} more)"
+      "show_all": "Show all ({{count}} more)",
+      "show_less": "Show fewer"
     },
     "health": {
       "period": "Period",

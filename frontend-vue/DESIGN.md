@@ -375,7 +375,9 @@ Sachlich und kompakt.
   - **Galaktische Dynamik (`vitalityMode`):** Über den Sparkles-Button unten rechts umschaltbar zwischen `Aus`, `Dezent` (Standard) und `Lebendig`.
 
 ### Netz-Statusboard und Betriebsmeldungen
-Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rundes Netzschild, Name (700), Zustandstext in Zustandsfarbe, rechts „online/gesamt“ in Mono; ein Klick filtert die Übersicht. Betriebsmeldungen (`ServiceNotices.vue`) zeigen das Netzschild des betroffenen Geräts, Titel in Zustandsfarbe, Detail in Mono und relative Zeit.
+Die Übersicht beginnt mit der Statuszeile (`NetworkPulse.vue`): „Alles in Ordnung · 29 von 31 Geräten online“ in Akzent oder die Zahl der offline bzw. gestörten Geräte in Zustandsfarbe, dahinter „Stand vor …“ (nach einem fehlgeschlagenen Neuladen in Bernstein). Die Zählregel steht in `components/dashboard/pulse.ts` und gilt für Statuszeile und Statusboard. Danach folgen Statusboard, Betriebsmeldungen und Orbit-Karte; ab 1280 px stehen die Meldungen links neben der Karte (22 rem, innen scrollend), darunter über ihr mit den vier dringendsten und „Alle anzeigen“.
+
+Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rundes Netzschild, Name (700), Zustandstext in Zustandsfarbe („Keine Geräte“ in `fg-subtle` für ein leeres Netz), rechts „online/gesamt“ in Mono; ein Klick filtert die Übersicht. Betriebsmeldungen (`ServiceNotices.vue`) zeigen das Netzschild des betroffenen Geräts, Titel in Zustandsfarbe, Detail in Mono und relative Zeit.
 
 ### Weitere Netzfarbträger
 - **IP-Kacheln:** belegt und online = Rahmen 55 % und Fläche 14 % in der Netzfarbe; offline rot getönt; frei Haarlinie; reserviert gestrichelt. Adressen in Mono.

@@ -98,7 +98,7 @@
     "pulse": {
       "all_clear": "Alles in Ordnung · {{online}} von {{total}} Geräten online",
       "updated": "Stand",
-      "failed": "Aktualisierung fehlgeschlagen ·"
+      "failed": "Aktualisierung fehlgeschlagen"
     },
     "notices": {
       "title": "Systemmeldungen",
@@ -118,7 +118,8 @@
       "updates_total_one": "{{count}} Update insgesamt",
       "updates_total_other": "{{count}} Updates insgesamt",
       "reboot": "Neustart nötig",
-      "show_all": "Alle anzeigen ({{count}} weitere)"
+      "show_all": "Alle anzeigen ({{count}} weitere)",
+      "show_less": "Weniger anzeigen"
     },
     "health": {
       "period": "Zeitraum",

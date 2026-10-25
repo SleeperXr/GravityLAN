@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { ArrowRight, CheckCircle2, ChevronDown } from 'lucide-vue-next';
 import type { Device } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
@@ -70,6 +70,11 @@ const notices = computed<Notice[]>(() => {
 const expanded = ref(false);
 const shown = computed(() => (props.limit && !expanded.value ? notices.value.slice(0, props.limit) : notices.value));
 const hidden = computed(() => notices.value.length - shown.value.length);
+/** More notices than the limit, so the list can fold; the toggle stays in place, keeping keyboard focus */
+const foldable = computed(() => !!props.limit && notices.value.length > props.limit);
+watch(foldable, (can) => {
+  if (!can) expanded.value = false;
+});
 
 function open(n: Notice) {
   if (n.action === 'updates') emit('openUpdates');
@@ -113,12 +118,14 @@ function open(n: Notice) {
       </li>
     </ul>
     <button
-      v-if="hidden > 0"
+      v-if="foldable"
       type="button"
       class="flex min-h-11 items-center justify-center gap-1.5 border-t border-line px-4 text-xs font-semibold text-fg-muted transition-colors hover:bg-raised hover:text-fg"
-      @click="expanded = true"
+      :aria-expanded="expanded"
+      @click="expanded = !expanded"
     >
-      <ChevronDown class="size-4" aria-hidden="true" />{{ t('gv.notices.show_all', { count: hidden }) }}
+      <ChevronDown class="size-4 transition-transform" :class="expanded && 'rotate-180'" aria-hidden="true" />
+      {{ expanded ? t('gv.notices.show_less') : t('gv.notices.show_all', { count: hidden }) }}
     </button>
   </section>
 </template>
