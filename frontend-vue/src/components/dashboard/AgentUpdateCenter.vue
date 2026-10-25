@@ -57,7 +57,8 @@ async function update(device: Device) {
   try {
     const login: AgentSshLogin = saved ? { profile_id: saved.id } : { ssh_user: sshUser.value, ssh_password: sshPassword.value, ssh_port: 22 };
     const res = await api.deployAgent(device.id, login);
-    statuses[device.id] = { status: res.status === 'success' ? 'success' : 'failed', message: res.message };
+    const message = res.error_code === 'host_key_changed' ? t('agent.host_key_changed', { ip: device.ip }) : res.message;
+    statuses[device.id] = { status: res.status === 'success' ? 'success' : 'failed', message };
   } catch (err) {
     statuses[device.id] = { status: 'failed', message: (err as Error).message || t('agent.connection_error') };
   }

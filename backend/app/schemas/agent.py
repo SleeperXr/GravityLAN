@@ -175,6 +175,8 @@ class AgentDeployResponse(BaseModel):
     status: str  # "success", "failed"
     message: str
     agent_version: str | None = None
+    # "host_key_changed": refused before logging in, the host presented another key (#45)
+    error_code: str | None = None
 
 
 class AgentEnrollmentResponse(BaseModel):
@@ -182,6 +184,8 @@ class AgentEnrollmentResponse(BaseModel):
 
     code: str
     expires_in: int  # seconds
+    # The install script would download over plain HTTP: the UI adds ALLOW_INSECURE=1 and warns (#44)
+    insecure: bool = False
 
 
 class PackageUpdateInfo(BaseModel):

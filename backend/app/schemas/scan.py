@@ -3,7 +3,14 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.network import MIN_SCAN_PREFIX, validate_scan_cidr
+
+# Most subnets one scan request may name (the setup wizard caps its list the same way)
+MAX_SCAN_SUBNETS = 64
 
 
 class ScanStatus(str, Enum):
@@ -35,9 +42,20 @@ class ScanRequest(BaseModel):
 
     subnets: list[str] = Field(
         default_factory=list,
-        description="CIDR subnets to scan; empty means the enabled subnets of the network overview",
+        max_length=MAX_SCAN_SUBNETS,
+        description=(
+            f"IPv4 CIDR subnets to scan, each /{MIN_SCAN_PREFIX} or smaller; "
+            "empty means the enabled subnets of the network overview"
+        ),
     )
-    ports: list[int] | None = None
+    ports: list[Annotated[int, Field(ge=1, le=65535)]] | None = Field(None, max_length=1024)
+
+    @field_validator("subnets")
+    @classmethod
+    def validate_subnets(cls, v: list[str]) -> list[str]:
+        # Same rules as the subnet management (#43): a 0.0.0.0/0 sweep would build a host
+        # list of four billion addresses and stall the event loop
+        return list(dict.fromkeys(validate_scan_cidr(cidr) for cidr in v))
 
 
 class ScanProgress(BaseModel):

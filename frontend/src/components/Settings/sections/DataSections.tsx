@@ -48,9 +48,12 @@ export function BackupSection() {
 
     setIsImporting(true);
     try {
-      await api.importBackup(file);
+      const result = await api.importBackup(file);
       // The page reloads right away, so a toast would not be seen
-      alert(t('settings.import_success'));
+      const revoked = result?.agent_tokens_revoked ?? 0;
+      alert(revoked ? `${t('settings.import_success')}
+
+${t('settings.import_agents_revoked', { count: revoked })}` : t('settings.import_success'));
       window.location.reload();
     } catch (err) {
       console.error('Import failed:', err);

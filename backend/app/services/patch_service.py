@@ -23,6 +23,7 @@ from app.services.ssh_utils import (
     TofuHostKeyPolicy,
     _load_ssh_key,
     build_pinned_ssh_client,
+    host_bypass_gateway,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,13 +78,12 @@ def _build_connect_kwargs(
 
 
 def _connect_with_fallback(client: paramiko.SSHClient, connect_kwargs: dict, host_ip: str) -> None:
-    """Connect directly, falling back to the Docker bridge gateway on failure."""
+    """Connect directly; only the Docker host itself is retried on the bridge gateway (#46)."""
     try:
         client.connect(**connect_kwargs)
     except Exception as e:
-        from app.services.docker_service import docker_service
-        gateway = docker_service.get_bridge_gateway()
-        if gateway and host_ip != gateway:
+        gateway = host_bypass_gateway(host_ip)
+        if gateway:
             logger.info("Direct connection failed (%s). Trying Host Bypass gateway: %s", e, gateway)
             connect_kwargs["hostname"] = gateway
             client.connect(**connect_kwargs)

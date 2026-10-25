@@ -90,8 +90,17 @@ def build_agent_config_json(server_url: str, raw_token: str, device_id: int, int
     return json.dumps(config_data, indent=2)
 
 
-def build_install_script(server_url: str, device_id: int, enroll_code: str | None) -> str:
-    """Generate the 'curl | bash' installer shell script for an agent."""
+def build_install_script(
+    server_url: str, device_id: int, enroll_code: str | None, allow_insecure: bool | None = None,
+) -> str:
+    """Generate the 'curl | bash' installer shell script for an agent.
+
+    Over plain HTTP the script stops unless ALLOW_INSECURE=1 is set on the device, or the
+    server allows it for every install (``GRAVITYLAN_ALLOW_INSECURE_INSTALL``, #44).
+    """
+    if allow_insecure is None:
+        allow_insecure = settings.allow_insecure_install
+    insecure_default = '\nALLOW_INSECURE="${ALLOW_INSECURE:-1}"  # GRAVITYLAN_ALLOW_INSECURE_INSTALL' if allow_insecure else ""
     quoted_server_url = shlex.quote(server_url)
     quoted_device_id = shlex.quote(str(device_id))
     quoted_enroll_code = shlex.quote(enroll_code or "")
@@ -103,12 +112,29 @@ echo "--- GravityLAN Agent Installer ---"
 INSTALL_DIR="/opt/gravitylan-agent"
 SERVER_URL={quoted_server_url}
 DEVICE_ID={quoted_device_id}
-ENROLL_CODE={quoted_enroll_code}
+ENROLL_CODE={quoted_enroll_code}{insecure_default}
+
+# Over plain HTTP the agent (run as root) and its token could be replaced or read on the way (#44)
+case "$SERVER_URL" in
+  http://*)
+    if [ "${{ALLOW_INSECURE:-0}}" != "1" ]; then
+      echo "Error: the GravityLAN server address is $SERVER_URL (plain HTTP, unencrypted)." >&2
+      echo "The agent runs as root and its token is downloaded with it, so anyone on the network path could replace or read both." >&2
+      echo "Recommended: set the server URL (Settings) to an HTTPS address, e.g. behind a reverse proxy," >&2
+      echo "or install the agent via SSH from the device's Agent tab." >&2
+      echo "To install over HTTP anyway, run the command with ALLOW_INSECURE=1:" >&2
+      echo "  curl -sSL '$SERVER_URL/api/agent/download/install-sh/$DEVICE_ID?code=$ENROLL_CODE' | sudo env ALLOW_INSECURE=1 bash" >&2
+      echo "(or allow it for every install on the server: GRAVITYLAN_ALLOW_INSECURE_INSTALL=true)" >&2
+      exit 1
+    fi
+    echo "WARNING: installing over plain HTTP (ALLOW_INSECURE=1). The agent and its token are not protected on the way." >&2
+    ;;
+esac
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Error: This script must be run as root to install the agent."
   echo "Please run the command with sudo bash:"
-  echo "curl -sSL '$SERVER_URL/api/agent/download/install-sh/$DEVICE_ID?code=$ENROLL_CODE' | sudo bash"
+  echo "curl -sSL '$SERVER_URL/api/agent/download/install-sh/$DEVICE_ID?code=$ENROLL_CODE' | sudo ${{ALLOW_INSECURE:+env ALLOW_INSECURE=$ALLOW_INSECURE }}bash"
   exit 1
 fi
 

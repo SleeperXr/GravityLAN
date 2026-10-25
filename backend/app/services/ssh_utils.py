@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -205,19 +206,34 @@ def build_connect_kwargs(
     return connect_kwargs, None
 
 
+def host_bypass_gateway(host_ip: str) -> Optional[str]:
+    """The Docker bridge gateway to retry an SSH login on, or None.
+
+    A container sometimes cannot reach its own host by the host's LAN address (macvlan),
+    but can through the bridge gateway. That is the same machine only when ``host_ip`` is
+    the configured Docker host; for any other device the retry would run the action on
+    the Docker host instead (#46), so a failed connection stays failed.
+    """
+    docker_host = (settings.docker_host_ip or os.getenv("DOCKER_HOST_IP") or "").strip()
+    if not docker_host or host_ip != docker_host:
+        return None
+    from app.services.docker_service import docker_service
+    gateway = docker_service.get_bridge_gateway()
+    return gateway if gateway and gateway != host_ip else None
+
+
 def connect_with_gateway_fallback(
     client: paramiko.SSHClient,
     connect_kwargs: dict,
     host_ip: str,
 ) -> None:
-    """Attempt SSH connection with Docker bridge gateway fallback (blocking; run in a thread)."""
+    """Attempt SSH connection, retrying on the bridge gateway only for the Docker host itself (blocking)."""
     try:
         client.connect(**connect_kwargs)
         return
     except Exception as e:
-        from app.services.docker_service import docker_service
-        gateway = docker_service.get_bridge_gateway()
-        if not gateway or host_ip == gateway:
+        gateway = host_bypass_gateway(host_ip)
+        if not gateway:
             raise e
 
     logger.info("Direct connection failed. Attempting Host Bypass via bridge gateway: %s", gateway)

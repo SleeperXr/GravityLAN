@@ -54,7 +54,9 @@ from app.schemas.agent import (
     GlobalMetricPoint,
     GlobalMetricsResponse,
 )
-from app.services.agent_deployer import deploy_agent, remove_agent, LATEST_AGENT_VERSION
+from app.services.agent_deployer import (
+    HOST_KEY_CHANGED, deploy_agent, is_host_key_refusal, remove_agent, LATEST_AGENT_VERSION,
+)
 from app.services.agent_tokens import hash_agent_token, new_agent_token, pending_storage_form
 from app.services.enrollment_service import enrollment_store
 from app.services.telemetry_query import load_metric_points
@@ -456,7 +458,12 @@ async def create_enrollment_code(
         raise HTTPException(status_code=404, detail="Device not found")
 
     code = enrollment_store.issue(device_id)
-    return AgentEnrollmentResponse(code=code, expires_in=int(enrollment_store.ttl_seconds))
+    server_url = await _detect_server_url(db)
+    return AgentEnrollmentResponse(
+        code=code,
+        expires_in=int(enrollment_store.ttl_seconds),
+        insecure=not server_url.lower().startswith("https://"),
+    )
 
 
 @router.get("/download/config/{device_id}")
@@ -534,7 +541,9 @@ async def _ssh_login(db: AsyncSession, device: Device, req: AgentInstallRequest,
 
     Saved connections follow the SSH terminal's rules (ADR-002): browser sessions
     only, never API or master tokens, and only to a host whose key the user has
-    already confirmed there.
+    already confirmed there. Typed-in credentials use the stored key of the host as
+    well; without one the first key is trusted and stored (TOFU, #45), so a changed
+    key is refused before any password is sent.
     """
     if req.profile_id is None:
         if not req.ssh_user:
@@ -542,6 +551,7 @@ async def _ssh_login(db: AsyncSession, device: Device, req: AgentInstallRequest,
         stmt = select(SshKnownHost).where(SshKnownHost.host == device.ip, SshKnownHost.port == req.ssh_port)
         known = (await db.execute(stmt)).scalar_one_or_none()
         pinned = PinnedHostKey(key_type=known.key_type, fingerprint=known.fingerprint) if known else None
+        tofu = TofuHostKeyPolicy() if pinned is None and not settings.ssh_strict_mode else None
 
         ssh_key = req.ssh_key
         ssh_passphrase = req.key_passphrase
@@ -558,6 +568,7 @@ async def _ssh_login(db: AsyncSession, device: Device, req: AgentInstallRequest,
             host_ip=device.ip, ssh_user=req.ssh_user,
             ssh_password=runner_password(req),
             ssh_key=ssh_key, ssh_key_passphrase=ssh_passphrase, ssh_port=req.ssh_port, pinned_host_key=pinned,
+            tofu_policy=tofu,
         )
 
     if not has_browser_session(http_request):
@@ -576,6 +587,19 @@ async def _ssh_login(db: AsyncSession, device: Device, req: AgentInstallRequest,
         ssh_key=login.private_key, ssh_key_passphrase=login.passphrase, ssh_port=login.port,
         pinned_host_key=login.pinned,
     )
+
+
+async def _remember_first_host_key(db: AsyncSession, login: dict) -> None:
+    """Store the host key learned on first contact, so later logins are pinned to it."""
+    tofu = login.get("tofu_policy")
+    if tofu is not None and tofu.captured:
+        from app.api.agent_patches import _persist_captured_host_key
+        await _persist_captured_host_key(db, login["host_ip"], login["ssh_port"], tofu.captured)
+        logger.info("SSH host key of %s:%d stored on first contact (%s)", login["host_ip"], login["ssh_port"], tofu.captured.fingerprint)
+
+
+def _ssh_error_code(success: bool, message: str) -> str | None:
+    return HOST_KEY_CHANGED if not success and is_host_key_refusal(message) else None
 
 
 @router.post("/deploy/{device_id}", response_model=AgentDeployResponse)
@@ -608,6 +632,7 @@ async def deploy_agent_endpoint(
                 device_id, login["host_ip"], server_url)
 
     success, message, token = await deploy_agent(**login, server_url=server_url, device_id=device_id)
+    await _remember_first_host_key(db, login)
 
     if success:
         # Save or update the token in the database
@@ -630,7 +655,7 @@ async def deploy_agent_endpoint(
         await db.commit()
         return AgentDeployResponse(status="success", message=message)
     else:
-        return AgentDeployResponse(status="failed", message=message)
+        return AgentDeployResponse(status="failed", message=message, error_code=_ssh_error_code(success, message))
 
 
 @router.post("/uninstall/{device_id}")
@@ -648,7 +673,9 @@ async def uninstall_agent_endpoint(
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    success, message = await remove_agent(**await _ssh_login(db, device, request, http_request))
+    login = await _ssh_login(db, device, request, http_request)
+    success, message = await remove_agent(**login)
+    await _remember_first_host_key(db, login)
 
     if success:
         # Deactivate token in DB
@@ -658,7 +685,7 @@ async def uninstall_agent_endpoint(
         await db.commit()
         return {"status": "success", "message": message}
     else:
-        return {"status": "failed", "message": message}
+        return {"status": "failed", "message": message, "error_code": _ssh_error_code(success, message)}
 
 
 @router.websocket("/ws/{device_id}")

@@ -61,6 +61,16 @@ also works from a phone without the key ever being on that phone.
    - The key is decrypted on the server (`app/services/ssh_credentials.py`) and only handed to paramiko; it is never in
      a response or a log line. The log records the connection name, the target and the key fingerprint. An optional
      sudo password for non-root users is used for that request only.
+10. **Typed-in credentials for agent deploy and removal use the same host keys** (2026-10-25, issue #45): until 0.5.4 a
+    deploy or removal with a typed-in password accepted any host key and stored none (`WarningPolicy`), so a
+    man-in-the-middle on the LAN received the SSH and sudo password. Now:
+    - With an `ssh_known_hosts` entry for the device's IP and port, only that key is accepted (`PinnedHostKeyPolicy`);
+      a changed key aborts before authentication, and the response carries `error_code: "host_key_changed"`, which
+      both interfaces turn into instructions (delete the entry under SSH → Known hosts, confirm the new key in the
+      terminal).
+    - Without an entry the first key is accepted and stored (trust on first use, `TofuHostKeyPolicy`). Unlike decision
+      9 this is a request typed in by the user, so first contact is the same moment the terminal would ask.
+    - With `GRAVITYLAN_SSH_STRICT_MODE` the system `known_hosts` and `RejectPolicy` apply as before.
 
 ## Consequences
 

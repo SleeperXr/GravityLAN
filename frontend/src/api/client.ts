@@ -85,6 +85,23 @@ export type TelemetryPurge =
   | { scope: 'device'; device_id: number }
   | { scope: 'all' };
 
+/** Result of a backup import. */
+export type BackupImportResult = {
+  status: string;
+  message: string;
+  /** Agents of devices whose id names another device after the import; they must be enrolled again */
+  agent_tokens_revoked?: number;
+  reassigned_devices?: number;
+};
+
+/** Result of an agent deploy/uninstall over SSH. */
+export type AgentSshResult = {
+  status: string;
+  message: string;
+  /** "host_key_changed": refused before logging in, the host presented another SSH key than stored */
+  error_code?: string | null;
+};
+
 export const api = {
   // Setup
   getSetupStatus: () => request<{ is_setup_complete: boolean; device_count: number; version?: string; agent_version?: string }>('/api/setup/status'),
@@ -189,16 +206,21 @@ export const api = {
   importBackup: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return fetch('/api/backup/import', { method: 'POST', body: formData }).then(res => res.json());
+    return fetch('/api/backup/import', { method: 'POST', body: formData }).then(async (res) => {
+      const body = await res.json().catch(() => ({}));
+      // A refused or rolled-back import must not read as success
+      if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : res.statusText);
+      return body as BackupImportResult;
+    });
   },
 
   // Agent
   deployAgent: (deviceId: number, data: import('../types').AgentSshLogin) =>
-    request<{ status: string; message: string; agent_version?: string }>(`/api/agent/deploy/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
+    request<AgentSshResult & { agent_version?: string }>(`/api/agent/deploy/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
   uninstallAgent: (deviceId: number, data: import('../types').AgentSshLogin) =>
-    request<{ status: string; message: string }>(`/api/agent/uninstall/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
+    request<AgentSshResult>(`/api/agent/uninstall/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
   createAgentEnrollment: (deviceId: number) =>
-    request<{ code: string; expires_in: number }>(`/api/agent/enroll/${deviceId}`, { method: 'POST' }),
+    request<{ code: string; expires_in: number; insecure?: boolean }>(`/api/agent/enroll/${deviceId}`, { method: 'POST' }),
   getAgentStatus: (deviceId: number) =>
     request<{ device_id: number; is_installed: boolean; is_active: boolean; agent_version?: string; last_seen?: string }>(`/api/agent/status/${deviceId}`),
   getAgentMetrics: (deviceId: number, limit?: number, range?: string) => {

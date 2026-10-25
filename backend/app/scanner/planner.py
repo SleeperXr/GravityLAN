@@ -8,6 +8,7 @@ from app.database import async_session
 from app.models.device import DiscoveredHost, Device
 from app.models.network import Subnet
 from app.scanner.discovery import discover_hosts_simple
+from app.scanner.subnets import scan_target_ips
 from app.scanner.arp import resolve_mac_addresses, get_local_arp_table
 from app.scanner.hostname import is_ip_like, resolve_hostnames
 from app.scanner.presence import (
@@ -99,8 +100,7 @@ async def _get_subnet_dns_server(subnet: str):
 async def _scan_subnet_alive_hosts(subnet: str, dns_server):
     """Fast ARP + Ping discovery over one subnet."""
     try:
-        net = ipaddress.ip_network(subnet, strict=False)
-        target_ips = [str(ip) for ip in net.hosts()]
+        target_ips = scan_target_ips(subnet)
     except ValueError as e:
         logger.error(f"Planner: Skipping invalid subnet '{subnet}': {e}")
         return []

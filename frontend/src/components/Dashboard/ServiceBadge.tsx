@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../../context/ToastContext';
+import { serviceUrl } from '../../utils/serviceUrl';
 
 interface ServiceBadgeProps {
   service: Service;
@@ -51,9 +52,8 @@ export function ServiceBadge({ service, ip, disabled, isMini }: ServiceBadgeProp
   const { showToast } = useToast();
   const [isCopied, setIsCopied] = useState(false);
   
-  const url = service.url_template
-    .replace('{ip}', ip)
-    .replace('{port}', String(service.port));
+  // null for an empty link or one with a scheme outside the allow-list (javascript:, data:)
+  const url = serviceUrl(service.url_template, ip, service.port);
 
   const Icon = getIcon(service);
   const isSmb = service.protocol.toLowerCase() === 'smb';
@@ -87,7 +87,7 @@ export function ServiceBadge({ service, ip, disabled, isMini }: ServiceBadgeProp
 
   return (
     <a
-      href={isSmb ? '#' : url}
+      href={isSmb || !url ? '#' : url}
       className={`service-badge ${disabled ? 'disabled' : ''} ${isCopied ? 'copied' : ''} ${isMini ? 'is-mini' : ''} ${service.is_up ? '' : 'is-down'}`}
       aria-disabled={disabled || undefined}
       onClick={(e) => {
@@ -116,6 +116,11 @@ export function ServiceBadge({ service, ip, disabled, isMini }: ServiceBadgeProp
           return;
         }
 
+        if (!url) {
+          e.preventDefault();
+          return;
+        }
+
         // For web protocols, open in new tab.
         if (url.startsWith('http')) {
           e.preventDefault();
@@ -126,7 +131,7 @@ export function ServiceBadge({ service, ip, disabled, isMini }: ServiceBadgeProp
           window.location.href = url;
         }
       }}
-      title={isSmb ? `${t('notifications.click_to_copy')}: \\\\${ip}` : isRdp ? t('notifications.rdp_download', { ip }) : `${service.name} — ${url}`}
+      title={isSmb ? `${t('notifications.click_to_copy')}: \\\\${ip}` : isRdp ? t('notifications.rdp_download', { ip }) : url ? `${service.name} — ${url}` : service.name}
     >
       <div className={`service-badge__dot ${service.is_up ? 'service-badge__dot--up' : 'service-badge__dot--down'}`} />
       <Icon size={isMini ? 14 : 12} strokeWidth={2.5} />

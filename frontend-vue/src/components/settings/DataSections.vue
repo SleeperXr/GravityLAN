@@ -48,9 +48,12 @@ async function importBackup(event: Event) {
   }
   importing.value = true;
   try {
-    await api.importBackup(file);
+    const result = await api.importBackup(file);
+    const revoked = result?.agent_tokens_revoked ?? 0;
     showToast('success', t('common.success'), t('settings.import_success'));
-    window.setTimeout(() => window.location.reload(), 1200);
+    if (revoked) showToast('error', t('settings.backup_import'), t('settings.import_agents_revoked', { count: revoked }));
+    // Leave time to read the agent notice before the reload
+    window.setTimeout(() => window.location.reload(), revoked ? 6000 : 1200);
   } catch (err) {
     showToast('error', t('common.error'), t('settings.import_failed') + (err as Error).message);
   } finally {

@@ -21,6 +21,31 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 # (the password has its own endpoint, POST /api/auth/password, which checks the old one)
 SENSITIVE_KEYS = {"api.master_token", "api.admin_password"}
 
+# The only keys the generic POST may write (#41). Everything else is managed by its own
+# endpoint: setup.complete only by the setup wizard and the authenticated reset-db, the
+# credentials by /api/auth/password. A settings:write token must not be able to put the
+# server back into setup mode, where /api/setup/complete hands out a new admin password.
+WRITABLE_KEYS = frozenset({
+    # Settings page (React useSettingsForm, Vue SettingsView)
+    "scan_interval", "quick_scan_interval", "scan_timeout", "scanner.offline_threshold",
+    "scanner.health_probe_interval", "dns.server", "history_retention_days",
+    "server_url_override", "server.url", "system.log_level", "ui.start_page", "ui.default_frontend",
+    # Network view groups, topology flow controls, GravityUI appearance
+    "network_groups", "ui.line_colors", "ui.orbit_layout", "ui.orbit_roles", "ui.link_type_colors",
+    # Telemetry retention (clamped when read) and agent adoption
+    "telemetry.raw_retention_hours", "telemetry.hourly_retention_days", "telemetry.daily_retention_days",
+    "agent.allow_auto_adoption",
+    # Legacy comma-separated subnet list, merged into the Subnet table
+    "scan_subnets",
+})
+# Display-only settings stored under a free-form key
+WRITABLE_PREFIXES = ("theme.", "topology.")
+
+
+def is_writable_key(key: str) -> bool:
+    """Whether POST /api/settings may write this key."""
+    return key in WRITABLE_KEYS or key.startswith(WRITABLE_PREFIXES)
+
 
 @router.get("", dependencies=[Depends(get_current_admin)])
 async def get_all_settings(db: AsyncSession = Depends(get_db)):
@@ -141,6 +166,12 @@ async def update_settings(settings: SettingsUpdate, db: AsyncSession = Depends(g
         raise HTTPException(
             status_code=400,
             detail=f"{', '.join(sorted(protected))} cannot be changed here. Change the password under Settings > Access.",
+        )
+    rejected = sorted(key for key in settings.root if not is_writable_key(key))
+    if rejected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{', '.join(rejected)} cannot be changed through /api/settings.",
         )
     for key, value in settings.root.items():
         # Validate known keys before persisting

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Copy, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Copy, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
@@ -11,18 +11,24 @@ function serverOrigin(): string {
   return `${protocol}//${hostname}${apiPort}`;
 }
 
-export function buildInstallCommand(deviceId: number, code: string): string {
-  return `curl -sSL "${serverOrigin()}/api/agent/download/install-sh/${deviceId}?code=${code}" | sudo bash`;
+/**
+ * The one-line installer. Over plain HTTP the script refuses to run unless ALLOW_INSECURE=1
+ * is set (#44); `env` passes it through sudo whatever the sudoers env policy says.
+ */
+export function buildInstallCommand(deviceId: number, code: string, insecure = false): string {
+  const shell = insecure ? 'sudo env ALLOW_INSECURE=1 bash' : 'sudo bash';
+  return `curl -sSL "${serverOrigin()}/api/agent/download/install-sh/${deviceId}?code=${code}" | ${shell}`;
 }
 
-export interface InstallCode { code: string; expiresAt: Date }
+/** ``insecure``: the script downloads over plain HTTP, so the command needs ALLOW_INSECURE=1 */
+export interface InstallCode { code: string; expiresAt: Date; insecure: boolean }
 
 /** A fresh single-use enrollment code for the install command of one device. */
 export async function requestInstallCode(deviceId: number): Promise<InstallCode> {
-  const { code, expires_in } = await api.createAgentEnrollment(deviceId);
+  const { code, expires_in, insecure } = await api.createAgentEnrollment(deviceId);
   // The code ends up in a root shell command: accept only the backend's token_urlsafe alphabet.
   if (!/^[A-Za-z0-9_-]+$/.test(code)) throw new Error('Unexpected install code format');
-  return { code, expiresAt: new Date(Date.now() + expires_in * 1000) };
+  return { code, expiresAt: new Date(Date.now() + expires_in * 1000), insecure: !!insecure };
 }
 
 export function buildUninstallCommand(deviceId: number): string {
@@ -108,7 +114,7 @@ export function ManualInstallCommand({ deviceId }: { deviceId: number }) {
     return () => { cancelled = true; };
   }, [deviceId, request]);
 
-  const command = installCode ? buildInstallCommand(deviceId, installCode.code) : '';
+  const command = installCode ? buildInstallCommand(deviceId, installCode.code, installCode.insecure) : '';
 
   const handleCopy = async () => {
     if (!command) return;
@@ -122,6 +128,14 @@ export function ManualInstallCommand({ deviceId }: { deviceId: number }) {
   return (
     <div className="manual-command">
       <p className="field-hint">{t('agent.manual_update_desc')}</p>
+      {installCode?.insecure && (
+        <div className="callout callout--warning" role="note">
+          <AlertTriangle size={16} className="callout__icon" aria-hidden="true" />
+          <p className="callout__body">
+            <strong>{t('agent.insecure_install_title')}:</strong> {t('agent.insecure_install_warning')}
+          </p>
+        </div>
+      )}
       <div className="manual-command__box">
         <code className="manual-command__code">
           {installCode ? command : t(failed ? 'agent.install_code_failed' : 'common.loading')}

@@ -316,13 +316,14 @@ async def test_run_planner_scan_skips_link_local_and_invalid_subnets(monkeypatch
     monkeypatch.setattr("app.scanner.sync.sync_hosts_batch", sync_mock)
     monkeypatch.setattr("app.services.webhook_service.trigger_webhooks", AsyncMock())
 
-    total = await planner.run_planner_scan(["169.254.0.0/16", "not-a-subnet", "10.0.0.0/8"])
+    total = await planner.run_planner_scan(["169.254.0.0/16", "not-a-subnet", "10.0.0.0/8", "10.1.0.0/24"])
 
     assert total == 0
-    # Only the valid 10.0.0.0/8 subnet is scanned
+    # Only the valid 10.1.0.0/24 subnet is scanned; a /8 is larger than MIN_SCAN_PREFIX (#43)
     assert planner.discover_hosts_simple.await_count == 1
     args = planner.discover_hosts_simple.await_args
-    assert args.args[0][0] == "10.0.0.1"
+    assert args.args[0][0] == "10.1.0.1"
+    assert len(args.args[0]) == 254
     sync_mock.assert_not_awaited()
 
 

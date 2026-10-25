@@ -426,6 +426,9 @@
     "deployed_title": "Agent installiert!",
     "deploy_failed_title": "Installation fehlgeschlagen",
     "connection_failed": "Verbindung fehlgeschlagen",
+    "insecure_install_title": "Unverschlüsselte Installation",
+    "insecure_install_warning": "Die Server-Adresse ist http://. Der Agent läuft als root und lädt sich samt Token unverschlüsselt herunter, jemand im Netz könnte beides austauschen oder mitlesen. Deshalb enthält der Befehl ALLOW_INSECURE=1. Besser: In den Einstellungen eine HTTPS-Server-URL setzen (z. B. hinter einem Reverse Proxy) oder den Agent per SSH installieren.",
+    "host_key_changed": "{{ip}} hat einen anderen SSH-Host-Key gezeigt als beim ersten Kontakt. GravityLAN hat abgebrochen, bevor Zugangsdaten gesendet wurden. Ist das erwartet (z. B. nach einer Neuinstallation), lösche unter SSH → Bekannte Hosts den alten Eintrag, verbinde dich einmal im SSH-Terminal und bestätige den neuen Key. Sonst kann jemand im Netz die Verbindung abfangen.",
     "uninstalling": "Deinstallation...",
     "removing": "Agent von {{ip}} wird entfernt...",
     "uninstalled_title": "Agent deinstalliert!",
@@ -574,6 +577,7 @@
     "export_failed": "Export fehlgeschlagen: ",
     "import_confirm_warning": "Bist du sicher? Alle bestehenden Daten werden überschrieben!",
     "import_success": "Backup erfolgreich importiert! Die Seite wird neu geladen.",
+    "import_agents_revoked": "{{count}} Agent(s) gehörten zu Geräten, die nach dem Import andere sind. Ihre Tokens wurden widerrufen, damit sie keine Messwerte unter fremden Geräten melden. Binde diese Agents im Agent-Tab des Geräts neu ein.",
     "import_failed": "Import fehlgeschlagen: ",
     "dns_custom_desc": "Wenn gesetzt, verwendet der Scanner diesen DNS-Server zur Namensauflösung statt des System-Standards.",
     "password": {

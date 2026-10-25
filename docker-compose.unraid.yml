@@ -22,3 +22,7 @@ services:
       - TZ=Europe/Berlin
       - GRAVITYLAN_DEBUG=false
       - GRAVITYLAN_PORT=8000
+      # Manual agent install over plain HTTP without ALLOW_INSECURE=1 on the device (unencrypted)
+      # - GRAVITYLAN_ALLOW_INSECURE_INSTALL=true
+      # LAN IP of this server: SSH to it may retry over the Docker bridge gateway (macvlan)
+      # - GRAVITYLAN_DOCKER_HOST_IP=192.168.1.10

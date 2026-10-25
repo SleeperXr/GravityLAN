@@ -53,7 +53,8 @@ function useAgentUpdates(devicesToUpdate: Device[], onComplete: () => void) {
         ? { profile_id: saved.id }
         : { ssh_user: sshUser, ssh_password: sshPassword, ssh_port: 22 };
       const res = await api.deployAgent(device.id, login);
-      setStatus(device.id, res.status === 'success' ? 'success' : 'failed', res.message);
+      const message = res.error_code === 'host_key_changed' ? t('agent.host_key_changed', { ip: device.ip }) : res.message;
+      setStatus(device.id, res.status === 'success' ? 'success' : 'failed', message);
     } catch (err) {
       setStatus(device.id, 'failed', (err as Error).message || t('agent.connection_error', 'Verbindungsfehler'));
     }

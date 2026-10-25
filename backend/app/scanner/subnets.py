@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from sqlalchemy import select
 
 from app.models.network import Subnet
-from app.schemas.network import normalize_cidr
+from app.schemas.network import normalize_cidr, validate_scan_cidr
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,16 @@ def _canonical(cidr: str) -> str | None:
         return normalize_cidr(cidr)
     except ValueError:
         return None
+
+
+def scan_target_ips(subnet: str) -> list[str]:
+    """Host addresses of a subnet the scanners sweep.
+
+    Raises ValueError for anything but an IPv4 network of at most MIN_SCAN_PREFIX bits,
+    so the list stays bounded (65 534 addresses) whichever path the subnet came from:
+    a request, the Subnet table or the detected local interfaces (#43).
+    """
+    return [str(ip) for ip in ipaddress.ip_network(validate_scan_cidr(subnet)).hosts()]
 
 
 async def get_enabled_subnets(db) -> list[str]:

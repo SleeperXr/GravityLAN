@@ -1,10 +1,41 @@
 """Pydantic schemas for device-related API requests and responses."""
 
+import re
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.interface import DeviceInterfaceResponse
+
+# Schemes a service link may use (#42). Both dashboards navigate to the link on click, so
+# javascript:, data:, vbscript: and the like would run in the dashboard origin. The
+# frontends apply the same list again, which also covers values stored before this check.
+ALLOWED_URL_SCHEMES = frozenset({"http", "https", "ssh", "sftp", "scp", "ftp", "smb", "rdp", "vnc"})
+_URL_SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.\-]*):")
+# Browsers skip leading C0 controls and spaces and drop tabs/newlines anywhere in a URL
+_URL_IGNORED_CHARS_RE = re.compile(r"[\t\n\r]")
+_URL_LEADING_JUNK = "".join(chr(c) for c in range(0x21))
+
+
+def is_safe_url_template(value: str) -> bool:
+    """Whether a url_template is empty or starts with an allow-listed scheme."""
+    if not value:
+        return True
+    normalized = _URL_IGNORED_CHARS_RE.sub("", value).lstrip(_URL_LEADING_JUNK)
+    match = _URL_SCHEME_RE.match(normalized)
+    return bool(match) and match.group(1).lower() in ALLOWED_URL_SCHEMES
+
+
+def safe_url_template(value: str | None) -> str:
+    """The template itself when it is safe, otherwise an empty string."""
+    return value if value and is_safe_url_template(value) else ""
+
+
+def _check_url_template(value: str | None) -> str | None:
+    if value is not None and not is_safe_url_template(value):
+        allowed = ", ".join(sorted(ALLOWED_URL_SCHEMES))
+        raise ValueError(f"url_template must start with one of these schemes: {allowed}")
+    return value
 
 
 class ServiceResponse(BaseModel):
@@ -31,11 +62,16 @@ class ServiceCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     protocol: str = Field("http", max_length=20)
     port: int = Field(..., ge=1, le=65535)
-    url_template: str = ""
+    url_template: str = Field("", max_length=500)
     color: str | None = None
     sort_order: int = 0
     is_auto_detected: bool = False
     ignore_ssl: bool = False
+
+    @field_validator("url_template")
+    @classmethod
+    def validate_url_template(cls, value):
+        return _check_url_template(value)
 
 
 class ServiceUpdate(BaseModel):
@@ -44,11 +80,16 @@ class ServiceUpdate(BaseModel):
     name: str | None = None
     protocol: str | None = None
     port: int | None = Field(None, ge=1, le=65535)
-    url_template: str | None = None
+    url_template: str | None = Field(None, max_length=500)
     color: str | None = None
     sort_order: int | None = None
     is_up: bool | None = None
     ignore_ssl: bool | None = None
+
+    @field_validator("url_template")
+    @classmethod
+    def validate_url_template(cls, value):
+        return _check_url_template(value)
 
 
 class DeviceHistoryResponse(BaseModel):

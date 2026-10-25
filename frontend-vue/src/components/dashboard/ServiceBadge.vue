@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next';
 import type { Service } from '@/types';
 import { copyText } from '@/lib/clipboard';
+import { serviceUrl } from '@/lib/serviceUrl';
 import { useToast } from '@/composables/useToast';
 import { t } from '@/i18n';
 
@@ -54,14 +55,15 @@ const icon = computed<Component>(() => {
   return key ? ICON_MAP[key] : ExternalLink;
 });
 
-const url = computed(() => props.service.url_template.replace('{ip}', props.ip).replace('{port}', String(props.service.port)));
+// null for an empty link or one with a scheme outside the allow-list (javascript:, data:)
+const url = computed(() => serviceUrl(props.service.url_template, props.ip, props.service.port));
 const protocol = computed(() => props.service.protocol.toLowerCase());
 const unc = computed(() => `\\\\${props.ip}`);
 
 const title = computed(() => {
   if (protocol.value === 'smb') return `${t('notifications.click_to_copy')}: ${unc.value}`;
   if (protocol.value === 'rdp') return t('notifications.rdp_download', { ip: props.ip });
-  return `${props.service.name} — ${url.value}`;
+  return url.value ? `${props.service.name} — ${url.value}` : props.service.name;
 });
 
 async function onClick(event: MouseEvent) {
@@ -93,6 +95,10 @@ async function onClick(event: MouseEvent) {
     showToast('success', t('notifications.rdp_started'), t('notifications.rdp_generated', { ip: props.ip }));
     return;
   }
+  if (!url.value) {
+    event.preventDefault();
+    return;
+  }
   if (!url.value.startsWith('http')) {
     // ssh:// and friends: let the OS pick the handler
     event.preventDefault();
@@ -103,8 +109,8 @@ async function onClick(event: MouseEvent) {
 
 <template>
   <a
-    :href="protocol === 'smb' || protocol === 'rdp' ? '#' : url"
-    :target="url.startsWith('http') ? '_blank' : undefined"
+    :href="protocol === 'smb' || protocol === 'rdp' || !url ? '#' : url"
+    :target="url?.startsWith('http') ? '_blank' : undefined"
     rel="noopener noreferrer"
     :title="title"
     :aria-disabled="disabled || undefined"

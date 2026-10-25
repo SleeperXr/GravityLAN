@@ -176,13 +176,14 @@ export function useAgentPanel(device: Device, active: boolean) {
     showToast('info', t(action.start), t(action.detail, { ip: device.ip }));
     try {
       const result = await action.run(device.id, sshForm);
-      appendLog(result.message);
+      const message = result.error_code === 'host_key_changed' ? t('agent.host_key_changed', { ip: device.ip }) : result.message;
+      appendLog(message);
       if (result.status === 'success') {
-        showToast('success', t(action.ok), result.message);
+        showToast('success', t(action.ok), message);
         setSshForm(prev => ({ ...prev, ssh_password: '', ssh_key: '', sudo_password: '' }));
         await loadAgentStatus();
       } else {
-        showToast('error', t(action.failed), result.message);
+        showToast('error', t(action.failed), message);
       }
     } catch (err) {
       const msg = errorMessage(err) || t('agent.connection_failed');

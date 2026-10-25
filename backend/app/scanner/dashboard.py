@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import ipaddress
 import os
 from datetime import datetime, timezone
 from sqlalchemy import select
@@ -10,6 +9,7 @@ from app.database import async_session
 from app.models.device import Device
 from app.models.network import Subnet
 from app.scanner.discovery import discover_hosts_simple
+from app.scanner.subnets import scan_target_ips
 from app.scanner.arp import resolve_mac_addresses
 from app.scanner.port_scanner import scan_ports
 from app.scanner.presence import (
@@ -55,8 +55,11 @@ async def _discover_subnet_hosts(subnet: str) -> list[dict]:
         if sub_obj:
             dns_server = sub_obj.dns_server
 
-    net = ipaddress.ip_network(subnet, strict=False)
-    target_ips = [str(ip) for ip in net.hosts()]
+    try:
+        target_ips = scan_target_ips(subnet)
+    except ValueError as e:
+        logger.error(f"Dashboard: Skipping subnet '{subnet}': {e}")
+        return []
 
     # No callback here either to prevent many commits
     alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server)

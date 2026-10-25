@@ -22,7 +22,18 @@ from app.services.ssh_utils import (
     build_pinned_ssh_client,
     build_ssh_client,
     connect_with_gateway_fallback,
+    TofuHostKeyPolicy,
 )
+
+# error_code of a deploy/uninstall refused because the host key changed (#45); the UIs
+# show their own translated instructions for it
+HOST_KEY_CHANGED = "host_key_changed"
+HOST_KEY_CHANGED_PREFIX = "SSH connection refused before logging in:"
+
+
+def is_host_key_refusal(message: str) -> bool:
+    """Whether a deploy/uninstall message reports a changed host key."""
+    return message.startswith(HOST_KEY_CHANGED_PREFIX)
 
 logger = logging.getLogger(__name__)
 
@@ -187,9 +198,9 @@ def _map_ssh_error(exc: Exception, host_ip: str) -> tuple[bool, str] | None:
 
     if isinstance(exc, HostKeyNotTrusted):
         return False, (
-            f"SSH connection refused before logging in: {host_ip} presented a different host key than the one "
-            "confirmed in the SSH terminal. If that is expected (e.g. after a reinstall), remove the old entry "
-            "under SSH → Known hosts, connect once in the terminal and confirm the new key."
+            f"{HOST_KEY_CHANGED_PREFIX} {host_ip} presented a different host key than the one stored on the first "
+            "connection. No credentials were sent. If that is expected (e.g. after a reinstall), remove the old "
+            "entry under SSH → Known hosts, connect once in the terminal and confirm the new key."
         )
     # Before the generic SSHException branch: authentication errors are SSHExceptions too
     if isinstance(exc, paramiko.AuthenticationException):
@@ -393,13 +404,15 @@ async def deploy_agent(
     device_id: int,
     ssh_key_passphrase: str | None = None,
     pinned_host_key: PinnedHostKey | None = None,
+    tofu_policy: TofuHostKeyPolicy | None = None,
 ) -> tuple[bool, str, str]:
     """Deploy and start the GravityLAN agent on a remote Linux host.
 
     paramiko is fully blocking, so the SSH session runs in a worker thread to
     keep the event loop (API, WebSockets, scheduler) responsive meanwhile.
-    With ``pinned_host_key`` (saved connections) only a server presenting that
-    key is logged in to.
+    With ``pinned_host_key`` only a server presenting that key is logged in to;
+    with ``tofu_policy`` (first contact) the presented key is accepted and recorded
+    in the policy, for the caller to store in ``ssh_known_hosts``.
 
     Returns:
         (success, message, token)
@@ -415,11 +428,20 @@ async def deploy_agent(
         device_id=device_id,
         ssh_key_passphrase=ssh_key_passphrase,
         pinned_host_key=pinned_host_key,
+        tofu_policy=tofu_policy,
     )
 
 
-def _client_for(pinned_host_key: PinnedHostKey | None):
-    return build_pinned_ssh_client(pinned_host_key) if pinned_host_key else build_ssh_client()
+def _client_for(pinned_host_key: PinnedHostKey | None, tofu_policy: TofuHostKeyPolicy | None = None):
+    """Pinned key first, then trust on first use; the settings-based client only for direct callers."""
+    from app.config import settings
+
+    if pinned_host_key:
+        return build_pinned_ssh_client(pinned_host_key)
+    client = build_ssh_client()
+    if tofu_policy is not None and not settings.ssh_strict_mode:
+        client.set_missing_host_key_policy(tofu_policy)
+    return client
 
 
 def _deploy_agent_blocking(
@@ -433,13 +455,14 @@ def _deploy_agent_blocking(
     device_id: int,
     ssh_key_passphrase: str | None = None,
     pinned_host_key: PinnedHostKey | None = None,
+    tofu_policy: TofuHostKeyPolicy | None = None,
 ) -> tuple[bool, str, str]:
     """Blocking body of :func:`deploy_agent`; only call it via ``asyncio.to_thread``."""
     token = uuid.uuid4().hex
     base_dir = REMOTE_BASE_DIR
     cleanup_msg = ""
 
-    client = _client_for(pinned_host_key)
+    client = _client_for(pinned_host_key, tofu_policy)
 
     try:
         connect_kwargs, err = build_connect_kwargs(host_ip, ssh_user, ssh_port, ssh_password, ssh_key, ssh_key_passphrase)
@@ -525,6 +548,7 @@ async def remove_agent(
     ssh_port: int = 22,
     ssh_key_passphrase: str | None = None,
     pinned_host_key: PinnedHostKey | None = None,
+    tofu_policy: TofuHostKeyPolicy | None = None,
 ) -> tuple[bool, str]:
     """Uninstall the GravityLAN Agent from a remote Linux host.
 
@@ -545,6 +569,7 @@ async def remove_agent(
         ssh_port=ssh_port,
         ssh_key_passphrase=ssh_key_passphrase,
         pinned_host_key=pinned_host_key,
+        tofu_policy=tofu_policy,
     )
 
 
@@ -557,9 +582,10 @@ def _remove_agent_blocking(
     ssh_port: int,
     ssh_key_passphrase: str | None = None,
     pinned_host_key: PinnedHostKey | None = None,
+    tofu_policy: TofuHostKeyPolicy | None = None,
 ) -> tuple[bool, str]:
     """Blocking body of :func:`remove_agent`; only call it via ``asyncio.to_thread``."""
-    client = _client_for(pinned_host_key)
+    client = _client_for(pinned_host_key, tofu_policy)
 
     try:
         connect_kwargs, err = build_connect_kwargs(host_ip, ssh_user, ssh_port, ssh_password, ssh_key, ssh_key_passphrase)
