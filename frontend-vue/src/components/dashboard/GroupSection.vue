@@ -139,7 +139,7 @@ defineExpose({ compact });
     <div class="flex items-center gap-2">
       <button
         type="button"
-        class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left"
+        class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left max-md:min-h-11"
         :aria-expanded="!collapsed"
         :aria-controls="`${sectionId}-body`"
         @click="emit('toggle')"

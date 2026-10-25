@@ -22,6 +22,7 @@ import GatewaysPopover from '@/components/dashboard/GatewaysPopover.vue';
 import NotificationCenter from '@/components/dashboard/NotificationCenter.vue';
 import ScanDialog from '@/components/dashboard/ScanDialog.vue';
 import AgentUpdateCenter from '@/components/dashboard/AgentUpdateCenter.vue';
+import OverviewMoreMenu from '@/components/dashboard/OverviewMoreMenu.vue';
 import DeviceEditor from '@/components/editor/DeviceEditor.vue';
 import LineStatusBoard from '@/components/dashboard/LineStatusBoard.vue';
 import ServiceNotices from '@/components/dashboard/ServiceNotices.vue';
@@ -238,7 +239,7 @@ function clearFilters() {
             v-model="query"
             type="search"
             :placeholder="t('gv.dashboard.search')"
-            class="h-9 w-full rounded-md border border-line bg-sunken pr-14 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none"
+            class="h-9 w-full rounded-md max-md:h-11 border border-line bg-sunken pr-14 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none"
           />
           <kbd class="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle sm:inline">
             Ctrl K
@@ -261,15 +262,26 @@ function clearFilters() {
         </div>
         <GatewaysPopover @open-device="(id, tab) => openDeviceById(id, tab)" />
         <NotificationCenter />
-        <Button v-if="outdatedAgents > 0" class="border-warn/40 text-warn-text" @click="updateCenterOpen = true">
-          <RefreshCw aria-hidden="true" />{{ outdatedAgents }}<span class="hidden sm:inline">{{ t('dashboard.agent_updates') }}</span>
-        </Button>
-        <Button :aria-label="t('dashboard.edit_layout')" :title="t('dashboard.edit_layout')" @click="toggleEdit">
-          <Pencil aria-hidden="true" /><span class="hidden xl:inline">{{ t('dashboard.edit_layout') }}</span>
-        </Button>
-        <Button :disabled="refreshingAll || store.isScanning" :aria-label="t('dashboard.refresh_all')" @click="refreshAll">
-          <RefreshCw :class="refreshingAll && 'animate-spin'" aria-hidden="true" /><span class="hidden xl:inline">{{ refreshingAll ? t('dashboard.refreshing') : t('dashboard.refresh_all') }}</span>
-        </Button>
+        <OverviewMoreMenu
+          v-if="isMobile"
+          :updates="outdatedAgents"
+          :refreshing="refreshingAll"
+          :scanning="store.isScanning"
+          @updates="updateCenterOpen = true"
+          @edit="toggleEdit"
+          @refresh="refreshAll"
+        />
+        <template v-else>
+          <Button v-if="outdatedAgents > 0" class="border-warn/40 text-warn-text" @click="updateCenterOpen = true">
+            <RefreshCw aria-hidden="true" />{{ outdatedAgents }}<span class="hidden sm:inline">{{ t('dashboard.agent_updates') }}</span>
+          </Button>
+          <Button :aria-label="t('dashboard.edit_layout')" :title="t('dashboard.edit_layout')" @click="toggleEdit">
+            <Pencil aria-hidden="true" /><span class="hidden xl:inline">{{ t('dashboard.edit_layout') }}</span>
+          </Button>
+          <Button :disabled="refreshingAll || store.isScanning" :aria-label="t('dashboard.refresh_all')" @click="refreshAll">
+            <RefreshCw :class="refreshingAll && 'animate-spin'" aria-hidden="true" /><span class="hidden xl:inline">{{ refreshingAll ? t('dashboard.refreshing') : t('dashboard.refresh_all') }}</span>
+          </Button>
+        </template>
         <Button variant="primary" :disabled="store.isScanning" @click="scan.openDialog()">
           <Radar :class="store.isScanning && 'animate-spin'" aria-hidden="true" />{{ store.isScanning ? t('dashboard.scanning') : t('dashboard.scan') }}
         </Button>
@@ -297,7 +309,7 @@ function clearFilters() {
               <p class="text-sm font-bold text-fg">{{ t('gv.plan.title') }}</p>
               <p class="text-xs text-fg-subtle">{{ t('gv.plan.live', { online: store.onlineCount, total: store.totalCount }) }}</p>
             </div>
-            <RouterLink to="/topology" class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg hover:border-line-strong">
+            <RouterLink to="/topology" class="inline-flex h-8 shrink-0 items-center max-md:h-11 gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg hover:border-line-strong">
               <Pencil class="size-3.5" aria-hidden="true" />{{ t('gv.plan.edit') }}
             </RouterLink>
           </div>

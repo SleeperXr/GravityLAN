@@ -114,7 +114,7 @@ async function onClick(event: MouseEvent) {
     rel="noopener noreferrer"
     :title="title"
     :aria-disabled="disabled || undefined"
-    class="group/svc inline-flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-md border border-line bg-raised px-2 text-xs font-medium text-fg-muted transition-colors"
+    class="group/svc inline-flex h-7 max-md:h-9 max-w-full min-w-0 items-center gap-1.5 rounded-md border border-line bg-raised px-2 text-xs font-medium text-fg-muted transition-colors"
     :class="[
       disabled ? 'pointer-events-none opacity-60' : 'hover:border-line-strong hover:bg-control-hover hover:text-fg',
       !service.is_up && 'border-dashed',

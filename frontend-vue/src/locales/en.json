@@ -35,6 +35,7 @@
       "services_down": "Services down",
       "services_down_hint": "Unreachable ports on online devices",
       "search": "Search name, IP, MAC or service",
+      "more_actions": "More actions",
       "clear_filter": "Clear filter",
       "matches": "{{count}} of {{total}} devices",
       "no_match": "No device matches the filter.",
