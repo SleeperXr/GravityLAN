@@ -23,15 +23,4 @@ services:
       - NET_RAW
       - NET_ADMIN
 
-  samba:
-    image: dperson/samba
-    container_name: GravityLAN_SMB
-    restart: unless-stopped
-    ports:
-      - "139:139"
-      - "445:445"
-    volumes:
-      - ./data:/mnt/data
-    command: -u "gravity;lan" -s "data;/mnt/data;yes;no;no;gravity;gravity;gravity"
-    environment:
-      - TZ=Europe/Berlin
+# A file share for this stack is in docker-compose-test.smb.yml (opt-in, localhost only, own directory).

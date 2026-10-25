@@ -260,3 +260,6 @@ backend/health.json
 
 # Keys and Secrets
 antigravity_key*
+
+# Scratch directory of docker-compose-test.smb.yml
+smb-share/

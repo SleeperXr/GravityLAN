@@ -1,0 +1,21 @@
+# Optional SMB share next to the test stack (#49). It does NOT share ./data: that directory
+# holds the database with the master token and the admin password hash, and the SSH vault key.
+#
+#   SMB_USER=me SMB_PASSWORD='a long password' #     docker compose -f docker-compose-test.yml -f docker-compose-test.smb.yml up -d
+#
+# Listens on 127.0.0.1 only. To reach it from the LAN set SMB_BIND to the host's LAN IP,
+# knowing that every device there can then try the password.
+services:
+  samba:
+    image: dperson/samba
+    container_name: GravityLAN_SMB
+    restart: unless-stopped
+    ports:
+      - "${SMB_BIND:-127.0.0.1}:139:139"
+      - "${SMB_BIND:-127.0.0.1}:445:445"
+    volumes:
+      - ./smb-share:/mnt/share
+    # Share: browsable, writable, no guest access, only SMB_USER
+    command: -u "${SMB_USER:?set SMB_USER};${SMB_PASSWORD:?set SMB_PASSWORD}" -s "share;/mnt/share;yes;no;no;${SMB_USER}"
+    environment:
+      - TZ=Europe/Berlin
