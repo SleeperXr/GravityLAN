@@ -23,6 +23,7 @@ MAX_BACKUP_BYTES = 10 * 1024 * 1024
 ALLOWED_TABLE_MAP = {
     "device_groups": "device_groups",
     "devices": "devices",
+    "device_interfaces": "device_interfaces",
     "services": "services",
     "discovered_hosts": "discovered_hosts",
     "settings": "app_settings",
@@ -92,7 +93,7 @@ async def export_backup():
         data: dict = {
             "metadata": {
                 "exported_at": datetime.now(timezone.utc).isoformat(),
-                "version": "0.1.0",
+                "version": settings.app_version,
                 "source": "GravityLAN Dashboard",
             },
             "device_groups": [],
@@ -104,6 +105,7 @@ async def export_backup():
         tables = {
             "device_groups": "device_groups",
             "devices": "devices",
+            "device_interfaces": "device_interfaces",
             "services": "services",
             "discovered_hosts": "discovered_hosts",
             "settings": "app_settings",
@@ -201,12 +203,16 @@ def _same_device(before: tuple[str, str], after: tuple[str, str]) -> bool:
     return before[1] == after[1]
 
 
-def _detach_reassigned_devices(cursor, before: dict[int, tuple[str, str]]) -> list[int]:
+def _detach_reassigned_devices(
+    cursor, before: dict[int, tuple[str, str]], restored: frozenset[str] = frozenset()
+) -> list[int]:
     """Drop what the old devices left behind under ids that now name another (or no) device.
 
     Agent tokens, interfaces and history are deleted, so an agent of the old device can no
     longer report as the new one; it has to be enrolled again. Saved SSH connections and
-    their history stay, but lose the device binding. Returns the affected device ids.
+    their history stay, but lose the device binding. Tables in ``restored`` came from the
+    backup itself and already belong to the new devices, so they are left alone.
+    Returns the affected device ids.
     """
     after = _device_identities(cursor)
     reassigned = sorted(
@@ -219,7 +225,7 @@ def _detach_reassigned_devices(cursor, before: dict[int, tuple[str, str]]) -> li
     existing = {row[0] for row in cursor.fetchall()}
     placeholders = ", ".join("?" * len(reassigned))
     for table in DEVICE_BOUND_DELETE:
-        if table in existing:
+        if table in existing and table not in restored:
             cursor.execute(f"DELETE FROM {table} WHERE device_id IN ({placeholders})", reassigned)
     for table in DEVICE_BOUND_UNLINK:
         if table in existing:
@@ -281,7 +287,7 @@ def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str,
         if _read_protected_settings(cursor) != protected_before:
             raise RuntimeError("Backup import would change protected settings")
 
-        reassigned = _detach_reassigned_devices(cursor, devices_before)
+        reassigned = _detach_reassigned_devices(cursor, devices_before, frozenset(imported))
         if report is not None:
             cursor.execute("SELECT COUNT(*) FROM agent_tokens")
             report["agent_tokens_revoked"] = tokens_before - cursor.fetchone()[0]

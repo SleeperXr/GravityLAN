@@ -549,6 +549,8 @@ async def add_service(device_id: int, data: ServiceCreate, db: AsyncSession = De
     db.add(service)
     await db.commit()
     await db.refresh(service)
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
     return service
 
 @router_services.patch("/{service_id}", response_model=ServiceResponse)
@@ -583,6 +585,8 @@ async def update_service(service_id: int, data: ServiceUpdate, db: AsyncSession 
     
     await db.commit()
     await db.refresh(service)
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
     return service
 
 @router_services.delete("/{service_id}", status_code=204)
@@ -594,6 +598,8 @@ async def delete_service(service_id: int, db: AsyncSession = Depends(get_db)):
     
     await db.delete(service)
     await db.commit()
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
 
 
 # --- Groups ---
@@ -638,6 +644,8 @@ async def create_group(data: GroupCreate, db: AsyncSession = Depends(get_db)) ->
     db.add(group)
     await db.commit()
     await db.refresh(group)
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
     return GroupResponse(
         id=group.id,
         name=group.name,
@@ -681,6 +689,8 @@ async def update_group(
 
     await db.commit()
     await db.refresh(group)
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
     return GroupResponse(
         id=group.id,
         name=group.name,
@@ -706,6 +716,8 @@ async def delete_group(group_id: int, db: AsyncSession = Depends(get_db)) -> Non
     # otherwise we do it manually. SQLAlchemy back_populates handles this.
     await db.delete(group)
     await db.commit()
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
 
 @groups_router.get("/{group_id}", response_model=GroupWithDevicesResponse)
 async def get_group_details(
