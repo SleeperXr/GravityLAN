@@ -14,6 +14,8 @@ export const useNetworkStore = defineStore('network', () => {
   const isLoading = ref(true);
   const loaded = ref(false);
   const error = ref<string | null>(null);
+  /** When the inventory last loaded successfully, for the overview's freshness note */
+  const lastUpdated = ref<Date | null>(null);
   const scanProgress = ref<ScanProgress | null>(null);
   let scanSocket: WebSocket | null = null;
   let inflight: Promise<void> | null = null;
@@ -40,6 +42,7 @@ export const useNetworkStore = defineStore('network', () => {
         groups.value = grps;
         subnets.value = subs;
         loaded.value = true;
+        lastUpdated.value = new Date();
         error.value = null;
       } catch (err) {
         error.value = err instanceof Error ? err.message : String(err);
@@ -99,6 +102,7 @@ export const useNetworkStore = defineStore('network', () => {
     subnets,
     isLoading,
     loaded,
+    lastUpdated,
     error,
     scanProgress,
     totalCount,

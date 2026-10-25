@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { ArrowRight, CheckCircle2 } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
+import { ArrowRight, CheckCircle2, ChevronDown } from 'lucide-vue-next';
 import type { Device } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
@@ -14,7 +14,11 @@ import { t } from '@/i18n';
  * watched 24/7, new agent keys, services down (not for clients in standby), security updates and
  * pending reboots reported by agents, IP changes, agent updates.
  */
-const props = defineProps<{ devices: Device[] }>();
+const props = defineProps<{
+  devices: Device[];
+  /** Show only the most urgent notices and a button for the rest (stacked layout, no inner scrolling) */
+  limit?: number;
+}>();
 const emit = defineEmits<{ openDevice: [device: Device]; openUpdates: []; openPatches: [device: Device] }>();
 
 interface Notice {
@@ -63,6 +67,10 @@ const notices = computed<Notice[]>(() => {
   return list.sort((a, b) => a.rank - b.rank);
 });
 
+const expanded = ref(false);
+const shown = computed(() => (props.limit && !expanded.value ? notices.value.slice(0, props.limit) : notices.value));
+const hidden = computed(() => notices.value.length - shown.value.length);
+
 function open(n: Notice) {
   if (n.action === 'updates') emit('openUpdates');
   else if (n.action === 'patches' && n.device) emit('openPatches', n.device);
@@ -82,7 +90,7 @@ function open(n: Notice) {
       <p class="text-xs text-fg-subtle">{{ t('gv.notices.all_clear_hint') }}</p>
     </div>
     <ul v-else class="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
-      <li v-for="n in notices" :key="n.key">
+      <li v-for="n in shown" :key="n.key">
         <button type="button" class="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-raised" @click="open(n)">
           <!-- The badge of the network orbit the device belongs to; fleet-wide notices get a neutral sign -->
           <LineBullet
@@ -104,5 +112,13 @@ function open(n: Notice) {
         </button>
       </li>
     </ul>
+    <button
+      v-if="hidden > 0"
+      type="button"
+      class="flex min-h-11 items-center justify-center gap-1.5 border-t border-line px-4 text-xs font-semibold text-fg-muted transition-colors hover:bg-raised hover:text-fg"
+      @click="expanded = true"
+    >
+      <ChevronDown class="size-4" aria-hidden="true" />{{ t('gv.notices.show_all', { count: hidden }) }}
+    </button>
   </section>
 </template>

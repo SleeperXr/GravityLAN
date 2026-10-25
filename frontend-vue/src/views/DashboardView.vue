@@ -25,6 +25,7 @@ import AgentUpdateCenter from '@/components/dashboard/AgentUpdateCenter.vue';
 import DeviceEditor from '@/components/editor/DeviceEditor.vue';
 import LineStatusBoard from '@/components/dashboard/LineStatusBoard.vue';
 import ServiceNotices from '@/components/dashboard/ServiceNotices.vue';
+import NetworkPulse from '@/components/dashboard/NetworkPulse.vue';
 import OrbitMap from '@/components/orbit/OrbitMap.vue';
 import type { EditorTab } from '@shared/components/Dashboard/editor/deviceForm';
 import { t } from '@/i18n';
@@ -36,6 +37,9 @@ const { showToast } = useToast();
 const { confirm } = useConfirm();
 
 const isMobile = useMediaQuery('(max-width: 767px)');
+/** Map and notices sit side by side from xl; stacked below, the notices come first and do not scroll inside */
+const isWide = useMediaQuery('(min-width: 1280px)');
+const STACKED_NOTICES = 4;
 const storedView = useStorage<'grid' | 'list'>('gravityui.dashboard.view', 'grid');
 const viewMode = computed(() => (isMobile.value ? 'list' : storedView.value));
 const collapsed = useStorage<(number | 'none')[]>('gravityui.dashboard.collapsed', []);
@@ -286,10 +290,22 @@ function clearFilters() {
       </template>
     </PageHeader>
 
-    <!-- Status board and the live gravitational orbit map with system notices -->
+    <!-- Status first: the one-line answer, the status board, what needs attention, then the orbit map -->
     <template v-if="store.loaded && store.totalCount > 0 && !editMode">
-      <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
-      <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div class="space-y-3">
+        <NetworkPulse :devices="store.devices" :updated="store.lastUpdated" :failed="!!store.error" />
+        <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
+      </div>
+      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <ServiceNotices
+          class="xl:order-last"
+          :class="isWide && 'max-h-[32rem]'"
+          :limit="isWide ? undefined : STACKED_NOTICES"
+          :devices="store.devices"
+          @open-device="(d) => openEditor(d)"
+          @open-updates="updateCenterOpen = true"
+          @open-patches="router.push('/agents')"
+        />
         <!-- Title and edit link sit above the map: on top of it the map's own search covered them -->
         <div class="gl-card flex h-[24rem] flex-col overflow-hidden md:h-[32rem]">
           <div class="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
@@ -305,7 +321,6 @@ function clearFilters() {
             <OrbitMap flow-id="dashboard-plan" @open-device="(d) => openEditor(d)" />
           </div>
         </div>
-        <ServiceNotices class="max-h-[32rem]" :devices="store.devices" @open-device="(d) => openEditor(d)" @open-updates="updateCenterOpen = true" @open-patches="router.push('/agents')" />
       </div>
     </template>
 

@@ -75,12 +75,13 @@
       "zoom_in": "Vergrößern",
       "zoom_out": "Verkleinern",
       "fit": "Ganzes System zeigen",
-      "live": "{{online}} von {{total}} Geräten im Orbit · live",
+      "live": "{{online}} von {{total}} Geräten online",
       "assigned_to": "Umkreist jetzt {{parent}}"
     },
     "lines": {
       "title": "Netz-Orbits",
       "normal": "Stabil im Orbit",
+      "empty": "Keine Geräte",
       "paused": "Pausiert, wird nicht gescannt",
       "dropped_one": "{{count}} Gerät offline",
       "dropped_other": "{{count}} Geräte offline",
@@ -93,6 +94,11 @@
       "custom": "Eigene Farbe",
       "reset": "Netzfarbe",
       "slot": "Orbit {{n}}"
+    },
+    "pulse": {
+      "all_clear": "Alles in Ordnung · {{online}} von {{total}} Geräten online",
+      "updated": "Stand",
+      "failed": "Aktualisierung fehlgeschlagen ·"
     },
     "notices": {
       "title": "Systemmeldungen",
@@ -111,7 +117,8 @@
       "reboot_only": "{{name}}: Neustart nötig",
       "updates_total_one": "{{count}} Update insgesamt",
       "updates_total_other": "{{count}} Updates insgesamt",
-      "reboot": "Neustart nötig"
+      "reboot": "Neustart nötig",
+      "show_all": "Alle anzeigen ({{count}} weitere)"
     },
     "health": {
       "period": "Zeitraum",
