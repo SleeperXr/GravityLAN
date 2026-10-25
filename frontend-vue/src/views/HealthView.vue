@@ -254,7 +254,7 @@ const sortOptions = computed(() => [
         </table>
       </div>
 
-      <ul class="grid gap-2.5 md:grid-cols-2 xl:hidden">
+      <ul class="grid gap-2.5 lg:grid-cols-2 xl:hidden">
         <li v-for="d in rows" :key="d.id">
           <button type="button" class="gl-card h-full w-full space-y-3 p-4 text-left" @click="select(d)">
             <div class="flex items-start gap-3">
@@ -269,6 +269,12 @@ const sortOptions = computed(() => [
               <span class="font-mono text-fg">{{ d.uptime.uptime_pct.toFixed(1) }}% <span class="text-fg-subtle">· {{ ms(d.latency.current_ms) }}</span></span>
             </div>
             <StatusMonitor compact size="sm" :focusable="false" :bars="d.uptime.history_bars" :span-hours="periodHours(period)" :uptime="d.uptime.uptime_pct" />
+            <!-- The same warnings the table shows, now that the cards stand in for it up to 1280 px -->
+            <div v-if="d.services.length || sslWarnings(d.services) > 0 || hasAgentWarning(d)" class="flex flex-wrap items-center gap-1.5">
+              <Badge v-if="d.services.length" mono><Layers aria-hidden="true" />{{ d.services.filter((s) => s.is_up).length }}/{{ d.services.length }}</Badge>
+              <Badge v-if="sslWarnings(d.services) > 0" tone="warn"><Lock aria-hidden="true" />SSL</Badge>
+              <Badge v-if="hasAgentWarning(d)" tone="danger"><ShieldAlert aria-hidden="true" />{{ d.agent?.reboot_required ? 'Reboot' : 'Patch' }}</Badge>
+            </div>
           </button>
         </li>
       </ul>

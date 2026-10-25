@@ -167,7 +167,9 @@ function labelShown(b: OrbitBody): boolean {
   return Boolean(s?.strong && s.set.bodyIds.has(b.id));
 }
 const labels = computed(() => {
-  const obstacles = bodyList.value.map((b) => ({ id: b.id, pos: posOf(b.id), radius: radiusOf(b) + (b.kind === 'planet' ? 7 : 0) }));
+  // A body that needs attention is as large as its halo, so labels keep clear of that ring
+  const reach = (b: OrbitBody) => (b.state !== 'online' ? Math.max(radiusOf(b), (radiusOf(b) + 5) * labelScale.value) : radiusOf(b) + (b.kind === 'planet' ? 7 : 0));
+  const obstacles = bodyList.value.map((b) => ({ id: b.id, pos: posOf(b.id), radius: reach(b) }));
   const items = bodyList.value.filter(labelShown).map((b) => ({
     ...obstacles.find((o) => o.id === b.id)!,
     size: labelSize(deviceLabel(b.device), b.device.ip, b.state !== 'online'),
@@ -555,13 +557,18 @@ const traceStartLabel = computed(() => {
 });
 
 const problemIds = computed(() => problemBodyIds(bodyList.value));
-/** Each press focuses the next body that needs attention (offline first), with its focus card. */
-const problemCursor = ref(0);
+/** Bodies that need attention are drawn last, so their halo lies on top rather than under a neighbour */
+const paintOrder = computed(() => [...bodyList.value.filter((b) => b.state === 'online'), ...bodyList.value.filter((b) => b.state !== 'online')]);
+/**
+ * Each press focuses the body after the focused one among those that need attention (offline
+ * first), with its focus card. A search or a path trace would keep their own spotlight, so they end.
+ */
 function focusNextProblem() {
   const ids = problemIds.value;
   if (!ids.length) return;
-  const id = ids[problemCursor.value % ids.length];
-  problemCursor.value = (problemCursor.value + 1) % ids.length;
+  const id = ids[(ids.indexOf(focusedId.value ?? -1) + 1) % ids.length];
+  if (traceFromId.value != null) cancelTrace();
+  searchQuery.value = '';
   focusedId.value = id;
   flyToBodies([...computeFocusSet(id, bodies.value, lightBeams.value).bodyIds]);
 }
@@ -762,7 +769,7 @@ useResizeObserver(svgRef, initialFit);
 
         <g>
           <OrbitBodyNode
-            v-for="(body, idx) in bodyList"
+            v-for="(body, idx) in paintOrder"
             :key="body.id"
             :body="body"
             :pos="posOf(body.id)"
@@ -803,7 +810,7 @@ useResizeObserver(svgRef, initialFit);
       <input
         v-model="searchQuery"
         type="search"
-        class="min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-fg-subtle focus:outline-none"
+        class="min-w-0 flex-1 bg-transparent text-sm text-ellipsis text-fg placeholder:text-fg-subtle focus:outline-none"
         :placeholder="t('gv.orbit.search')"
         :aria-label="t('gv.orbit.search_label')"
         @keydown.enter.prevent="submitSearch"
@@ -839,7 +846,7 @@ useResizeObserver(svgRef, initialFit);
       <button
         v-if="problemIds.length && !editing"
         type="button"
-        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 px-1 font-mono text-[11px] font-semibold text-danger-text hover:bg-danger/20"
+        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 max-md:h-11 px-1 font-mono text-[11px] font-semibold text-danger-text hover:bg-danger/20"
         :title="t('gv.orbit.problems_label', { count: problemIds.length })"
         :aria-label="t('gv.orbit.problems_label', { count: problemIds.length })"
         @click="focusNextProblem"
@@ -848,7 +855,7 @@ useResizeObserver(svgRef, initialFit);
       </button>
       <button
         type="button"
-        class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg"
+        class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11"
         :class="vitalityMode !== 'off' && 'text-accent-text'"
         :title="t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) })"
         :aria-label="t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) })"
@@ -856,13 +863,13 @@ useResizeObserver(svgRef, initialFit);
       >
         <Sparkles class="size-3.5" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
         <Plus class="size-4" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg" :aria-label="t('gv.plan.zoom_out')" @click="view.zoomBy(0.82)">
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11" :aria-label="t('gv.plan.zoom_out')" @click="view.zoomBy(0.82)">
         <Minus class="size-4" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
         <Maximize class="size-3.5" />
       </button>
     </div>

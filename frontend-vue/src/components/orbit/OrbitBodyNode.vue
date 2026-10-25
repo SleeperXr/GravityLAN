@@ -7,8 +7,8 @@ import { t } from '@/i18n';
 
 /**
  * One body on the orbit map. Star: filled core with diffraction spikes. Planet: ring with halo
- * and role pill (SW / AP / HOST). Moon: small ring. Offline is struck through and labelled,
- * degraded carries a "!" badge, so state never rides on colour alone. Both get a halo that keeps
+ * and role pill (SW / AP / HOST). Moon: small ring. An offline body is struck through and says
+ * "Offline" under its name, degraded carries a "!" badge, so state never rides on colour alone. Both get a halo that keeps
  * them findable at overview zoom, and the state is part of the accessible name.
  */
 const props = defineProps<{
@@ -55,6 +55,7 @@ const ariaLabel = computed(() => `${name.value} (${props.body.device.ip})${state
     @pointerenter="emit('enter')"
     @pointerleave="emit('leave')"
     @keydown.enter.prevent="emit('click', $event as unknown as MouseEvent)"
+    @keydown.space.prevent="emit('click', $event as unknown as MouseEvent)"
   >
     <g class="orbit-float-node" :style="{ animationDelay: `${(index % 7) * -0.85}s` }">
       <!-- Attention halo: counter-scaled like the labels, so an offline or degraded body stays a visible
