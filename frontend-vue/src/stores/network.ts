@@ -13,6 +13,8 @@ export const useNetworkStore = defineStore('network', () => {
   const subnets = ref<Subnet[]>([]);
   const isLoading = ref(true);
   const loaded = ref(false);
+  /** When the last load succeeded (ms since epoch); a failed reload keeps the old value. */
+  const loadedAt = ref<number | null>(null);
   const error = ref<string | null>(null);
   const scanProgress = ref<ScanProgress | null>(null);
   let scanSocket: WebSocket | null = null;
@@ -40,6 +42,7 @@ export const useNetworkStore = defineStore('network', () => {
         groups.value = grps;
         subnets.value = subs;
         loaded.value = true;
+        loadedAt.value = Date.now();
         error.value = null;
       } catch (err) {
         error.value = err instanceof Error ? err.message : String(err);
@@ -99,6 +102,7 @@ export const useNetworkStore = defineStore('network', () => {
     subnets,
     isLoading,
     loaded,
+    loadedAt,
     error,
     scanProgress,
     totalCount,

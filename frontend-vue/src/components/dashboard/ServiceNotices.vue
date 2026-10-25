@@ -1,73 +1,23 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { useMediaQuery } from '@vueuse/core';
 import { ArrowRight, CheckCircle2 } from 'lucide-vue-next';
-import type { Device } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
-import { isAgentOutdated, patchState } from '@/lib/agent';
-import { isClientStandby } from '@/lib/standby';
-import { deviceLabel, lineLabelFor, networkColor } from '@/lib/networks';
+import type { Notice } from '@/lib/notices';
+import { lineLabelFor, networkColor } from '@/lib/networks';
 import { t } from '@/i18n';
 
-/**
- * Service notices: everything that needs the operator, most urgent first. Offline devices
- * watched 24/7, new agent keys, services down (not for clients in standby), security updates and
- * pending reboots reported by agents, IP changes, agent updates.
- */
-const props = defineProps<{ devices: Device[] }>();
-const emit = defineEmits<{ openDevice: [device: Device]; openUpdates: []; openPatches: [device: Device] }>();
+/** Service notices: everything that needs the operator, most urgent first (see buildNotices). */
+const props = defineProps<{ notices: Notice[] }>();
+const emit = defineEmits<{ open: [notice: Notice] }>();
 
-interface Notice {
-  key: string;
-  rank: number;
-  device?: Device;
-  tone: 'danger' | 'warn' | 'info';
-  title: string;
-  detail: string;
-  since?: string | null;
-  action?: 'device' | 'updates' | 'patches';
-}
-
-const notices = computed<Notice[]>(() => {
-  const list: Notice[] = [];
-  for (const d of props.devices) {
-    const name = deviceLabel(d);
-    if (!d.is_online && d.alert_offline !== false) {
-      list.push({ key: `off-${d.id}`, rank: 0, device: d, tone: 'danger', title: t('gv.notices.dropped', { name }), detail: d.ip, since: d.status_changed_at, action: 'device' });
-    }
-    if (d.has_pending_token) {
-      list.push({ key: `key-${d.id}`, rank: 1, device: d, tone: 'danger', title: t('gv.notices.new_key', { name }), detail: t('dashboard.security_alert'), action: 'device' });
-    }
-    // A client with every port closed is asleep (standby), not disrupted
-    const down = d.is_online && !isClientStandby(d) ? d.services.filter((s) => !s.is_up) : [];
-    if (down.length) {
-      const title = down.length === d.services.length ? t('gv.notices.services_none', { name }) : t('gv.notices.services_down', { name, count: down.length });
-      list.push({ key: `svc-${d.id}`, rank: 2, device: d, tone: 'warn', title, detail: down.map((s) => `${s.name} :${s.port}`).join(', '), action: 'device' });
-    }
-    // Security updates the agent reports, or a pending reboot: the Agents page installs them
-    const patches = patchState(d);
-    if (patches && (patches.security > 0 || patches.reboot)) {
-      const parts = [t('gv.notices.updates_total', { count: patches.available }), patches.reboot ? t('gv.notices.reboot') : ''].filter(Boolean);
-      const title = patches.security > 0 ? t('gv.notices.security_updates', { name, count: patches.security }) : t('gv.notices.reboot_only', { name });
-      list.push({ key: `sec-${d.id}`, rank: 2, device: d, tone: patches.security > 0 ? 'warn' : 'info', title, detail: parts.join(' · '), action: 'patches' });
-    }
-    if (d.old_ip) {
-      list.push({ key: `ip-${d.id}`, rank: 3, device: d, tone: 'info', title: t('gv.notices.ip_changed', { name }), detail: `${d.old_ip} → ${d.ip}`, since: d.ip_changed_at, action: 'device' });
-    }
-  }
-  const outdated = props.devices.filter((d) => d.has_agent && isAgentOutdated(d.agent_info?.agent_version, d.agent_info?.latest_version));
-  if (outdated.length) {
-    const target = outdated[0].agent_info?.latest_version;
-    list.push({ key: 'updates', rank: 4, tone: 'info', title: t('gv.notices.updates', { count: outdated.length }), detail: target ? `→ v${target}` : '', action: 'updates' });
-  }
-  return list.sort((a, b) => a.rank - b.rank);
-});
-
-function open(n: Notice) {
-  if (n.action === 'updates') emit('openUpdates');
-  else if (n.action === 'patches' && n.device) emit('openPatches', n.device);
-  else if (n.device) emit('openDevice', n.device);
-}
+/** Below xl the list sits in the page flow (no inner scroll box), so a long list is cut short instead. */
+const COLLAPSED_COUNT = 5;
+const besideMap = useMediaQuery('(min-width: 1280px)');
+const expanded = ref(false);
+const collapsible = computed(() => !besideMap.value && props.notices.length > COLLAPSED_COUNT);
+const shown = computed(() => (collapsible.value && !expanded.value ? props.notices.slice(0, COLLAPSED_COUNT) : props.notices));
 </script>
 
 <template>
@@ -82,8 +32,8 @@ function open(n: Notice) {
       <p class="text-xs text-fg-subtle">{{ t('gv.notices.all_clear_hint') }}</p>
     </div>
     <ul v-else class="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
-      <li v-for="n in notices" :key="n.key">
-        <button type="button" class="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-raised" @click="open(n)">
+      <li v-for="n in shown" :key="n.key">
+        <button type="button" class="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-raised" @click="emit('open', n)">
           <!-- The badge of the network orbit the device belongs to; fleet-wide notices get a neutral sign -->
           <LineBullet
             v-if="n.device"
@@ -104,5 +54,14 @@ function open(n: Notice) {
         </button>
       </li>
     </ul>
+    <button
+      v-if="collapsible"
+      type="button"
+      class="min-h-11 border-t border-line px-4 text-left text-sm font-semibold text-fg-muted transition-colors hover:bg-raised hover:text-fg"
+      :aria-expanded="expanded"
+      @click="expanded = !expanded"
+    >
+      {{ expanded ? t('gv.notices.show_fewer') : t('gv.notices.show_all', { count: notices.length }) }}
+    </button>
   </section>
 </template>

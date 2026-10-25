@@ -75,7 +75,6 @@
       "zoom_in": "Vergrößern",
       "zoom_out": "Verkleinern",
       "fit": "Ganzes System zeigen",
-      "live": "{{online}} von {{total}} Geräten im Orbit · live",
       "assigned_to": "Umkreist jetzt {{parent}}"
     },
     "lines": {
@@ -111,7 +110,27 @@
       "reboot_only": "{{name}}: Neustart nötig",
       "updates_total_one": "{{count}} Update insgesamt",
       "updates_total_other": "{{count}} Updates insgesamt",
-      "reboot": "Neustart nötig"
+      "reboot": "Neustart nötig",
+      "show_all": "Alle {{count}} Meldungen anzeigen",
+      "show_fewer": "Weniger anzeigen"
+    },
+    "fleet": {
+      "title": "Gesamtstatus",
+      "offline_one": "{{count}} Gerät offline: {{names}}",
+      "offline_other": "{{count}} Geräte offline: {{names}}",
+      "new_key": "Neuer Agent-Schlüssel: {{names}}",
+      "attention_one": "{{count}} Hinweis: {{topics}}",
+      "attention_other": "{{count}} Hinweise: {{topics}}",
+      "topic_services": "Dienste gestört",
+      "topic_patches": "Sicherheitsupdates",
+      "quiet": "Keine Störungen",
+      "info_one": "{{count}} Hinweis ohne Handlungsbedarf",
+      "info_other": "{{count}} Hinweise ohne Handlungsbedarf",
+      "more": "+{{count}}",
+      "online": "{{online}}/{{total}} online",
+      "as_of": "Stand",
+      "stale": "Daten veraltet, Verbindung prüfen",
+      "to_problem": "Zum Problem"
     },
     "health": {
       "period": "Zeitraum",

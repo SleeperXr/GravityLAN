@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useMediaQuery, useStorage } from '@vueuse/core';
+import { useEventListener, useMediaQuery, useStorage } from '@vueuse/core';
 import { useRouter } from 'vue-router';
 import { Check, LayoutGrid, List, Pencil, Radar, RefreshCw, RotateCcw, Search, Server, Trash2, X } from 'lucide-vue-next';
 import { api } from '@/api/client';
@@ -25,7 +25,9 @@ import AgentUpdateCenter from '@/components/dashboard/AgentUpdateCenter.vue';
 import DeviceEditor from '@/components/editor/DeviceEditor.vue';
 import LineStatusBoard from '@/components/dashboard/LineStatusBoard.vue';
 import ServiceNotices from '@/components/dashboard/ServiceNotices.vue';
+import FleetStatusLine from '@/components/dashboard/FleetStatusLine.vue';
 import OrbitMap from '@/components/orbit/OrbitMap.vue';
+import { buildNotices, isStale, type Notice } from '@/lib/notices';
 import type { EditorTab } from '@shared/components/Dashboard/editor/deviceForm';
 import { t } from '@/i18n';
 
@@ -64,6 +66,11 @@ function onGlobalKeyDown(e: KeyboardEvent) {
 
 onMounted(() => window.addEventListener('keydown', onGlobalKeyDown));
 
+/** Back from another page, edit mode or a hidden tab: reload at once rather than flag the data stale. */
+function refreshIfStale() {
+  if (isStale(store.loadedAt, Date.now())) void store.loadData(true);
+}
+
 // Keep the overview current outside edit mode: every 10 s during a scan, 30 s otherwise.
 let timer: number | undefined;
 watch(
@@ -71,9 +78,13 @@ watch(
   ([editing, scanning]) => {
     window.clearInterval(timer);
     timer = editing ? undefined : window.setInterval(() => void store.loadData(true), scanning ? 10000 : 30000);
+    if (!editing) refreshIfStale();
   },
   { immediate: true },
 );
+useEventListener(document, 'visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !editMode.value) refreshIfStale();
+});
 onBeforeUnmount(() => {
   window.clearInterval(timer);
   window.removeEventListener('keydown', onGlobalKeyDown);
@@ -83,6 +94,7 @@ if (!store.loaded) void store.loadData();
 const outdatedAgents = computed(
   () => store.devices.filter((d) => d.has_agent && isAgentOutdated(d.agent_info?.agent_version, d.agent_info?.latest_version)).length,
 );
+const notices = computed(() => buildNotices(store.devices));
 const filtering = computed(() => !editMode.value && (query.value.trim() !== '' || statusFilter.value !== 'all' || lineFilter.value !== null));
 
 const filteredDevices = computed(() => {
@@ -132,6 +144,12 @@ async function openDeviceById(id: number, tab?: EditorTab) {
   } catch {
     // device vanished in the meantime
   }
+}
+
+function openNotice(notice: Notice) {
+  if (notice.action === 'updates') updateCenterOpen.value = true;
+  else if (notice.action === 'patches') void router.push('/agents');
+  else if (notice.device) openEditor(notice.device);
 }
 
 function toggleSelected(id: number, selected: boolean) {
@@ -286,17 +304,18 @@ function clearFilters() {
       </template>
     </PageHeader>
 
-    <!-- Status board and the live gravitational orbit map with system notices -->
+    <!-- Overall status, the status board, then system notices and the live orbit map -->
     <template v-if="store.loaded && store.totalCount > 0 && !editMode">
+      <FleetStatusLine :notices="notices" :online="store.onlineCount" :total="store.totalCount" :loaded-at="store.loadedAt" @open="openNotice" />
       <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
-      <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <!-- Notices come first in reading order and on narrow screens; from xl they sit beside the map.
+           Below xl they grow with their content instead of scrolling inside the page. -->
+      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <ServiceNotices class="xl:order-2 xl:max-h-[28rem]" :notices="notices" @open="openNotice" />
         <!-- Title and edit link sit above the map: on top of it the map's own search covered them -->
-        <div class="gl-card flex h-[24rem] flex-col overflow-hidden md:h-[32rem]">
+        <div class="gl-card flex h-[22rem] flex-col overflow-hidden md:h-[28rem] xl:order-1">
           <div class="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-            <div class="min-w-0">
-              <p class="text-sm font-bold text-fg">{{ t('gv.plan.title') }}</p>
-              <p class="text-xs text-fg-subtle">{{ t('gv.plan.live', { online: store.onlineCount, total: store.totalCount }) }}</p>
-            </div>
+            <p class="min-w-0 text-sm font-bold text-fg">{{ t('gv.plan.title') }}</p>
             <RouterLink to="/topology" class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg hover:border-line-strong">
               <Pencil class="size-3.5" aria-hidden="true" />{{ t('gv.plan.edit') }}
             </RouterLink>
@@ -305,7 +324,6 @@ function clearFilters() {
             <OrbitMap flow-id="dashboard-plan" @open-device="(d) => openEditor(d)" />
           </div>
         </div>
-        <ServiceNotices class="max-h-[32rem]" :devices="store.devices" @open-device="(d) => openEditor(d)" @open-updates="updateCenterOpen = true" @open-patches="router.push('/agents')" />
       </div>
     </template>
 

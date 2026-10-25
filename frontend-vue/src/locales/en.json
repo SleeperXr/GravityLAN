@@ -75,7 +75,6 @@
       "zoom_in": "Zoom in",
       "zoom_out": "Zoom out",
       "fit": "Show whole system",
-      "live": "{{online}} of {{total}} devices in orbit · live",
       "assigned_to": "Now orbits {{parent}}"
     },
     "lines": {
@@ -111,7 +110,27 @@
       "reboot_only": "{{name}}: reboot required",
       "updates_total_one": "{{count}} update in total",
       "updates_total_other": "{{count}} updates in total",
-      "reboot": "reboot required"
+      "reboot": "reboot required",
+      "show_all": "Show all {{count}} notices",
+      "show_fewer": "Show fewer"
+    },
+    "fleet": {
+      "title": "Overall status",
+      "offline_one": "{{count}} device offline: {{names}}",
+      "offline_other": "{{count}} devices offline: {{names}}",
+      "new_key": "New agent key: {{names}}",
+      "attention_one": "{{count}} notice: {{topics}}",
+      "attention_other": "{{count}} notices: {{topics}}",
+      "topic_services": "services disrupted",
+      "topic_patches": "security updates",
+      "quiet": "No disruptions",
+      "info_one": "{{count}} notice, no action needed",
+      "info_other": "{{count}} notices, no action needed",
+      "more": "+{{count}}",
+      "online": "{{online}}/{{total}} online",
+      "as_of": "Updated",
+      "stale": "data is stale, check the connection",
+      "to_problem": "Go to problem"
     },
     "health": {
       "period": "Period",
