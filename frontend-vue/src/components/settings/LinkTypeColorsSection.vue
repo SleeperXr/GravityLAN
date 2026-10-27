@@ -8,7 +8,7 @@ import { useTheme } from '@/composables/useTheme';
 import { t } from '@/i18n';
 
 /**
- * One beam colour per connection type (10GbE, 2.5GbE, 1GbE, WLAN, fibre) on the orbit map.
+ * One beam colour per connection type (10GbE, 2.5GbE, 1GbE, 100Mb, WLAN, fibre) on the orbit map.
  * Saved right away (setting `ui.link_type_colors`); a colour set on a single link still wins,
  * and without a type colour a beam keeps its network's colour.
  */

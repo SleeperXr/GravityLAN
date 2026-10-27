@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Plus, Trash2, X } from 'lucide-vue-next';
-import { LINK_TYPES, type OrbitLink } from './orbitModel';
+import { linkTypeOptions, type OrbitLink } from './orbitModel';
 import Button from '@/components/ui/Button.vue';
 import { t } from '@/i18n';
 
@@ -58,7 +58,7 @@ const emit = defineEmits<{ patch: [patch: Partial<OrbitLink>]; remove: []; close
           class="h-9 rounded-md border border-line bg-sunken px-2 text-sm text-fg focus:border-accent focus:outline-none"
           @change="emit('patch', { link_type: ($event.target as HTMLSelectElement).value })"
         >
-          <option v-for="lt in LINK_TYPES" :key="lt" :value="lt">{{ lt }}</option>
+          <option v-for="lt in linkTypeOptions(link.link_type)" :key="lt" :value="lt">{{ lt }}</option>
         </select>
       </label>
       <Button variant="danger-ghost" @click="emit('remove')"><Trash2 aria-hidden="true" />{{ t('common.delete') }}</Button>

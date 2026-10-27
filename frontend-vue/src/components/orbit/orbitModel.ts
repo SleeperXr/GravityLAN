@@ -18,7 +18,23 @@ export type OrbitLink = TopologyLink & {
   notes?: string | null;
 };
 
-export const LINK_TYPES = ['10GbE', '2.5GbE', '1GbE', 'WLAN', 'Fiber'] as const;
+export const LINK_TYPES = ['10GbE', '2.5GbE', '1GbE', '100Mb', 'WLAN', 'Fiber'] as const;
+
+/** Types offered for a link: the known ones, plus its own type if that is none of them (older or imported data). */
+export function linkTypeOptions(current: string | null | undefined): string[] {
+  return current && !(LINK_TYPES as readonly string[]).includes(current) ? [...LINK_TYPES, current] : [...LINK_TYPES];
+}
+
+/** Links ending at a device: what its ports carry on the map. */
+export function linkCount(deviceId: number, links: Pick<OrbitLink, 'source_id' | 'target_id'>[]): number {
+  return links.filter((l) => l.source_id === deviceId || l.target_id === deviceId).length;
+}
+
+/** True when one more link would exceed the device's `max_ports`; 0 or empty means no limit. */
+export function portLimitReached(device: Pick<Device, 'id' | 'max_ports'>, links: Pick<OrbitLink, 'source_id' | 'target_id'>[]): boolean {
+  const max = device.max_ports ?? 0;
+  return max > 0 && linkCount(device.id, links) >= max;
+}
 
 export type BodyKind = 'star' | 'planet' | 'moon';
 /** What the user can pick: a dwarf planet is a small planet (a switch or AP with few devices). */

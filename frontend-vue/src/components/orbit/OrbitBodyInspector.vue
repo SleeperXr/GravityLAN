@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { X } from 'lucide-vue-next';
 import type { Device } from '@/types';
 import { roleOf, type OrbitBody, type OrbitRole } from './orbitModel';
@@ -7,11 +8,11 @@ import { deviceLabel } from '@/lib/networks';
 import { t } from '@/i18n';
 
 /**
- * Edit mode: the selected body with its role (automatic or chosen), the hub it orbits and a link
- * to its editor. A body that others orbit cannot become a moon.
+ * Edit mode: the selected body with its role (automatic or chosen), the hub it orbits, its port limit
+ * and a link to its editor. A body that others orbit cannot become a moon.
  */
-const props = defineProps<{ device: Device; body: OrbitBody; parents: OrbitBody[]; chosenRole: OrbitRole | null; hasOrbiters: boolean }>();
-const emit = defineEmits<{ open: []; close: []; assign: [targetId: number]; role: [role: OrbitRole | null] }>();
+const props = defineProps<{ device: Device; body: OrbitBody; parents: OrbitBody[]; chosenRole: OrbitRole | null; hasOrbiters: boolean; links: number }>();
+const emit = defineEmits<{ open: []; close: []; assign: [targetId: number]; role: [role: OrbitRole | null]; maxPorts: [value: number] }>();
 
 const roles: OrbitRole[] = ['star', 'planet', 'dwarf', 'moon'];
 const field = 'h-8 rounded-md border border-line bg-sunken px-2 text-xs text-fg focus:border-accent focus:outline-none';
@@ -21,6 +22,21 @@ function onRole(e: Event) {
   emit('role', value === 'auto' ? null : (value as OrbitRole));
 }
 const autoLabel = () => t('gv.orbit.role_auto_is', { role: t(`gv.orbit.role_${roleOf(props.body)}`) });
+
+/** The select shows the current hub again; a refused move (port limit) must not leave the new one displayed. */
+function onAssign(e: Event) {
+  const select = e.target as HTMLSelectElement;
+  emit('assign', Number(select.value));
+  select.value = String(props.body.parentId ?? '');
+}
+
+const maxPorts = computed(() => props.device.max_ports ?? 0);
+const overLimit = computed(() => maxPorts.value > 0 && props.links > maxPorts.value);
+function onMaxPorts(e: Event) {
+  const value = parseInt((e.target as HTMLInputElement).value, 10);
+  const next = Number.isNaN(value) ? 0 : Math.min(Math.max(value, 0), 999);
+  if (next !== maxPorts.value) emit('maxPorts', next);
+}
 </script>
 
 <template>
@@ -47,9 +63,16 @@ const autoLabel = () => t('gv.orbit.role_auto_is', { role: t(`gv.orbit.role_${ro
     </label>
     <label v-if="body.kind !== 'star' && parents.length > 0" class="flex flex-col gap-1 text-xs font-medium text-fg">
       <span>{{ t('gv.orbit.hub') }}</span>
-      <select :value="body.parentId ?? ''" :class="field" @change="emit('assign', Number(($event.target as HTMLSelectElement).value))">
+      <select :value="body.parentId ?? ''" :class="field" @change="onAssign">
         <option v-for="p in parents" :key="p.id" :value="p.id">{{ deviceLabel(p.device) }} ({{ t(`gv.orbit.role_${roleOf(p)}`) }})</option>
       </select>
+    </label>
+    <label class="flex flex-col gap-1 text-xs font-medium text-fg">
+      <span>{{ t('topology.max_ports') }}</span>
+      <input type="number" min="0" max="999" inputmode="numeric" :value="maxPorts" :class="[field, 'font-mono']" @change="onMaxPorts" />
+      <span class="font-normal" :class="overLimit ? 'text-warn-text' : 'text-fg-subtle'" aria-live="polite">
+        {{ maxPorts > 0 ? t('gv.orbit.ports_used', { used: links, max: maxPorts }) : t('gv.orbit.ports_unlimited', { used: links }) }}
+      </span>
     </label>
   </div>
 </template>

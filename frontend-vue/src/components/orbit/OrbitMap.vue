@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useResizeObserver, useStorage } from '@vueuse/core';
-import { Check, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, Sparkles, TriangleAlert, Wand2 } from 'lucide-vue-next';
+import { useFullscreen, useResizeObserver, useStorage } from '@vueuse/core';
+import { Check, Expand, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, Shrink, Sparkles, TriangleAlert, Wand2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
 import { useNetworkStore } from '@/stores/network';
@@ -15,7 +15,9 @@ import {
   computeOrbitRings,
   findDropTargetBody,
   getDescendantIds,
+  linkCount,
   moveWithDescendants,
+  portLimitReached,
   resolveOrbitSystem,
   snapToOrbitRing,
   type LightBeam,
@@ -65,6 +67,8 @@ function cycleVitality() {
 }
 
 const editing = ref(props.editable && props.startEditing);
+const canvasRef = ref<HTMLElement | null>(null);
+const { isFullscreen, isSupported: fullscreenSupported, toggle: toggleFullscreen } = useFullscreen(canvasRef);
 const links = ref<OrbitLink[]>([]);
 const gatewayIds = ref(new Set<number>());
 const localPositions = ref(new Map<number, Point>());
@@ -398,6 +402,7 @@ async function setRole(role: OrbitRole | null) {
 async function assignOrbitToTarget(childId: number, target: OrbitBody) {
   const child = bodies.value.get(childId);
   if (!child || child.id === target.id) return;
+  if (target.id !== child.parentId && warnPortLimit(target.device)) return;
   const tPos = posOf(target.id);
   const siblings = bodyList.value.filter((b) => b.parentId === target.id && b.kind === 'moon');
   const radius = siblings.length ? Math.round(Math.hypot(posOf(siblings[0].id).x - tPos.x, posOf(siblings[0].id).y - tPos.y)) : target.kind === 'star' ? 140 : 90;
@@ -433,15 +438,34 @@ async function assignOrbitToTarget(childId: number, target: OrbitBody) {
   }
 }
 
+/** Toasts and returns true when `device` has no free port left for one more link (React parity). */
+function warnPortLimit(device: Device | undefined): boolean {
+  if (!device || !portLimitReached(device, links.value)) return false;
+  showToast('error', t('topology.port_limit_reached', { name: deviceLabel(device), current: linkCount(device.id, links.value), max: device.max_ports }), '');
+  return true;
+}
+
+async function setMaxPorts(device: Device, value: number) {
+  store.patchDevice(device.id, { max_ports: value });
+  try {
+    await api.updateDevice(device.id, { max_ports: value });
+    showToast('success', t('gv.orbit.ports_saved', { name: deviceLabel(device) }), '');
+  } catch (err) {
+    showToast('error', t('notifications.save_failed'), (err as Error).message);
+    void store.loadData(true);
+  }
+}
+
 async function createBeamBetween(source: number, target: number) {
   if (source === target) return;
   if (links.value.some((l) => (l.source_id === source && l.target_id === target) || (l.source_id === target && l.target_id === source))) {
     showToast('info', t('gv.plan.link_exists'), '');
     return;
   }
+  const a = devicesById.value.get(source);
+  const b = devicesById.value.get(target);
+  if (warnPortLimit(a) || warnPortLimit(b)) return;
   try {
-    const a = devicesById.value.get(source);
-    const b = devicesById.value.get(target);
     const type = a?.is_ap || b?.is_ap || a?.is_wlan || b?.is_wlan ? 'WLAN' : '1GbE';
     const created = (await api.createTopologyLink({ source_id: source, target_id: target, link_type: type })) as OrbitLink;
     links.value = [...links.value, created];
@@ -671,6 +695,7 @@ useResizeObserver(svgRef, initialFit);
 <template>
   <div
     :id="flowId"
+    ref="canvasRef"
     class="cosmic-canvas relative h-full w-full overflow-hidden select-none"
     :class="[editing && 'is-editing', vitalityMode === 'subtle' && 'vitality-subtle', vitalityMode === 'lively' && 'vitality-lively']"
   >
@@ -872,6 +897,17 @@ useResizeObserver(svgRef, initialFit);
       <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
         <Maximize class="size-3.5" />
       </button>
+      <button
+        v-if="fullscreenSupported"
+        type="button"
+        class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l"
+        :aria-label="isFullscreen ? t('gv.orbit.exit_fullscreen') : t('gv.orbit.fullscreen')"
+        :title="isFullscreen ? t('gv.orbit.exit_fullscreen') : t('gv.orbit.fullscreen')"
+        :aria-pressed="isFullscreen"
+        @click="toggleFullscreen()"
+      >
+        <component :is="isFullscreen ? Shrink : Expand" class="size-3.5" />
+      </button>
     </div>
 
     <div v-if="editable" class="absolute top-3 right-3 z-10 flex gap-2">
@@ -899,6 +935,8 @@ useResizeObserver(svgRef, initialFit);
       :parents="assignableParents"
       :chosen-role="appearance.orbitRoles[String(selectedBody.id)] ?? null"
       :has-orbiters="bodyList.some((b) => b.parentId === selectedBody?.id)"
+      :links="linkCount(selectedBody.id, links)"
+      @max-ports="(value) => selectedDevice && setMaxPorts(selectedDevice, value)"
       @role="setRole"
       @open="emit('openDevice', selectedDevice)"
       @close="selectedDeviceId = null"

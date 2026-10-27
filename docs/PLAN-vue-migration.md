@@ -158,13 +158,14 @@ zwei Aufrufe gleich, alle Einstellungsfelder sind vorhanden.
 
 ### 7.1 Lücken (vor dem Standard-Wechsel schließen)
 
-- [ ] **Port-Belegung pro Gerät**: React zeigt auf der Karte „3 / 24 Ports“ und lässt `max_ports` setzen
-      (Topologie-Seitenleiste). GravityUI zeigt und bearbeitet `max_ports` nirgends. Vorschlag: Feld im Geräte-Editor
-      (Tab Einstellungen) und Anzeige im Orbit-Inspektor.
-- [ ] **Linkgeschwindigkeit 100 Mb/s**: React bietet `100Mb` an, GravityUI (`LINK_TYPES`) nicht. Ein in React
-      angelegter 100-Mb-Link hat in GravityUIs Auswahl keinen passenden Eintrag.
-- [ ] **Vollbild für die Karte**: React hat einen Vollbild-Knopf auf der Topologie, GravityUI nicht.
-- [ ] **KPI „aktive Probleme“**: React zeigt `active_issues_count` im Health-Kopf, GravityUI nicht.
+- [x] **Port-Belegung pro Gerät**: React zeigt auf der Karte „3 / 24 Ports“, lässt `max_ports` setzen und blockt
+      neue Links über dem Limit. GravityUI: Feld und Belegung im Orbit-Inspektor (Bearbeiten-Modus), Limit beim
+      Verbinden und Umhängen geprüft.
+- [x] **Linkgeschwindigkeit 100 Mb/s**: `100Mb` in `LINK_TYPES` (Auswahl und Strahlfarben); ein unbekannter Typ
+      eines Links bleibt in der Auswahl sichtbar.
+- [x] **Vollbild für die Karte**: Knopf in den Zoom-Steuerelementen der Orbit-Karte.
+- [x] ~~KPI „aktive Probleme“~~: kein Fehlen, GravityUI zeigt `active_issues_count` als Badge, sobald > 0
+      (Fehlalarm der ersten Suche).
 - [ ] **Rack-Ansicht**: Meldung „Rack-Ansicht fehlt in Vue“ (2026-10-26) ist noch offen, nicht nachgestellt.
 
 ### 7.2 Bewusst nicht übernommen

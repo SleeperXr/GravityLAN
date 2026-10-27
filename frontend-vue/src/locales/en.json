@@ -216,6 +216,11 @@
       "role_auto_is": "Automatic: {{role}}",
       "role_dwarf": "Dwarf planet (small hub)",
       "role_moon_blocked": "Other devices orbit this one, so it cannot be a moon.",
+      "ports_used": "{{used}} of {{max}} ports in use",
+      "ports_unlimited": "{{used}} links, 0 = no limit",
+      "ports_saved": "Port limit for {{name}} saved",
+      "fullscreen": "Full screen",
+      "exit_fullscreen": "Exit full screen",
       "role_saved": "{{name}}: {{role}}"
     },
     "status_monitor": {

@@ -216,6 +216,11 @@
       "role_auto_is": "Automatisch: {{role}}",
       "role_dwarf": "Zwergplanet (kleiner Hub)",
       "role_moon_blocked": "Andere Geräte kreisen um dieses Gerät, daher kann es kein Mond sein.",
+      "ports_used": "{{used}} von {{max}} Ports belegt",
+      "ports_unlimited": "{{used}} Verbindungen, 0 = kein Limit",
+      "ports_saved": "Port-Limit für {{name}} gespeichert",
+      "fullscreen": "Vollbild",
+      "exit_fullscreen": "Vollbild beenden",
       "role_saved": "{{name}}: {{role}}"
     },
     "status_monitor": {

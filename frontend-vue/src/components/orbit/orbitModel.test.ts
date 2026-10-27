@@ -5,7 +5,11 @@ import {
   computeLightBeams,
   computeOrbitRings,
   findDropTargetBody,
+  LINK_TYPES,
+  linkCount,
+  linkTypeOptions,
   moveWithDescendants,
+  portLimitReached,
   resolveOrbitSystem,
   roleOf,
   snapToOrbitRing,
@@ -200,5 +204,32 @@ describe('orbitModel hierarchy and mechanics', () => {
     expect(beams).toHaveLength(3);
     expect(beams.every((b) => b.isPrimaryBridge)).toBe(true);
     expect(rings.length).toBeGreaterThan(0);
+  });
+});
+
+describe('link types and port limits', () => {
+  const ends = [
+    { source_id: 1, target_id: 2 },
+    { source_id: 3, target_id: 1 },
+    { source_id: 2, target_id: 3 },
+  ];
+
+  it('offers 100 Mb/s and keeps an unknown type of the link selectable', () => {
+    expect(LINK_TYPES).toContain('100Mb');
+    expect(linkTypeOptions('1GbE')).toEqual([...LINK_TYPES]);
+    expect(linkTypeOptions('40GbE')).toEqual([...LINK_TYPES, '40GbE']);
+    expect(linkTypeOptions(null)).toEqual([...LINK_TYPES]);
+  });
+
+  it('counts the links at either end of a device', () => {
+    expect(linkCount(1, ends)).toBe(2);
+    expect(linkCount(4, ends)).toBe(0);
+  });
+
+  it('reports a full device only when it has a limit', () => {
+    expect(portLimitReached({ id: 1, max_ports: 2 }, ends)).toBe(true);
+    expect(portLimitReached({ id: 1, max_ports: 3 }, ends)).toBe(false);
+    expect(portLimitReached({ id: 1, max_ports: 0 }, ends)).toBe(false);
+    expect(portLimitReached({ id: 1, max_ports: null }, ends)).toBe(false);
   });
 });
