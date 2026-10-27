@@ -105,6 +105,114 @@ export function isPlanetCandidate(device: Device, degree: number, hasVmChildren:
   return degree >= 2;
 }
 
+type Adjacency = Map<number, { neighborId: number; link: OrbitLink }[]>;
+
+/** Where a body orbits before roles are decided. */
+interface RawParent {
+  parentId: number | null;
+  wireless: boolean;
+  linkId: number | null;
+  linkColor?: string | null;
+}
+
+/** Undirected adjacency of the links whose both ends exist (self-links dropped). */
+function buildAdjacency(devices: Device[], links: OrbitLink[], byId: Map<number, Device>): Adjacency {
+  const adj: Adjacency = new Map(devices.map((d) => [d.id, []]));
+  for (const l of links) {
+    if (!byId.has(l.source_id) || !byId.has(l.target_id) || l.source_id === l.target_id) continue;
+    adj.get(l.source_id)!.push({ neighborId: l.target_id, link: l });
+    adj.get(l.target_id)!.push({ neighborId: l.source_id, link: l });
+  }
+  return adj;
+}
+
+/** Chosen stars, else gateways and routers; without any, the device with the most links. */
+function findStars(devices: Device[], adj: Adjacency, gatewayIds: Set<number>, roles: OrbitRoles): Set<number> {
+  const starIds = new Set<number>();
+  for (const d of devices) {
+    const role = roles[String(d.id)];
+    if (role === 'star' || (!role && (gatewayIds.has(d.id) || (d.device_type || '').toLowerCase() === 'router'))) {
+      starIds.add(d.id);
+    }
+  }
+  if (starIds.size === 0 && devices.length > 0) {
+    const sorted = [...devices].sort(
+      (a, b) => (adj.get(b.id)?.length ?? 0) - (adj.get(a.id)?.length ?? 0) || a.id - b.id,
+    );
+    starIds.add(sorted[0].id);
+  }
+  return starIds;
+}
+
+/**
+ * Breadth-first over the links, first from the stars, then from each link island the stars do not reach,
+ * so linked pairs still orbit one another. Returns each reached device's neighbour one hop closer to the start.
+ */
+function linkParents(
+  devices: Device[],
+  adj: Adjacency,
+  starIds: Set<number>,
+): Map<number, { parentId: number; link: OrbitLink }> {
+  const visited = new Set<number>();
+  const parents = new Map<number, { parentId: number; link: OrbitLink }>();
+  const spread = (seeds: number[]) => {
+    for (const id of seeds) visited.add(id);
+    const queue = [...seeds];
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      for (const { neighborId, link } of adj.get(curr) ?? []) {
+        if (visited.has(neighborId)) continue;
+        visited.add(neighborId);
+        parents.set(neighborId, { parentId: curr, link });
+        queue.push(neighborId);
+      }
+    }
+  };
+  spread([...starIds]);
+  for (const d of devices) {
+    if (!visited.has(d.id) && (adj.get(d.id)?.length ?? 0) > 0) spread([d.id]);
+  }
+  return parents;
+}
+
+/** Re-parent every device whose parent chain loops (e.g. a host whose parent_id points to its VM) to the primary star. */
+function breakCycles(devices: Device[], rawParents: Map<number, RawParent>, primaryStarId: number | null): void {
+  for (const d of devices) {
+    const seen = new Set<number>([d.id]);
+    let curr = rawParents.get(d.id)?.parentId ?? null;
+    while (curr != null) {
+      if (seen.has(curr)) {
+        rawParents.set(d.id, { parentId: primaryStarId !== d.id ? primaryStarId : null, wireless: false, linkId: null });
+        break;
+      }
+      seen.add(curr);
+      curr = rawParents.get(curr)?.parentId ?? null;
+    }
+  }
+}
+
+/** Star, planet or moon, and whether a planet is drawn as a dwarf. */
+function classify(
+  d: Device,
+  isStar: boolean,
+  role: OrbitRole | undefined,
+  degree: number,
+  children: number,
+  hasVmChildren: boolean,
+): { kind: BodyKind; dwarf: boolean } {
+  if (isStar) return { kind: 'star', dwarf: false };
+  // A body others orbit cannot be a moon, so a chosen moon with children stays a dwarf planet.
+  const planet =
+    role === 'planet' ||
+    role === 'dwarf' ||
+    children > 0 ||
+    (role !== 'moon' && isPlanetCandidate(d, degree, hasVmChildren));
+  if (!planet) return { kind: 'moon', dwarf: false };
+  const dwarf =
+    role === 'dwarf' || (role === 'moon' && children > 0) || (!role && isNetworkGear(d) && children < DWARF_MAX_CHILDREN);
+  return { kind: 'planet', dwarf };
+}
+
 /**
  * Determine each device's celestial role (star, planet, moon) and who it orbits around:
  * 1. parent_id (VM / container) -> Host
@@ -118,192 +226,83 @@ export function resolveOrbitSystem(
   gatewayIds: Set<number>,
   roles: OrbitRoles = {},
 ): Map<number, OrbitBody> {
-  const chosen = (id: number): OrbitRole | undefined => roles[String(id)];
   const byId = new Map(devices.map((d) => [d.id, d]));
-
-  // Build undirected adjacency list of valid topology links
-  const adj = new Map<number, { neighborId: number; link: OrbitLink }[]>();
-  for (const d of devices) adj.set(d.id, []);
-  for (const l of links) {
-    if (!byId.has(l.source_id) || !byId.has(l.target_id) || l.source_id === l.target_id) continue;
-    adj.get(l.source_id)!.push({ neighborId: l.target_id, link: l });
-    adj.get(l.target_id)!.push({ neighborId: l.source_id, link: l });
-  }
-
-  const vmParentIds = new Set<number>();
-  for (const d of devices) {
-    if (d.parent_id != null && byId.has(d.parent_id)) vmParentIds.add(d.parent_id);
-  }
-
-  // Identify Stars (chosen, else gateways or routers; fallback to highest-degree node if none)
-  const starIds = new Set<number>();
-  for (const d of devices) {
-    const role = chosen(d.id);
-    if (role === 'star' || (!role && (gatewayIds.has(d.id) || (d.device_type || '').toLowerCase() === 'router'))) {
-      starIds.add(d.id);
-    }
-  }
-  if (starIds.size === 0 && devices.length > 0) {
-    const sorted = [...devices].sort(
-      (a, b) => (adj.get(b.id)?.length ?? 0) - (adj.get(a.id)?.length ?? 0) || a.id - b.id,
-    );
-    starIds.add(sorted[0].id);
-  }
-
-  // BFS from Stars over topology links to establish hop distance & parent link toward a Star
-  const distFromStar = new Map<number, number>();
-  const bfsParent = new Map<number, { parentId: number; link: OrbitLink }>();
-  const queue: number[] = [];
-
-  for (const sid of starIds) {
-    distFromStar.set(sid, 0);
-    queue.push(sid);
-  }
-
-  while (queue.length > 0) {
-    const curr = queue.shift()!;
-    const currDist = distFromStar.get(curr)!;
-    for (const { neighborId, link } of adj.get(curr) ?? []) {
-      if (!distFromStar.has(neighborId)) {
-        distFromStar.set(neighborId, currDist + 1);
-        bfsParent.set(neighborId, { parentId: curr, link });
-        queue.push(neighborId);
-      }
-    }
-  }
-
-  // Also handle disconnected link islands so linked pairs still orbit one another
-  for (const d of devices) {
-    if (distFromStar.has(d.id)) continue;
-    const neighbors = adj.get(d.id) ?? [];
-    if (neighbors.length === 0) continue;
-    distFromStar.set(d.id, 1);
-    const q = [d.id];
-    while (q.length > 0) {
-      const curr = q.shift()!;
-      const cd = distFromStar.get(curr)!;
-      for (const { neighborId, link } of adj.get(curr) ?? []) {
-        if (!distFromStar.has(neighborId)) {
-          distFromStar.set(neighborId, cd + 1);
-          bfsParent.set(neighborId, { parentId: curr, link });
-          q.push(neighborId);
-        }
-      }
-    }
-  }
-
-  // Access points by subnet for unlinked WLAN devices
+  const adj = buildAdjacency(devices, links, byId);
+  const vmParentIds = new Set(
+    devices.filter((d) => d.parent_id != null && byId.has(d.parent_id)).map((d) => d.parent_id as number),
+  );
+  const starIds = findStars(devices, adj, gatewayIds, roles);
+  const bfsParent = linkParents(devices, adj, starIds);
   const aps = devices.filter((d) => d.is_ap || (d.device_type || '').toLowerCase() === 'ap');
   const primaryStarId = [...starIds][0] ?? null;
 
-  function starForSubnet(subnetId: number | null | undefined, selfId: number): number | null {
-    for (const sid of starIds) {
-      if (sid === selfId) continue;
-      const sd = byId.get(sid);
-      if (sd && subnetId != null && sd.subnet_id === subnetId) return sid;
-    }
-    for (const sid of starIds) {
-      if (sid !== selfId) return sid;
-    }
-    return null;
-  }
+  const starForSubnet = (subnetId: number | null | undefined, selfId: number): number | null => {
+    const others = [...starIds].filter((sid) => sid !== selfId);
+    return others.find((sid) => subnetId != null && byId.get(sid)?.subnet_id === subnetId) ?? others[0] ?? null;
+  };
 
-  // First pass: assign preliminary parentId and link
-  const rawParents = new Map<number, { parentId: number | null; wireless: boolean; linkId: number | null; linkColor?: string | null }>();
-
-  for (const d of devices) {
-    if (starIds.has(d.id)) {
-      rawParents.set(d.id, { parentId: null, wireless: false, linkId: null });
-      continue;
-    }
+  const parentOf = (d: Device): RawParent => {
+    if (starIds.has(d.id)) return { parentId: null, wireless: false, linkId: null };
 
     // 1. VM / Container -> Host
     if (d.parent_id != null && byId.has(d.parent_id) && d.parent_id !== d.id) {
       const explicitLink = (adj.get(d.id) ?? []).find((n) => n.neighborId === d.parent_id)?.link ?? null;
-      rawParents.set(d.id, {
+      return {
         parentId: d.parent_id,
         wireless: explicitLink?.link_type === 'WLAN',
         linkId: explicitLink?.id ?? null,
         linkColor: explicitLink?.color,
-      });
-      continue;
+      };
     }
 
     // 2. Explicit TopologyLink (BFS neighbor closer to Star)
     const bfs = bfsParent.get(d.id);
     if (bfs) {
-      rawParents.set(d.id, {
+      return {
         parentId: bfs.parentId,
         wireless: bfs.link.link_type === 'WLAN' || Boolean(d.is_wlan),
         linkId: bfs.link.id,
         linkColor: bfs.link.color,
-      });
-      continue;
+      };
     }
 
     // 3. Unlinked WLAN device -> Access Point in same subnet (or first AP)
     if (d.is_wlan && !d.is_ap) {
       const ap = aps.find((a) => a.id !== d.id && a.subnet_id === d.subnet_id) ?? aps.find((a) => a.id !== d.id);
-      if (ap) {
-        rawParents.set(d.id, { parentId: ap.id, wireless: true, linkId: null });
-        continue;
-      }
+      if (ap) return { parentId: ap.id, wireless: true, linkId: null };
     }
 
     // 4. Default -> Star of its subnet (or primary Star)
     const fallbackStar = starForSubnet(d.subnet_id, d.id) ?? primaryStarId;
-    rawParents.set(d.id, {
+    return {
       parentId: fallbackStar && fallbackStar !== d.id ? fallbackStar : null,
       wireless: Boolean(d.is_wlan),
       linkId: null,
-    });
-  }
+    };
+  };
 
-  // Break any accidental cycles (e.g. if a host has parent_id pointing to a child)
-  for (const d of devices) {
-    const seen = new Set<number>([d.id]);
-    let curr = rawParents.get(d.id)?.parentId ?? null;
-    while (curr != null) {
-      if (seen.has(curr)) {
-        rawParents.set(d.id, { parentId: primaryStarId !== d.id ? primaryStarId : null, wireless: false, linkId: null });
-        break;
-      }
-      seen.add(curr);
-      curr = rawParents.get(curr)?.parentId ?? null;
-    }
-  }
+  const rawParents = new Map(devices.map((d) => [d.id, parentOf(d)]));
+  breakCycles(devices, rawParents, primaryStarId);
 
-  // Count children in the resolved orbit tree
   const childCount = new Map<number, number>();
   for (const { parentId } of rawParents.values()) {
     if (parentId != null) childCount.set(parentId, (childCount.get(parentId) ?? 0) + 1);
   }
 
-  // Build final OrbitBody records
   const result = new Map<number, OrbitBody>();
   for (const d of devices) {
     const info = rawParents.get(d.id)!;
-    const degree = adj.get(d.id)?.length ?? 0;
-    const children = childCount.get(d.id) ?? 0;
-    const role = chosen(d.id);
-    // A body others orbit cannot be a moon, so a chosen moon with children stays a dwarf planet.
-    const kind: BodyKind = starIds.has(d.id)
-      ? 'star'
-      : role === 'planet' || role === 'dwarf' || children > 0 || (role !== 'moon' && isPlanetCandidate(d, degree, vmParentIds.has(d.id)))
-        ? 'planet'
-        : 'moon';
-    const dwarf = kind === 'planet' && (role === 'dwarf' || (role === 'moon' && children > 0) || (!role && isNetworkGear(d) && children < DWARF_MAX_CHILDREN));
-
+    const { kind, dwarf } = classify(
+      d,
+      starIds.has(d.id),
+      roles[String(d.id)],
+      adj.get(d.id)?.length ?? 0,
+      childCount.get(d.id) ?? 0,
+      vmParentIds.has(d.id),
+    );
     const state = bodyState(d);
-    const orbitStyle: OrbitStyle = state === 'offline' ? 'broken' : info.wireless ? 'dashed' : 'solid';
-    const primaryColor = info.linkColor || networkColor(d.subnet_id, d.ip);
-    const rings = [
-      ...new Set([
-        primaryColor,
-        networkColor(d.subnet_id, d.ip),
-        ...(d.interfaces ?? []).map((i) => networkColor(i.subnet_id, i.ip)),
-      ]),
-    ];
+    const ownColor = networkColor(d.subnet_id, d.ip);
+    const primaryColor = info.linkColor || ownColor;
 
     result.set(d.id, {
       id: d.id,
@@ -312,9 +311,11 @@ export function resolveOrbitSystem(
       dwarf,
       state,
       parentId: info.parentId,
-      orbitStyle,
+      orbitStyle: state === 'offline' ? 'broken' : info.wireless ? 'dashed' : 'solid',
       color: primaryColor,
-      rings,
+      rings: [
+        ...new Set([primaryColor, ownColor, ...(d.interfaces ?? []).map((i) => networkColor(i.subnet_id, i.ip))]),
+      ],
       parentLinkId: info.linkId,
     });
   }
