@@ -7,10 +7,14 @@ All notable changes to this project will be documented in this file.
 ### Added
 - GravityUI orbit map: port limit per device, like the React topology. In edit mode the inspector of a selected device shows how many of its ports are in use ("6 of 24 ports in use") and lets you change `max_ports` (0 means no limit). Drawing a new light beam to a full device, or moving a device onto a full hub, is refused with "Port limit reached: Core Switch already uses 6 of 6 ports."
 - GravityUI orbit map: full-screen button next to the zoom controls.
+- Demo mode: `scripts/dev_demo.py --company` seeds a small company network on Linux instead of the homelab, with its own database in `.demo-data/company/`. A firewall with eight VLANs (management, server, Proxmox cluster, backup, clients, IoT, guest Wi-Fi, DMZ), a core stack with aggregation, top-of-rack and access switches, nine access points, a four-node Proxmox cluster with VMs and containers plus cluster and backup interfaces, TrueNAS, a backup server and an archive NAS in four racks, Linux workstations and notebooks, printers, IP cameras and 22 Shellys: 133 devices, 22 simulated agents, outages, patches and an outdated agent to look at.
 - GravityUI links can be set to 100 Mb/s (`100Mb`), which the React topology already offered; the type also gets its own beam colour under Settings. A link whose type GravityUI does not know keeps that type in the selection instead of showing an empty field.
 
 ### Changed
 - GravityUI (Vue) will replace the React interface ([ADR-003](docs/adr/003-react-retirement.md)). Once GravityUI covers everything the React interface does, it becomes the default; the React interface stays behind the switch for one more version and is removed after that. Until then, new features and polish go into GravityUI only.
+
+### Fixed
+- Demo mode: in the homelab rack, Proxmox, Unraid and the Synology NAS overlapped (the 2 U hosts were placed one unit apart).
 
 ### Removed
 - Unused code: the old transit-style network map of GravityUI (replaced by the orbit map in 0.5.0) together with its only dependency `@vue-flow/core`, a never-called multi-host port scan helper, and exception classes nothing raised. Completed planning documents moved to `docs/archive/`.

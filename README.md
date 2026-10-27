@@ -281,7 +281,7 @@ npm install
 npm run dev
 ```
 
-**Without touching your network:** `python scripts/dev_demo.py` (in the backend virtualenv) starts the API on `127.0.0.1:8000` with a throw-away demo database, simulated agents with 24 hours of history and a fake SSH shell, but no scans. Start a frontend as above and log in with `demo`. `--reset` seeds the demo data again, `--fresh` starts like a new install. The screenshots in this README come from it.
+**Without touching your network:** `python scripts/dev_demo.py` (in the backend virtualenv) starts the API on `127.0.0.1:8000` with a throw-away demo database, simulated agents with 24 hours of history and a fake SSH shell, but no scans. Start a frontend as above and log in with `demo`. `--reset` seeds the demo data again, `--fresh` starts like a new install, `--company` loads a small company network instead (8 VLANs, a four-node Proxmox cluster, about 130 devices, own database). The screenshots in this README come from it.
 
 **Tests and checks:**
 
@@ -570,7 +570,7 @@ npm install
 npm run dev
 ```
 
-**Ohne dein Netz anzufassen:** `python scripts/dev_demo.py` (in der Backend-venv) startet die API auf `127.0.0.1:8000` mit einer Wegwerf-Demo-Datenbank, simulierten Agenten mit 24 Stunden Verlauf und einer Demo-Shell für SSH, aber ohne Scans. Ein Frontend wie oben starten, Passwort `demo`. `--reset` befüllt die Demo-Daten neu, `--fresh` startet wie eine Neuinstallation. Die Screenshots in dieser README stammen daraus.
+**Ohne dein Netz anzufassen:** `python scripts/dev_demo.py` (in der Backend-venv) startet die API auf `127.0.0.1:8000` mit einer Wegwerf-Demo-Datenbank, simulierten Agenten mit 24 Stunden Verlauf und einer Demo-Shell für SSH, aber ohne Scans. Ein Frontend wie oben starten, Passwort `demo`. `--reset` befüllt die Demo-Daten neu, `--fresh` startet wie eine Neuinstallation, `--company` lädt stattdessen ein kleines Firmennetz (8 VLANs, Proxmox-Cluster mit vier Knoten, rund 130 Geräte, eigene Datenbank). Die Screenshots in dieser README stammen daraus.
 
 **Tests und Prüfungen:**
 
