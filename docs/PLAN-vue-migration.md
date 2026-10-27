@@ -146,3 +146,59 @@ frontend-vue/
 - [x] **Rule Compliance:**
   - [x] Purple Ban eingehalten (Graphite `#0E1116` / `#151A21` + Sky `#3DB8F5`)
   - [x] Legacy Frontend bleibt zu 100 % intakt und sofort auf `main` veröffentlichbar
+
+## 7. Feature-Parität React → GravityUI (Stand 2026-10-27, Commit 6c79d73)
+
+Grundlage für [ADR-003](adr/003-react-retirement.md). Vorgehen: Routen, Komponenten, aufgerufene API-Funktionen,
+benutzte Übersetzungsschlüssel und Einstellungsfelder beider Oberflächen gegeneinander abgeglichen.
+
+**Ergebnis:** GravityUI deckt React fast vollständig ab und kann einiges mehr (Tutorials, Orbit-Rollen, Linienfarben,
+Netzwerk-Puls, Status-Monitor, Known-Hosts-Verwaltung). Alle Seiten haben ein Gegenstück, die API-Nutzung ist bis auf
+zwei Aufrufe gleich, alle Einstellungsfelder sind vorhanden.
+
+### 7.1 Lücken (vor dem Standard-Wechsel schließen)
+
+- [ ] **Port-Belegung pro Gerät**: React zeigt auf der Karte „3 / 24 Ports“ und lässt `max_ports` setzen
+      (Topologie-Seitenleiste). GravityUI zeigt und bearbeitet `max_ports` nirgends. Vorschlag: Feld im Geräte-Editor
+      (Tab Einstellungen) und Anzeige im Orbit-Inspektor.
+- [ ] **Linkgeschwindigkeit 100 Mb/s**: React bietet `100Mb` an, GravityUI (`LINK_TYPES`) nicht. Ein in React
+      angelegter 100-Mb-Link hat in GravityUIs Auswahl keinen passenden Eintrag.
+- [ ] **Vollbild für die Karte**: React hat einen Vollbild-Knopf auf der Topologie, GravityUI nicht.
+- [ ] **KPI „aktive Probleme“**: React zeigt `active_issues_count` im Health-Kopf, GravityUI nicht.
+- [ ] **Rack-Ansicht**: Meldung „Rack-Ansicht fehlt in Vue“ (2026-10-26) ist noch offen, nicht nachgestellt.
+
+### 7.2 Bewusst nicht übernommen
+
+- **React-Flow-Editor** (Ein-/Ausgangs-Handles oben/unten, freie Kanten): durch die Orbit-Karte ersetzt; Handles haben
+  dort keine Entsprechung.
+- **WLAN/AP-Schalter in der Topologie-Seitenleiste**: in GravityUI im Geräte-Editor (Tab Einstellungen).
+- **Gerät auf der Karte löschen**: in GravityUI über den Geräte-Editor.
+- **`ThemeManager` / `api.getThemeSettings`** (Primärfarbe, Radius, Glass-Mode): keine Oberfläche setzt diese Werte,
+  totes Feature.
+- **`api.getTopologyMap`**: GravityUI lädt Geräte aus dem Store und Links über `api.getTopologyLinks`.
+
+### 7.3 Standard-Wechsel (Release N)
+
+- [ ] Lücken aus 7.1 geschlossen
+- [ ] Fallback in `backend/app/main.py::_default_frontend` von `"react"` auf `"vue"` (gilt nur, wenn
+      `ui.default_frontend` nicht gesetzt ist; eine bewusste Wahl im Browser-Cookie `gl_ui` bleibt)
+- [ ] Hinweis „in Entwicklung“ (`DevNotice`) entfernen, README/Screenshots auf GravityUI als Standard
+- [ ] CHANGELOG: Ankündigung, dass React mit Release N+1 entfällt
+
+### 7.4 React entfernen (Release N+1)
+
+Voraussetzung: GravityUI darf nichts mehr aus `frontend/src` importieren. Heute kommen über `@shared` noch:
+
+| Import | Nutzer | Ziel |
+|---|---|---|
+| `@shared/api/client` | 3 | `frontend-vue/src/api/` |
+| `@shared/types`, `@shared/types/health` | 2 | `frontend-vue/src/types/` |
+| `@shared/locales/{de,en}/translation.json` | 3 | `frontend-vue/src/locales/` (mit `gv.*` zusammenführen) |
+| `@shared/components/Network/subnet/model` | 6 | `frontend-vue/src/lib/` |
+| `@shared/components/Dashboard/editor/deviceForm` | 3 | `frontend-vue/src/lib/` |
+| `@shared/components/Dashboard/overview/layout` | 1 | `frontend-vue/src/lib/` |
+| `@shared/utils/version` | 1 | `frontend-vue/src/lib/` |
+
+Danach: `frontend/` und die Stage `frontend-build` im `Dockerfile` (inkl. `COPY frontend/src` in der Vue-Stage)
+entfernen, GravityUI von `/frontend-vue` nach `/` legen, Umschalter und `ui.default_frontend` entfernen, CI anpassen.
+Die Tests aus `frontend/` vorher auf Fälle prüfen, die in `frontend-vue/` noch fehlen.
