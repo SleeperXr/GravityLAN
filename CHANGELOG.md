@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- GravityUI (Vue) will replace the React interface ([ADR-003](docs/adr/003-react-retirement.md)). Once GravityUI covers everything the React interface does, it becomes the default; the React interface stays behind the switch for one more version and is removed after that. Until then, new features and polish go into GravityUI only.
+
+### Removed
+- Unused code: the old transit-style network map of GravityUI (replaced by the orbit map in 0.5.0) together with its only dependency `@vue-flow/core`, a never-called multi-host port scan helper, and exception classes nothing raised. Completed planning documents moved to `docs/archive/`.
+
 ## [0.5.6] - 2026-10-25
 
 ### Changed

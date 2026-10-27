@@ -11,7 +11,6 @@ import socket
 import subprocess
 import re
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Any
 
 logger = logging.getLogger(__name__)
 
@@ -121,60 +120,6 @@ async def scan_ports(
             logger.debug("Open port found: %s:%d", ip, result)
 
     return open_ports
-
-
-async def scan_hosts_ports(
-    hosts: list[dict],
-    ports: list[int] | None = None,
-    timeout: float = 0.4,
-    gentle: bool = True,
-    max_concurrent: int = 5,
-    cancel_event: asyncio.Event | None = None,
-    on_scanned: Callable[[dict], Any] | None = None,
-    dns_server: str | None = None,
-) -> list[dict]:
-    """Scan multiple hosts for open ports with concurrency control.
-
-    Args:
-        hosts: List of host dicts (must have 'ip' key).
-        ports: Ports to scan per host.
-        timeout: Connect timeout.
-        gentle: Enable stealth delays.
-        max_concurrent: Max hosts scanned simultaneously.
-        cancel_event: Cancellation signal.
-        on_scanned: Async callback after each host is scanned.
-
-    Returns:
-        Updated host dicts with populated 'ports' lists.
-    """
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def _scan_single(host: dict) -> dict:
-        async with semaphore:
-            if cancel_event and cancel_event.is_set():
-                return host
-
-            found_ports = await scan_ports(
-                host["ip"],
-                ports=ports,
-                timeout=timeout,
-                gentle=gentle,
-                cancel_event=cancel_event,
-                dns_server=dns_server,
-            )
-            host["ports"] = found_ports
-
-            if on_scanned:
-                await on_scanned(host)
-
-            # Inter-host delay in gentle mode
-            if gentle:
-                await asyncio.sleep(random.uniform(0.3, 1.0))
-
-            return host
-
-    tasks = [_scan_single(host) for host in hosts]
-    return await asyncio.gather(*tasks, return_exceptions=False)
 
 
 def _parse_nmap_greppable(output: str) -> list[int]:

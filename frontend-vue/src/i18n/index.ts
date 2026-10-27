@@ -5,7 +5,7 @@
  */
 import i18next, { type TOptions } from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
-import { computed, readonly, ref } from 'vue';
+import { computed, ref } from 'vue';
 import translationDE from '@shared/locales/de/translation.json';
 import translationEN from '@shared/locales/en/translation.json';
 import gravityDE from '@/locales/de.json';
@@ -54,17 +54,6 @@ export function formatNumber(value: number, options?: Intl.NumberFormatOptions):
 export function formatDateTime(value: string | number | Date, options?: Intl.DateTimeFormatOptions): string {
   const date = value instanceof Date ? value : new Date(value);
   return new Intl.DateTimeFormat(locale.value === 'de' ? 'de-DE' : 'en-US', options ?? { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-}
-
-export function useI18n() {
-  return {
-    t,
-    locale: readonly(locale),
-    setLocale,
-    toggleLocale: () => setLocale(locale.value === 'de' ? 'en' : 'de'),
-    formatNumber,
-    formatDateTime,
-  };
 }
 
 export { i18next };

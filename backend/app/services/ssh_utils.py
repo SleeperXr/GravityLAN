@@ -28,16 +28,6 @@ class CustomWarningPolicy(paramiko.WarningPolicy):
     pass
 
 
-class SSHConnectionError(Exception):
-    """Raised when SSH connection fails after all fallback attempts."""
-    pass
-
-
-class SSHAuthenticationError(Exception):
-    """Raised when SSH authentication fails."""
-    pass
-
-
 class SSHKeyPassphraseRequired(ValueError):
     """Raised when a private key is encrypted and no (or a wrong) passphrase was given."""
     pass

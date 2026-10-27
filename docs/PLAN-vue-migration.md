@@ -1,6 +1,7 @@
 # PLAN: GravityUI (`frontend-vue`) — Dual-UI Architektur mit `shadcn-vue` Standard-Dashboards
 
 > **Status:** 🚀 In Umsetzung (Phase 1 & 2 freigegeben)  
+> **Update 2026-10-27:** Die Dual-UI ist eine Übergangsphase. Laut [ADR-003](adr/003-react-retirement.md) wird GravityUI nach Feature-Parität Standard, React bleibt eine Version als Fallback und wird danach entfernt.  
 > **Project Type:** `WEB` (Primary Agent: `@[frontend-specialist]`, Support: `@[backend-specialist]`, `@[devops-engineer]`, `@[test-engineer]`)  
 > **Architektur-Prinzip:** **Legacy UI (`/` in React) bleibt zu 100 % intakt** + **GravityUI (`/frontend-vue` in Vue 3 + `shadcn-vue`)** mit **1-Klick-Umschalter** in beiden Oberflächen (sofort `main`-ready).
 
