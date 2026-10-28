@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - GravityUI orbit map: port limit per device, like the React topology. In edit mode the inspector of a selected device shows how many of its ports are in use ("6 of 24 ports in use") and lets you change `max_ports` (0 means no limit). Drawing a new light beam to a full device, or moving a device onto a full hub, is refused with "Port limit reached: Core Switch already uses 6 of 6 ports."
 - GravityUI orbit map: full-screen button next to the zoom controls.
+- Backup links (redundancy). A link can be marked "Backup" in the link inspector of the orbit map (`role` on `/api/topology/links`: `primary`, the default, or `backup`). A backup link is drawn thin, dashed and dimmed, without the travelling light, and labelled "Backup · Fiber"; it never decides which device orbits which, so adding a fallback path leaves roles, hubs and the layout as they are. The company demo has eight of them (a second firewall uplink, cross-links between core and aggregation, every Proxmox node and the TrueNAS on both top-of-rack switches).
 - Demo mode: `scripts/dev_demo.py --company` seeds a small company network on Linux instead of the homelab, with its own database in `.demo-data/company/`. A firewall with eight VLANs (management, server, Proxmox cluster, backup, clients, IoT, guest Wi-Fi, DMZ), a core stack with aggregation, top-of-rack and access switches, nine access points, a four-node Proxmox cluster with VMs and containers plus cluster and backup interfaces, TrueNAS, a backup server and an archive NAS in four racks, Linux workstations and notebooks, printers, IP cameras and 22 Shellys: 133 devices, 22 simulated agents, outages, patches and an outdated agent to look at.
 - GravityUI links can be set to 100 Mb/s (`100Mb`), which the React topology already offered; the type also gets its own beam colour under Settings. A link whose type GravityUI does not know keeps that type in the selection instead of showing an empty field.
 
@@ -14,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - GravityUI (Vue) will replace the React interface ([ADR-003](docs/adr/003-react-retirement.md)). Once GravityUI covers everything the React interface does, it becomes the default; the React interface stays behind the switch for one more version and is removed after that. Until then, new features and polish go into GravityUI only.
 
 ### Fixed
+- GravityUI orbit map: adding, changing or removing a link no longer rearranges the whole map. As long as nobody had arranged the orbit by hand, positions were recomputed from the links, so a second fibre moved every device; the shown positions are now kept before a link changes. "Arrange automatically" still lays the map out anew on request.
 - Demo mode: in the homelab rack, Proxmox, Unraid and the Synology NAS overlapped (the 2 U hosts were placed one unit apart).
 
 ### Removed

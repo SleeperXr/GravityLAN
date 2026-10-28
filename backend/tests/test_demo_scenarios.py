@@ -46,8 +46,13 @@ def test_references_point_to_known_devices(scenario):
             # The seed resolves parents by name while inserting, so a host must come before its guests
             assert flags["parent"] in seen, name
         seen.add(name)
-    for a, b, _kind in scenario.links:
+    pairs = set()
+    for a, b, _kind, *role in scenario.links:
         assert a in names and b in names, (a, b)
+        assert role in ([], ["backup"]), (a, b, role)
+        # One link per pair of devices (the database has a unique constraint on it)
+        assert frozenset((a, b)) not in pairs, (a, b)
+        pairs.add(frozenset((a, b)))
     agents = {d[0] for d in scenario.devices if d[6]}
     assert set(scenario.patches) <= agents
     assert scenario.reboot_required <= agents
@@ -71,7 +76,8 @@ def test_rack_slots_fit_and_do_not_overlap(scenario):
 def test_company_network_hangs_together():
     scenario = SCENARIOS["company"]()
     adjacency: dict[str, set[str]] = {}
-    for a, b, _ in scenario.links:
+    # Every device must hang off the firewall over primary links alone; backups are extra
+    for a, b, *_rest in (l for l in scenario.links if len(l) < 4):
         adjacency.setdefault(a, set()).add(b)
         adjacency.setdefault(b, set()).add(a)
     reached, queue = {scenario.router}, [scenario.router]
@@ -87,3 +93,12 @@ def test_company_network_hangs_together():
     for name, *_rest in (d for d in scenario.devices if d[4].get("is_wlan")):
         assert adjacency[name] & aps, f"{name} has no access point"
     assert len(scenario.subnets) >= 8 and len(aps) >= 8
+
+
+def test_company_has_redundant_paths_but_one_single_point_of_failure():
+    scenario = SCENARIOS["company"]()
+    backups = [l for l in scenario.links if len(l) == 4]
+    assert backups
+    ends = {name for l in backups for name in l[:2]}
+    assert "Core-Switch 02" in ends and "pve-01" in ends
+    assert "Agg Lager" not in ends

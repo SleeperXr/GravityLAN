@@ -22,6 +22,7 @@ MIGRATIONS = [
     ("devices", "missed_scans", "INTEGER DEFAULT 0"),
     ("topology_links", "source_handle", "TEXT"),
     ("topology_links", "target_handle", "TEXT"),
+    ("topology_links", "role", "VARCHAR(20) DEFAULT 'primary'"),
     ("discovered_hosts", "is_reserved", "BOOLEAN DEFAULT FALSE"),
     ("discovered_hosts", "ip_placeholder", "BOOLEAN DEFAULT FALSE"),
     ("discovered_hosts", "old_ip", "VARCHAR(45)"),

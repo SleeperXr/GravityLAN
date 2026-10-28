@@ -247,8 +247,9 @@ async def _seed(scenario: Scenario) -> dict[str, tuple[int, str, tuple]]:
             db.add(DeviceInterface(device_id=by_name[name].id, ip=ip, mac=by_name[name].mac, subnet_id=subnets[key].id,
                                    vlan_id=vlan, label=label, is_online=True, last_seen=now))
             db.add(DiscoveredHost(ip=ip, mac=by_name[name].mac, is_online=True, is_monitored=True))
-        for source, target, link_type in scenario.links:
-            db.add(TopologyLink(source_id=by_name[source].id, target_id=by_name[target].id, link_type=link_type))
+        for source, target, link_type, *role in scenario.links:
+            db.add(TopologyLink(source_id=by_name[source].id, target_id=by_name[target].id, link_type=link_type,
+                                role=role[0] if role else "primary"))
         for name, message, minutes in scenario.down_events:
             db.add(DeviceHistory(device_id=by_name[name].id, status="down", message=message, timestamp=now - timedelta(minutes=minutes)))
         await db.commit()

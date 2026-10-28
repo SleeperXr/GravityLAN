@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Device } from '@/types';
 import {
   autoOrbitLayout,
+  isBackupLink,
   computeLightBeams,
   computeOrbitRings,
   findDropTargetBody,
@@ -231,5 +232,42 @@ describe('link types and port limits', () => {
     expect(portLimitReached({ id: 1, max_ports: 3 }, ends)).toBe(false);
     expect(portLimitReached({ id: 1, max_ports: 0 }, ends)).toBe(false);
     expect(portLimitReached({ id: 1, max_ports: null }, ends)).toBe(false);
+  });
+});
+
+describe('backup links', () => {
+  const devices = [
+    makeDevice({ id: 1, ip: '10.0.0.1', device_type: 'router' }),
+    makeDevice({ id: 2, ip: '10.0.0.2', device_type: 'switch' }),
+    makeDevice({ id: 3, ip: '10.0.0.3', device_type: 'switch' }),
+    makeDevice({ id: 4, ip: '10.0.0.4', device_type: 'client' }),
+  ];
+  const primary: OrbitLink[] = [
+    { id: 1, source_id: 1, target_id: 2, link_type: 'Fiber' },
+    { id: 2, source_id: 2, target_id: 3, link_type: 'Fiber' },
+    { id: 3, source_id: 3, target_id: 4, link_type: '1GbE' },
+  ] as OrbitLink[];
+  // A second path from the router straight to the second switch, as a fallback
+  const backup = { id: 9, source_id: 1, target_id: 3, link_type: 'Fiber', role: 'backup' } as OrbitLink;
+
+  it('changes neither hubs, roles nor the automatic layout', () => {
+    const before = resolveOrbitSystem(devices, primary, new Set([1]));
+    const after = resolveOrbitSystem(devices, [...primary, backup], new Set([1]));
+    expect([...after.values()].map((b) => [b.id, b.parentId, b.kind, b.dwarf])).toEqual([...before.values()].map((b) => [b.id, b.parentId, b.kind, b.dwarf]));
+    expect(autoOrbitLayout(devices, [...primary, backup], new Set([1]))).toEqual(autoOrbitLayout(devices, primary, new Set([1])));
+  });
+
+  it('would re-parent the switch if the same link were primary', () => {
+    const asPrimary = resolveOrbitSystem(devices, [...primary, { ...backup, role: 'primary' }], new Set([1]));
+    expect(asPrimary.get(3)?.parentId).toBe(1);
+  });
+
+  it('is drawn as a backup beam, never as a primary bridge', () => {
+    const bodies = resolveOrbitSystem(devices, [...primary, backup], new Set([1]));
+    const beam = computeLightBeams([...primary, backup], bodies).find((b) => b.id === 9)!;
+    expect(beam.isBackup).toBe(true);
+    expect(beam.isPrimaryBridge).toBe(false);
+    expect(isBackupLink(backup)).toBe(true);
+    expect(isBackupLink(primary[0])).toBe(false);
   });
 });

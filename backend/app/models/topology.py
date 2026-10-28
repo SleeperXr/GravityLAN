@@ -38,6 +38,8 @@ class TopologyLink(Base):
     speed: Mapped[int | None] = mapped_column(Integer, nullable=True) # Mbps
     color: Mapped[str | None] = mapped_column(String(7), nullable=True) # Cable color hex
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 'primary' carries traffic and shapes the orbit map; 'backup' is a standby/fallback path drawn on top
+    role: Mapped[str] = mapped_column(String(20), default="primary", server_default="primary", nullable=False)
     
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     

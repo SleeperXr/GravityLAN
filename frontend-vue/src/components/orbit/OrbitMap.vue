@@ -298,6 +298,16 @@ async function ensureCustom() {
   await appearance.setOrbitCustom(true).catch(() => {});
 }
 
+/**
+ * Before a link changes: pin every body where it is shown right now, so a new, removed or changed link
+ * (a second fibre, a backup path) never rearranges the map. Saving the positions runs in the background.
+ */
+function freezeLayout() {
+  if (appearance.orbitCustom) return;
+  localPositions.value = new Map(positions.value);
+  void ensureCustom();
+}
+
 function onBodyPointerDown(body: OrbitBody, e: PointerEvent) {
   e.stopPropagation();
   if (!editing.value) return;
@@ -465,6 +475,7 @@ async function createBeamBetween(source: number, target: number) {
   const a = devicesById.value.get(source);
   const b = devicesById.value.get(target);
   if (warnPortLimit(a) || warnPortLimit(b)) return;
+  freezeLayout();
   try {
     const type = a?.is_ap || b?.is_ap || a?.is_wlan || b?.is_wlan ? 'WLAN' : '1GbE';
     const created = (await api.createTopologyLink({ source_id: source, target_id: target, link_type: type })) as OrbitLink;
@@ -478,6 +489,7 @@ async function createBeamBetween(source: number, target: number) {
 async function patchLink(patch: Partial<OrbitLink>) {
   const link = selectedLink.value;
   if (!link) return;
+  freezeLayout();
   links.value = links.value.map((l) => (l.id === link.id ? { ...l, ...patch } : l));
   try {
     await api.updateTopologyLink(link.id, patch as never);
@@ -490,6 +502,7 @@ async function patchLink(patch: Partial<OrbitLink>) {
 async function deleteLink() {
   const link = selectedLink.value;
   if (!link) return;
+  freezeLayout();
   links.value = links.value.filter((l) => l.id !== link.id);
   selectedLinkId.value = null;
   try {

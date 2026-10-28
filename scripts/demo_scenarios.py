@@ -22,7 +22,7 @@ class Scenario:
     name: str
     domain: str
     devices: list[tuple]
-    links: list[tuple[str, str, str]]
+    links: list[tuple]  # (source, target, link type) or (source, target, link type, 'backup')
     subnets: list[tuple[str, str, str, int | None, str | None]]  # key, cidr, name, vlan, gateway
     extra_groups: list[tuple[str, str, int]]
     racks: list[tuple[str, int]]  # name, units
@@ -149,8 +149,8 @@ def company() -> Scenario:
     def add(name, ip, dtype, group, flags=None, services=(), profile=None):
         devices.append((name, ip, dtype, group, dict(flags or {}), list(services), profile))
 
-    def link(a, b, kind):
-        links.append((a, b, kind))
+    def link(a, b, kind, role="primary"):
+        links.append((a, b, kind) if role == "primary" else (a, b, kind, role))
 
     # --- Core network (management VLAN 10) -----------------------------------------------------
     add("fw-01", "10.20.10.1", "firewall", "Firewalls", {"subtype": "nftables / keepalived", "vendor": "Supermicro", "max_ports": 8},
@@ -318,6 +318,15 @@ def company() -> Scenario:
     add("Wetterstation Dach", "10.20.60.31", "webui", "IoT", {"subtype": "Wetterstation", "vendor": "Ecowitt", "is_wlan": True}, [("Web UI", "http", 80, True)])
     link("AP Lager Außen", "Wetterstation Dach", "WLAN")
 
+    # --- Redundancy: standby paths that take over when a primary uplink fails ------------------
+    # Agg Lager deliberately has no second path, so it stays a single point of failure to look at.
+    link("fw-01", "Core-Switch 02", "Fiber", "backup")
+    link("Core-Switch 01", "Agg Verwaltung", "Fiber", "backup")
+    link("Core-Switch 02", "Agg Serverraum", "Fiber", "backup")
+    for node, tor in (("pve-01", "ToR Rack B"), ("pve-02", "ToR Rack B"), ("pve-03", "ToR Rack A"), ("pve-04", "ToR Rack A")):
+        link(tor, node, "10GbE", "backup")
+    link("ToR Rack B", "TrueNAS", "10GbE", "backup")
+
     # --- Guest Wi-Fi (VLAN 70) ------------------------------------------------------------------
     guests = [("Gast iPhone", "AP EG Besprechung"), ("Gast Laptop 1", "AP EG Besprechung"), ("Gast Laptop 2", "AP EG Besprechung"),
               ("Gast Android", "AP EG Empfang"), ("Gast iPad", "AP EG Empfang"), ("Lieferant Scanner", "AP Lager Halle")]
@@ -374,10 +383,10 @@ def company() -> Scenario:
     )
 
 
-def tree_grid(devices: list[tuple], links: list[tuple[str, str, str]], root: str) -> dict[str, tuple[float, float]]:
-    """(column, row) per device for the React topology: a tidy tree from `root` over links, then guests under their host."""
+def tree_grid(devices: list[tuple], links: list[tuple], root: str) -> dict[str, tuple[float, float]]:
+    """(column, row) per device for the React topology: a tidy tree from `root` over primary links, then guests under their host."""
     adjacency: dict[str, list[str]] = {}
-    for a, b, _ in links:
+    for a, b, *_rest in (l for l in links if len(l) < 4):
         adjacency.setdefault(a, []).append(b)
         adjacency.setdefault(b, []).append(a)
     for d in devices:

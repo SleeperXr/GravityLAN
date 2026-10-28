@@ -1,6 +1,9 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime
+
+# primary: carries traffic; backup: standby/fallback path (redundancy), never decides the orbit
+LinkRole = Literal["primary", "backup"]
 
 class TopologyLinkBase(BaseModel):
     source_id: int
@@ -11,6 +14,7 @@ class TopologyLinkBase(BaseModel):
     speed: Optional[int] = None
     color: Optional[str] = None
     notes: Optional[str] = None
+    role: LinkRole = "primary"
 
 class TopologyLinkCreate(TopologyLinkBase):
     pass
@@ -24,6 +28,7 @@ class TopologyLinkUpdate(BaseModel):
     speed: Optional[int] = None
     color: Optional[str] = None
     notes: Optional[str] = None
+    role: Optional[LinkRole] = None
 
 class TopologyLink(TopologyLinkBase):
     id: int

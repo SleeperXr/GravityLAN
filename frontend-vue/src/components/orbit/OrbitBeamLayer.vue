@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import type { LightBeam, Point } from './orbitModel';
 import { beamPath } from './orbitLayout';
+import { t } from '@/i18n';
 
 /**
  * Light beams (topology links) between bodies. Beams between bodies on rings around the same
@@ -47,7 +48,7 @@ const colourOf = (beam: LightBeam) => (beam.interrupted ? 'var(--gl-danger)' : b
         fill="none"
         :stroke="colourOf(beam)"
         :stroke-width="selectedId === beam.id ? 9 : beam.isPrimaryBridge ? 6 : 4"
-        :stroke-opacity="selectedId === beam.id ? 0.38 : beam.interrupted ? 0.12 : 0.2"
+        :stroke-opacity="selectedId === beam.id ? 0.38 : beam.interrupted || beam.isBackup ? 0.08 : 0.2"
         stroke-linecap="round"
       />
       <!-- Core line -->
@@ -55,14 +56,14 @@ const colourOf = (beam: LightBeam) => (beam.interrupted ? 'var(--gl-danger)' : b
         :d="d"
         fill="none"
         :stroke="colourOf(beam)"
-        :stroke-width="selectedId === beam.id ? 3.2 : beam.isPrimaryBridge ? 2.2 : 1.4"
-        :stroke-dasharray="beam.interrupted ? '2 9' : beam.isWireless ? '6 6' : undefined"
-        :stroke-opacity="beam.interrupted ? 0.65 : 0.9"
+        :stroke-width="selectedId === beam.id ? 3.2 : beam.isBackup ? 1.3 : beam.isPrimaryBridge ? 2.2 : 1.4"
+        :stroke-dasharray="beam.interrupted ? '2 9' : beam.isBackup ? '3 7' : beam.isWireless ? '6 6' : undefined"
+        :stroke-opacity="beam.interrupted ? 0.65 : beam.isBackup ? 0.6 : 0.9"
         stroke-linecap="round"
       />
       <!-- Photon travelling along live beams -->
       <path
-        v-if="!beam.interrupted && animated"
+        v-if="!beam.interrupted && !beam.isBackup && animated"
         :d="d"
         fill="none"
         stroke="var(--gl-fg)"
@@ -72,9 +73,19 @@ const colourOf = (beam: LightBeam) => (beam.interrupted ? 'var(--gl-danger)' : b
         class="photon-pulse"
       />
       <!-- Link type at the middle of the beam -->
-      <g v-if="beam.linkType && (beam.isPrimaryBridge || selectedId === beam.id)" :transform="`translate(${mid.x}, ${mid.y})`">
-        <rect x="-22" y="-9" width="44" height="18" rx="9" fill="var(--gl-surface)" :stroke="selectedId === beam.id ? 'var(--gl-fg)' : 'var(--gl-line-strong)'" stroke-width="1" />
-        <text x="0" y="3.5" text-anchor="middle" fill="var(--gl-fg-muted)" class="pointer-events-none font-mono text-[10px] font-medium">{{ beam.linkType }}</text>
+      <g v-if="beam.linkType && (beam.isPrimaryBridge || beam.isBackup || selectedId === beam.id)" :transform="`translate(${mid.x}, ${mid.y})`">
+        <rect
+          :x="beam.isBackup ? -40 : -22"
+          y="-9"
+          :width="beam.isBackup ? 80 : 44"
+          height="18"
+          rx="9"
+          fill="var(--gl-surface)"
+          :stroke="selectedId === beam.id ? 'var(--gl-fg)' : 'var(--gl-line-strong)'"
+          stroke-width="1"
+          :stroke-dasharray="beam.isBackup ? '3 3' : undefined"
+        />
+        <text x="0" y="3.5" text-anchor="middle" fill="var(--gl-fg-muted)" class="pointer-events-none font-mono text-[10px] font-medium">{{ beam.isBackup ? `${t('gv.plan.backup')} · ${beam.linkType}` : beam.linkType }}</text>
       </g>
     </g>
 

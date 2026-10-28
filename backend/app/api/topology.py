@@ -85,6 +85,8 @@ async def update_link(link_id: int, link_update: TopologyLinkUpdate, db: AsyncSe
         raise HTTPException(status_code=404, detail="Link not found")
     
     update_data = link_update.model_dump(exclude_unset=True)
+    if update_data.get("role", "") is None:
+        del update_data["role"]  # the role is never empty; null means "leave it"
     for field, value in update_data.items():
         setattr(db_link, field, value)
     

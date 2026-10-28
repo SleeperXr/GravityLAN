@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { Plus, Trash2, X } from 'lucide-vue-next';
-import { linkTypeOptions, type OrbitLink } from './orbitModel';
+import { isBackupLink, linkTypeOptions, type LinkRole, type OrbitLink } from './orbitModel';
 import Button from '@/components/ui/Button.vue';
 import { t } from '@/i18n';
 
-/** Edit mode: colour, type and removal of the selected light beam. */
+/** Edit mode: colour, role (primary or backup), type and removal of the selected light beam. */
 defineProps<{ link: OrbitLink; ends: string; swatches: string[] }>();
 const emit = defineEmits<{ patch: [patch: Partial<OrbitLink>]; remove: []; close: [] }>();
+const roles: LinkRole[] = ['primary', 'backup'];
 </script>
 
 <template>
@@ -49,6 +50,23 @@ const emit = defineEmits<{ patch: [patch: Partial<OrbitLink>]; remove: []; close
           <Plus class="absolute inset-0 m-auto size-3.5 text-fg-subtle" aria-hidden="true" />
         </label>
       </div>
+    </fieldset>
+    <fieldset>
+      <legend class="mb-1.5 text-xs font-medium text-fg">{{ t('gv.plan.link_role') }}</legend>
+      <div class="flex rounded-md border border-line bg-sunken p-0.5">
+        <button
+          v-for="role in roles"
+          :key="role"
+          type="button"
+          class="h-8 flex-1 rounded-[5px] text-xs font-semibold transition-colors"
+          :class="(role === 'backup') === isBackupLink(link) ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
+          :aria-pressed="(role === 'backup') === isBackupLink(link)"
+          @click="emit('patch', { role })"
+        >
+          {{ t(`gv.plan.role_${role}`) }}
+        </button>
+      </div>
+      <p class="mt-1 text-[11px] text-fg-subtle">{{ t('gv.plan.role_hint') }}</p>
     </fieldset>
     <div class="flex items-end gap-2">
       <label class="flex flex-1 flex-col gap-1.5 text-xs font-medium text-fg">

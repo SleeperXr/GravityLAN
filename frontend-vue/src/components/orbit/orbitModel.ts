@@ -12,11 +12,17 @@ import { networkColor } from '@/lib/networks';
 import { isClientStandby } from '@/lib/standby';
 import { layoutOrbit, orbitCenterId } from './orbitLayout';
 
+export type LinkRole = 'primary' | 'backup';
+
 export type OrbitLink = TopologyLink & {
   color?: string | null;
   speed?: number | null;
   notes?: string | null;
+  /** 'backup': a standby/fallback path; it is drawn but never decides who orbits whom */
+  role?: LinkRole | null;
 };
+
+export const isBackupLink = (link: Pick<OrbitLink, 'role'>): boolean => link.role === 'backup';
 
 export const LINK_TYPES = ['10GbE', '2.5GbE', '1GbE', '100Mb', 'WLAN', 'Fiber'] as const;
 
@@ -87,6 +93,8 @@ export interface LightBeam {
   interrupted: boolean;
   isWireless: boolean;
   isPrimaryBridge: boolean;
+  /** A standby/fallback path: drawn thin and dashed, without photons */
+  isBackup: boolean;
 }
 
 /** Radius tolerance (px) for snapping sibling moons onto a shared concentric orbit ring. */
@@ -131,11 +139,14 @@ interface RawParent {
   linkColor?: string | null;
 }
 
-/** Undirected adjacency of the links whose both ends exist (self-links dropped). */
+/**
+ * Undirected adjacency of the primary links whose both ends exist (self-links dropped). Backup links stay
+ * out, so adding a fallback path never changes roles, hubs or the layout.
+ */
 function buildAdjacency(devices: Device[], links: OrbitLink[], byId: Map<number, Device>): Adjacency {
   const adj: Adjacency = new Map(devices.map((d) => [d.id, []]));
   for (const l of links) {
-    if (!byId.has(l.source_id) || !byId.has(l.target_id) || l.source_id === l.target_id) continue;
+    if (isBackupLink(l) || !byId.has(l.source_id) || !byId.has(l.target_id) || l.source_id === l.target_id) continue;
     adj.get(l.source_id)!.push({ neighborId: l.target_id, link: l });
     adj.get(l.target_id)!.push({ neighborId: l.source_id, link: l });
   }
@@ -364,7 +375,8 @@ export function computeLightBeams(
       color,
       interrupted: !a.device.is_online || !b.device.is_online,
       isWireless: l.link_type === 'WLAN',
-      isPrimaryBridge,
+      isPrimaryBridge: isPrimaryBridge && !isBackupLink(l),
+      isBackup: isBackupLink(l),
     });
   }
   return beams;
