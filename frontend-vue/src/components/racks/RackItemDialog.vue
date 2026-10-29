@@ -9,6 +9,7 @@ import Select from '@/components/ui/Select.vue';
 import Textarea from '@/components/ui/Textarea.vue';
 import { useToast } from '@/composables/useToast';
 import { t } from '@/i18n';
+import { apiErrorMessage } from '@/lib/apiErrors';
 import { RACK_KINDS, kindOf } from './rackKinds';
 import { PORT_KINDS } from './rackModel';
 
@@ -61,7 +62,7 @@ async function save() {
     open.value = false;
     emit('saved', saved);
   } catch (err) {
-    showToast('error', t('gv.rack.item_save'), (err as Error).message);
+    showToast('error', t('gv.rack.item_save'), apiErrorMessage(err));
   } finally {
     saving.value = false;
   }

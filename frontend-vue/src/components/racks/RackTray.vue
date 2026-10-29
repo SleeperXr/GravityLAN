@@ -22,7 +22,11 @@ const props = defineProps<{
   selectedKey: string | null;
   /** The entry picked for placing by click or keyboard, waiting for a free unit */
   placingKey: string | null;
+  /** Devices left out of `unracked` because they do not look rack-mountable */
+  hiddenCount?: number;
 }>();
+/** Offer every device without a rack, not only the rack-mountable ones */
+const showAll = defineModel<boolean>('showAll', { default: false });
 const emit = defineEmits<{
   select: [key: string];
   open: [key: string];
@@ -131,6 +135,15 @@ function onDetach(event: DragEvent) {
         <Search class="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
         <Input v-model="query" class="pl-8" :placeholder="t('gv.rack.tray_search')" />
       </label>
+      <button
+        v-if="showAll || hiddenCount"
+        type="button"
+        class="text-xs font-medium text-accent-text underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        :title="t('gv.rack.tray_filter_hint')"
+        @click="showAll = !showAll"
+      >
+        {{ showAll ? t('gv.rack.tray_show_rackable') : t('gv.rack.tray_show_all', { count: hiddenCount }) }}
+      </button>
       <ul v-if="shownUnracked.length" class="max-h-72 space-y-1 overflow-y-auto pr-1 lg:max-h-none lg:overflow-visible">
         <li v-for="e in shownUnracked" :key="e.key">
           <button
