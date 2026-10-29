@@ -127,14 +127,15 @@ function gatewayLabel(sub: Subnet): string {
       <Input v-model="name" :placeholder="t('settings.subnet_name_placeholder')" :aria-label="t('settings.subnet_name')" />
       <Button type="submit" :loading="adding" :disabled="!cidr.trim()"><Plus v-if="!adding" aria-hidden="true" />{{ t('settings.subnet_add') }}</Button>
     </form>
-    <p id="set-subnets-hint" class="-mt-3 text-xs text-fg-subtle">{{ t('settings.subnets_hint') }}</p>
+    <p id="set-subnets-hint" class="-mt-3 max-w-prose text-xs text-fg-subtle">{{ t('settings.subnets_hint') }}</p>
 
     <p v-if="loaded && subnets.length === 0" class="rounded-md border border-dashed border-line-strong px-4 py-5 text-center text-sm text-fg-muted">
       {{ detected.length > 0 ? t('settings.subnets_empty_auto', { subnets: detected.map((s) => s.subnet).join(', ') }) : t('settings.subnets_empty') }}
     </p>
 
-    <ul v-if="subnets.length > 0" class="divide-y divide-line rounded-md border border-line" :aria-label="t('settings.subnets')">
-      <li v-for="sub in subnets" :key="sub.id" class="px-3 py-2.5" :class="!sub.is_enabled && 'bg-raised'">
+    <!-- Ruled rows, not boxes: the section card is the only frame -->
+    <ul v-if="subnets.length > 0" class="divide-y divide-line border-y border-line" :aria-label="t('settings.subnets')">
+      <li v-for="sub in subnets" :key="sub.id" class="py-2.5">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div class="min-w-0 flex-1" :class="!sub.is_enabled && 'opacity-60'">
             <p class="flex flex-wrap items-center gap-2 text-sm font-medium text-fg">
@@ -159,8 +160,8 @@ function gatewayLabel(sub: Subnet): string {
 
     <div v-if="subnets.length > 0 && suggestions.length > 0" class="space-y-2">
       <p class="text-xs font-medium text-fg">{{ t('settings.subnets_detected') }}</p>
-      <ul class="divide-y divide-line rounded-md border border-dashed border-line-strong" :aria-label="t('settings.subnets_detected')">
-        <li v-for="s in suggestions" :key="s.subnet" class="flex items-center gap-3 px-3 py-2">
+      <ul class="divide-y divide-line border-y border-dashed border-line-strong" :aria-label="t('settings.subnets_detected')">
+        <li v-for="s in suggestions" :key="s.subnet" class="flex items-center gap-3 py-2">
           <div class="min-w-0 flex-1">
             <code class="font-mono text-sm text-fg">{{ s.subnet }}</code>
             <p class="text-xs text-fg-subtle">{{ s.interface_name }} · {{ s.ip_address }}</p>

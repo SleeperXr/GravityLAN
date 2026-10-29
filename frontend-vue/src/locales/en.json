@@ -47,6 +47,7 @@
       "free": "free",
       "used": "in use",
       "usage": "Address usage",
+      "empty_subnet": "No address is in use here yet. A scan fills the grid, or pick another subnet above.",
       "legend_device": "In the overview",
       "legend_discovered": "Discovered only",
       "legend_reserved": "Reserved",
@@ -94,6 +95,8 @@
       "dropped_other": "{{count}} devices offline",
       "degraded_one": "{{count}} device with a service down",
       "degraded_other": "{{count}} devices with services down",
+      "empty_folded_one": "Empty network:",
+      "empty_folded_other": "{{count}} empty networks:",
       "colors_title": "Orbit & network colours",
       "colors_desc": "Each network has its own orbit colour – on orbital rings, light beams, device chips and racks. Changes apply right away.",
       "colors_empty": "No subnets yet.",
@@ -256,6 +259,8 @@
       "summary": "{{title}}: {{uptime}}% uptime, {{down}} outages and {{partial}} disruptions in {{count}} slots. Arrow keys show single slots."
     },
     "timeline": {
+      "all_at": "All {{when}}",
+      "mostly_at": "Mostly {{when}}, otherwise on the entry",
       "incidents": "Incidents over time",
       "history": "Status history"
     },

@@ -7,6 +7,7 @@ import { t } from '@/i18n';
 import type { RackCable, RackPort } from '@/types';
 import { draggingKey } from './rackDrag';
 import { kindOf } from './rackKinds';
+import { channelWidth, laneCount, laneX } from './cableLanes';
 import { cableRoute, fitsAt, ownerKeyOf, portsOnSide, rackSlots, sideOf, type PortSide, type RackEntry } from './rackModel';
 
 /**
@@ -41,16 +42,13 @@ const emit = defineEmits<{
 }>();
 
 const UNIT_REM = 1.75;
-/** Width of the cable channel right of the rail, in px */
-const CHANNEL_PX = 72;
-/** Distance between two cable lanes in the channel, in px; a lane is the vertical run of one cable */
-const LANE_PX = 7;
-const LANES = 8;
 
 const slots = computed(() => rackSlots(props.units, props.entries));
 const dragCandidates = computed(() => [...props.entries, ...props.candidates]);
 const hover = ref<{ unit: number; valid: boolean } | null>(null);
 const portById = computed(() => new Map(props.ports.map((p) => [p.id, p])));
+/** One lane per cable, the channel widening as needed: lanes reused after eight drew cable 9 over cable 1 */
+const channelPx = computed(() => channelWidth(laneCount(props.cables, portById.value, props.side)));
 const keysHere = computed(() => new Set(dragCandidates.value.map((e) => e.key)));
 
 const railRef = ref<HTMLElement | null>(null);
@@ -71,7 +69,7 @@ function measure() {
   const origin = rail.getBoundingClientRect();
   const width = rail.clientWidth;
   const channel = rail.querySelector<HTMLElement>('[data-channel]');
-  const channelLeft = channel ? channel.getBoundingClientRect().left - origin.left : width - CHANNEL_PX;
+  const channelLeft = channel ? channel.getBoundingClientRect().left - origin.left : width - channelPx.value;
   const centre = (portId: number) => {
     const el = rail.querySelector<HTMLElement>('[data-port="' + portId + '"]');
     if (!el) return null;
@@ -89,9 +87,8 @@ function measure() {
     const a = centre(pa.id);
     const b = centre(pb.id);
     if (a && b) {
-      const laneX = channelLeft + LANE_PX + (lane % LANES) * LANE_PX;
+      draws.push({ id: cable.id, d: cableRoute(a, b, laneX(channelLeft, lane)), colour, active, stub: false, label: null });
       lane += 1;
-      draws.push({ id: cable.id, d: cableRoute(a, b, laneX), colour, active, stub: false, label: null });
     } else if (a || b) {
       // The other end is not drawn here: on the other side of the rack, or in another rack
       const end = (a ?? b)!;
@@ -283,7 +280,7 @@ function portSummary(entry: RackEntry): string | null {
         <template v-if="hover?.unit === slot.unit">{{ hover.valid ? t('gv.rack.drop_here') : t('gv.rack.drop_blocked') }}</template>
       </span>
 
-      <span data-channel class="shrink-0" :style="{ width: CHANNEL_PX + 'px' }" aria-hidden="true" />
+      <span data-channel class="shrink-0" :style="{ width: channelPx + 'px' }" aria-hidden="true" />
 
       <span class="w-6 shrink-0 font-mono text-[10px] leading-7 text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
     </div>

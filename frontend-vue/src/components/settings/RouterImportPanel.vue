@@ -149,7 +149,8 @@ const statusTone = (net: RouterNetworkPreview) => (net.status === 'new' ? 'accen
 </script>
 
 <template>
-  <div class="space-y-4 rounded-md border border-line bg-raised p-4">
+  <!-- Opens inside the subnets card: a rule on the left marks it as part of the row above, no box in a box -->
+  <div class="space-y-4 border-l-2 border-line pl-4">
     <form class="space-y-4" :aria-label="t('router_import.title')" @submit.prevent="fetchNetworks()">
       <div class="grid gap-3 sm:grid-cols-[12rem_1fr_6rem]">
         <Field v-slot="{ id }" :label="t('router_import.provider')">
@@ -183,7 +184,7 @@ const statusTone = (net: RouterNetworkPreview) => (net.status === 'new' ? 'accen
             <Field v-slot="{ id }" :label="t('router_import.community')"><Input :id="id" v-model="secrets.community" type="password" autocomplete="off" :placeholder="isStored('community') ? t('router_import.secret_stored') : ''" /></Field>
           </div>
         </div>
-        <p class="text-xs leading-relaxed text-fg-subtle">{{ t('router_import.snmp_hint') }}</p>
+        <p class="max-w-prose text-xs leading-relaxed text-fg-subtle">{{ t('router_import.snmp_hint') }}</p>
       </template>
       <template v-else>
         <div class="grid gap-3 sm:grid-cols-[1fr_8rem]">
@@ -193,7 +194,7 @@ const statusTone = (net: RouterNetworkPreview) => (net.status === 'new' ? 'accen
             <Field v-slot="{ id }" :label="t('router_import.fingerprint')"><Input :id="id" v-model="options.fingerprint" mono :placeholder="t('router_import.fingerprint_placeholder')" /></Field>
           </div>
         </div>
-        <p class="text-xs leading-relaxed text-fg-subtle">{{ t('router_import.unifi_hint') }}</p>
+        <p class="max-w-prose text-xs leading-relaxed text-fg-subtle">{{ t('router_import.unifi_hint') }}</p>
       </template>
 
       <div class="flex flex-wrap gap-2">
@@ -215,8 +216,8 @@ const statusTone = (net: RouterNetworkPreview) => (net.status === 'new' ? 'accen
       <p class="text-sm font-medium text-fg">{{ t('router_import.preview_title', { host: preview.host, count: preview.networks.length }) }}</p>
       <p v-if="preview.networks.length === 0" class="text-sm text-fg-subtle">{{ t('router_import.preview_empty') }}</p>
       <template v-else>
-        <ul class="divide-y divide-line rounded-md border border-line bg-surface" :aria-label="t('router_import.preview_list')">
-          <li v-for="net in preview.networks" :key="net.cidr" class="flex flex-wrap items-center gap-3 px-3 py-2.5" :class="!importable(net) && 'opacity-60'">
+        <ul class="divide-y divide-line border-y border-line" :aria-label="t('router_import.preview_list')">
+          <li v-for="net in preview.networks" :key="net.cidr" class="flex flex-wrap items-center gap-3 py-2.5" :class="!importable(net) && 'opacity-60'">
             <label class="flex min-w-0 flex-1 items-start gap-3">
               <input
                 type="checkbox"

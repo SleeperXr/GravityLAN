@@ -85,8 +85,9 @@ async function remove(group: DeviceGroup) {
       <Input v-model="newName" :placeholder="t('settings.new_group_name')" :aria-label="t('settings.new_group_name')" maxlength="100" />
       <Button type="submit" :disabled="!newName.trim()"><Plus aria-hidden="true" />{{ t('settings.create') }}</Button>
     </form>
-    <ul class="divide-y divide-line rounded-md border border-line">
-      <li v-for="group in groups" :key="group.id" class="flex min-h-12 items-center gap-2 px-3 py-2">
+    <!-- Ruled rows, not a box: the section card is the only frame -->
+    <ul class="divide-y divide-line border-y border-line">
+      <li v-for="group in groups" :key="group.id" class="flex min-h-12 items-center gap-2 py-2">
         <form v-if="editingId === group.id" class="flex flex-1 items-center gap-2" @submit.prevent="saveRename(group)">
           <Input v-model="editingName" class="h-8" maxlength="100" autofocus :aria-label="t('settings.edit_group', { name: group.name })" @keydown.esc="editingId = null" />
           <Button type="submit" size="icon-sm" variant="ghost" :disabled="!editingName.trim() || editingName.trim() === group.name" :aria-label="t('common.save')"><Check aria-hidden="true" /></Button>

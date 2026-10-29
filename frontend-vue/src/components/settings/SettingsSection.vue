@@ -12,7 +12,7 @@ defineProps<{ id: string; title: string; description?: string; danger?: boolean 
   >
     <header class="mb-5">
       <h2 :id="`${id}-title`" class="text-base font-semibold" :class="danger ? 'text-danger-text' : 'text-fg'">{{ title }}</h2>
-      <p v-if="description" class="mt-1 max-w-2xl text-sm leading-relaxed text-fg-muted">{{ description }}</p>
+      <p v-if="description" class="mt-1 max-w-prose text-sm leading-relaxed text-fg-muted">{{ description }}</p>
     </header>
     <div class="space-y-5"><slot /></div>
   </section>
