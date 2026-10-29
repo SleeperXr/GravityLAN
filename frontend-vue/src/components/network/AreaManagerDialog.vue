@@ -38,7 +38,7 @@ function save() {
 
 <template>
   <Dialog v-model:open="open" :title="t('network.manage_areas')" :description="`${prefix}.0/24`" size="lg">
-    <div class="hidden grid-cols-[1fr_5rem_5rem_3rem_2.25rem] gap-2 px-1 pb-1.5 text-[11px] font-medium text-fg-subtle sm:grid">
+    <div class="hidden grid-cols-[1fr_5rem_5rem_3rem_2.25rem] gap-2 px-1 pb-1.5 text-xs font-medium text-fg-subtle sm:grid">
       <span>{{ t('network.area_name') }}</span><span>{{ t('network.start') }}</span><span>{{ t('network.end') }}</span><span>{{ t('network.color') }}</span><span />
     </div>
     <form class="grid grid-cols-[1fr_4.5rem_4.5rem] gap-2 rounded-md border border-dashed border-line-strong p-2 sm:grid-cols-[1fr_5rem_5rem_3rem_2.25rem]" @submit.prevent="addDraft">

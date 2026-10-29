@@ -12,6 +12,14 @@
   --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  /*
+   * Type floor: nothing is set below `text-micro` (11 px, the ramp's Badge step). It is for badges,
+   * count pills, the version tag, mobile tab labels, rack rail numbers, chart axis ticks and dense
+   * mono metadata only; running text, hints, labels and buttons start at `text-xs` (12 px).
+   */
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 1.45;
+
   --color-canvas: var(--gl-canvas);
   --color-chrome: var(--gl-chrome);
   --color-surface: var(--gl-surface);

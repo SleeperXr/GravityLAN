@@ -941,7 +941,7 @@ useResizeObserver(svgRef, initialFit);
         :aria-label="t('gv.orbit.search_label')"
         @keydown.enter.prevent="submitSearch"
       />
-      <span v-if="searchQuery" class="font-mono text-[10px] text-fg-subtle" aria-live="polite">{{ searchHits.length }}</span>
+      <span v-if="searchQuery" class="font-mono text-micro text-fg-subtle" aria-live="polite">{{ searchHits.length }}</span>
     </div>
 
     <OrbitFocusCard
@@ -961,7 +961,7 @@ useResizeObserver(svgRef, initialFit);
 
     <p
       v-if="!editing && !focusedInfo && !searchQuery && traceFromId == null && !(coarsePointer && pageScrolls)"
-      class="pointer-events-none absolute bottom-3 left-3 z-10 hidden max-w-xs rounded-md border border-line bg-surface/90 px-2.5 py-1.5 text-[11px] text-fg-muted backdrop-blur sm:block"
+      class="pointer-events-none absolute bottom-3 left-3 z-10 hidden max-w-xs rounded-md border border-line bg-surface/90 px-2.5 py-1.5 text-xs text-fg-muted backdrop-blur sm:block"
     >
       {{ pageScrolls ? t('gv.orbit.hint_embedded', { key: modifierKey }) : t('gv.orbit.hint') }}
     </p>
@@ -1003,7 +1003,7 @@ useResizeObserver(svgRef, initialFit);
       <button
         v-if="problemIds.length && !editing"
         type="button"
-        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 max-md:h-11 max-md:min-w-11 max-md:border-r max-md:border-b-0 px-1 font-mono text-[11px] font-semibold text-danger-text hover:bg-danger/20"
+        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 max-md:h-11 max-md:min-w-11 max-md:border-r max-md:border-b-0 px-1 font-mono text-xs font-semibold text-danger-text hover:bg-danger/20"
         :title="t('gv.orbit.problems_label', { count: problemIds.length })"
         :aria-label="t('gv.orbit.problems_label', { count: problemIds.length })"
         @click="focusNextProblem"

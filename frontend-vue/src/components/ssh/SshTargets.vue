@@ -54,7 +54,7 @@ const rowClass = 'flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1.
               <SquareTerminal class="size-4 shrink-0 text-accent-text" aria-hidden="true" />
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-sm font-medium text-fg">{{ p.name }}</span>
-                <span class="block truncate font-mono text-[11px] text-fg-subtle">{{ p.username }}@{{ p.target_host }}{{ portSuffix(p.port) }}</span>
+                <span class="block truncate font-mono text-xs text-fg-subtle">{{ p.username }}@{{ p.target_host }}{{ portSuffix(p.port) }}</span>
               </span>
               <Badge class="shrink-0">{{ p.auth_method === 'key' ? p.key_name || t('ssh.auth.key') : t(`ssh.auth.${p.auth_method}`) }}</Badge>
             </button>
@@ -72,7 +72,7 @@ const rowClass = 'flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1.
               <History class="size-4 shrink-0 text-fg-subtle" aria-hidden="true" />
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-sm font-medium text-fg">{{ h.label }}</span>
-                <span class="block truncate font-mono text-[11px] text-fg-subtle">{{ h.target_host }}{{ portSuffix(h.port) }}</span>
+                <span class="block truncate font-mono text-xs text-fg-subtle">{{ h.target_host }}{{ portSuffix(h.port) }}</span>
               </span>
               <Badge class="shrink-0">{{ h.auth_method === 'key' ? h.key_name || t('ssh.auth.key') : t('ssh.auth.password') }}</Badge>
             </button>
@@ -98,7 +98,7 @@ const rowClass = 'flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1.
               <StatusDot :state="d.is_online ? 'online' : 'offline'" size="sm" class="mx-1" />
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-sm font-medium text-fg">{{ deviceLabel(d) }}</span>
-                <span class="block truncate font-mono text-[11px] text-fg-subtle">{{ d.ip }}</span>
+                <span class="block truncate font-mono text-xs text-fg-subtle">{{ d.ip }}</span>
               </span>
               <Badge v-if="profileDeviceIds.has(d.id)" tone="info" class="shrink-0">{{ t('ssh.targets.has_profile') }}</Badge>
             </button>

@@ -141,7 +141,7 @@ const activeSlot = computed(() => (active.value === null ? null : slots.value[ac
     </div>
     <span v-else class="font-mono text-xs text-fg-subtle">–</span>
 
-    <div v-if="!compact && slots.length" class="mt-1 flex justify-between text-[10px] text-fg-subtle">
+    <div v-if="!compact && slots.length" class="mt-1 flex justify-between text-micro text-fg-subtle">
       <span>{{ spanLabel }}</span>
       <span>{{ t('gv.status_monitor.now') }}</span>
     </div>
@@ -160,7 +160,7 @@ const activeSlot = computed(() => (active.value === null ? null : slots.value[ac
           {{ t(`gv.status_monitor.${activeSlot.status}`) }}
           <span v-if="activeSlot.pct !== null" class="ml-auto pl-2 font-mono tabular">{{ pct(activeSlot.pct) }} %</span>
         </p>
-        <p class="mt-0.5 font-mono text-[11px] text-fg-muted">{{ when(activeSlot.start) }} – {{ when(activeSlot.end) }}</p>
+        <p class="mt-0.5 font-mono text-xs text-fg-muted">{{ when(activeSlot.start) }} – {{ when(activeSlot.end) }}</p>
       </div>
     </Teleport>
   </div>

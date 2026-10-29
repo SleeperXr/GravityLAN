@@ -39,7 +39,7 @@ const emit = defineEmits<{ close: []; open: []; toHub: []; centre: []; trace: []
     <dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
       <dt class="text-fg-subtle">{{ t('gv.orbit.kind') }}</dt>
       <dd class="text-fg">
-        {{ t(`gv.orbit.role_${roleOf(body)}`) }}<span v-if="badge" class="font-mono text-[10px] text-fg-muted"> · {{ badge }}</span>
+        {{ t(`gv.orbit.role_${roleOf(body)}`) }}<span v-if="badge" class="font-mono text-xs text-fg-muted"> · {{ badge }}</span>
       </dd>
       <dt class="text-fg-subtle">{{ t('gv.orbit.status') }}</dt>
       <dd class="text-fg">{{ t(`gv.orbit.state_${body.state}`) }}</dd>

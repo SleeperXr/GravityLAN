@@ -120,7 +120,7 @@ function onDetach(event: DragEvent) {
             <StatusDot v-if="e.kind === 'device'" :state="e.online ? 'online' : 'offline'" size="sm" :label="e.online ? t('network.online') : t('network.offline')" />
             <component :is="kindOf(e.itemKind ?? 'other').icon" v-else class="size-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
             <span class="min-w-0 flex-1 truncate text-fg">{{ e.label }}</span>
-            <span class="shrink-0 font-mono text-[10px] text-fg-subtle">{{ e.detail }}</span>
+            <span class="shrink-0 font-mono text-xs text-fg-subtle">{{ e.detail }}</span>
           </button>
         </li>
       </ul>
@@ -161,7 +161,7 @@ function onDetach(event: DragEvent) {
             <GripVertical class="size-3.5 shrink-0 text-fg-subtle opacity-60" aria-hidden="true" />
             <StatusDot :state="e.online ? 'online' : 'offline'" size="sm" :label="e.online ? t('network.online') : t('network.offline')" />
             <span class="min-w-0 flex-1 truncate text-fg">{{ e.label }}</span>
-            <span class="shrink-0 font-mono text-[10px] text-fg-subtle">{{ e.detail }}</span>
+            <span class="shrink-0 font-mono text-xs text-fg-subtle">{{ e.detail }}</span>
           </button>
         </li>
       </ul>

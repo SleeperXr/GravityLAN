@@ -116,7 +116,7 @@ const showsSsl = (svc: Service) => svc.protocol?.toLowerCase() === 'https' || [4
               @input="editLocally(svc.id, { name: ($event.target as HTMLInputElement).value })"
               @blur="save(svc, { name: ($event.target as HTMLInputElement).value })"
             />
-            <span v-if="!svc.is_auto_detected" class="rounded-sm bg-info/15 px-1.5 text-[10px] font-semibold text-info-text">{{ t('editor.manual') }}</span>
+            <span v-if="!svc.is_auto_detected" class="rounded-sm bg-info/15 px-1.5 text-micro font-semibold text-info-text">{{ t('editor.manual') }}</span>
           </div>
           <div class="flex flex-wrap items-center gap-3 text-xs text-fg-subtle">
             <label class="flex items-center gap-1.5">

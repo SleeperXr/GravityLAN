@@ -39,8 +39,8 @@ const toggle = (kind: GroupKind) => (expanded.value = expanded.value === kind ? 
       <ShieldAlert class="mt-0.5 size-4 shrink-0 text-warn-text" aria-hidden="true" />
       <div class="min-w-0 flex-1">
         <p class="text-sm font-semibold text-fg">{{ t('gv.orbit.resilience_title') }}</p>
-        <p class="text-[11px] leading-snug text-fg-subtle">{{ t('gv.orbit.resilience_hint') }}</p>
-        <p class="mt-1 text-[11px] leading-snug text-fg-subtle">{{ t('gv.orbit.core_hint') }}</p>
+        <p class="text-xs leading-snug text-fg-subtle">{{ t('gv.orbit.resilience_hint') }}</p>
+        <p class="mt-1 text-xs leading-snug text-fg-subtle">{{ t('gv.orbit.core_hint') }}</p>
       </div>
       <button type="button" class="-m-1 inline-flex size-7 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover" :aria-label="t('common.close')" @click="emit('close')">
         <X class="size-4" />
@@ -61,7 +61,7 @@ const toggle = (kind: GroupKind) => (expanded.value = expanded.value === kind ? 
           <span class="min-w-0 flex-1">{{ t(g.key, { count: g.devices.length }) }}</span>
         </button>
         <div v-if="expanded === g.kind" class="pb-1 pl-8">
-          <p class="pr-3 pb-1 text-[11px] leading-snug text-fg-subtle">{{ t(g.hint) }}</p>
+          <p class="pr-3 pb-1 text-xs leading-snug text-fg-subtle">{{ t(g.hint) }}</p>
           <ul class="max-h-36 overflow-y-auto pr-1.5">
             <li v-for="d in g.devices" :key="d.id">
               <button

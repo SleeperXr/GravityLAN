@@ -87,7 +87,7 @@ const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
           stroke-width="1"
           :stroke-dasharray="idleBackup(beam) ? '3 3' : undefined"
         />
-        <text x="0" y="3.5" text-anchor="middle" :fill="beam.failover ? 'var(--gl-warn-text)' : 'var(--gl-fg-muted)'" class="pointer-events-none font-mono text-[10px] font-medium">{{ beam.failover ? `${t('gv.plan.backup_active')} · ${beam.linkType}` : beam.isBackup ? `${t('gv.plan.backup')} · ${beam.linkType}` : beam.linkType }}</text>
+        <text x="0" y="3.5" text-anchor="middle" :fill="beam.failover ? 'var(--gl-warn-text)' : 'var(--gl-fg-muted)'" class="pointer-events-none font-mono text-micro font-medium">{{ beam.failover ? `${t('gv.plan.backup_active')} · ${beam.linkType}` : beam.isBackup ? `${t('gv.plan.backup')} · ${beam.linkType}` : beam.linkType }}</text>
       </g>
     </g>
 
@@ -113,7 +113,7 @@ const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
     </template>
     <g v-for="(id, i) in trace.hops" :key="`trace-hop-${id}`" :transform="`translate(${pos(id).x + 20}, ${pos(id).y - 24})`">
       <circle r="9" fill="var(--gl-accent)" />
-      <text y="3.5" text-anchor="middle" fill="var(--gl-sign-ink)" class="font-mono text-[10px] font-bold">{{ i + 1 }}</text>
+      <text y="3.5" text-anchor="middle" fill="var(--gl-sign-ink)" class="font-mono text-micro font-bold">{{ i + 1 }}</text>
     </g>
   </g>
 </template>

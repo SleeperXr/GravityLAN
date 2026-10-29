@@ -149,7 +149,7 @@ async function purge(request: TelemetryPurge | null) {
       <li v-for="tier in tiers" :key="tier.key" class="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5">
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium text-fg">{{ t(`telemetry_settings.tier_${tier.key}`) }}</p>
-          <p class="text-xs text-fg-subtle">{{ t(`telemetry_settings.tier_${tier.key}_desc`) }}</p>
+          <p class="max-w-prose text-xs text-fg-subtle">{{ t(`telemetry_settings.tier_${tier.key}_desc`) }}</p>
         </div>
         <p class="font-mono text-xs text-fg-muted tabular">
           {{ t('telemetry_settings.rows', { rows: formatNumber(tier.rows) }) }}<span v-if="tier.oldest"> · {{ t('telemetry_settings.since', { date: utcDate(tier.oldest) }) }}</span>

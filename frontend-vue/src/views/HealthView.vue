@@ -219,7 +219,7 @@ const sortOptions = computed(() => [
               <td class="px-5 py-3">
                 <button type="button" class="block max-w-full truncate text-left text-sm font-bold text-fg group-hover:text-accent-text" @click.stop="select(d)">{{ d.display_name }}</button>
                 <p class="mt-0.5 flex items-center gap-2 truncate font-mono text-xs text-fg-subtle">
-                  {{ d.ip }}<span v-if="d.group_name" class="rounded-sm bg-raised px-1.5 font-sans text-[11px] text-fg-muted">{{ d.group_name }}</span>
+                  {{ d.ip }}<span v-if="d.group_name" class="rounded-sm bg-raised px-1.5 font-sans text-xs text-fg-muted">{{ d.group_name }}</span>
                 </p>
               </td>
               <td class="px-4 py-3">
@@ -231,7 +231,7 @@ const sortOptions = computed(() => [
               <td class="px-4 py-3">
                 <div class="flex items-baseline justify-between text-xs">
                   <span class="font-mono font-semibold text-fg">{{ d.uptime.uptime_pct.toFixed(1) }}%</span>
-                  <span class="font-mono text-[11px] text-fg-subtle">24h {{ d.uptime.uptime_24h.toFixed(0) }}%</span>
+                  <span class="font-mono text-xs text-fg-subtle">24h {{ d.uptime.uptime_24h.toFixed(0) }}%</span>
                 </div>
                 <StatusMonitor class="mt-1" compact size="sm" :bars="d.uptime.history_bars" :span-hours="periodHours(period)" :uptime="d.uptime.uptime_pct" :title="d.display_name" />
               </td>
@@ -239,7 +239,7 @@ const sortOptions = computed(() => [
                 <div class="flex items-center justify-between gap-3">
                   <div class="font-mono text-xs">
                     <p class="font-semibold text-fg">{{ ms(d.latency.current_ms) }}</p>
-                    <p class="text-[11px] text-fg-subtle">Ø {{ ms(d.latency.avg_ms) }}<span v-if="d.latency.jitter_ms !== null"> ±{{ d.latency.jitter_ms.toFixed(1) }}</span></p>
+                    <p class="text-xs text-fg-subtle">Ø {{ ms(d.latency.avg_ms) }}<span v-if="d.latency.jitter_ms !== null"> ±{{ d.latency.jitter_ms.toFixed(1) }}</span></p>
                   </div>
                   <Sparkline :values="d.latency.sparkline" />
                 </div>

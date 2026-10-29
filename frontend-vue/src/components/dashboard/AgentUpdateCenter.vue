@@ -116,7 +116,7 @@ function statusText(status: RowStatus) {
               {{ device.ip }} · <span class="text-fg-muted">v{{ device.agent_info?.agent_version }}</span> →
               <span class="text-accent-text">v{{ device.agent_info?.latest_version }}</span>
             </p>
-            <p v-if="loginFor(device)" class="mt-0.5 flex items-center gap-1 text-[11px] text-fg-subtle">
+            <p v-if="loginFor(device)" class="mt-0.5 flex items-center gap-1 text-xs text-fg-subtle">
               <KeyRound class="size-3" aria-hidden="true" />{{ t('agent.via_saved_connection', { name: loginFor(device)!.name }) }}
             </p>
           </div>
@@ -145,7 +145,7 @@ function statusText(status: RowStatus) {
             </Button>
           </div>
         </div>
-        <p v-if="statuses[device.id]?.status === 'failed' && statuses[device.id]?.message" class="mt-2 rounded-sm bg-danger/10 px-2 py-1 font-mono text-[11px] break-words text-danger-text">
+        <p v-if="statuses[device.id]?.status === 'failed' && statuses[device.id]?.message" class="mt-2 rounded-sm bg-danger/10 px-2 py-1 font-mono text-xs break-words text-danger-text">
           {{ statuses[device.id]?.message }}
         </p>
         <div v-if="manualOpen[device.id]" class="mt-3"><ManualInstallCommand :device-id="device.id" /></div>

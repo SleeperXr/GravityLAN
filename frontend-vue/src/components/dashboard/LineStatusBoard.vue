@@ -78,9 +78,9 @@ function statusText(row: LineRow) {
           <span class="min-w-0 flex-1">
             <span class="flex items-baseline gap-2">
               <span class="truncate text-sm font-bold text-fg">{{ row.name }}</span>
-              <span class="hidden truncate font-mono text-[11px] text-fg-subtle 2xl:inline">{{ row.cidr }}</span>
+              <span class="hidden truncate font-mono text-xs text-fg-subtle 2xl:inline">{{ row.cidr }}</span>
             </span>
-            <span class="mt-0.5 block truncate text-[13px] font-semibold" :class="statusText(row).tone">{{ statusText(row).text }}</span>
+            <span class="mt-0.5 block truncate text-sm font-semibold" :class="statusText(row).tone">{{ statusText(row).text }}</span>
           </span>
           <span class="shrink-0 text-right font-mono text-xs text-fg-muted tabular">
             <span class="block text-base font-semibold text-fg">{{ row.online }}<span class="text-fg-subtle">/{{ row.total }}</span></span>

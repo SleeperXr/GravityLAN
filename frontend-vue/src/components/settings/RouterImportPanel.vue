@@ -207,7 +207,7 @@ const statusTone = (net: RouterNetworkPreview) => (net.status === 'new' ? 'accen
 
     <div v-if="preview?.status === 'confirm_certificate'" role="alert" class="space-y-2 rounded-md border border-warn/40 bg-warn/[0.07] p-3">
       <p class="text-sm font-medium text-fg">{{ t('router_import.cert_title') }}</p>
-      <p class="text-xs text-fg-muted">{{ t(preview.reason === 'certificate_mismatch' ? 'router_import.cert_mismatch' : 'router_import.cert_untrusted') }}</p>
+      <p class="max-w-prose text-xs text-fg-muted">{{ t(preview.reason === 'certificate_mismatch' ? 'router_import.cert_mismatch' : 'router_import.cert_untrusted') }}</p>
       <code class="block rounded-sm bg-sunken px-2 py-1.5 font-mono text-xs break-all text-fg">{{ preview.fingerprint }}</code>
       <Button size="sm" :disabled="busy !== null" @click="fetchNetworks({ fingerprint: preview.fingerprint ?? '' })"><ShieldCheck aria-hidden="true" />{{ t('router_import.cert_trust') }}</Button>
     </div>
@@ -237,7 +237,7 @@ const statusTone = (net: RouterNetworkPreview) => (net.status === 'new' ? 'accen
         </ul>
         <div class="flex flex-wrap items-center gap-3">
           <Button variant="primary" :loading="busy === 'apply'" :disabled="picked.length === 0 || busy !== null" @click="apply">{{ t('router_import.apply', { count: picked.length }) }}</Button>
-          <p class="text-xs text-fg-subtle">{{ t('router_import.apply_hint') }}</p>
+          <p class="max-w-prose text-xs text-fg-subtle">{{ t('router_import.apply_hint') }}</p>
         </div>
       </template>
     </div>

@@ -300,8 +300,7 @@ function portSummary(entry: RackEntry): string | null {
           :y="c.label.y"
           text-anchor="end"
           fill="var(--gl-fg-muted)"
-          font-size="9"
-          class="font-mono"
+          class="font-mono text-micro"
         >
           {{ c.label.text }}
         </text>
@@ -316,7 +315,7 @@ function portSummary(entry: RackEntry): string | null {
       @dragleave="leave(slot.unit)"
       @drop="drop($event, slot.unit)"
     >
-      <span class="w-6 shrink-0 text-right font-mono text-[10px] leading-[var(--rack-unit,1.75rem)] text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
+      <span class="w-6 shrink-0 text-right font-mono text-micro leading-[var(--rack-unit,1.75rem)] text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
 
       <!-- Entries that overlap share the row, side by side, each on its own units -->
       <div v-if="slot.entries.length" class="flex min-w-0 flex-1 items-start gap-1" :style="{ height: 'calc(' + slot.height + ' * var(--rack-unit, ' + UNIT_REM + 'rem))' }">
@@ -354,8 +353,8 @@ function portSummary(entry: RackEntry): string | null {
           <StatusDot v-if="entry.kind === 'device'" :state="entry.online ? 'online' : 'offline'" size="sm" />
           <component :is="kindOf(entry.itemKind ?? 'other').icon" v-else class="size-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
           <span class="min-w-[5rem] flex-1" aria-hidden="true">
-            <span class="block truncate text-xs font-semibold text-fg">{{ entry.label }}</span>
-            <span v-if="entry.detail || entry.height > 1" class="block truncate font-mono text-[10px] text-fg-subtle">
+            <span class="block truncate text-xs leading-3.5 font-semibold text-fg">{{ entry.label }}</span>
+            <span v-if="entry.detail || entry.height > 1" class="block truncate font-mono text-micro leading-3 text-fg-subtle">
               {{ entry.detail }}<template v-if="entry.height > 1"> · {{ t('rack.units', { count: entry.height }) }}</template>
             </span>
           </span>
@@ -381,7 +380,7 @@ function portSummary(entry: RackEntry): string | null {
               />
             </li>
           </ul>
-          <span v-if="portSummary(entry)" class="shrink-0 rounded-sm bg-sunken px-1.5 font-mono text-[10px] text-fg-muted tabular" :title="t('gv.rack.ports_summary')" aria-hidden="true">
+          <span v-if="portSummary(entry)" class="shrink-0 rounded-sm bg-sunken px-1.5 font-mono text-micro text-fg-muted tabular" :title="t('gv.rack.ports_summary')" aria-hidden="true">
             {{ portSummary(entry) }}
           </span>
         </div>
@@ -410,7 +409,7 @@ function portSummary(entry: RackEntry): string | null {
 
       <span
         v-else
-        class="my-px flex h-[calc(var(--rack-unit,1.75rem)_-_2px)] flex-1 items-center rounded-[5px] border border-dashed px-2 text-[10px] transition-colors"
+        class="my-px flex h-[calc(var(--rack-unit,1.75rem)_-_2px)] flex-1 items-center rounded-[5px] border border-dashed px-2 text-xs transition-colors"
         :class="[slotClass(slot.unit), hover?.unit === slot.unit ? 'text-fg-muted' : 'text-transparent']"
       >
         <template v-if="hover?.unit === slot.unit">{{ hover.valid ? t('gv.rack.drop_here') : t('gv.rack.drop_blocked') }}</template>
@@ -418,7 +417,7 @@ function portSummary(entry: RackEntry): string | null {
 
       <span data-channel class="shrink-0" :style="{ width: channelPx + 'px' }" aria-hidden="true" />
 
-      <span class="w-6 shrink-0 font-mono text-[10px] leading-[var(--rack-unit,1.75rem)] text-fg-subtle tabular max-sm:hidden" aria-hidden="true">{{ slot.unit }}</span>
+      <span class="w-6 shrink-0 font-mono text-micro leading-[var(--rack-unit,1.75rem)] text-fg-subtle tabular max-sm:hidden" aria-hidden="true">{{ slot.unit }}</span>
     </div>
   </div>
 </template>

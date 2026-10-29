@@ -108,7 +108,7 @@ function apply() {
           v-for="port in ports"
           :key="port.id"
           type="button"
-          class="flex size-7 items-center justify-center rounded-[4px] border font-mono text-[10px] font-semibold tabular transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          class="flex size-7 items-center justify-center rounded-[4px] border font-mono text-xs font-semibold tabular transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           :class="[
             colourOfPort[port.id] ? 'text-[#0c0f14]' : 'border-line text-fg-muted hover:border-accent hover:text-fg',
             pendingPortId === port.id && 'ring-2 ring-warn ring-offset-2 ring-offset-surface',

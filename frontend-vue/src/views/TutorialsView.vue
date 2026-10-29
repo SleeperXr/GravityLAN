@@ -66,7 +66,7 @@ const tx = (id: string, field: string) => t(`gv.tutorials.${id}.${field}`);
                 <span class="grid size-9 shrink-0 place-items-center rounded-md bg-accent/10 text-accent-text"><component :is="tut.icon" class="size-4.5" aria-hidden="true" /></span>
                 <div class="min-w-0 flex-1">
                   <h3 class="text-base font-semibold text-fg">{{ tx(tut.id, 'title') }}</h3>
-                  <p class="mt-0.5 text-sm text-fg-muted">{{ tx(tut.id, 'summary') }}</p>
+                  <p class="mt-0.5 max-w-prose text-sm text-fg-muted">{{ tx(tut.id, 'summary') }}</p>
                 </div>
                 <RouterLink
                   v-if="tut.to"
@@ -81,8 +81,8 @@ const tx = (id: string, field: string) => t(`gv.tutorials.${id}.${field}`);
 
               <ol class="space-y-2">
                 <li v-for="(step, i) in stepsOf(tx(tut.id, 'steps'))" :key="i" class="flex gap-3 text-sm text-fg">
-                  <span class="grid size-5 shrink-0 place-items-center rounded-full bg-raised font-mono text-[11px] font-semibold text-fg-muted">{{ i + 1 }}</span>
-                  <span class="min-w-0 pt-px">{{ step }}</span>
+                  <span class="grid size-5 shrink-0 place-items-center rounded-full bg-raised font-mono text-micro font-semibold text-fg-muted">{{ i + 1 }}</span>
+                  <span class="max-w-prose min-w-0 pt-px">{{ step }}</span>
                 </li>
               </ol>
 
@@ -101,7 +101,7 @@ const tx = (id: string, field: string) => t(`gv.tutorials.${id}.${field}`);
 
               <p class="flex gap-2.5 rounded-md border border-info/25 bg-info/[0.06] p-3 text-sm text-fg-muted">
                 <Lightbulb class="mt-0.5 size-4 shrink-0 text-info-text" aria-hidden="true" />
-                <span>{{ tx(tut.id, 'hint') }}</span>
+                <span class="max-w-prose">{{ tx(tut.id, 'hint') }}</span>
               </p>
 
               <RouterLink v-if="tut.to" :to="tut.to" class="inline-flex items-center gap-1 text-xs font-medium text-info-text hover:underline sm:hidden">

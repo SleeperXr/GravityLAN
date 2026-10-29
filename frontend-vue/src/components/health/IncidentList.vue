@@ -62,10 +62,10 @@ function iconOf(incident: HealthIncident) {
         <span class="min-w-0 flex-1">
           <span class="flex items-baseline justify-between gap-2">
             <span class="truncate text-sm font-bold text-fg">{{ incident.device_name }}</span>
-            <span v-if="ownTime(incident)" class="shrink-0 text-[11px] text-fg-subtle"><RelativeTime :date="incident.timestamp" /></span>
+            <span v-if="ownTime(incident)" class="shrink-0 text-xs text-fg-subtle"><RelativeTime :date="incident.timestamp" /></span>
           </span>
           <span class="mt-0.5 line-clamp-2 block text-xs text-fg-muted">{{ incident.message || incident.status }}</span>
-          <span class="mt-2 flex items-center justify-between gap-2 border-t border-line pt-1.5 font-mono text-[11px] text-fg-subtle">
+          <span class="mt-2 flex items-center justify-between gap-2 border-t border-line pt-1.5 font-mono text-xs text-fg-subtle">
             <span class="truncate">{{ incident.device_ip }}</span>
             <span class="shrink-0 font-semibold">{{ statusWord(incident.status) }}</span>
           </span>

@@ -26,7 +26,7 @@ const roles: LinkRole[] = ['primary', 'backup'];
       <div class="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
-          class="h-7 rounded-full border border-line-strong px-2.5 text-[11px] font-medium"
+          class="h-7 rounded-full border border-line-strong px-2.5 text-xs font-medium"
           :class="!link.color ? 'bg-fg text-canvas' : 'text-fg-muted hover:text-fg'"
           :aria-pressed="!link.color"
           @click="emit('patch', { color: null })"
@@ -66,7 +66,7 @@ const roles: LinkRole[] = ['primary', 'backup'];
           {{ t(`gv.plan.role_${role}`) }}
         </button>
       </div>
-      <p class="mt-1 text-[11px] text-fg-subtle">{{ t('gv.plan.role_hint') }}</p>
+      <p class="mt-1 text-xs text-fg-subtle">{{ t('gv.plan.role_hint') }}</p>
     </fieldset>
     <div class="flex items-end gap-2">
       <label class="flex flex-1 flex-col gap-1.5 text-xs font-medium text-fg">

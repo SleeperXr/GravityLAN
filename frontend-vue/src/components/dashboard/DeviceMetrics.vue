@@ -70,7 +70,7 @@ const expandedRows = computed(() => {
   <template v-if="metrics">
     <div v-if="compact" class="grid grid-cols-2 gap-x-3 gap-y-2">
       <div v-for="m in compactMeters" :key="m.key" class="min-w-0">
-        <div class="mb-1 flex items-baseline justify-between gap-2 text-[11px]">
+        <div class="mb-1 flex items-baseline justify-between gap-2 text-xs">
           <span class="text-fg-subtle">{{ m.label }}</span>
           <span class="font-mono font-medium tabular" :class="texts[m.tone]">{{ m.text }}</span>
         </div>
@@ -106,7 +106,7 @@ const expandedRows = computed(() => {
 
       <div v-if="metrics.network && Object.keys(metrics.network).length > 0" class="text-xs">
         <span class="mb-1 flex items-center gap-1.5 text-fg-muted"><Activity class="size-3.5" aria-hidden="true" />{{ t('agent.network') }}</span>
-        <div v-for="(data, iface) in metrics.network" :key="iface" class="flex justify-between font-mono text-[11px] text-fg-subtle">
+        <div v-for="(data, iface) in metrics.network" :key="iface" class="flex justify-between font-mono text-xs text-fg-subtle">
           <span>{{ iface }}</span>
           <span>↓ {{ formatBps(data?.rx_bytes_sec ?? 0) }} · ↑ {{ formatBps(data?.tx_bytes_sec ?? 0) }}</span>
         </div>

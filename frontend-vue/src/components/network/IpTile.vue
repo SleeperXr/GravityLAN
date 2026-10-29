@@ -89,17 +89,17 @@ const ports = computed(() => [
     <PopoverTrigger as-child>
       <button
         type="button"
-        class="relative flex aspect-square min-w-0 items-center justify-center rounded-md border font-mono text-[0.72em] transition-[transform,border-color] duration-100 hover:-translate-y-px hover:border-fg-subtle focus-visible:z-10"
+        class="relative flex aspect-square min-w-0 items-center justify-center rounded-md border @container font-mono text-[max(var(--text-xs),0.8em)] transition-[transform,border-color] duration-100 hover:-translate-y-px hover:border-fg-subtle focus-visible:z-10"
         :class="[tileClass, tile.isReserved && 'border-dashed', host?.is_monitored && !online && 'ring-2 ring-danger/40 ring-inset']"
         :style="lineStyle"
         :aria-label="label"
       >
         <span v-if="tile.group" class="absolute inset-x-0.5 top-0.5 h-[3px] rounded-full" :style="{ backgroundColor: tile.group.color }" aria-hidden="true" />
-        <span v-if="showAreaLabel && tile.group" class="absolute -top-2 left-1 z-[1] max-w-[calc(100%*3)] truncate rounded-[3px] px-1 text-[9px] leading-[14px] font-semibold text-black" :style="{ backgroundColor: tile.group.color }" aria-hidden="true">
+        <span v-if="showAreaLabel && tile.group" class="absolute -top-2 left-1 z-[1] max-w-[calc(100%*3)] truncate rounded-[3px] px-1 text-micro leading-[14px] font-semibold text-black" :style="{ backgroundColor: tile.group.color }" aria-hidden="true">
           {{ tile.group.name }}
         </span>
-        <span v-if="emojiIcon" class="text-[1.4em]" :class="!online && 'opacity-50'" aria-hidden="true">{{ emojiIcon }}</span>
-        <span v-else>{{ tile.i }}</span>
+        <span v-if="emojiIcon" class="hidden text-[1.4em] @min-[1.75rem]:inline" :class="!online && 'opacity-50'" aria-hidden="true">{{ emojiIcon }}</span>
+        <span v-else class="hidden @min-[1.75rem]:inline">{{ tile.i }}</span>
         <span class="absolute top-1 right-1 size-1.5 rounded-full" :class="online ? 'bg-accent' : 'bg-danger'" aria-hidden="true" />
         <Lock v-if="tile.isReserved" class="absolute right-0.5 bottom-0.5 size-2.5 text-info-text" aria-hidden="true" />
         <Eye v-if="host?.is_monitored" class="absolute bottom-0.5 left-0.5 size-2.5" :class="online ? 'text-info-text' : 'animate-pulse text-danger-text'" aria-hidden="true" />
@@ -159,7 +159,7 @@ const ports = computed(() => [
         <div v-if="ports.length > 0" class="mt-3 border-t border-line pt-3">
           <p class="gl-eyebrow mb-1.5">Services / {{ t('network.nmap_scan') }}</p>
           <div class="flex flex-wrap gap-1">
-            <span v-for="p in ports" :key="p.key" class="rounded-sm px-1.5 py-0.5 font-mono text-[10px]" :class="p.tone === 'info' ? 'bg-info/10 text-info-text' : 'bg-accent/10 text-accent-text'">{{ p.text }}</span>
+            <span v-for="p in ports" :key="p.key" class="rounded-sm px-1.5 py-0.5 font-mono text-xs" :class="p.tone === 'info' ? 'bg-info/10 text-info-text' : 'bg-accent/10 text-accent-text'">{{ p.text }}</span>
           </div>
         </div>
       </PopoverContent>
@@ -168,14 +168,14 @@ const ports = computed(() => [
 
   <div
     v-else
-    class="relative flex aspect-square min-w-0 items-center justify-center rounded-md border font-mono text-[0.72em]"
+    class="relative flex aspect-square min-w-0 items-center justify-center rounded-md border @container font-mono text-[max(var(--text-xs),0.8em)]"
     :class="tileClass"
     :title="label"
   >
     <span v-if="tile.group" class="absolute inset-x-0.5 top-0.5 h-[3px] rounded-full opacity-70" :style="{ backgroundColor: tile.group.color }" aria-hidden="true" />
-    <span v-if="showAreaLabel && tile.group" class="absolute -top-2 left-1 z-[1] truncate rounded-[3px] px-1 text-[9px] leading-[14px] font-semibold text-black" :style="{ backgroundColor: tile.group.color }" aria-hidden="true">
+    <span v-if="showAreaLabel && tile.group" class="absolute -top-2 left-1 z-[1] max-w-[calc(100%*3)] truncate rounded-[3px] px-1 text-micro leading-[14px] font-semibold text-black" :style="{ backgroundColor: tile.group.color }" aria-hidden="true">
       {{ tile.group.name }}
     </span>
-    {{ tile.i }}
+    <span class="hidden @min-[1.75rem]:inline">{{ tile.i }}</span>
   </div>
 </template>

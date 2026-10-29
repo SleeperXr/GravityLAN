@@ -41,12 +41,12 @@ const links = [
       <div class="bg-surface p-4">
         <p class="gl-eyebrow">{{ t('about.agent') }}</p>
         <p class="mt-1 font-mono text-xl font-semibold text-fg tabular">{{ agentVersion ? `v${agentVersion}` : '–' }}</p>
-        <p class="mt-0.5 text-[11px] text-fg-subtle">{{ t('about.agent_hint') }}</p>
+        <p class="mt-0.5 text-xs text-fg-subtle">{{ t('about.agent_hint') }}</p>
       </div>
       <div class="bg-surface p-4">
         <p class="gl-eyebrow">{{ t('about.interface') }}</p>
         <p class="mt-1 text-base font-semibold text-fg">GravityUI</p>
-        <p class="mt-0.5 text-[11px] text-fg-subtle">
+        <p class="mt-0.5 text-xs text-fg-subtle">
           {{ t('about.interface_dev') }} · <a :href="REACT_UI_URL" class="text-info-text hover:underline">{{ t('about.classic') }}</a>
         </p>
       </div>
@@ -54,7 +54,7 @@ const links = [
 
     <section class="gl-card p-5" aria-labelledby="about-links">
       <h2 id="about-links" class="text-sm font-semibold text-fg">{{ t('about.project') }}</h2>
-      <p class="mt-1 text-sm text-fg-muted">{{ t('about.project_text') }}</p>
+      <p class="mt-1 max-w-prose text-sm text-fg-muted">{{ t('about.project_text') }}</p>
       <ul class="mt-3 grid gap-2 sm:grid-cols-2">
         <li v-for="link in links" :key="link.href">
           <a
@@ -66,7 +66,7 @@ const links = [
             <component :is="link.icon" class="size-4 shrink-0 text-accent-text" aria-hidden="true" />
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium text-fg">{{ t(link.label) }}</span>
-              <span class="block truncate font-mono text-[11px] text-fg-subtle">{{ link.hint.startsWith('about.') ? t(link.hint) : link.hint }}</span>
+              <span class="block truncate font-mono text-xs text-fg-subtle">{{ link.hint.startsWith('about.') ? t(link.hint) : link.hint }}</span>
             </span>
             <ExternalLink class="size-3.5 shrink-0 text-fg-subtle" aria-hidden="true" />
           </a>
@@ -76,7 +76,7 @@ const links = [
 
     <section class="gl-card p-5" aria-labelledby="about-license">
       <h2 id="about-license" class="flex items-center gap-2 text-sm font-semibold text-fg"><Scale class="size-4 text-fg-subtle" aria-hidden="true" />{{ t('about.license') }}</h2>
-      <p class="mt-1 text-sm text-fg-muted">{{ t('about.license_text') }}</p>
+      <p class="mt-1 max-w-prose text-sm text-fg-muted">{{ t('about.license_text') }}</p>
       <p class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
         <a :href="PROJECT_LINKS.license" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-info-text hover:underline"><BookOpen class="size-3.5" aria-hidden="true" />LICENSE</a>
         <a :href="PROJECT_LINKS.notices" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-info-text hover:underline"><Box class="size-3.5" aria-hidden="true" />{{ t('about.third_party') }}</a>

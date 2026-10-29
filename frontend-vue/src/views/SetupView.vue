@@ -175,7 +175,7 @@ const features = [
     <header class="relative flex items-center justify-between gap-3 px-5 py-4 md:px-8">
       <div class="flex items-center gap-2.5">
         <span class="text-base font-bold tracking-tight text-fg">{{ t('app.title') }}</span>
-        <span class="rounded-sm border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[11px] font-semibold text-accent-text">{{ t('setup.first_run') }}</span>
+        <span class="rounded-sm border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-micro font-semibold text-accent-text">{{ t('setup.first_run') }}</span>
       </div>
       <div class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('gv.language')">
         <button
@@ -205,7 +205,7 @@ const features = [
               aria-hidden="true"
             />
             <span
-              class="relative z-10 grid size-[22px] place-items-center rounded-full border-[3px] font-mono text-[10px] font-bold transition-colors"
+              class="relative z-10 grid size-[22px] place-items-center rounded-full border-[3px] font-mono text-micro font-bold transition-colors"
               :class="{
                 'border-accent bg-accent text-accent-fg': s.state === 'done',
                 'border-accent bg-canvas text-accent-text ring-4 ring-accent/20': s.state === 'current',
@@ -217,7 +217,7 @@ const features = [
               <Check v-if="s.state === 'done'" class="size-3" :stroke-width="3.5" />
               <template v-else-if="s.state === 'skipped'">–</template>
             </span>
-            <span class="text-[11px] font-medium sm:text-xs" :class="s.state === 'current' ? 'text-fg' : 'text-fg-subtle'">{{ t(`setup.${s.key}`) }}</span>
+            <span class="text-micro font-medium sm:text-xs" :class="s.state === 'current' ? 'text-fg' : 'text-fg-subtle'">{{ t(`setup.${s.key}`) }}</span>
           </li>
         </ol>
 

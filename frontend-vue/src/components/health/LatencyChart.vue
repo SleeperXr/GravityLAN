@@ -127,8 +127,8 @@ const hovered = computed(() => (active.value !== null ? points.value[active.valu
         </template>
         <line v-if="hovered" :x1="hovered.x" :x2="hovered.x" :y1="PAD.top" :y2="PAD.top + plotH" stroke="var(--gl-fg-subtle)" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" />
       </svg>
-      <span v-for="tick in yTicks" :key="`y${tick.y}`" class="absolute left-0 -translate-y-1/2 font-mono text-[10px] text-fg-subtle" :style="{ top: `${(tick.y / H) * 100}%` }">{{ tick.label }}</span>
-      <span v-for="tick in xTicks" :key="`x${tick.x}`" class="absolute bottom-0 -translate-x-1/2 font-mono text-[10px] whitespace-nowrap text-fg-subtle" :style="{ left: `${(tick.x / W) * 100}%` }">{{ tick.label }}</span>
+      <span v-for="tick in yTicks" :key="`y${tick.y}`" class="absolute left-0 -translate-y-1/2 font-mono text-micro text-fg-subtle" :style="{ top: `${(tick.y / H) * 100}%` }">{{ tick.label }}</span>
+      <span v-for="tick in xTicks" :key="`x${tick.x}`" class="absolute bottom-0 -translate-x-1/2 font-mono text-micro whitespace-nowrap text-fg-subtle" :style="{ left: `${(tick.x / W) * 100}%` }">{{ tick.label }}</span>
       <span
         v-if="hovered"
         class="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-sunken"
@@ -141,7 +141,7 @@ const hovered = computed(() => (active.value !== null ? points.value[active.valu
         class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs shadow-pop"
         :style="{ left: `${Math.min(Math.max((hovered.x / W) * 100, 15), 85)}%`, top: `${Math.max(14, (hovered.y / H) * 100 - 6)}%` }"
       >
-        <p class="font-mono text-[10px] text-fg-subtle">{{ formatDateTime(hovered.s.timestamp, { dateStyle: 'short', timeStyle: 'medium' }) }}</p>
+        <p class="font-mono text-xs text-fg-subtle">{{ formatDateTime(hovered.s.timestamp, { dateStyle: 'short', timeStyle: 'medium' }) }}</p>
         <p class="mt-0.5 flex items-center gap-1.5 font-mono font-semibold" :class="hovered.s.is_online ? 'text-fg' : 'text-danger-text'">
           <span class="size-2 rounded-full" :class="hovered.s.is_online ? 'bg-info' : 'bg-danger'" />
           {{ hovered.s.latency_ms !== null ? `${hovered.s.latency_ms.toFixed(1)} ms` : t('common.offline') }}

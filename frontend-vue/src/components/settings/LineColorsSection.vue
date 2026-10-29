@@ -64,7 +64,7 @@ async function choose(s: Subnet, color: string | null) {
           <LineBullet :color="networkColor(s.id)" :label="bullet(s)" />
           <span class="min-w-0">
             <span class="block truncate text-sm font-medium text-fg">{{ s.name || s.cidr }}</span>
-            <span class="block font-mono text-[11px] text-fg-subtle">{{ s.cidr }}<template v-if="s.vlan_id != null"> · VLAN {{ s.vlan_id }}</template></span>
+            <span class="block font-mono text-xs text-fg-subtle">{{ s.cidr }}<template v-if="s.vlan_id != null"> · VLAN {{ s.vlan_id }}</template></span>
           </span>
         </span>
         <span class="flex flex-wrap items-center gap-1.5" role="group" :aria-label="t('gv.lines.colors_for', { name: s.name || s.cidr })">
@@ -82,7 +82,7 @@ async function choose(s: Subnet, color: string | null) {
           </button>
           <label class="relative grid size-6 cursor-pointer place-items-center overflow-hidden rounded-full border border-dashed border-line-strong" :title="t('gv.lines.custom')">
             <span class="sr-only">{{ t('gv.lines.custom') }}</span>
-            <span class="text-[11px] font-bold text-fg-subtle" aria-hidden="true">+</span>
+            <span class="text-xs font-bold text-fg-subtle" aria-hidden="true">+</span>
             <input type="color" class="absolute inset-0 cursor-pointer opacity-0" :value="toHex(custom(s))" @change="choose(s, ($event.target as HTMLInputElement).value)" />
           </label>
           <button

@@ -271,9 +271,9 @@ function openEditor(device: Device) {
         >
           <LineBullet :color="networkColor(sub.id)" :label="lineLabel(sub)" size="sm" />
           <span class="font-medium text-fg">{{ sub.name }}</span>
-          <span v-if="sub.vlan_id != null" class="font-mono text-[11px] text-fg-subtle">VLAN {{ sub.vlan_id }}</span>
+          <span v-if="sub.vlan_id != null" class="font-mono text-xs text-fg-subtle">VLAN {{ sub.vlan_id }}</span>
           <SubnetModeBadge :subnet="sub" />
-          <span v-if="sub.is_enabled === false" class="text-[11px] text-warn-text">{{ t('network.subnet_paused') }}</span>
+          <span v-if="sub.is_enabled === false" class="text-xs text-warn-text">{{ t('network.subnet_paused') }}</span>
         </button>
         <button
           v-if="prefix === prefixOf(sub.cidr)"

@@ -108,7 +108,7 @@ const shortTime = (time: string) => time.slice(11, 19);
           @click="level = opt"
         >
           {{ t(`gv.logs.level_${opt}`) }}
-          <span v-if="opt !== 'all' && counts[opt] > 0" class="rounded-sm px-1 font-mono text-[10px]" :class="opt === 'error' ? 'bg-danger/15 text-danger-text' : 'bg-warn/15 text-warn-text'">{{ counts[opt] }}</span>
+          <span v-if="opt !== 'all' && counts[opt] > 0" class="rounded-sm px-1 font-mono text-micro" :class="opt === 'error' ? 'bg-danger/15 text-danger-text' : 'bg-warn/15 text-warn-text'">{{ counts[opt] }}</span>
         </button>
       </div>
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
@@ -126,7 +126,7 @@ const shortTime = (time: string) => time.slice(11, 19);
     </div>
 
     <section class="gl-card relative flex min-h-0 flex-1 flex-col overflow-hidden" :aria-label="t('settings.live_logs_title')">
-      <div ref="box" class="min-h-0 flex-1 overflow-auto bg-sunken py-2 font-mono text-[12px] leading-relaxed" role="log" aria-live="off" tabindex="0" @scroll="onScroll">
+      <div ref="box" class="min-h-0 flex-1 overflow-auto bg-sunken py-2 font-mono text-xs leading-relaxed" role="log" aria-live="off" tabindex="0" @scroll="onScroll">
         <p v-if="lines.length === 0" class="px-4 py-3 text-fg-subtle italic">{{ paused ? t('gv.logs.paused_hint') : t('gv.logs.waiting') }}</p>
         <p v-else-if="visible.length === 0" class="px-4 py-3 text-fg-subtle italic">{{ t('gv.logs.no_match') }}</p>
         <div

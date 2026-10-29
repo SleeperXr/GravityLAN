@@ -165,7 +165,7 @@ async function remove(key: SshKey) {
       <div v-if="generated" class="space-y-2 rounded-lg border border-accent/40 bg-accent/[0.07] p-3 text-sm">
         <p class="flex items-center gap-2 font-semibold text-fg"><ShieldCheck class="size-4 text-accent-text" aria-hidden="true" />{{ t('ssh.keys.generated_title', { name: generated.name }) }}</p>
         <p class="text-xs text-fg-muted">{{ t('ssh.keys.generated_hint') }}</p>
-        <code class="block rounded-md bg-sunken p-2 font-mono text-[11px] break-all text-fg">{{ generated.public_key }}</code>
+        <code class="block rounded-md bg-sunken p-2 font-mono text-xs break-all text-fg">{{ generated.public_key }}</code>
         <Button size="sm" @click="copyPublicKey(generated)"><Copy aria-hidden="true" />{{ t('ssh.keys.copy_public') }}</Button>
       </div>
     </section>
@@ -180,8 +180,8 @@ async function remove(key: SshKey) {
             <span class="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-fg">
               {{ key.name }}<Badge mono>{{ key.key_type }}</Badge><Badge v-if="key.has_passphrase">{{ t('ssh.keys.with_passphrase') }}</Badge>
             </span>
-            <span class="block truncate font-mono text-[11px] text-fg-subtle">{{ key.fingerprint }}</span>
-            <span class="block text-[11px] text-fg-subtle">{{ t('ssh.keys.last_used', { date: when(key.last_used_at) }) }}</span>
+            <span class="block truncate font-mono text-xs text-fg-subtle">{{ key.fingerprint }}</span>
+            <span class="block text-xs text-fg-subtle">{{ t('ssh.keys.last_used', { date: when(key.last_used_at) }) }}</span>
           </span>
           <Button size="icon-sm" variant="ghost" :title="t('ssh.keys.copy_public')" :aria-label="t('ssh.keys.copy_public')" @click="copyPublicKey(key)"><Copy aria-hidden="true" /></Button>
           <Button size="icon-sm" variant="danger-ghost" :title="t('common.delete')" :aria-label="t('common.delete')" @click="remove(key)"><Trash2 aria-hidden="true" /></Button>

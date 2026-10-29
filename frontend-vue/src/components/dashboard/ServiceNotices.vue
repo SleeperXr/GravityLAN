@@ -110,8 +110,8 @@ function open(n: Notice) {
             <span class="block text-sm leading-5 font-bold" :class="n.tone === 'danger' ? 'text-danger-text' : n.tone === 'warn' ? 'text-warn-text' : 'text-fg'">
               {{ n.title }}
             </span>
-            <span class="mt-0.5 block truncate font-mono text-[11px] text-fg-subtle">{{ n.detail }}</span>
-            <span v-if="n.since" class="mt-0.5 block text-[11px] text-fg-subtle"><RelativeTime :date="n.since" /></span>
+            <span class="mt-0.5 block truncate font-mono text-xs text-fg-subtle">{{ n.detail }}</span>
+            <span v-if="n.since" class="mt-0.5 block text-xs text-fg-subtle"><RelativeTime :date="n.since" /></span>
           </span>
           <ArrowRight class="mt-1 size-4 shrink-0 text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
         </button>

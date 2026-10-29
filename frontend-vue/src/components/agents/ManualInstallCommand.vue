@@ -72,7 +72,7 @@ async function copy() {
     </div>
     <div class="flex items-stretch gap-2">
       <code
-        class="min-w-0 flex-1 overflow-x-auto rounded-md border border-line bg-sunken px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all"
+        class="min-w-0 flex-1 overflow-x-auto rounded-md border border-line bg-sunken px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all"
         :class="mode === 'uninstall' ? 'text-danger-text' : 'text-fg'"
       >{{ command || t(failed ? 'agent.install_code_failed' : 'common.loading') }}</code>
       <Button size="sm" class="h-auto max-md:h-auto" :disabled="!command" @click="copy">
@@ -80,7 +80,7 @@ async function copy() {
         {{ t('common.copy') }}
       </Button>
     </div>
-    <div v-if="mode === 'install'" class="flex flex-wrap items-center justify-between gap-2 text-[11px] text-fg-subtle">
+    <div v-if="mode === 'install'" class="flex flex-wrap items-center justify-between gap-2 text-xs text-fg-subtle">
       <span>{{ installCode ? t('agent.install_code_hint', { time: formatDateTime(installCode.expiresAt, { hour: '2-digit', minute: '2-digit' }) }) : '' }}</span>
       <button type="button" class="inline-flex items-center gap-1 hover:text-fg" @click="request++">
         <RefreshCw class="size-3" aria-hidden="true" />

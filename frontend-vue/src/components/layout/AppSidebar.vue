@@ -18,9 +18,9 @@ const activeId = computed(() => route.meta.navId as string | undefined);
 <template>
   <aside class="hidden h-dvh w-60 shrink-0 flex-col border-r border-line bg-chrome md:flex">
     <div class="flex h-14 items-center gap-2 px-5">
-      <span class="text-[15px] font-semibold tracking-tight text-fg">{{ t('app.title') }}</span>
-      <span v-if="props.version" class="font-mono text-[11px] text-fg-subtle">v{{ props.version }}</span>
-      <span class="ml-auto rounded-sm border border-accent/25 bg-accent/10 px-1.5 py-px text-[10px] font-semibold text-accent-text">
+      <span class="text-base font-semibold tracking-tight text-fg">{{ t('app.title') }}</span>
+      <span v-if="props.version" class="font-mono text-micro text-fg-subtle">v{{ props.version }}</span>
+      <span class="ml-auto rounded-sm border border-accent/25 bg-accent/10 px-1.5 py-px text-micro font-semibold text-accent-text">
         {{ t('gv.brand_tag') }}
       </span>
     </div>
@@ -55,14 +55,14 @@ const activeId = computed(() => route.meta.navId as string | undefined);
         <span class="flex-1 truncate">{{ t(item.label) }}</span>
         <span
           v-if="item.id === 'dashboard' && store.totalCount > 0"
-          class="font-mono text-[11px] text-fg-subtle tabular"
+          class="font-mono text-xs text-fg-subtle tabular"
           :aria-label="`${store.onlineCount} / ${store.totalCount}`"
         >
           {{ store.onlineCount }}/{{ store.totalCount }}
         </span>
         <span
           v-else-if="item.id === 'ssh' && ssh.liveCount > 0"
-          class="rounded-sm bg-accent/15 px-1.5 font-mono text-[11px] text-accent-text"
+          class="rounded-sm bg-accent/15 px-1.5 font-mono text-micro text-accent-text"
           :title="t('ssh.sessions.open_in_background', { count: ssh.liveCount })"
         >
           {{ ssh.liveCount }}

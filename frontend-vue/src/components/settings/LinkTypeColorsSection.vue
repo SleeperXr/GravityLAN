@@ -50,7 +50,7 @@ async function choose(type: string, color: string | null) {
           </svg>
           <span class="min-w-0">
             <span class="block truncate font-mono text-sm font-medium text-fg">{{ label(type) }}</span>
-            <span class="block text-[11px] text-fg-subtle">{{ custom(type) ? custom(type) : t('gv.link_types.network') }}</span>
+            <span class="block text-xs text-fg-subtle">{{ custom(type) ? custom(type) : t('gv.link_types.network') }}</span>
           </span>
         </span>
         <span class="flex flex-wrap items-center gap-1.5" role="group" :aria-label="t('gv.link_types.for', { type: label(type) })">
@@ -68,7 +68,7 @@ async function choose(type: string, color: string | null) {
           </button>
           <label class="relative grid size-6 cursor-pointer place-items-center overflow-hidden rounded-full border border-dashed border-line-strong" :title="t('gv.lines.custom')">
             <span class="sr-only">{{ t('gv.lines.custom') }}</span>
-            <span class="text-[11px] font-bold text-fg-subtle" aria-hidden="true">+</span>
+            <span class="text-xs font-bold text-fg-subtle" aria-hidden="true">+</span>
             <input type="color" class="absolute inset-0 cursor-pointer opacity-0" :value="toHex(custom(type))" @change="choose(type, ($event.target as HTMLInputElement).value)" />
           </label>
           <button

@@ -287,12 +287,14 @@ Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden 
 - **Body** (400–500, 0,875 rem): Fließtext, Navigation, Buttons (500, primär 600), Beschreibungen (`max-w-2xl`).
 - **Meta** (0,75 rem): Hilfetexte, Zähler, Zeitangaben.
 - **Label** (600, 0,75 rem, `fg-subtle`, normale Schreibung; Klasse `.gl-eyebrow`): Beschriftung direkt über einem Messwert oder einer Definitionsliste und kleine Listengruppen-Überschriften. Kein Versal-Satz, kein Vorspann über Seiten- oder Abschnittstiteln.
-- **Badge** (500, 11 px): Badges, mobile Tab-Beschriftungen, Versionsnummer.
-- **Mono** (11 px bis 0,875 rem): IPs, CIDRs, MACs, Ports, Latenzen („2,4 ms“), Online-Zähler („14/15“), Linktypen.
-- **Netzschild** (800, 10 px / 12 px / 14 px in sm/md/lg): VLAN-ID oder Anfangsbuchstabe.
-- **Körpername** (700, 13 px) mit Mono-Zeile (10,5 px) darunter: im Orbit-Netzplan auf Pille mit halbtransparentem Hintergrund für optimale Lesbarkeit bei jedem Zoom.
+- **Badge / Micro** (500, 11 px, Utility `text-micro`): Badges und Zähl-Pillen, mobile Tab-Beschriftungen, Versionsnummer, Rack-Höheneinheiten, Achsenbeschriftungen von Diagrammen und dichte Mono-Metadaten (IP/HE-Zeile im Rack-Einschub). Das ist die Untergrenze: nichts wird kleiner gesetzt.
+- **Mono** (11 px bis 0,875 rem): IPs, CIDRs, MACs, Ports, Latenzen („2,4 ms“), Online-Zähler („14/15“), Linktypen. In Listen, Hilfezeilen und Popovers 12 px (`text-xs`); 11 px nur dort, wo ein dichtes Raster sonst bricht.
+- **Netzschild** (800, 11 px / 12 px / 14 px in sm/md/lg): VLAN-ID oder Anfangsbuchstabe.
+- **Körpername** (700, 12 px) mit Mono-Zeile (11 px) darunter: im Orbit-Netzplan auf Pille mit halbtransparentem Hintergrund für optimale Lesbarkeit bei jedem Zoom.
 
 ### Named Rules
+**The Untergrenze Rule.** Fließtext, Hilfetexte, Beschriftungen, Buttons und Listen-Unterzeilen stehen mindestens in 12 px (`text-xs`); 11 px (`text-micro`) nur für die oben genannten Mikro-Beschriftungen, nie kleiner, keine freien Pixelwerte (`text-[10px]`). Passt eine Größe nicht in ein dichtes Raster (IP-Kacheln, Rack-Zeilen, Port-Leiste), wird Inhalt gekürzt oder ausgeblendet, nicht die Schrift verkleinert.
+
 **The Abgelesen-in-Mono Rule.** Alles, was eine Adresse, ein Zähler oder ein Messwert ist, steht in JetBrains Mono mit Tabellenziffern; Fließtext und Namen nie.
 
 ## Layout

@@ -257,7 +257,7 @@ function clearFilters() {
             :placeholder="t('gv.dashboard.search')"
             class="h-9 w-full rounded-md max-md:h-11 border border-line bg-sunken pr-14 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none"
           />
-          <kbd class="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle sm:inline">
+          <kbd class="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-micro text-fg-subtle sm:inline">
             Ctrl K
           </kbd>
         </label>
