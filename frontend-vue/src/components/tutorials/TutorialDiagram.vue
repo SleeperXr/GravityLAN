@@ -4,7 +4,8 @@ import type { DiagramKind } from './tutorials';
 
 /**
  * Small explanatory diagrams for the tutorials. Drawn with the theme's colour variables, so they
- * follow light and dark mode; every label sits inside a box wide enough for its German text.
+ * follow light and dark mode; every label sits inside a box wide enough for its German text. A diagram is drawn
+ * at least at its viewBox width (1 unit = 1 px), so no label renders below 11 px.
  */
 defineProps<{ kind: DiagramKind }>();
 const d = (key: string) => t(`gv.tutorials.diagram.${key}`);
@@ -16,9 +17,13 @@ const routes = [
 </script>
 
 <template>
-  <figure class="overflow-x-auto rounded-md border border-line bg-sunken p-3">
+  <!-- Never drawn narrower than its viewBox, so 11-unit labels stay 11 px; a narrow card scrolls the figure, not the page -->
+  <figure
+    class="overflow-x-auto rounded-md border border-line bg-sunken p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    tabindex="0"
+  >
     <!-- Setup: wizard, scan subnets, first scan, overview -->
-    <svg v-if="kind === 'setup'" viewBox="0 0 680 120" class="min-w-[560px]" role="img" :aria-label="d('setup_label')">
+    <svg v-if="kind === 'setup'" viewBox="0 0 680 120" class="w-full min-w-[680px]" role="img" :aria-label="d('setup_label')">
       <defs>
         <marker id="tut-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="var(--gl-fg-subtle)" />
@@ -34,7 +39,7 @@ const routes = [
     </svg>
 
     <!-- How GravityLAN reaches a subnet: L2 direct, L3 routed, L2 probe -->
-    <svg v-else-if="kind === 'routing'" viewBox="0 0 680 210" class="min-w-[560px]" role="img" :aria-label="d('routing_label')">
+    <svg v-else-if="kind === 'routing'" viewBox="0 0 680 210" class="w-full min-w-[680px]" role="img" :aria-label="d('routing_label')">
       <rect x="10" y="75" width="130" height="60" rx="10" fill="var(--gl-raised)" stroke="var(--gl-accent)" stroke-width="1.5" />
       <text x="75" y="109" text-anchor="middle" font-size="13" font-weight="700" fill="var(--gl-fg)">GravityLAN</text>
       <g v-for="(row, i) in routes" :key="row.key" :transform="`translate(0, ${i * 70})`">
@@ -47,7 +52,7 @@ const routes = [
     </svg>
 
     <!-- Agent: installed over SSH, then reports on its own -->
-    <svg v-else-if="kind === 'agent'" viewBox="0 0 680 150" class="min-w-[560px]" role="img" :aria-label="d('agent_label')">
+    <svg v-else-if="kind === 'agent'" viewBox="0 0 680 150" class="w-full min-w-[680px]" role="img" :aria-label="d('agent_label')">
       <defs>
         <marker id="tut-arrow-agent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="var(--gl-fg-subtle)" />
@@ -69,7 +74,7 @@ const routes = [
     </svg>
 
     <!-- Measurement data tiers -->
-    <svg v-else-if="kind === 'telemetry'" viewBox="0 0 680 120" class="min-w-[560px]" role="img" :aria-label="d('telemetry_label')">
+    <svg v-else-if="kind === 'telemetry'" viewBox="0 0 680 120" class="w-full min-w-[680px]" role="img" :aria-label="d('telemetry_label')">
       <defs>
         <marker id="tut-arrow-tel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="var(--gl-fg-subtle)" />

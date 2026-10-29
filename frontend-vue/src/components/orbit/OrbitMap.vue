@@ -928,7 +928,7 @@ useResizeObserver(svgRef, initialFit);
     <!-- Search: highlights matches, Enter flies there -->
     <div
       v-if="!editing"
-      class="absolute top-3 left-3 z-10 flex h-9 items-center gap-2 rounded-md border border-line bg-surface/95 px-2.5 shadow-pop backdrop-blur focus-within:border-accent"
+      class="absolute top-3 left-3 z-10 flex h-9 items-center gap-2 rounded-md bg-surface/95 px-2.5 shadow-pop backdrop-blur focus-within:ring-1 focus-within:ring-accent"
       :class="editable ? 'w-[min(16rem,calc(100%-12rem))]' : 'w-[min(16rem,calc(100%-1.5rem))]'"
       @pointerdown.stop
     >
@@ -969,7 +969,7 @@ useResizeObserver(svgRef, initialFit);
     <!-- Plain wheel over the embedded map: the page scrolls, this says how to zoom -->
     <p
       v-if="pageScrolls"
-      class="pointer-events-none absolute top-1/2 left-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-md border border-line bg-surface/95 px-3 py-1.5 text-xs font-medium text-fg shadow-pop backdrop-blur transition-opacity duration-200"
+      class="pointer-events-none absolute top-1/2 left-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface/95 px-3 py-1.5 text-xs font-medium text-fg shadow-pop backdrop-blur transition-opacity duration-200"
       :class="wheelHint ? 'opacity-100' : 'opacity-0'"
       aria-hidden="true"
     >
@@ -980,8 +980,8 @@ useResizeObserver(svgRef, initialFit);
     <button
       v-if="coarsePointer && pageScrolls && !resilienceMode"
       type="button"
-      class="absolute top-14 right-3 z-20 inline-flex h-11 items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold shadow-pop backdrop-blur"
-      :class="touchActive ? 'border-accent bg-accent text-accent-fg' : 'border-line bg-surface/95 text-fg'"
+      class="absolute top-14 right-3 z-20 inline-flex h-11 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold shadow-pop backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+      :class="touchActive ? 'bg-accent text-accent-fg' : 'bg-surface/95 text-fg'"
       @click="touchActive = !touchActive"
     >
       <component :is="touchActive ? Check : Hand" class="size-3.5" aria-hidden="true" />{{ touchActive ? t('gv.orbit.touch_release') : t('gv.orbit.touch_activate') }}
@@ -999,11 +999,11 @@ useResizeObserver(svgRef, initialFit);
     <OrbitTracePanel v-if="!editing && traceFromId != null" :start-label="traceStartLabel" :has-target="traceToId != null" :path="tracedPath" :hops="traceHops" @close="cancelTrace" />
 
     <!-- Motion and zoom controls; a row on phones, where a column of 44 px buttons covered the map height -->
-    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-surface shadow-pop max-md:flex-row">
+    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md bg-surface shadow-pop max-md:flex-row">
       <button
         v-if="problemIds.length && !editing"
         type="button"
-        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 max-md:h-11 max-md:min-w-11 max-md:border-r max-md:border-b-0 px-1 font-mono text-xs font-semibold text-danger-text hover:bg-danger/20"
+        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 max-md:h-11 max-md:min-w-11 max-md:border-r max-md:border-b-0 px-1 font-mono text-xs font-semibold text-danger-text hover:bg-danger/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
         :title="t('gv.orbit.problems_label', { count: problemIds.length })"
         :aria-label="t('gv.orbit.problems_label', { count: problemIds.length })"
         @click="focusNextProblem"
@@ -1013,44 +1013,44 @@ useResizeObserver(svgRef, initialFit);
       <button
         v-if="!editing"
         type="button"
-        class="flex size-8 items-center justify-center border-b border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-r max-md:border-b-0"
+        class="flex size-8 items-center justify-center border-b border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-r max-md:border-b-0"
         :class="resilienceMode && 'bg-warn/10 text-warn-text'"
         :title="t('gv.orbit.resilience')"
         :aria-label="t('gv.orbit.resilience')"
         :aria-pressed="resilienceMode"
         @click="resilienceMode = !resilienceMode"
       >
-        <ShieldAlert class="size-3.5" />
+        <ShieldAlert class="size-3.5" aria-hidden="true" />
       </button>
       <button
         type="button"
-        class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11"
+        class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11"
         :class="vitalityMode !== 'off' && 'text-accent-text'"
         :title="t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) })"
         :aria-label="t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) })"
         @click="cycleVitality"
       >
-        <Sparkles class="size-3.5" />
+        <Sparkles class="size-3.5" aria-hidden="true" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
-        <Plus class="size-4" />
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
+        <Plus class="size-4" aria-hidden="true" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_out')" @click="view.zoomBy(0.82)">
-        <Minus class="size-4" />
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_out')" @click="view.zoomBy(0.82)">
+        <Minus class="size-4" aria-hidden="true" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
-        <Maximize class="size-3.5" />
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
+        <Maximize class="size-3.5" aria-hidden="true" />
       </button>
       <button
         v-if="fullscreenSupported"
         type="button"
-        class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l"
+        class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-t-0 max-md:border-l"
         :aria-label="isFullscreen ? t('gv.orbit.exit_fullscreen') : t('gv.orbit.fullscreen')"
         :title="isFullscreen ? t('gv.orbit.exit_fullscreen') : t('gv.orbit.fullscreen')"
         :aria-pressed="isFullscreen"
         @click="toggleFullscreen()"
       >
-        <component :is="isFullscreen ? Shrink : Expand" class="size-3.5" />
+        <component :is="isFullscreen ? Shrink : Expand" class="size-3.5" aria-hidden="true" />
       </button>
     </div>
 

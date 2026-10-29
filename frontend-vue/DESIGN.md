@@ -313,6 +313,7 @@ Das System ist flach und tonal geschichtet: `canvas` → `surface` → `raised`,
 ### Shadow Vocabulary
 - **Kartenkante** (`--gl-shadow-card`; dunkel `0 1px 0 0 rgb(255 255 255 / 0.025) inset`, hell `0 1px 2px rgb(16 20 27 / 0.04)`): auf jeder `.gl-card`, kaum sichtbar.
 - **Schwebend** (`--gl-shadow-pop`; dunkel `0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04)`, hell `0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06)`): Dialoge, Sheets, Popover, Orbit-Bedienelemente und -Inspektorpanels.
+- Kleine Bedienelemente auf der Orbit-Karte (Suche, Zoom-/Bewegungsleiste, Hinweis- und Touch-Pillen) tragen nur `shadow-pop` ohne eigene Rahmenlinie: dessen 1-px-Ring ist ihre Kante. Fokus zeigt ein Akzent-Ring (in der Leiste nach innen, weil sie beschneidet).
 - Dialog-Overlay: Schwarz 55 % mit 2 px Unschärfe.
 
 ### Named Rules
@@ -399,7 +400,7 @@ Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rund
 - **Do** Zustand doppelt kodieren: Ring plus Durchstreichung, unterbrochene Umlaufbahn und Text-Badge („Offline“, „Störung“).
 - **Do** Text auf Tönungen in `*-text` setzen und neue Textfarben in beiden Themen gegen 4,5:1 prüfen.
 - **Do** Adressen, Zähler und Messwerte in JetBrains Mono mit Tabellenziffern setzen.
-- **Do** Bewegung auf `opacity`/`transform` begrenzen; `prefers-reduced-motion` schaltet kontinuierliche Orbit-/Puls-Animationen automatisch ab.
+- **Do** Bewegung auf `opacity`/`transform` begrenzen; `prefers-reduced-motion` schaltet kontinuierliche Orbit-/Puls-Animationen automatisch ab. Fortschritts- und Messbalken füllen sich über `fillShift()`/`fillScale()`/`stackedLayers()` aus `lib/meter.ts`, nie über `width`.
 
 ### Don't:
 - **Don't** Hex-Werte in Komponenten schreiben; Ausnahme ist die Schildtinte (`#0c0f14`) auf vollen Netzfarben.

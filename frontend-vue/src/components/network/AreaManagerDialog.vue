@@ -6,18 +6,30 @@ import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Input from '@/components/ui/Input.vue';
 import { t } from '@/i18n';
+import { linePaletteHex, nextPaletteColour } from '@/lib/palette';
 
 /** Named address ranges (.start–.end) of the shown /24; saved together on "Save". */
 const open = defineModel<boolean>('open', { default: false });
 const props = defineProps<{ areas: NetworkArea[]; prefix: string }>();
 const emit = defineEmits<{ save: [areas: NetworkArea[]] }>();
 
-const EMPTY: NetworkArea = { name: '', start: 0, end: 0, color: '#38bdf8' };
+/** A new area takes the first line colour no area of this /24 uses yet */
+const blankArea = (taken: NetworkArea[]): NetworkArea => ({
+  name: '',
+  start: 0,
+  end: 0,
+  color: nextPaletteColour(
+    taken.map((a) => a.color),
+    linePaletteHex(),
+  ),
+});
 const local = ref<NetworkArea[]>([]);
-const draft = ref<NetworkArea>({ ...EMPTY });
+const draft = ref<NetworkArea>(blankArea([]));
 
 watch(open, (isOpen) => {
-  if (isOpen) local.value = props.areas.map((a) => ({ ...a }));
+  if (!isOpen) return;
+  local.value = props.areas.map((a) => ({ ...a }));
+  draft.value = blankArea(local.value);
 });
 
 const num = (v: unknown) => Math.max(0, Math.min(255, parseInt(String(v), 10) || 0));
@@ -25,12 +37,12 @@ const num = (v: unknown) => Math.max(0, Math.min(255, parseInt(String(v), 10) ||
 function addDraft() {
   if (!draft.value.name.trim() && !draft.value.start && !draft.value.end) return;
   local.value = [...local.value, { ...draft.value }];
-  draft.value = { ...EMPTY };
+  draft.value = blankArea(local.value);
 }
 
 function save() {
   const final = draft.value.name.trim() ? [...local.value, { ...draft.value }] : local.value;
-  draft.value = { ...EMPTY };
+  draft.value = blankArea(final);
   emit('save', final);
   open.value = false;
 }

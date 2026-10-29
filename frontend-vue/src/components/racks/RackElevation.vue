@@ -8,13 +8,14 @@ import type { RackCable, RackPort } from '@/types';
 import { draggingKey } from './rackDrag';
 import { kindOf } from './rackKinds';
 import { channelWidth, laneCount, laneX } from './cableLanes';
-import { cableRoute, fitsAt, ownerKeyOf, portsOnSide, rackSlots, sideOf, type PortSide, type RackEntry } from './rackModel';
+import { cableRoute, fitsAt, overlappingKeys, ownerKeyOf, portsOnSide, rackSlots, sideOf, type PortSide, type RackEntry, type RackSlot } from './rackModel';
 import { placeTargets, stepTarget } from './rackPlacement';
-import { overlappingKeys, type RackSlot } from './rackModel';
 
 /**
  * The rack as one row per unit, seen from the front or the rear. Entries are dragged to a free place (a place
  * that does not fit shows why before the mouse is released) or moved one unit at a time with the arrow keys.
+ * One unit is `--rack-unit` tall (set on the rail, taller on phones); rows, entries, overlap offsets and
+ * placement targets all derive from it, and the cables are measured from the jacks as drawn.
  *
  * Cables run in a channel on the right of the rail: a thick line with a dark edge from each jack to its lane,
  * so each cable is visible on its own. A cable whose other end is not on this side (or not in this rack) leaves
@@ -49,8 +50,6 @@ const emit = defineEmits<{
   /** A jack was used: the start or the end of a cable */
   pickPort: [key: string, port: RackPort];
 }>();
-
-const UNIT_REM = 1.75;
 
 const slots = computed(() => rackSlots(props.units, props.entries));
 const overlapping = computed(() => overlappingKeys(props.entries));
@@ -140,8 +139,8 @@ function entryStyle(slot: RackSlot, entry: RackEntry): Record<string, string | u
   const offset = slot.unit - (entry.unit ?? slot.unit);
   const height = Math.min(entry.height, entry.unit ?? 1);
   return {
-    height: 'calc(' + height + ' * var(--rack-unit, ' + UNIT_REM + 'rem) - 2px)',
-    marginTop: offset > 0 ? 'calc(' + offset + ' * var(--rack-unit, ' + UNIT_REM + 'rem) + 1px)' : undefined,
+    height: 'calc(' + height + ' * var(--rack-unit) - 2px)',
+    marginTop: offset > 0 ? 'calc(' + offset + ' * var(--rack-unit) + 1px)' : undefined,
   };
 }
 
@@ -213,8 +212,12 @@ function leave(unit: number) {
   if (hover.value?.unit === unit) hover.value = null;
 }
 
+/** Arrow keys: one unit up or down. The entry is drawn anew on its new row, so focus follows it there. */
 function nudge(entry: RackEntry, delta: number) {
-  if (entry.unit !== null) emit('move', entry.key, entry.unit + delta);
+  if (entry.unit === null) return;
+  const unit = entry.unit + delta;
+  if (fitsAt(props.units, props.entries, unit, entry.height, entry.key)) followFocus(entry.key, unit);
+  emit('move', entry.key, unit);
 }
 
 function slotClass(unit: number): string {
@@ -229,8 +232,15 @@ const activeTarget = ref<number | null>(null);
 watch(targets, (list) => {
   if (activeTarget.value === null || !list.includes(activeTarget.value)) activeTarget.value = list[0] ?? null;
 });
-/** After a place by keyboard, focus goes to the placed entry once it is drawn */
-let focusAfterPlace: string | null = null;
+/**
+ * An entry about to be drawn on another row (placed, nudged, moved to a free place) gets a new button there, so
+ * focus is handed to it once it sits on `unit`, unless the user has meanwhile moved on outside the rack.
+ */
+let pendingFocus: { key: string; unit: number } | null = null;
+
+function followFocus(key: string, unit: number) {
+  pendingFocus = { key, unit };
+}
 
 function targetEl(unit: number): HTMLElement | null {
   return railRef.value?.querySelector<HTMLElement>('[data-place-unit="' + unit + '"]') ?? null;
@@ -243,7 +253,7 @@ function focusPlaceTarget(): boolean {
   targetEl(unit)?.focus();
   return true;
 }
-defineExpose({ focusPlaceTarget });
+defineExpose({ focusPlaceTarget, followFocus });
 
 function stepPlace(unit: number, direction: 'up' | 'down') {
   const next = stepTarget(targets.value, unit, direction);
@@ -252,19 +262,24 @@ function stepPlace(unit: number, direction: 'up' | 'down') {
   targetEl(next)?.focus();
 }
 
-function placeAt(unit: number, event: MouseEvent) {
+/** A free unit was chosen (click, Enter or Space): the targets go away, so focus goes to the placed entry. */
+function placeAt(unit: number) {
   if (!props.placing) return;
-  if (event.detail === 0) focusAfterPlace = props.placing.key;
+  if (targets.value.includes(unit)) followFocus(props.placing.key, unit);
   emit('place', props.placing.key, unit);
 }
 
 watch(
   () => props.entries,
   () => {
-    const key = focusAfterPlace;
-    if (!key || !props.entries.some((e) => e.key === key && e.unit !== null)) return;
-    focusAfterPlace = null;
-    void nextTick(() => railRef.value?.querySelector<HTMLElement>('[data-key="' + key + '"]')?.focus());
+    const wanted = pendingFocus;
+    if (!wanted || !props.entries.some((e) => e.key === wanted.key && e.unit === wanted.unit)) return;
+    pendingFocus = null;
+    void nextTick(() => {
+      const active = document.activeElement;
+      const lost = !active || active === document.body || !!railRef.value?.contains(active);
+      if (lost) railRef.value?.querySelector<HTMLElement>('[data-key="' + wanted.key + '"]')?.focus();
+    });
   },
 );
 
@@ -315,10 +330,10 @@ function portSummary(entry: RackEntry): string | null {
       @dragleave="leave(slot.unit)"
       @drop="drop($event, slot.unit)"
     >
-      <span class="w-6 shrink-0 text-right font-mono text-micro leading-[var(--rack-unit,1.75rem)] text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
+      <span class="w-6 shrink-0 text-right font-mono text-micro leading-[var(--rack-unit)] text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
 
       <!-- Entries that overlap share the row, side by side, each on its own units -->
-      <div v-if="slot.entries.length" class="flex min-w-0 flex-1 items-start gap-1" :style="{ height: 'calc(' + slot.height + ' * var(--rack-unit, ' + UNIT_REM + 'rem))' }">
+      <div v-if="slot.entries.length" class="flex min-w-0 flex-1 items-start gap-1" :style="{ height: 'calc(' + slot.height + ' * var(--rack-unit))' }">
         <!-- The button covers the entry; the jacks sit above it as buttons of their own -->
         <div
           v-for="entry in slot.entries"
@@ -386,43 +401,52 @@ function portSummary(entry: RackEntry): string | null {
         </div>
       </div>
 
-      <button
-        v-else-if="placing"
-        type="button"
-        :data-place-unit="slot.unit"
-        class="my-px flex h-[calc(var(--rack-unit,1.75rem)_-_2px)] min-w-0 flex-1 items-center rounded-[5px] border border-dashed px-2 text-left text-xs text-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        :class="
-          targets.includes(slot.unit)
-            ? 'border-accent/60 hover:bg-accent/10 hover:text-fg-muted focus-visible:bg-accent/10 focus-visible:text-fg-muted'
-            : 'cursor-not-allowed border-line/70 hover:text-fg-subtle'
-        "
-        :tabindex="slot.unit === activeTarget ? 0 : -1"
-        :aria-disabled="!targets.includes(slot.unit) || undefined"
-        :aria-label="t('gv.rack.place_at', { label: placing.label, unit: slot.unit }) + (targets.includes(slot.unit) ? '' : ', ' + t('gv.rack.drop_blocked'))"
-        @click="placeAt(slot.unit, $event)"
-        @focus="targets.includes(slot.unit) && (activeTarget = slot.unit)"
-        @keydown.up.prevent="stepPlace(slot.unit, 'up')"
-        @keydown.down.prevent="stepPlace(slot.unit, 'down')"
-      >
-        <span class="truncate">{{ targets.includes(slot.unit) ? t('gv.rack.drop_here') : t('gv.rack.drop_blocked') }}</span>
-      </button>
+      <!-- While placing, the free units join the list as buttons that put the picked entry there -->
+      <div v-else-if="placing" role="listitem" class="flex min-w-0 flex-1">
+        <button
+          type="button"
+          :data-place-unit="slot.unit"
+          class="my-px flex h-[calc(var(--rack-unit)_-_2px)] min-w-0 flex-1 items-center rounded-[5px] border border-dashed px-2 text-left text-xs text-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          :class="
+            targets.includes(slot.unit)
+              ? 'border-accent/60 hover:bg-accent/10 hover:text-fg-muted focus-visible:bg-accent/10 focus-visible:text-fg-muted'
+              : 'cursor-not-allowed border-line/70 hover:text-fg-subtle'
+          "
+          :tabindex="slot.unit === activeTarget ? 0 : -1"
+          :aria-disabled="!targets.includes(slot.unit) || undefined"
+          :aria-label="t('gv.rack.place_at', { label: placing.label, unit: slot.unit }) + (targets.includes(slot.unit) ? '' : ', ' + t('gv.rack.drop_blocked'))"
+          @click="placeAt(slot.unit)"
+          @focus="targets.includes(slot.unit) && (activeTarget = slot.unit)"
+          @keydown.up.prevent="stepPlace(slot.unit, 'up')"
+          @keydown.down.prevent="stepPlace(slot.unit, 'down')"
+        >
+          <span class="truncate">{{ targets.includes(slot.unit) ? t('gv.rack.drop_here') : t('gv.rack.drop_blocked') }}</span>
+        </button>
+      </div>
 
+      <!-- A free unit outside placing is only a drop zone for the mouse; it says nothing to a screen reader -->
       <span
         v-else
-        class="my-px flex h-[calc(var(--rack-unit,1.75rem)_-_2px)] flex-1 items-center rounded-[5px] border border-dashed px-2 text-xs transition-colors"
+        class="my-px flex h-[calc(var(--rack-unit)_-_2px)] flex-1 items-center rounded-[5px] border border-dashed px-2 text-xs transition-colors"
         :class="[slotClass(slot.unit), hover?.unit === slot.unit ? 'text-fg-muted' : 'text-transparent']"
+        aria-hidden="true"
       >
         <template v-if="hover?.unit === slot.unit">{{ hover.valid ? t('gv.rack.drop_here') : t('gv.rack.drop_blocked') }}</template>
       </span>
 
       <span data-channel class="shrink-0" :style="{ width: channelPx + 'px' }" aria-hidden="true" />
 
-      <span class="w-6 shrink-0 font-mono text-micro leading-[var(--rack-unit,1.75rem)] text-fg-subtle tabular max-sm:hidden" aria-hidden="true">{{ slot.unit }}</span>
+      <span class="w-6 shrink-0 font-mono text-micro leading-[var(--rack-unit)] text-fg-subtle tabular max-sm:hidden" aria-hidden="true">{{ slot.unit }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* One rack unit; every height in the elevation is a multiple of it */
+.rack-rail {
+  --rack-unit: 1.75rem;
+}
+
 /* Phones: one unit is a 44 px touch target (46 px row, 44 px entry) */
 @media (width < 48rem) {
   .rack-rail {

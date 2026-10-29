@@ -6,6 +6,7 @@ import { useAppearance } from '@/stores/appearance';
 import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
 import { t } from '@/i18n';
+import { linePaletteHex } from '@/lib/palette';
 
 /**
  * One beam colour per connection type (10GbE, 2.5GbE, 1GbE, 100Mb, WLAN, fibre) on the orbit map.
@@ -19,8 +20,7 @@ onMounted(() => void appearance.load());
 const { resolved: theme } = useTheme();
 const palette = computed(() => {
   void theme.value;
-  const style = getComputedStyle(document.documentElement);
-  return Array.from({ length: 10 }, (_, i) => style.getPropertyValue(`--line-${i + 1}`).trim()).filter((c) => /^#[0-9a-f]{6}$/i.test(c));
+  return linePaletteHex();
 });
 
 const custom = (type: string) => appearance.linkTypeColors[type] ?? null;

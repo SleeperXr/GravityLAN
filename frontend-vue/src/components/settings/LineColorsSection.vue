@@ -9,6 +9,7 @@ import { useAppearance } from '@/stores/appearance';
 import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
 import { t } from '@/i18n';
+import { linePaletteHex } from '@/lib/palette';
 
 /**
  * One line colour per network, used on the network map, line signs, device chips and racks.
@@ -34,8 +35,7 @@ onMounted(async () => {
 const { resolved: theme } = useTheme();
 const palette = computed(() => {
   void theme.value; // light and dark have their own palette
-  const style = getComputedStyle(document.documentElement);
-  return Array.from({ length: 10 }, (_, i) => style.getPropertyValue(`--line-${i + 1}`).trim()).filter((c) => /^#[0-9a-f]{6}$/i.test(c));
+  return linePaletteHex();
 });
 
 const bullet = (s: Subnet) => lineLabel(s);

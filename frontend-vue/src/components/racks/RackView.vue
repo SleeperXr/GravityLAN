@@ -17,9 +17,24 @@ import RackElevation from './RackElevation.vue';
 import RackItemDialog from './RackItemDialog.vue';
 import RackPortsPanel, { type CableRow } from './RackPortsPanel.vue';
 import RackTray from './RackTray.vue';
-import { cableDefaults, deviceEntry, entryKey, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, type PortSide, type RackEntry } from './rackModel';
-import { nearestFreeUnit, rackCandidates } from './rackModel';
+import {
+  cableDefaults,
+  deviceEntry,
+  entryKey,
+  fitsAt,
+  itemEntry,
+  nearestFreeUnit,
+  occupiedUnits,
+  ownerKeyOf,
+  placementIssues,
+  portsOf,
+  rackCandidates,
+  type PortSide,
+  type RackEntry,
+} from './rackModel';
+import { placeTargets } from './rackPlacement';
 import { apiErrorMessage } from '@/lib/apiErrors';
+import { fillShift } from '@/lib/meter';
 
 /**
  * Racks with their equipment: network devices and rack equipment (unmanaged switches, UPS, patch panels,
@@ -292,7 +307,13 @@ const placing = computed<RackEntry | null>(() => {
   const entry = placingKey.value ? findEntry(placingKey.value) : undefined;
   return entry && entry.unit === null ? entry : null;
 });
-const placingMessage = computed(() => (placing.value ? t('gv.rack.place_pending', { label: placing.value.label, count: placing.value.height }) : ''));
+/** Whether the picked entry fits anywhere in this rack; if not, the placing bar says so instead of asking for a unit */
+const placingFits = computed(() => !!placing.value && !!rack.value && placeTargets(rack.value.units, entries.value, placing.value).length > 0);
+const placingMessage = computed(() => {
+  const entry = placing.value;
+  if (!entry) return '';
+  return t(placingFits.value ? 'gv.rack.place_pending' : 'gv.rack.place_no_room', { label: entry.label, count: entry.height });
+});
 
 /**
  * A tray entry was clicked (or Enter / Space): it waits for a free unit. From the keyboard, focus goes to the
@@ -321,14 +342,16 @@ function cancelPlacing() {
   placeOrigin = null;
 }
 
-/** A free unit was chosen: the same fit check and save as a drop. */
+/**
+ * A free unit was chosen: the same fit check, save and undo toast as a drop. The toast is what is announced,
+ * so the live region of the placing bar goes quiet instead of saying it a second time.
+ */
 async function placeAt(key: string, unit: number) {
-  const entry = findEntry(key);
-  if (!entry || !(await moveEntry(key, unit))) return;
+  if (!(await moveEntry(key, unit))) return;
   placingKey.value = null;
   placeOrigin = null;
   selectedKey.value = key;
-  placeAnnouncement.value = t('gv.rack.placed', { label: entry.label, unit });
+  placeAnnouncement.value = '';
 }
 
 // Another rack shows other free units: drop the pick
@@ -347,6 +370,8 @@ async function placeFree(entry: RackEntry) {
     return;
   }
   selectEntry(entry.key);
+  // The issue and its button go away once it fits, so focus moves on to the entry in its new place
+  elevationRef.value?.followFocus(entry.key, unit);
   await moveEntry(entry.key, unit);
 }
 
@@ -624,7 +649,11 @@ async function removeRack() {
       >
         <div ref="rackColumnRef" class="min-w-0 space-y-3 lg:min-h-0 lg:overflow-y-auto">
           <p class="sr-only" aria-live="polite">{{ placing ? placingMessage : placeAnnouncement }}</p>
-          <div v-if="placing" class="sticky top-0 z-10 flex items-center gap-2 rounded-md border border-accent bg-surface px-3 py-1.5 text-xs text-fg shadow-pop">
+          <div
+            v-if="placing"
+            class="sticky top-0 z-10 flex items-center gap-2 rounded-md border bg-surface px-3 py-1.5 text-xs text-fg shadow-pop"
+            :class="placingFits ? 'border-accent' : 'border-warn'"
+          >
             <p class="min-w-0 flex-1">{{ placingMessage }}</p>
             <Button size="sm" variant="ghost" @click="cancelPlacing">{{ t('common.cancel') }}</Button>
           </div>
@@ -665,10 +694,10 @@ async function removeRack() {
           <div class="gl-subcard space-y-2 p-4">
             <div class="flex items-baseline justify-between gap-3">
               <p class="gl-eyebrow">{{ t('rack.occupied') }}</p>
-              <p class="font-mono text-sm text-fg tabular"><span class="text-xl font-semibold">{{ occupied }}</span> / {{ rack.units }} HE</p>
+              <p class="font-mono text-sm text-fg tabular"><span class="text-xl font-semibold">{{ occupied }}</span> / {{ t('rack.units', { count: rack.units }) }}</p>
             </div>
             <div class="h-2 overflow-hidden rounded-full bg-sunken" role="progressbar" :aria-label="t('rack.occupied')" aria-valuemin="0" :aria-valuemax="rack.units" :aria-valuenow="occupied">
-              <div class="h-full rounded-full bg-accent" :style="{ width: `${Math.min(100, (occupied / rack.units) * 100)}%` }" />
+              <div class="h-full rounded-full bg-accent" :style="{ transform: fillShift((occupied / rack.units) * 100) }" />
             </div>
             <p class="text-xs text-fg-subtle">
               {{ t('rack.devices') }}: <span class="font-mono text-fg">{{ entries.length }}</span> · {{ t('gv.racks.free', { count: Math.max(0, rack.units - occupied) }) }}

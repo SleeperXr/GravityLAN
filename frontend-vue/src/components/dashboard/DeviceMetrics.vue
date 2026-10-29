@@ -3,6 +3,7 @@ import { computed, toRef } from 'vue';
 import { Activity, Cpu, HardDrive, MemoryStick, Thermometer } from 'lucide-vue-next';
 import { useLiveMetrics } from '@/composables/useLiveMetrics';
 import { formatBps, fullestDisk, meterTone, type MeterTone } from '@/lib/metrics';
+import { fillShift } from '@/lib/meter';
 import { t } from '@/i18n';
 
 /**
@@ -83,7 +84,7 @@ const expandedRows = computed(() => {
           aria-valuemax="100"
           :aria-valuetext="m.text"
         >
-          <div class="h-full rounded-full transition-[width] duration-500" :class="fills[m.tone]" :style="{ width: `${Math.min(m.percent, 100)}%` }" />
+          <div class="h-full rounded-full transition-transform duration-500 ease-out" :class="fills[m.tone]" :style="{ transform: fillShift(m.percent) }" />
         </div>
       </div>
     </div>
@@ -95,7 +96,7 @@ const expandedRows = computed(() => {
           <span class="font-mono text-fg tabular">{{ row.value }}</span>
         </div>
         <div class="h-1.5 overflow-hidden rounded-full bg-raised" role="meter" :aria-label="row.label" :aria-valuenow="Math.round(row.percent)" aria-valuemin="0" aria-valuemax="100">
-          <div class="h-full rounded-full transition-[width] duration-500" :class="fills[meterTone(row.percent, 70, 90)]" :style="{ width: `${Math.min(row.percent, 100)}%` }" />
+          <div class="h-full rounded-full transition-transform duration-500 ease-out" :class="fills[meterTone(row.percent, 70, 90)]" :style="{ transform: fillShift(row.percent) }" />
         </div>
       </div>
 

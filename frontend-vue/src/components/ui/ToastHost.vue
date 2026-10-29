@@ -35,7 +35,7 @@ const tones = { success: 'text-accent-text', error: 'text-danger-text', info: 't
         </button>
         <button
           type="button"
-          class="-m-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg"
+          class="-m-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           :aria-label="t('common.close')"
           @click="removeToast(toast.id)"
         >

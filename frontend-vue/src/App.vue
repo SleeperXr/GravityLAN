@@ -14,6 +14,7 @@ import Button from '@/components/ui/Button.vue';
 import LoginView from '@/views/LoginView.vue';
 import SetupView from '@/views/SetupView.vue';
 import { t } from '@/i18n';
+import { fillScale } from '@/lib/meter';
 
 type BootState = 'checking' | 'setup' | 'login' | 'ready';
 
@@ -117,7 +118,7 @@ onBeforeUnmount(() => store.disconnectScanStream());
           {{ t('gv.scan.stop') }}
         </Button>
         <div v-if="scanPercent !== null" class="absolute inset-x-0 bottom-0 h-0.5 bg-accent/15" aria-hidden="true">
-          <div class="h-full bg-accent transition-[width] duration-500" :style="{ width: `${scanPercent}%` }" />
+          <div class="h-full origin-left bg-accent transition-transform duration-500 ease-out" :style="{ transform: fillScale(scanPercent) }" />
         </div>
       </div>
 

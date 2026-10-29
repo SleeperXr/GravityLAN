@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import type { Device, RackPort } from '@/types';
 import { setLocale } from '@/i18n';
 import RackElevation from './RackElevation.vue';
@@ -13,9 +13,11 @@ const ports = [
   { id: 2, device_id: 1, rack_item_id: null, number: 2, kind: 'RJ45', side: 'front' },
 ] as RackPort[];
 
-function render(entries: RackEntry[]) {
+function render(entries: RackEntry[], extra: { placing?: RackEntry | null } = {}, attach = false) {
   return mount(RackElevation, {
+    attachTo: attach ? document.body : undefined,
     props: {
+      ...extra,
       name: 'Rack',
       units: 6,
       width: 19,
@@ -32,7 +34,12 @@ function render(entries: RackEntry[]) {
   });
 }
 
+let mounted: VueWrapper | null = null;
 beforeEach(() => setLocale('en'));
+afterEach(() => {
+  mounted?.unmount();
+  mounted = null;
+});
 
 describe('RackElevation', () => {
   it('lists each entry as a list item holding a button named with its state and place', () => {
@@ -65,5 +72,47 @@ describe('RackElevation', () => {
     expect(units).toEqual([6, 5, 4, 3, 2, 1]);
     const names = wrapper.findAll('[role="listitem"] > button').map((b) => b.attributes('aria-label'));
     expect(names.every((n) => n?.includes('overlaps another device'))).toBe(true);
+  });
+
+  it('lists the free units as items while placing, each a button that places there', async () => {
+    const tray = { ...dev(9, 0), unit: null };
+    const wrapper = render([dev(1, 5)], { placing: tray });
+    const targets = wrapper.findAll('[role="listitem"] > button[data-place-unit]');
+    expect(targets.map((b) => Number(b.attributes('data-place-unit')))).toEqual([6, 4, 3, 2, 1]);
+    await targets[1].trigger('click');
+    expect(wrapper.emitted('place')?.[0]).toEqual(['device-9', 4]);
+  });
+
+  it('hands focus to the placed entry once it is drawn, also after a click', async () => {
+    const tray = { ...dev(9, 0), unit: null };
+    mounted = render([dev(1, 5)], { placing: tray }, true);
+    await mounted.get('[data-place-unit="3"]').trigger('click');
+    await mounted.setProps({ entries: [dev(1, 5), dev(9, 3)], placing: null });
+    await flushPromises();
+    expect(document.activeElement?.getAttribute('data-key')).toBe('device-9');
+  });
+
+  it('keeps focus on an entry that the arrow keys move to another row', async () => {
+    mounted = render([dev(1, 5)], {}, true);
+    const button = mounted.get<HTMLButtonElement>('[data-key="device-1"]');
+    button.element.focus();
+    await button.trigger('keydown', { key: 'ArrowUp' });
+    expect(mounted.emitted('move')?.[0]).toEqual(['device-1', 6]);
+    await mounted.setProps({ entries: [dev(1, 6)] });
+    await flushPromises();
+    expect(document.activeElement?.getAttribute('data-key')).toBe('device-1');
+  });
+
+  it('does not take focus for a move that cannot fit', async () => {
+    mounted = render([dev(1, 6)], {}, true);
+    await mounted.get('[data-key="device-1"]').trigger('keydown', { key: 'ArrowUp' });
+    expect(mounted.emitted('move')?.[0]).toEqual(['device-1', 7]);
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    await mounted.setProps({ entries: [dev(1, 6)] });
+    await flushPromises();
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
   });
 });

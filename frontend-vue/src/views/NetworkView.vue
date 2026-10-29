@@ -17,6 +17,7 @@ import IpTile from '@/components/network/IpTile.vue';
 import LineBullet from '@/components/common/LineBullet.vue';
 import { lineLabel, networkColor } from '@/lib/networks';
 import { busiestPrefix } from '@/lib/subnetPick';
+import { stackedLayers } from '@/lib/meter';
 import SubnetModeBadge from '@/components/network/SubnetModeBadge.vue';
 import AddSubnetDialog from '@/components/network/AddSubnetDialog.vue';
 import SubnetSettingsDialog from '@/components/network/SubnetSettingsDialog.vue';
@@ -69,6 +70,8 @@ const segments = computed(() => [
   { key: 'offline', label: t('network.offline'), value: usage.value.offline, cls: 'bg-danger' },
   { key: 'reserved', label: t('gv.network.legend_reserved'), value: usage.value.reserved, cls: 'bg-fg-subtle' },
 ]);
+/** The usage bar as layers that move with `transform`, so a changing count does not relayout the bar */
+const segmentLayers = computed(() => stackedLayers(segments.value, 254));
 
 async function loadAreas() {
   try {
@@ -315,8 +318,8 @@ function openEditor(device: Device) {
         </div>
         <!-- Nothing in use yet: say so instead of a bar and a legend of zeros -->
         <p v-if="usage.used === 0" class="mt-2 max-w-[65ch] text-sm text-fg-muted">{{ t('gv.network.empty_subnet') }}</p>
-        <div v-else class="mt-3 flex h-2 overflow-hidden rounded-full bg-sunken" role="img" :aria-label="segments.map((s) => `${s.label}: ${s.value}`).join(', ')">
-          <div v-for="seg in segments" :key="seg.key" :class="seg.cls" class="h-full transition-[width] duration-500" :style="{ width: `${(seg.value / 254) * 100}%` }" />
+        <div v-else class="relative mt-3 h-2 overflow-hidden rounded-full bg-sunken" role="img" :aria-label="segments.map((s) => `${s.label}: ${s.value}`).join(', ')">
+          <div v-for="layer in segmentLayers" :key="layer.key" :class="layer.cls" class="absolute inset-0 origin-left transition-transform duration-500 ease-out" :style="{ transform: layer.transform }" />
         </div>
         <ul class="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-fg-muted">
           <li v-for="seg in usage.used > 0 ? segments : []" :key="seg.key" class="flex items-center gap-1.5"><span class="size-2 rounded-[3px]" :class="seg.cls" aria-hidden="true" />{{ seg.label }} <span class="font-mono text-fg tabular">{{ seg.value }}</span></li>

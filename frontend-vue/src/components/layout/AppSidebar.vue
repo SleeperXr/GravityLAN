@@ -25,7 +25,7 @@ const activeId = computed(() => route.meta.navId as string | undefined);
       </span>
     </div>
 
-    <!-- The pages as stops on one route: each has its own line sign, the current stop is filled -->
+    <!-- The pages as stops on one route: each has its own line sign, the current stop is filled, a hairline joins the stops -->
     <nav :aria-label="t('sidebar.navigation')" class="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
       <RouterLink
         v-for="(item, index) in NAV_ITEMS"
@@ -37,8 +37,7 @@ const activeId = computed(() => route.meta.navId as string | undefined);
       >
         <span
           v-if="index < NAV_ITEMS.length - 1"
-          class="absolute top-[calc(50%+13px)] left-[calc(0.5rem+12px)] h-3 w-0.5 opacity-50"
-          :style="{ background: `linear-gradient(${lineVar(item)}, ${lineVar(NAV_ITEMS[index + 1])})` }"
+          class="absolute top-[calc(50%+13px)] left-[calc(0.5rem+12px)] h-3 w-0.5 bg-line-strong"
           aria-hidden="true"
         />
         <span
