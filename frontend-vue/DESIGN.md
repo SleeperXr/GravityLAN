@@ -377,6 +377,7 @@ Sachlich und kompakt.
   - **Sternbild-Linien zeichnen:** Über den `+`-Griff am Rand eines ausgewählten Körpers lässt sich direkt eine neue Verbindung zu einem anderen Körper ziehen.
   - **Inspektor-Panels (unten links):** Erlauben für Verbindungen die Wahl von Farbe und Linktyp (`10GbE`, `2.5GbE`, `1GbE`, `WLAN`, `Fiber`) sowie für Himmelskörper den direkten Wechsel des Eltern-Hubs per Auswahlfeld.
   - **Galaktische Dynamik (`vitalityMode`):** Über den Sparkles-Button unten rechts umschaltbar zwischen `Aus`, `Dezent` (Standard) und `Lebendig`.
+  - **Bewegung liegt unter den Körpern:** Das Sternenfeld funkelt in drei Gruppen (`TWINKLE_GROUPS`), der Plasma-Puls eines Sterns sitzt in seinem Nebel, Photonen laufen auf den Beams. Die Körper selbst schweben und pulsieren nicht: Jedes animierte Element zwischen ihnen wird eine eigene Compositor-Ebene, und Chrome sortiert alles danach Gemalte bei jedem gescrollten Frame neu (zwei davon kosteten auf der Übersicht 40 ms je Frame). Außerhalb des sichtbaren Bereichs ruht jede Bewegung des Plans.
 
 ### Netz-Statusboard und Betriebsmeldungen
 Die Übersicht beginnt mit der Statuszeile (`NetworkPulse.vue`): „Alles in Ordnung · 29 von 31 Geräten online“ in Akzent oder die Zahl der offline bzw. gestörten Geräte in Zustandsfarbe mit den ersten zwei Namen („2 Geräte offline: NAS, Pi-hole“, weitere als „+n“), dahinter „Stand vor …“ (nach einem fehlgeschlagenen Neuladen in Bernstein) und bei Problemen „Zum Problem“, das das erste betroffene Gerät öffnet (offline vor gestört). Die Zählregel steht in `components/dashboard/pulse.ts` und gilt für Statuszeile und Statusboard. Danach folgen Statusboard, Betriebsmeldungen und Orbit-Karte; ab 1280 px stehen die Meldungen links neben der Karte (22 rem, innen scrollend), darunter über ihr mit den vier dringendsten und „Alle anzeigen“.
@@ -408,3 +409,4 @@ Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rund
 - **Don't** Schatten auf ruhende Karten legen; `shadow-pop` gehört schwebenden Ebenen.
 - **Don't** `.gl-eyebrow` als Vorspann über Titel setzen oder in Versalien; sie beschriftet Werte.
 - **Don't** Seiten als KPI-Kachelreihe plus Tabelle bauen (kompakte Statusleisten nutzen).
+- **Don't** Dauerbewegung an einzelne Himmelskörper oder Sterne hängen; die Zahl animierter Elemente im Orbit-Plan darf nicht mit dem Netz wachsen.

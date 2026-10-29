@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useEventListener, useFullscreen, useMediaQuery, useResizeObserver, useStorage } from '@vueuse/core';
+import { useEventListener, useFullscreen, useIntersectionObserver, useMediaQuery, useResizeObserver, useStorage } from '@vueuse/core';
 import { Check, Expand, Hand, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, ShieldAlert, Shrink, Sparkles, TriangleAlert, Wand2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
@@ -26,7 +26,7 @@ import {
   type OrbitRole,
   type Point,
 } from './orbitModel';
-import { labelRank, labelSize, orbitCenterId, placeLabels, problemBodyIds, radiusOf } from './orbitLayout';
+import { cosmicStarfield, labelRank, labelSize, orbitCenterId, placeLabels, problemBodyIds, radiusOf } from './orbitLayout';
 import { computeFocusSet, findPath, focusSetFromIds, matchBodies, type FocusSet, type TracedPath } from './orbitFocus';
 import { useOrbitViewport } from './useOrbitViewport';
 import { analyseResilience, failoverState } from './orbitResilience';
@@ -73,6 +73,16 @@ const editing = ref(props.editable && props.startEditing);
 const resilienceMode = ref(false);
 const canvasRef = ref<HTMLElement | null>(null);
 const { isFullscreen, isSupported: fullscreenSupported, toggle: toggleFullscreen } = useFullscreen(canvasRef);
+/**
+ * Off screen nothing on the map moves. Chrome keeps painting content up to a few thousand pixels
+ * beyond the viewport, so on the dashboard the map's animations still cost every frame of
+ * scrolling through the first device groups.
+ */
+const onScreen = ref(true);
+useIntersectionObserver(canvasRef, (entries) => {
+  const last = entries[entries.length - 1];
+  if (last) onScreen.value = last.isIntersecting;
+});
 const links = ref<OrbitLink[]>([]);
 const gatewayIds = ref(new Set<number>());
 const localPositions = ref(new Map<number, Point>());
@@ -208,23 +218,7 @@ const labels = computed(() => {
   return placeLabels(items, labelScale.value, obstacles);
 });
 
-/** Deterministic background stars. */
-const cosmicStars = computed(() => {
-  let seed = 1337;
-  const rand = () => {
-    seed = (seed * 1664525 + 1013904223) % 4294967296;
-    return seed / 4294967296;
-  };
-  return Array.from({ length: 96 }, (_, i) => ({
-    id: i,
-    x: Math.round((rand() - 0.48) * 3600),
-    y: Math.round((rand() - 0.48) * 2600),
-    r: rand() > 0.86 ? 1.4 : rand() > 0.45 ? 1.0 : 0.65,
-    opacity: Math.round((0.25 + rand() * 0.55) * 100) / 100,
-    twinkle: rand() > 0.4,
-    delay: `${Math.round(rand() * 45) / 10}s`,
-  }));
-});
+const starfield = cosmicStarfield();
 
 /** Hub under inspection: its rings light up. */
 const activeClusterCenterId = computed(() => {
@@ -789,7 +783,7 @@ useResizeObserver(svgRef, initialFit);
     :id="flowId"
     ref="canvasRef"
     class="cosmic-canvas relative h-full w-full overflow-hidden select-none"
-    :class="[editing && 'is-editing', vitalityMode === 'subtle' && 'vitality-subtle', vitalityMode === 'lively' && 'vitality-lively']"
+    :class="[editing && 'is-editing', vitalityMode === 'subtle' && 'vitality-subtle', vitalityMode === 'lively' && 'vitality-lively', !onScreen && 'motion-paused']"
   >
     <!-- A group, not an image: the bodies inside are buttons that assistive technology must reach -->
     <svg
@@ -811,22 +805,15 @@ useResizeObserver(svgRef, initialFit);
       </defs>
 
       <g :transform="`translate(${view.viewX.value}, ${view.viewY.value}) scale(${view.zoom.value})`">
-        <!-- Background stars -->
+        <!-- Background stars; the twinkling ones fade group by group -->
         <g class="cosmic-starfield pointer-events-none" aria-hidden="true">
-          <circle
-            v-for="s in cosmicStars"
-            :key="s.id"
-            :cx="s.x"
-            :cy="s.y"
-            :r="s.r"
-            fill="var(--gl-fg)"
-            :fill-opacity="s.opacity"
-            :class="s.twinkle && 'star-twinkle'"
-            :style="{ animationDelay: s.delay }"
-          />
+          <circle v-for="s in starfield.still" :key="s.id" :cx="s.x" :cy="s.y" :r="s.r" fill="var(--gl-fg)" :fill-opacity="s.opacity" />
+          <g v-for="(group, i) in starfield.twinkling" :key="`twinkle-${i}`" class="star-twinkle" :style="{ animationDelay: `${i * -1.5}s` }">
+            <circle v-for="s in group" :key="s.id" :cx="s.x" :cy="s.y" :r="s.r" fill="var(--gl-fg)" :fill-opacity="s.opacity" />
+          </g>
         </g>
 
-        <!-- Nebula glow around stars and planets -->
+        <!-- Nebula glow around stars and planets; a star's glow carries its plasma pulse -->
         <g class="pointer-events-none" aria-hidden="true">
           <circle
             v-for="body in bodyList.filter((b) => b.kind !== 'moon')"
@@ -895,13 +882,12 @@ useResizeObserver(svgRef, initialFit);
 
         <g>
           <OrbitBodyNode
-            v-for="(body, idx) in paintOrder"
+            v-for="body in paintOrder"
             :key="body.id"
             :body="body"
             :pos="posOf(body.id)"
             :label="labels.get(body.id) ?? null"
             :label-scale="labelScale"
-            :index="idx"
             :editing="editing"
             :selected="selectedDeviceId === body.id"
             :dim="bodyDim(body.id)"
@@ -1113,55 +1099,34 @@ useResizeObserver(svgRef, initialFit);
   background-size: 28px 28px, 100% 100%;
 }
 
+/*
+ * Motion lives beneath the bodies: the starfield, the stars' nebula glow and the photons on the
+ * beams. Every element with a running opacity or transform animation is a compositor layer of
+ * its own, and one in or between the bodies splits everything painted after it into layers that
+ * Chrome sorts again on every scrolled frame: two of them cost about 40 ms a frame, the earlier
+ * floating bodies and pulsing halos up to 75 ms. The photons repaint instead and stay cheap.
+ */
 @keyframes star-twinkle {
   0%,
   100% {
     opacity: 0.25;
-    transform: scale(0.9);
   }
   50% {
     opacity: 0.9;
-    transform: scale(1.15);
   }
 }
 
 .star-twinkle {
   animation: star-twinkle 4.5s ease-in-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
 }
 
-@keyframes orbit-float {
-  0%,
-  100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-3.5px);
-  }
-}
-
-@keyframes corona-pulse {
+@keyframes nebula-pulse {
   0%,
   100% {
     transform: scale(1);
-    opacity: 0.16;
   }
   50% {
-    transform: scale(1.18);
-    opacity: 0.3;
-  }
-}
-
-@keyframes diffraction-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 0.75;
-  }
-  50% {
-    transform: scale(1.1);
-    opacity: 0.95;
+    transform: scale(1.12);
   }
 }
 
@@ -1183,36 +1148,15 @@ useResizeObserver(svgRef, initialFit);
   }
 }
 
-.vitality-subtle :deep(.orbit-float-node) {
-  animation: orbit-float 5.8s ease-in-out infinite;
-}
-
-.vitality-lively :deep(.orbit-float-node) {
-  animation: orbit-float 3.4s ease-in-out infinite;
-}
-
-.vitality-subtle :deep(.star-corona),
-.vitality-subtle :deep(.planet-halo) {
-  animation: corona-pulse 4.5s ease-in-out infinite;
+/* Scale only: the glow's opacity brightens the hub under the pointer */
+.vitality-subtle .star-nebula-pulse {
+  animation: nebula-pulse 4.5s ease-in-out infinite;
   transform-box: fill-box;
   transform-origin: center;
 }
 
-.vitality-lively :deep(.star-corona),
-.vitality-lively :deep(.planet-halo) {
-  animation: corona-pulse 2.6s ease-in-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.vitality-subtle :deep(.star-diffraction) {
-  animation: diffraction-pulse 4.5s ease-in-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.vitality-lively :deep(.star-diffraction) {
-  animation: diffraction-pulse 2.6s ease-in-out infinite;
+.vitality-lively .star-nebula-pulse {
+  animation: nebula-pulse 2.6s ease-in-out infinite;
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -1241,12 +1185,13 @@ useResizeObserver(svgRef, initialFit);
   transform-origin: center;
 }
 
+.motion-paused :deep(*) {
+  animation: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .star-twinkle,
-  :deep(.orbit-float-node),
-  :deep(.star-corona),
-  :deep(.planet-halo),
-  :deep(.star-diffraction),
+  .star-nebula-pulse,
   :deep(.photon-pulse),
   :deep(.trace-flow),
   .orbit-drop-ring {

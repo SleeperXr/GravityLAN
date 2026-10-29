@@ -281,3 +281,44 @@ export function beamPath(a: Point, b: Point, centre: Point | null): { d: string;
   const cy = Math.round(2 * mid.y - (a.y + b.y) / 2);
   return { d: `M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`, mid };
 }
+
+// ── Background ───────────────────────────────────────────────────────────────
+
+export interface CosmicStar {
+  id: number;
+  x: number;
+  y: number;
+  r: number;
+  opacity: number;
+}
+
+/**
+ * Twinkling stars fade in this many groups, not one by one: every animated element on the map is
+ * a compositor layer of its own, and with one per star each scrolled frame of the dashboard cost
+ * about 40 ms instead of 8.
+ */
+export const TWINKLE_GROUPS = 3;
+
+/** Deterministic background stars: the still ones, and the twinkling ones by group. */
+export function cosmicStarfield(count = 96): { still: CosmicStar[]; twinkling: CosmicStar[][] } {
+  let seed = 1337;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+  const still: CosmicStar[] = [];
+  const twinkling: CosmicStar[][] = Array.from({ length: TWINKLE_GROUPS }, () => []);
+  for (let id = 0; id < count; id++) {
+    const star = {
+      id,
+      x: Math.round((rand() - 0.48) * 3600),
+      y: Math.round((rand() - 0.48) * 2600),
+      r: rand() > 0.86 ? 1.4 : rand() > 0.45 ? 1.0 : 0.65,
+      opacity: Math.round((0.25 + rand() * 0.55) * 100) / 100,
+    };
+    const twinkles = rand() > 0.4;
+    const group = Math.floor(rand() * TWINKLE_GROUPS);
+    (twinkles ? twinkling[group] : still).push(star);
+  }
+  return { still, twinkling };
+}

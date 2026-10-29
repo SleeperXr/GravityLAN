@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Device } from '@/types';
 import { resolveOrbitSystem, type OrbitLink } from './orbitModel';
-import { BODY_RADIUS, beamPath, labelRank, labelSize, layoutOrbit, orbitCenterId, placeLabels, problemBodyIds } from './orbitLayout';
+import { BODY_RADIUS, TWINKLE_GROUPS, beamPath, cosmicStarfield, labelRank, labelSize, layoutOrbit, orbitCenterId, placeLabels, problemBodyIds } from './orbitLayout';
 
 vi.mock('@/lib/networks', () => ({
   networkColor: (subnetId: number | null | undefined) => `var(--line-${subnetId ?? 1})`,
@@ -138,5 +138,20 @@ describe('placeLabels in a crowded spot', () => {
     // Below the neighbour at y = 30 (radius 10), not on top of it
     expect(place.side).toBe('below');
     expect(place.y).toBeGreaterThan(40);
+  });
+});
+
+describe('cosmic starfield', () => {
+  // Each animated element is a compositor layer; one per star made scrolling the dashboard stutter
+  it('twinkles in a fixed number of groups, however many stars there are', () => {
+    for (const count of [10, 96, 400]) {
+      const { still, twinkling } = cosmicStarfield(count);
+      expect(twinkling).toHaveLength(TWINKLE_GROUPS);
+      expect(still.length + twinkling.flat().length).toBe(count);
+    }
+  });
+
+  it('places the same stars every time', () => {
+    expect(cosmicStarfield()).toEqual(cosmicStarfield());
   });
 });
