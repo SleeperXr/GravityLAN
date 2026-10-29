@@ -4,18 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-29
+
 ### Added
-- Rack view: front and rear. Every port has a side (front or rear, set in the port panel). The rack shows the front or the rear, and cables are drawn as lines down the right-hand side of the rack, between their two jacks. A cable whose other end is on the other side leaves as a dashed stub. The company demo has the servers' ports on the rear.
-- Rack view: rack size can be changed. "Edit rack" changes the name, the height in units (HE) and the width (19 or 10 inch). A smaller rack is refused while something in it would not fit.
+- Rack equipment outside the network inventory: unmanaged switches, UPS units, copper and fibre patch panels, power strips, blanking panels, cable management and other equipment, pulled into the rack from "Einbauen". A phone system is not rack equipment: it has an IP, so it comes in as a network device and gets a faceplate with a display; rack items saved as phone systems while this was being built become "other equipment".
+- Ports and cables in the rack. Any device or rack item gets a number of ports of one kind (RJ45, SFP, SFP+, LC, Power, Console) on the front or the rear. A cable joins two ports of different devices and takes its type and colour from the port kind; both can be changed. A port carries one cable at a time, and a port that still has a cable cannot be removed. The company demo has ports and cables, with the servers' ports on the rear.
+- Rack front and rear, and the rack size: the rack turns around to show its rear, and its height (1 to 60 units) and width (19 or 10 inch) can be changed; a smaller rack is refused while something in it would not fit.
 - Field labels: the device editor says which size is which. "Kachelgröße auf der Übersicht" is the tile size on the dashboard (grid cells), "Höhe im Rack" is the height in the rack in units; both hints say where to change them.
-
-### Security
-- dnspython 2.9.0 (Dependabot alert #50, `dns.name.from_wire_parser()` excessive CPU use). A crafted DNS answer, e.g. from a DNS server in the scanned network, could keep name decompression busy during hostname lookups. Minimum version raised in `requirements.txt` and `pyproject.toml`, lockfile updated.
-
-### Added
-- Rack view: equipment can be moved by drag and drop. Network devices and rack items sit on units; drag them onto a free place (a place that does not fit shows "Does not fit here" before the mouse is released), or select one and move it with the arrow keys. Devices in the tray (in the rack without a unit, or in no rack at all) are dragged in, and placed ones are dragged back to the tray or out of the rack. Every move saves at once and shows in the device editor (rack, unit and height are the same fields).
-- Rack view: rack equipment that is not in the network inventory: unmanaged switches, UPS units, copper and fibre patch panels, power strips, blanking panels, cable management and other equipment. A phone system is not rack equipment: it has an IP, so it is a network device and gets a faceplate with a display; rack items saved as phone systems while this was being built become "other equipment". Added with the "Add rack item" button; a new item starts in the tray.
-- Rack view: ports and cables. Any device or rack item gets a number of ports of a kind (RJ45, SFP, SFP+, LC, Power, Console). Click a port, then a port of another device (it may be in the same view later); the cable is made with a type and colour from the port kind, and can be removed in the port panel. A port carries one cable at a time, and a port that still has a cable cannot be removed.
 - Health: a card lists the single points of failure of the network (the devices whose loss cuts others off from the core), with the number of devices each one takes down.
 - Orbit map: backup links keep their label only while they carry traffic or are selected, so a crowded map stays readable.
 - GravityUI orbit map: port limit per device, like the React topology. In edit mode the inspector of a selected device shows how many of its ports are in use ("6 of 24 ports in use") and lets you change `max_ports` (0 means no limit). Drawing a new light beam to a full device, or moving a device onto a full hub, is refused with "Port limit reached: Core Switch already uses 6 of 6 ports."
@@ -42,6 +37,9 @@ All notable changes to this project will be documented in this file.
 
 ### Removed
 - Unused code: the old transit-style network map of GravityUI (replaced by the orbit map in 0.5.0) together with its only dependency `@vue-flow/core`, a never-called multi-host port scan helper, and exception classes nothing raised. Completed planning documents moved to `docs/archive/`.
+
+### Security
+- dnspython 2.9.0 (Dependabot alert #50, `dns.name.from_wire_parser()` excessive CPU use). A crafted DNS answer, e.g. from a DNS server in the scanned network, could keep name decompression busy during hostname lookups. Minimum version raised in `requirements.txt` and `pyproject.toml`, lockfile updated.
 
 ## [0.5.6] - 2026-10-25
 

@@ -67,6 +67,9 @@ Features:
 
 Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
   <Changes>
+### 0.6.0
+- Racks rebuilt: faceplates that look like the hardware, drag and drop with snapping and undo, rack equipment (patch panels, UPS, power strips, blanks, cable management), ports and cables with a front and a rear view. Backup links and a resilience view on the orbit map, single points of failure on Health. Company demo network. Design critique fixes with a readable type floor, smooth dashboard scrolling, dnspython 2.9.0.
+
 ### 0.5.6
 - Follow-ups to the 0.5.5 security fixes: install command uses the server URL and needs an explicit opt-in over HTTP, bounded live discovery, install codes and open streams revoked on import and reset. Backups include device interfaces. GravityUI overview leads with network status, names problem devices and has 44 px touch targets on phones. Agent 0.3.10.
 
