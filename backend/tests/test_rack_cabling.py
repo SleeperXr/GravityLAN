@@ -155,3 +155,24 @@ async def test_ports_have_a_side_for_front_and_rear_view(client, db, admin_token
     item = (await client.post("/api/topology/rack-items", json=_item(rack.id, port_count=2), headers=HEADERS)).json()
     sides = [p["side"] for p in (await _cabling(client))["ports"] if p["rack_item_id"] == item["id"]]
     assert sides == ["front", "front"]
+
+
+@pytest.mark.asyncio
+async def test_power_strip_replaces_the_phone_system(client, db, admin_token):
+    from app.database.migrations import _retire_phone_system_items
+    from app.models.rack_cabling import RackItem
+
+    rack, _ = await _rack_with_server(db)
+    strip = await client.post("/api/topology/rack-items", json=_item(rack.id, kind="power_strip", port_count=8, port_kind="Power"), headers=HEADERS)
+    assert strip.status_code == 200 and strip.json()["kind"] == "power_strip"
+    # A phone system has an IP: it is a network device, not rack equipment
+    phone = await client.post("/api/topology/rack-items", json=_item(rack.id, kind="phone_system", rack_unit=3), headers=HEADERS)
+    assert phone.status_code == 422
+
+    # Items of the old kind become "other" and keep their name
+    old = RackItem(rack_id=rack.id, name="Telefonanlage", kind="phone_system", rack_unit=9, rack_height=1)
+    db.add(old)
+    await db.commit()
+    await _retire_phone_system_items(db)
+    await db.refresh(old)
+    assert (old.kind, old.name) == ("other", "Telefonanlage")

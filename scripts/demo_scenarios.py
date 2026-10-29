@@ -391,7 +391,7 @@ def company() -> Scenario:
         rack_items=[
             ("USV Netzwerkschrank", "Netzwerkschrank Verwaltung", "ups", 18, 2, 4, "Power"),
             ("Patchfeld Kupfer EG", "Netzwerkschrank Verwaltung", "patch_copper", 23, 1, 24, "RJ45"),
-            ("Telefonanlage", "Netzwerkschrank Verwaltung", "phone_system", 16, 1, 8, "RJ45"),
+            ("Steckdosenleiste", "Netzwerkschrank Verwaltung", "power_strip", 16, 1, 8, "Power"),
             ("Blende", "Netzwerkschrank Verwaltung", "blank", 19, 1, 0, "RJ45"),
             ("Kabelführung", "Serverraum Rack A", "cable_management", 35, 1, 0, "RJ45"),
             ("Patchfeld Glasfaser", "Serverraum Rack B", "patch_fiber", 41, 1, 12, "LC"),
@@ -403,7 +403,7 @@ def company() -> Scenario:
             ("ToR Rack A", 1, "pve-01", 1, "DAC / Modul"),
             ("ToR Rack A", 2, "pve-02", 1, "DAC / Modul"),
             ("ToR Rack B", 3, "pve-03", 1, "DAC / Modul"),
-            ("Access EG", 1, "Telefonanlage", 1, "Cat6"),
+            ("USV Netzwerkschrank", 1, "Steckdosenleiste", 1, "Stromkabel C13"),
             ("Patchfeld Kupfer EG", 1, "Access EG", 2, "Cat6"),
             ("Patchfeld Kupfer EG", 2, "Access OG1", 1, "Cat6"),
         ],

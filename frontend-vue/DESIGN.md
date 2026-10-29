@@ -386,7 +386,7 @@ Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rund
 
 ### Weitere Netzfarbträger
 - **IP-Kacheln:** belegt und online = Rahmen 55 % und Fläche 14 % in der Netzfarbe; offline rot getönt; frei Haarlinie; reserviert gestrichelt. Adressen in Mono.
-- **Rack:** Einschübe als `raised`-Leisten mit kleinem Netzschild; leere Einheiten gestrichelt; Rahmen 6 px in gedämpfter Haarlinie.
+- **Rack:** Einschübe als Hardware-Frontplatten (`raised`, im hellen Thema `surface`): Ohren mit einer Schraube je HE, Netzfarb-Streifen, Betriebs-LED, Buchsen je Port rechtsbündig. Freie Einheiten zu gestrichelten Blöcken zusammengefasst („16 HE frei“). Kabel als Schlaufe zwischen nahen Buchsen, sonst im Kabelkanal rechts, je Kabel Farblinie auf dunklem Mantel; gestrichelt = anderes Ende auf der anderen Seite oder in einem anderen Rack. Verschieben und Einbauen federn nach (Feder statt Kurve, nur `transform`), die Rückseite ist eine Drehung um die Hochachse; unter reduzierter Bewegung springt alles direkt.
 - **Ersteinrichtung:** die vier Schritte entlang einer 5-px-Trajektorie (erledigt Akzent, offen `hairline-strong`), Hintergrund mit Koordinatenraster.
 - **Netzfarben (Einstellungen):** pro Subnetz Netzschild, Palettenvorschläge des aktuellen Themas und freier Farbwähler; Zurücksetzen auf den Palettenslot.
 

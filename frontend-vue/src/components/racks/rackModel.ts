@@ -4,6 +4,7 @@
  * layout, so one overlap rule, one set of placement issues and one drop check apply to both.
  */
 import type { Device, RackItem, RackPort } from '@/types';
+import { faceOfDevice, faceOfItem, type FaceKind } from './rackKinds';
 
 export type EntryKind = 'device' | 'item';
 
@@ -20,6 +21,10 @@ export interface RackEntry {
   itemKind: string | null;
   unit: number | null;
   height: number;
+  /** The hardware its faceplate is drawn as */
+  face: FaceKind;
+  /** Subnet of a device, for its network colour; null for rack items */
+  subnetId: number | null;
 }
 
 /**
@@ -52,6 +57,8 @@ export function deviceEntry(device: Device, label: string): RackEntry {
     itemKind: null,
     unit: device.rack_unit,
     height: device.rack_height || 1,
+    face: faceOfDevice(device),
+    subnetId: device.subnet_id ?? null,
   };
 }
 
@@ -66,6 +73,8 @@ export function itemEntry(item: RackItem): RackEntry {
     itemKind: item.kind,
     unit: item.rack_unit,
     height: item.rack_height || 1,
+    face: faceOfItem(item.kind),
+    subnetId: null,
   };
 }
 
@@ -239,13 +248,15 @@ export function portsOnSide(entry: RackEntry, ports: RackPort[], side: PortSide)
   return portsOf(entry, ports).filter((p) => sideOf(p) === side);
 }
 
-/**
- * A cable as a route: it leaves its jack to the right, runs up or down the lane at laneX with rounded corners,
- * and comes back to the other jack. Cables in one lane do not cross the faceplates they are plugged into.
- */
-export function cableRoute(a: { x: number; y: number }, b: { x: number; y: number }, laneX: number, radius = 6): string {
-  if (a.y === b.y) return `M ${a.x} ${a.y} H ${b.x}`;
-  const dir = b.y > a.y ? 1 : -1;
-  const r = Math.min(radius, Math.abs(b.y - a.y) / 2);
-  return `M ${a.x} ${a.y} H ${laneX - r} Q ${laneX} ${a.y} ${laneX} ${a.y + dir * r} V ${b.y - dir * r} Q ${laneX} ${b.y} ${laneX - r} ${b.y} H ${b.x}`;
+/** The first unit from the top where an entry of `height` fits, or null when the rack has no such gap. */
+export function firstFreeUnit(units: number, entries: RackEntry[], height: number, movingKey?: string): number | null {
+  for (let unit = units; unit >= height; unit--) if (fitsAt(units, entries, unit, height, movingKey)) return unit;
+  return null;
+}
+
+/** What blocks an entry of `height` at `unit`: the entry in the way, 'outside' when it would leave the rack, null when it fits. */
+export function blockerAt(units: number, entries: RackEntry[], unit: number, height: number, movingKey?: string): RackEntry | 'outside' | null {
+  const span = spanOf(unit, height);
+  if (Math.min(...span) < 1 || Math.max(...span) > units) return 'outside';
+  return entries.find((e) => e.key !== movingKey && e.unit !== null && spanOf(e.unit, e.height).some((u) => span.includes(u))) ?? null;
 }

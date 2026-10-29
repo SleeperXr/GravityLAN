@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from sqlalchemy import inspect, select, or_
+from sqlalchemy import inspect, select, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -270,7 +270,22 @@ async def run_migrations(db: AsyncSession):
     except Exception as e:
         await db.rollback()
         logger.error(f"Migration error while clearing unsafe service links: {e}")
+
+    try:
+        await _retire_phone_system_items(db)
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Migration error while retiring phone system rack items: {e}")
     logger.info("Schema migration complete.")
+
+
+async def _retire_phone_system_items(db: AsyncSession):
+    """Rack items of the retired kind phone_system become "other": a phone system has an IP and is a network device."""
+    from app.models.rack_cabling import RackItem
+    result = await db.execute(update(RackItem).where(RackItem.kind == "phone_system").values(kind="other"))
+    if result.rowcount:
+        logger.info(f"Retired {result.rowcount} phone system rack item(s) to 'other'")
+    await db.commit()
 
 
 async def _clear_unsafe_service_links(db: AsyncSession):

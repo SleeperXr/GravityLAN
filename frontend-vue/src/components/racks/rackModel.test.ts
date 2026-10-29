@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Device, RackItem, RackPort } from '@/types';
-import { cableRoute, cableDefaults, deviceEntry, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, portsOnSide, rackSlots, sideOf, spanOf, type RackEntry } from './rackModel';
+import { blockerAt, cableDefaults, deviceEntry, firstFreeUnit, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, portsOnSide, rackSlots, sideOf, spanOf, type RackEntry } from './rackModel';
 import { isRackMountable, nearestFreeUnit, overlappingKeys, rackCandidates } from './rackModel';
+import { faceOfDevice } from './rackKinds';
 
 const dev = (id: number, rack_unit: number | null, rack_height = 1): RackEntry =>
   deviceEntry({ id, ip: `10.0.0.${id}`, rack_id: 1, rack_unit, rack_height, is_online: true } as Device, `Dev ${id}`);
@@ -137,8 +138,35 @@ describe('front and rear', () => {
     expect(sideOf({ side: undefined } as unknown as RackPort)).toBe('front');
   });
 
-  it('draws a cable as a curve through its lane', () => {
-    expect(cableRoute({ x: 10, y: 20 }, { x: 30, y: 40 }, 100)).toBe('M 10 20 H 94 Q 100 20 100 26 V 34 Q 100 40 94 40 H 30');
-    expect(cableRoute({ x: 10, y: 20 }, { x: 30, y: 20 }, 100)).toBe('M 10 20 H 30');
+});
+
+describe('finding room', () => {
+  it('names what is in the way of a place, or that it leaves the rack', () => {
+    const entries = [dev(1, 5, 2), item(7, 2)];
+    expect(blockerAt(6, entries, 4, 1)).toMatchObject({ key: 'device-1' });
+    expect(blockerAt(6, entries, 6, 2)).toMatchObject({ key: 'device-1' });
+    expect(blockerAt(6, entries, 1, 2)).toBe('outside');
+    expect(blockerAt(6, entries, 3, 1)).toBeNull();
+    expect(blockerAt(6, entries, 5, 2, 'device-1')).toBeNull();
+  });
+
+  it('offers the highest gap that is tall enough', () => {
+    const entries = [dev(1, 6), dev(2, 4, 2)];
+    expect(firstFreeUnit(6, entries, 1)).toBe(5);
+    expect(firstFreeUnit(6, entries, 2)).toBe(2);
+    expect(firstFreeUnit(6, entries, 3)).toBeNull();
+  });
+
+  it('draws a device as the hardware its type names', () => {
+    const face = (device_type: string, device_subtype = '', is_host = false) => faceOfDevice({ device_type, device_subtype, is_host });
+    expect(face('switch')).toBe('switch');
+    expect(face('firewall', 'nftables / keepalived')).toBe('router');
+    expect(face('nas', 'TrueNAS SCALE')).toBe('storage');
+    expect(face('server', 'Proxmox VE', true)).toBe('server');
+    expect(face('unknown', '', true)).toBe('server');
+    expect(face('webui')).toBe('generic');
+    expect(face('Phone System', 'Starface')).toBe('phone');
+    expect(dev(1, 1).face).toBe('generic');
+    expect(item(1, 1).face).toBe('blank');
   });
 });

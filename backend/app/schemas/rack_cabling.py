@@ -10,7 +10,7 @@ RackItemKind = Literal[
     "ups",
     "patch_copper",
     "patch_fiber",
-    "phone_system",
+    "power_strip",
     "blank",
     "cable_management",
     "other",
