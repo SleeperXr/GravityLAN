@@ -41,6 +41,8 @@ class RackPort(Base):
     rack_item_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rack_items.id", ondelete="CASCADE"), nullable=True, index=True)
     number: Mapped[int] = mapped_column(Integer, nullable=False)
     kind: Mapped[str] = mapped_column(String(20), nullable=False, default="RJ45")
+    # Which side of the rack the port is on: front (switches, patch panels) or rear (servers, power)
+    side: Mapped[str] = mapped_column(String(10), nullable=False, default="front", server_default="front")
 
     __table_args__ = (
         UniqueConstraint("device_id", "number", name="uix_rack_port_device"),

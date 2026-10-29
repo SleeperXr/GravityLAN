@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Device, RackItem, RackPort } from '@/types';
-import { cableDefaults, deviceEntry, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, rackSlots, spanOf, type RackEntry } from './rackModel';
+import { cableCurve, cableDefaults, deviceEntry, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, portsOnSide, rackSlots, sideOf, spanOf, type RackEntry } from './rackModel';
 
 const dev = (id: number, rack_unit: number | null, rack_height = 1): RackEntry =>
   deviceEntry({ id, ip: `10.0.0.${id}`, rack_id: 1, rack_unit, rack_height, is_online: true } as Device, `Dev ${id}`);
@@ -50,5 +50,20 @@ describe('rackModel', () => {
   it('gives a new cable the usual type and colour of its port kind', () => {
     expect(cableDefaults('LC').cable).toBe('OM4 LC-LC');
     expect(cableDefaults('Unbekannt').cable).toBe('Kabel');
+  });
+});
+
+describe('front and rear', () => {
+  it('splits the ports of an entry by side', () => {
+    const ports = [
+      { id: 1, device_id: 3, rack_item_id: null, number: 1, kind: 'RJ45', side: 'front' },
+      { id: 2, device_id: 3, rack_item_id: null, number: 2, kind: 'RJ45', side: 'rear' },
+    ] as RackPort[];
+    expect(portsOnSide(dev(3, 1), ports, 'rear').map((p) => p.id)).toEqual([2]);
+    expect(sideOf({ side: undefined } as unknown as RackPort)).toBe('front');
+  });
+
+  it('draws a cable as a curve through its lane', () => {
+    expect(cableCurve({ x: 10, y: 20 }, { x: 30, y: 40 }, 100)).toBe('M 10 20 C 100 20, 100 40, 30 40');
   });
 });

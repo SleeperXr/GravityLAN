@@ -270,7 +270,8 @@ async def _seed(scenario: Scenario) -> dict[str, tuple[int, str, tuple]]:
                 ports[(name, number)] = port
         for name, (count, kind) in scenario.port_counts.items():
             for number in range(1, count + 1):
-                port = RackPort(device_id=by_name[name].id, number=number, kind=kind)
+                side = "rear" if name.startswith(("pve", "TrueNAS")) else "front"
+                port = RackPort(device_id=by_name[name].id, number=number, kind=kind, side=side)
                 db.add(port)
                 ports[(name, number)] = port
         await db.flush()

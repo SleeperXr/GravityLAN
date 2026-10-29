@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Rack view: front and rear. Every port has a side (front or rear, set in the port panel). The rack shows the front or the rear, and cables are drawn as lines down the right-hand side of the rack, between their two jacks. A cable whose other end is on the other side leaves as a dashed stub. The company demo has the servers' ports on the rear.
+- Rack view: rack size can be changed. "Edit rack" changes the name, the height in units (HE) and the width (19 or 10 inch). A smaller rack is refused while something in it would not fit.
+- Field labels: the device editor says which size is which. "Kachelgröße auf der Übersicht" is the tile size on the dashboard (grid cells), "Höhe im Rack" is the height in the rack in units; both hints say where to change them.
+
 ### Security
 - dnspython 2.9.0 (Dependabot alert #50, `dns.name.from_wire_parser()` excessive CPU use). A crafted DNS answer, e.g. from a DNS server in the scanned network, could keep name decompression busy during hostname lookups. Minimum version raised in `requirements.txt` and `pyproject.toml`, lockfile updated.
 

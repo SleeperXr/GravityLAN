@@ -23,6 +23,7 @@ MIGRATIONS = [
     ("topology_links", "source_handle", "TEXT"),
     ("topology_links", "target_handle", "TEXT"),
     ("topology_links", "role", "VARCHAR(20) DEFAULT 'primary'"),
+    ("rack_ports", "side", "VARCHAR(10) DEFAULT 'front'"),
     ("discovered_hosts", "is_reserved", "BOOLEAN DEFAULT FALSE"),
     ("discovered_hosts", "ip_placeholder", "BOOLEAN DEFAULT FALSE"),
     ("discovered_hosts", "old_ip", "VARCHAR(45)"),

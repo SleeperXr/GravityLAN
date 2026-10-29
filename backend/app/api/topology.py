@@ -7,7 +7,8 @@ from app.api.auth import get_current_admin
 from app.database import get_db
 from app.models.topology import Rack as RackModel, TopologyLink as LinkModel
 from app.models.device import Device as DeviceModel
-from app.schemas.topology import Rack as RackSchema, RackCreate, TopologyLink as LinkSchema, TopologyLinkCreate, TopologyLinkUpdate
+from app.models.rack_cabling import RackItem as RackItemModel
+from app.schemas.topology import Rack as RackSchema, RackCreate, TopologyLink as LinkSchema, TopologyLinkCreate, TopologyLinkUpdate, RackPatch
 from app.services.cache_service import topology_cache
 
 # Auth on the router itself (defense in depth); main.py adds it again on include.
@@ -52,6 +53,30 @@ async def create_rack(rack: RackCreate, db: AsyncSession = Depends(get_db)):
     topology_cache.invalidate()
     await db.refresh(db_rack)
     return db_rack
+
+@router.patch("/racks/{rack_id}", response_model=RackSchema)
+async def update_rack(rack_id: int, patch: RackPatch, db: AsyncSession = Depends(get_db)):
+    """Rename a rack or change its height (units) and width; refused while something in it would not fit."""
+    rack = await db.get(RackModel, rack_id)
+    if rack is None:
+        raise HTTPException(status_code=404, detail="Rack not found")
+    values = patch.model_dump(exclude_unset=True)
+    if any(field in values and values[field] is None for field in ("name", "units", "width")):
+        raise HTTPException(status_code=422, detail="This field cannot be cleared")
+    units = values.get("units", rack.units)
+    devices = (await db.execute(select(DeviceModel).where(DeviceModel.rack_id == rack_id, DeviceModel.rack_unit.is_not(None)))).scalars().all()
+    items = (await db.execute(select(RackItemModel).where(RackItemModel.rack_id == rack_id, RackItemModel.rack_unit.is_not(None)))).scalars().all()
+    placed = [(d.display_name or d.ip, d.rack_unit, d.rack_height or 1) for d in devices]
+    placed += [(i.name, i.rack_unit, i.rack_height or 1) for i in items]
+    for name, unit, height in placed:
+        if unit > units or unit - height + 1 < 1:
+            raise HTTPException(status_code=409, detail=f"{name} sits on unit {unit}; move it before making the rack smaller")
+    for field, value in values.items():
+        setattr(rack, field, value)
+    await db.commit()
+    topology_cache.invalidate()
+    await db.refresh(rack)
+    return rack
 
 @router.delete("/racks/{rack_id}")
 async def delete_rack(rack_id: int, db: AsyncSession = Depends(get_db)):

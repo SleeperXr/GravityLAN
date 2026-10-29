@@ -283,6 +283,7 @@ export const api = {
   // Topology
   getRacks: () => request<import('../types').Rack[]>('/api/topology/racks'),
   createRack: (data: Partial<import('../types').Rack>) => request<import('../types').Rack>('/api/topology/racks', { method: 'POST', body: JSON.stringify(data) }),
+  updateRack: (id: number, data: Partial<import('../types').Rack>) => request<import('../types').Rack>('/api/topology/racks/' + id, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteRack: (id: number) => request<void>(`/api/topology/racks/${id}`, { method: 'DELETE' }),
   getCabling: () => request<import('../types').RackCabling>('/api/topology/cabling'),
   createRackItem: (data: Partial<import('../types').RackItem> & { rack_id: number; name: string; port_count?: number; port_kind?: string }) =>
@@ -290,7 +291,7 @@ export const api = {
   updateRackItem: (id: number, data: Partial<import('../types').RackItem>) =>
     request<import('../types').RackItem>(`/api/topology/rack-items/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteRackItem: (id: number) => request<void>(`/api/topology/rack-items/${id}`, { method: 'DELETE' }),
-  setPorts: (data: { owner_type: 'device' | 'item'; owner_id: number; count: number; kind: string }) =>
+  setPorts: (data: { owner_type: 'device' | 'item'; owner_id: number; count: number; kind: string; side?: 'front' | 'rear' }) =>
     request<import('../types').RackPort[]>('/api/topology/ports', { method: 'PUT', body: JSON.stringify(data) }),
   createCable: (data: { a_port_id: number; b_port_id: number; cable?: string; color?: string | null; notes?: string | null }) =>
     request<import('../types').RackCable>('/api/topology/rack-cables', { method: 'POST', body: JSON.stringify(data) }),

@@ -76,15 +76,15 @@ function intOrNull(value: string | number | null | undefined): number | null {
         <Field v-slot="{ id }" :label="t('editor.rack_position')">
           <Select :id="id" v-model="form.rack_id" :options="rackOptions" />
         </Field>
-        <Field v-slot="{ id }" label="Unit">
+        <Field v-slot="{ id }" :label="t('gv.editor.rack_unit')" :hint="t('gv.editor.rack_unit_hint')">
           <Input :id="id" :model-value="form.rack_unit" type="number" min="1" inputmode="numeric" mono @update:model-value="(v) => (form.rack_unit = intOrNull(v))" />
         </Field>
-        <Field v-slot="{ id }" :label="t('editor.rack_height')">
+        <Field v-slot="{ id }" :label="t('editor.rack_height')" :hint="t('gv.editor.rack_height_hint')">
           <Input :id="id" :model-value="form.rack_height" type="number" min="1" max="10" mono @update:model-value="(v) => (form.rack_height = intOrNull(v) ?? 1)" />
         </Field>
       </div>
       <div class="grid gap-4 sm:grid-cols-2">
-        <Field v-slot="{ id }" :label="t('editor.grid_size')" :hint="t('editor.units')">
+        <Field v-slot="{ id }" :label="t('gv.editor.tile_size')" :hint="t('gv.editor.tile_size_hint')">
           <div class="flex items-center gap-2">
             <Input :id="id" :model-value="form.w" type="number" min="1" max="12" mono :aria-label="`${t('editor.grid_size')} W`" @update:model-value="(v) => (form.w = intOrNull(v) ?? 1)" />
             <span class="text-fg-subtle" aria-hidden="true">×</span>

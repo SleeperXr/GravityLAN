@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, useId } from 'vue';
 import { useEventListener } from '@vueuse/core';
-import { AlertTriangle, Loader2, Plus, Server, Trash2 } from 'lucide-vue-next';
+import { AlertTriangle, Loader2, Pencil, Plus, Server, Trash2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device, Rack, RackCable, RackCabling, RackItem, RackPort } from '@/types';
 import Button from '@/components/ui/Button.vue';
@@ -17,7 +17,7 @@ import RackElevation from './RackElevation.vue';
 import RackItemDialog from './RackItemDialog.vue';
 import RackPortsPanel, { type CableRow } from './RackPortsPanel.vue';
 import RackTray from './RackTray.vue';
-import { cableDefaults, deviceEntry, entryKey, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, type RackEntry } from './rackModel';
+import { cableDefaults, deviceEntry, entryKey, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, type PortSide, type RackEntry } from './rackModel';
 
 /**
  * Racks with their equipment: network devices and rack equipment (unmanaged switches, UPS, patch panels,
@@ -42,6 +42,9 @@ const editingItem = ref<RackItem | null>(null);
 const creatingRack = ref(false);
 const rackForm = ref({ name: '', units: 42, width: 19 });
 const savingRack = ref(false);
+const side = ref<PortSide>('front');
+const sides: PortSide[] = ['front', 'rear'];
+const rackEditing = ref(false);
 
 async function load(select?: number) {
   try {
@@ -239,11 +242,11 @@ async function detach(key: string) {
 }
 
 // ── Ports and cables ─────────────────────────────────────────────────────────
-async function setPorts(count: number, kind: string) {
+async function setPorts(count: number, kind: string, side: PortSide) {
   const entry = selected.value;
   if (!entry) return;
   try {
-    await api.setPorts({ owner_type: entry.kind, owner_id: entry.id, count, kind });
+    await api.setPorts({ owner_type: entry.kind, owner_id: entry.id, count, kind, side });
     await refreshCabling();
     showToast('success', t('gv.rack.ports_title'), t('gv.rack.ports_saved', { label: entry.label, count }));
   } catch (err) {
@@ -335,8 +338,34 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
 // ── Racks ────────────────────────────────────────────────────────────────────
 function openCreate() {
+  rackEditing.value = false;
   rackForm.value = { name: '', units: 42, width: 19 };
   creatingRack.value = true;
+}
+
+function openEditRack() {
+  if (!rack.value) return;
+  rackEditing.value = true;
+  rackForm.value = { name: rack.value.name, units: rack.value.units, width: rack.value.width };
+  creatingRack.value = true;
+}
+
+/** Saves a new rack, or the changes to the open one; a smaller rack is refused while something would not fit. */
+async function saveRack() {
+  if (!rackEditing.value) return createRack();
+  const current = rack.value;
+  if (!current) return;
+  savingRack.value = true;
+  try {
+    await api.updateRack(current.id, { name: rackForm.value.name.trim() || current.name, units: rackForm.value.units, width: rackForm.value.width });
+    creatingRack.value = false;
+    await load(current.id);
+    emit('changed');
+  } catch (err) {
+    showToast('error', t('gv.rack.save_rack'), (err as Error).message);
+  } finally {
+    savingRack.value = false;
+  }
 }
 
 async function createRack() {
@@ -407,7 +436,21 @@ async function removeRack() {
             {{ r.name }}
           </button>
         </div>
+        <div class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('gv.rack.side_title')">
+          <button
+            v-for="s in sides"
+            :key="s"
+            type="button"
+            class="h-7 rounded-sm px-3 text-xs font-semibold transition-colors"
+            :class="side === s ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
+            :aria-pressed="side === s"
+            @click="side = s"
+          >
+            {{ t('gv.rack.side_' + s) }}
+          </button>
+        </div>
         <div class="ml-auto flex gap-1">
+          <Button size="sm" @click="openEditRack"><Pencil aria-hidden="true" />{{ t('gv.rack.edit_rack') }}</Button>
           <Button size="sm" @click="addItem"><Plus aria-hidden="true" />{{ t('gv.rack.add_item') }}</Button>
           <Button size="sm" @click="openCreate"><Plus aria-hidden="true" />{{ t('gv.racks.new') }}</Button>
           <Button size="icon-sm" variant="danger-ghost" :aria-label="t('gv.racks.delete')" :title="t('gv.racks.delete')" @click="removeRack"><Trash2 aria-hidden="true" /></Button>
@@ -423,6 +466,11 @@ async function removeRack() {
             :candidates="unracked"
             :selected-key="selectedKey"
             :port-stats="portStats"
+            :side="side"
+            :width="rack.width"
+            :ports="cabling.ports"
+            :cables="cabling.cables"
+            :colour-of-port="colourOfPort"
             @select="selectEntry"
             @open="openEntry"
             @move="moveEntry"
@@ -487,8 +535,8 @@ async function removeRack() {
 
     <RackItemDialog v-if="rack" v-model:open="itemDialog" :rack-id="rack.id" :item="editingItem" @saved="onItemSaved" />
 
-    <Dialog v-model:open="creatingRack" :title="t('gv.racks.new')" size="sm">
-      <form :id="`${id}-form`" class="space-y-4" @submit.prevent="createRack">
+    <Dialog v-model:open="creatingRack" :title="rackEditing ? t('gv.rack.edit_rack') : t('gv.racks.new')" size="sm">
+      <form :id="`${id}-form`" class="space-y-4" @submit.prevent="saveRack">
         <div class="space-y-1.5">
           <label :for="`${id}-name`" class="text-xs font-medium text-fg">{{ t('gv.racks.name') }}</label>
           <Input :id="`${id}-name`" v-model="rackForm.name" :placeholder="`Rack ${racks.length + 1}`" autofocus />
@@ -518,7 +566,7 @@ async function removeRack() {
       </form>
       <template #footer>
         <Button @click="creatingRack = false">{{ t('common.cancel') }}</Button>
-        <Button variant="primary" type="submit" :form="`${id}-form`" :loading="savingRack"><Plus v-if="!savingRack" aria-hidden="true" />{{ t('gv.racks.create') }}</Button>
+        <Button variant="primary" type="submit" :form="`${id}-form`" :loading="savingRack"><Plus v-if="!savingRack" aria-hidden="true" />{{ rackEditing ? t('gv.rack.save_rack') : t('gv.racks.create') }}</Button>
       </template>
     </Dialog>
   </div>

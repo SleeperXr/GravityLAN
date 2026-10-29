@@ -127,3 +127,31 @@ async def test_deleting_an_item_takes_its_ports_and_cables(client, db, admin_tok
     cabling = await _cabling(client)
     assert cabling["cables"] == []
     assert all(p["rack_item_id"] != ups["id"] for p in cabling["ports"])
+
+
+@pytest.mark.asyncio
+async def test_rack_size_follows_what_is_in_it(client, db, admin_token):
+    rack, _ = await _rack_with_server(db)
+    # The server sits on units 6 and 5: a 4-unit rack would lose it
+    too_small = await client.patch(f"/api/topology/racks/{rack.id}", json={"units": 4}, headers=HEADERS)
+    assert too_small.status_code == 409 and "pve-01" in too_small.json()["detail"]
+    grown = await client.patch(f"/api/topology/racks/{rack.id}", json={"units": 24, "width": 10}, headers=HEADERS)
+    assert grown.status_code == 200 and grown.json()["units"] == 24 and grown.json()["width"] == 10
+    bad_width = await client.patch(f"/api/topology/racks/{rack.id}", json={"width": 7}, headers=HEADERS)
+    assert bad_width.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ports_have_a_side_for_front_and_rear_view(client, db, admin_token):
+    rack, server = await _rack_with_server(db)
+    rear = await client.put(
+        "/api/topology/ports", json={"owner_type": "device", "owner_id": server.id, "count": 2, "kind": "RJ45", "side": "rear"}, headers=HEADERS
+    )
+    assert [p["side"] for p in rear.json()] == ["rear", "rear"]
+    invalid = await client.put(
+        "/api/topology/ports", json={"owner_type": "device", "owner_id": server.id, "count": 2, "kind": "RJ45", "side": "top"}, headers=HEADERS
+    )
+    assert invalid.status_code == 422
+    item = (await client.post("/api/topology/rack-items", json=_item(rack.id, port_count=2), headers=HEADERS)).json()
+    sides = [p["side"] for p in (await _cabling(client))["ports"] if p["rack_item_id"] == item["id"]]
+    assert sides == ["front", "front"]

@@ -1,26 +1,36 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { useResizeObserver } from '@vueuse/core';
 import { GripVertical } from 'lucide-vue-next';
 import StatusDot from '@/components/common/StatusDot.vue';
 import { t } from '@/i18n';
+import type { RackCable, RackPort } from '@/types';
 import { draggingKey } from './rackDrag';
 import { kindOf } from './rackKinds';
-import { fitsAt, rackSlots, type RackEntry } from './rackModel';
+import { cableCurve, fitsAt, portsOnSide, rackSlots, type PortSide, type RackEntry } from './rackModel';
 
 /**
- * The rack as one row per unit. Entries are dragged to a free place (a place that does not fit shows why
- * before the mouse is released) or moved one unit at a time with the arrow keys. A click selects, a double
- * click opens. The parent decides what a move means and saves it.
+ * The rack as one row per unit, seen from the front or the rear. Entries are dragged to a free place (a place
+ * that does not fit shows why before the mouse is released) or moved one unit at a time with the arrow keys.
+ * Ports sit on the faceplate as jacks; cables run as lines down the right-hand side of the rack. A cable whose
+ * other end is on the other side of the rack leaves as a dashed stub. The parent decides what a move means.
  */
 const props = defineProps<{
   name: string;
   units: number;
+  /** Rack width in inches: 19 or 10 */
+  width: number;
   /** Entries of this rack, placed or waiting in the tray */
   entries: RackEntry[];
   /** Network devices without a rack that may be dragged in */
   candidates: RackEntry[];
   selectedKey: string | null;
   portStats: Record<string, { cabled: number; total: number }>;
+  side: PortSide;
+  /** Every port of the rack's devices and rack items */
+  ports: RackPort[];
+  cables: RackCable[];
+  colourOfPort: Record<number, string>;
 }>();
 const emit = defineEmits<{
   select: [key: string];
@@ -32,8 +42,56 @@ const UNIT_REM = 1.75;
 const slots = computed(() => rackSlots(props.units, props.entries));
 const dragCandidates = computed(() => [...props.entries, ...props.candidates]);
 const hover = ref<{ unit: number; valid: boolean } | null>(null);
+const portById = computed(() => new Map(props.ports.map((p) => [p.id, p])));
+
+const railRef = ref<HTMLElement | null>(null);
+const railWidth = ref(0);
+type CablePath = { id: number; d: string; colour: string; partial: boolean };
+const cablePaths = ref<CablePath[]>([]);
+
+/** Where each cable is drawn: between its two jacks when both are on this side, else a dashed stub to the lane. */
+function measure() {
+  const rail = railRef.value;
+  if (!rail) return;
+  const origin = rail.getBoundingClientRect();
+  railWidth.value = rail.clientWidth;
+  const centre = (portId: number) => {
+    const el = rail.querySelector<HTMLElement>('[data-port="' + portId + '"]');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2 - origin.left, y: r.top + r.height / 2 - origin.top };
+  };
+  const paths: CablePath[] = [];
+  let lane = 0;
+  for (const cable of props.cables) {
+    if (!portById.value.has(cable.a_port_id) || !portById.value.has(cable.b_port_id)) continue;
+    const a = centre(cable.a_port_id);
+    const b = centre(cable.b_port_id);
+    const colour = cable.color ?? '#c3cad4';
+    if (a && b) {
+      const laneX = railWidth.value - 8 - (lane % 8) * 4;
+      paths.push({ id: cable.id, d: cableCurve(a, b, laneX), colour, partial: false });
+      lane += 1;
+    } else if (a || b) {
+      const end = (a ?? b)!;
+      paths.push({ id: cable.id, d: 'M ' + end.x + ' ' + end.y + ' H ' + (railWidth.value - 4), colour, partial: true });
+    }
+  }
+  cablePaths.value = paths;
+}
+
+watch(
+  () => [props.entries, props.ports, props.cables, props.side, props.units],
+  () => nextTick(measure),
+);
+onMounted(() => nextTick(measure));
+useResizeObserver(railRef, measure);
 
 const dragged = (): RackEntry | null => dragCandidates.value.find((e) => e.key === draggingKey.value) ?? null;
+
+function jacksOf(entry: RackEntry): RackPort[] {
+  return portsOnSide(entry, props.ports, props.side);
+}
 
 function startDrag(event: DragEvent, entry: RackEntry) {
   draggingKey.value = entry.key;
@@ -81,16 +139,32 @@ function slotClass(unit: number): string {
 
 function portSummary(entry: RackEntry): string | null {
   const stat = props.portStats[entry.key];
-  return stat && stat.total > 0 ? `${stat.cabled}/${stat.total}` : null;
+  return stat && stat.total > 0 ? stat.cabled + '/' + stat.total : null;
 }
 </script>
 
 <template>
   <div
-    class="rack-rail rounded-lg border-[6px] border-[color-mix(in_oklab,var(--gl-line-strong)_70%,transparent)] bg-sunken p-1.5 shadow-inner"
+    ref="railRef"
+    class="rack-rail relative rounded-lg border-[6px] border-[color-mix(in_oklab,var(--gl-line-strong)_70%,transparent)] bg-sunken p-1.5 pr-8 shadow-inner"
+    :style="{ maxWidth: width === 10 ? '17rem' : undefined }"
     role="list"
-    :aria-label="name"
+    :aria-label="name + ', ' + (side === 'front' ? t('gv.rack.side_front') : t('gv.rack.side_rear'))"
   >
+    <svg class="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
+      <path
+        v-for="c in cablePaths"
+        :key="c.id"
+        :d="c.d"
+        fill="none"
+        :stroke="c.colour"
+        :stroke-width="c.partial ? 1.25 : 1.6"
+        :stroke-dasharray="c.partial ? '3 3' : undefined"
+        stroke-linecap="round"
+        opacity="0.85"
+      />
+    </svg>
+
     <div
       v-for="slot in slots"
       :key="slot.unit"
@@ -113,8 +187,8 @@ function portSummary(entry: RackEntry): string | null {
           !slot.entry.online && 'opacity-70',
           draggingKey === slot.entry.key && 'opacity-40',
         ]"
-        :style="{ height: `calc(${slot.entry.height * UNIT_REM}rem - 2px)` }"
-        :aria-label="`${slot.entry.label}, ${t('gv.rack.position', { unit: slot.unit, count: slot.entry.height })}`"
+        :style="{ height: 'calc(' + slot.entry.height * UNIT_REM + 'rem - 2px)' }"
+        :aria-label="slot.entry.label + ', ' + t('gv.rack.position', { unit: slot.unit, count: slot.entry.height })"
         :aria-pressed="selectedKey === slot.entry.key"
         :title="t('gv.rack.entry_hint')"
         @click="emit('select', slot.entry.key)"
@@ -132,11 +206,21 @@ function portSummary(entry: RackEntry): string | null {
           :label="slot.entry.online ? t('network.online') : t('network.offline')"
         />
         <component :is="kindOf(slot.entry.itemKind ?? 'other').icon" v-else class="size-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
-        <span class="min-w-0 flex-1">
+        <span class="min-w-[5rem] flex-1">
           <span class="block truncate text-xs font-semibold text-fg">{{ slot.entry.label }}</span>
           <span v-if="slot.entry.detail || slot.entry.height > 1" class="block truncate font-mono text-[10px] text-fg-subtle">
             {{ slot.entry.detail }}<template v-if="slot.entry.height > 1"> · {{ t('rack.units', { count: slot.entry.height }) }}</template>
           </span>
+        </span>
+        <span v-if="jacksOf(slot.entry).length" class="flex shrink-0 items-center gap-px" aria-hidden="true">
+          <span
+            v-for="p in jacksOf(slot.entry)"
+            :key="p.id"
+            :data-port="p.id"
+            class="rounded-[1px] border"
+            :class="[jacksOf(slot.entry).length > 24 ? 'size-[3px]' : 'size-[5px]', colourOfPort[p.id] ? '' : 'border-fg-subtle/60']"
+            :style="colourOfPort[p.id] ? { backgroundColor: colourOfPort[p.id], borderColor: colourOfPort[p.id] } : undefined"
+          />
         </span>
         <span v-if="portSummary(slot.entry)" class="shrink-0 rounded-sm bg-sunken px-1.5 font-mono text-[10px] text-fg-muted tabular" :title="t('gv.rack.ports_summary')">
           {{ portSummary(slot.entry) }}

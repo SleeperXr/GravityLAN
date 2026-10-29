@@ -426,7 +426,7 @@
       "item_name": "Name",
       "item_name_hint": "e.g. Switch server room",
       "item_kind": "Kind",
-      "item_height": "Rack units (U)",
+      "item_height": "Height in rack (U)",
       "item_notes": "Notes",
       "item_save": "Save",
       "ports_title": "Ports",
@@ -449,7 +449,20 @@
       "cable_remove": "Remove cable",
       "cable_removed": "Cable removed",
       "cable_connected": "{{a}} ↔ {{b}} connected",
-      "select_hint": "Click a device or item in the rack to see its ports and cables."
+      "select_hint": "Click a device or item in the rack to see its ports and cables.",
+      "edit_rack": "Edit rack",
+      "save_rack": "Save",
+      "side_title": "View",
+      "side_front": "Front",
+      "side_rear": "Rear",
+      "side_label": "Port side"
+    },
+    "editor": {
+      "tile_size": "Tile size on the overview (width × height)",
+      "tile_size_hint": "Grid cells of the overview, not of the rack. Change here in the device editor or by dragging on the overview",
+      "rack_height_hint": "Height in the rack in U. Change here in the device editor or by dragging in the rack view",
+      "rack_unit": "Place in the rack (top U)",
+      "rack_unit_hint": "The rack view sets this when you drag. Change here in the device editor or in the rack view"
     }
   }
 }

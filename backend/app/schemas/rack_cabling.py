@@ -16,6 +16,7 @@ RackItemKind = Literal[
     "other",
 ]
 PortOwnerType = Literal["device", "item"]
+PortSide = Literal["front", "rear"]
 HEX_COLOUR = r"^#[0-9a-fA-F]{6}$"
 
 
@@ -56,6 +57,7 @@ class PortsIn(BaseModel):
     owner_id: int
     count: int = Field(ge=0, le=96)
     kind: str = Field(default="RJ45", min_length=1, max_length=20)
+    side: PortSide = "front"
 
 
 class PortOut(BaseModel):
@@ -64,6 +66,7 @@ class PortOut(BaseModel):
     rack_item_id: int | None
     number: int
     kind: str
+    side: str
 
     model_config = {"from_attributes": True}
 

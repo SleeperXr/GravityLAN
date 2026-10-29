@@ -138,3 +138,21 @@ const FALLBACK_CABLE = { cable: 'Kabel', colour: '#c3cad4' };
 export const PORT_KINDS = ['RJ45', 'SFP', 'SFP+', 'LC', 'Power', 'Console'] as const;
 
 export const cableDefaults = (portKind: string): { cable: string; colour: string } => CABLE_DEFAULTS[portKind] ?? FALLBACK_CABLE;
+
+export type PortSide = 'front' | 'rear';
+
+/** Side of the rack a port sits on; ports without a side are on the front. */
+export const sideOf = (port: RackPort): PortSide => (port.side === 'rear' ? 'rear' : 'front');
+
+/** The ports of one entry that sit on the given side of the rack. */
+export function portsOnSide(entry: RackEntry, ports: RackPort[], side: PortSide): RackPort[] {
+  return portsOf(entry, ports).filter((p) => sideOf(p) === side);
+}
+
+/**
+ * A cable as a curve: it leaves its port to the right, runs down the cable lane at laneX and comes back to the
+ * other port, so cables do not cross the faceplates they are plugged into.
+ */
+export function cableCurve(a: { x: number; y: number }, b: { x: number; y: number }, laneX: number): string {
+  return 'M ' + a.x + ' ' + a.y + ' C ' + laneX + ' ' + a.y + ', ' + laneX + ' ' + b.y + ', ' + b.x + ' ' + b.y;
+}

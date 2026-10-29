@@ -60,7 +60,7 @@ async def _cabled_port_ids(db: AsyncSession, port_ids: list[int]) -> set[int]:
     return {port for row in rows for port in row if port in port_ids}
 
 
-async def _set_ports(db: AsyncSession, owner_field: str, owner_id: int, count: int, kind: str) -> None:
+async def _set_ports(db: AsyncSession, owner_field: str, owner_id: int, count: int, kind: str, side: str) -> None:
     """Give the owner exactly ports 1..count, all of `kind`. A port that still has a cable cannot be removed."""
     column = getattr(RackPort, owner_field)
     existing = (await db.execute(select(RackPort).where(column == owner_id))).scalars().all()
@@ -73,9 +73,10 @@ async def _set_ports(db: AsyncSession, owner_field: str, owner_id: int, count: i
             await db.delete(port)
         else:
             port.kind = kind
+            port.side = side
     for number in range(1, count + 1):
         if number not in numbers:
-            db.add(RackPort(**{owner_field: owner_id}, number=number, kind=kind))
+            db.add(RackPort(**{owner_field: owner_id}, number=number, kind=kind, side=side))
 
 
 @router.get("/cabling", response_model=CablingOut)
@@ -100,7 +101,7 @@ async def create_rack_item(data: RackItemIn, db: AsyncSession = Depends(get_db))
     )
     db.add(item)
     await db.flush()
-    await _set_ports(db, "rack_item_id", item.id, data.port_count, data.port_kind)
+    await _set_ports(db, "rack_item_id", item.id, data.port_count, data.port_kind, "front")
     await db.commit()
     await db.refresh(item)
     return item
@@ -152,7 +153,7 @@ async def set_ports(data: PortsIn, db: AsyncSession = Depends(get_db)):
         owner, owner_field = await db.get(RackItem, data.owner_id), "rack_item_id"
     if owner is None:
         raise HTTPException(status_code=404, detail="Owner not found")
-    await _set_ports(db, owner_field, data.owner_id, data.count, data.kind)
+    await _set_ports(db, owner_field, data.owner_id, data.count, data.kind, data.side)
     await db.commit()
     column = getattr(RackPort, owner_field)
     return (await db.execute(select(RackPort).where(column == data.owner_id).order_by(RackPort.number))).scalars().all()

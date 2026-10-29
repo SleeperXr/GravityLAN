@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal, Optional, List
 from datetime import datetime
 
@@ -45,6 +45,12 @@ class RackBase(BaseModel):
 
 class RackCreate(RackBase):
     pass
+
+class RackPatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    units: Optional[int] = Field(default=None, ge=1, le=60)
+    width: Optional[Literal[10, 19]] = None
+    notes: Optional[str] = None
 
 class Rack(RackBase):
     id: int

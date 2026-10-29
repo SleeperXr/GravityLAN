@@ -340,6 +340,7 @@ export interface RackPort {
   rack_item_id: number | null;
   number: number;
   kind: string;
+  side: string;
 }
 
 /** A physical cable between two ports of the rack. */

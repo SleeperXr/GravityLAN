@@ -6,7 +6,7 @@ import Input from '@/components/ui/Input.vue';
 import Select from '@/components/ui/Select.vue';
 import { t } from '@/i18n';
 import type { RackPort } from '@/types';
-import { PORT_KINDS, type RackEntry } from './rackModel';
+import { PORT_KINDS, type PortSide, type RackEntry } from './rackModel';
 
 /** One cable as the selected entry sees it: its own port, the port at the other end, and the colour. */
 export interface CableRow {
@@ -33,7 +33,7 @@ const props = defineProps<{
   position: string | null;
 }>();
 const emit = defineEmits<{
-  setPorts: [count: number, kind: string];
+  setPorts: [count: number, kind: string, side: PortSide];
   pick: [port: RackPort];
   cancel: [];
   removeCable: [id: number];
@@ -43,19 +43,25 @@ const emit = defineEmits<{
 
 const count = ref(props.ports.length);
 const kind = ref(props.ports[0]?.kind ?? 'RJ45');
+const side = ref<PortSide>((props.ports[0]?.side as PortSide | undefined) ?? 'front');
 watch(
   () => [props.entry.key, props.ports.length, props.ports[0]?.kind],
   () => {
     count.value = props.ports.length;
     kind.value = props.ports[0]?.kind ?? 'RJ45';
+    side.value = (props.ports[0]?.side as PortSide | undefined) ?? 'front';
   },
 );
 
 const kindOptions = PORT_KINDS.map((k) => ({ value: k, label: k }));
+const sideOptions = [
+  { value: 'front', label: t('gv.rack.side_front') },
+  { value: 'rear', label: t('gv.rack.side_rear') },
+];
 const pending = computed(() => props.ports.some((p) => p.id === props.pendingPortId));
 
 function apply() {
-  emit('setPorts', Math.min(96, Math.max(0, Math.round(count.value) || 0)), kind.value);
+  emit('setPorts', Math.min(96, Math.max(0, Math.round(count.value) || 0)), kind.value, side.value);
 }
 </script>
 
@@ -88,6 +94,10 @@ function apply() {
       <label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-fg">
         {{ t('gv.rack.ports_kind') }}
         <Select v-model="kind" :options="kindOptions" />
+      </label>
+      <label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-fg">
+        {{ t('gv.rack.side_label') }}
+        <Select v-model="side" :options="sideOptions" />
       </label>
       <Button size="sm" type="submit">{{ t('gv.rack.ports_apply') }}</Button>
     </form>
