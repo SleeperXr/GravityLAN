@@ -1,97 +1,379 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, useId } from 'vue';
+import { useEventListener } from '@vueuse/core';
 import { AlertTriangle, Loader2, Plus, Server, Trash2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
-import type { Device, Rack } from '@/types';
+import type { Device, Rack, RackCable, RackCabling, RackItem, RackPort } from '@/types';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
-import StatusDot from '@/components/common/StatusDot.vue';
-import { deviceLabel, lineLabelFor, networkColor } from '@/lib/networks';
-import LineBullet from '@/components/common/LineBullet.vue';
-import { heightOf, occupiedUnits, placementIssues, rackSlots } from './rackModel';
+import { useNetworkStore } from '@/stores/network';
+import { deviceLabel } from '@/lib/networks';
 import { confirmAction } from '@/composables/useConfirm';
 import { useToast } from '@/composables/useToast';
 import { t } from '@/i18n';
+import RackElevation from './RackElevation.vue';
+import RackItemDialog from './RackItemDialog.vue';
+import RackPortsPanel, { type CableRow } from './RackPortsPanel.vue';
+import RackTray from './RackTray.vue';
+import { cableDefaults, deviceEntry, entryKey, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, type RackEntry } from './rackModel';
 
 /**
- * Racks with the devices placed in them (rack, top unit and height are set in the device
- * editor). Each device carries its network's line colour; a click opens the editor.
+ * Racks with their equipment: network devices and rack equipment (unmanaged switches, UPS, patch panels,
+ * blanks, cable management). Drag entries onto free units; click a port and then a port elsewhere to cable
+ * them. Every change is saved at once and shows in the device editor as well.
  */
 const props = defineProps<{ devices: Device[] }>();
 const emit = defineEmits<{ openDevice: [device: Device]; changed: [] }>();
+
 const { showToast } = useToast();
+const store = useNetworkStore();
 const id = useId();
 
 const racks = ref<Rack[]>([]);
-const selectedId = ref<number | null>(null);
+const selectedRackId = ref<number | null>(null);
+const cabling = ref<RackCabling>({ items: [], ports: [], cables: [] });
 const loading = ref(true);
+const selectedKey = ref<string | null>(null);
+const pendingPortId = ref<number | null>(null);
+const itemDialog = ref(false);
+const editingItem = ref<RackItem | null>(null);
+const creatingRack = ref(false);
+const rackForm = ref({ name: '', units: 42, width: 19 });
+const savingRack = ref(false);
 
 async function load(select?: number) {
   try {
-    const data = await api.getRacks();
-    racks.value = Array.isArray(data) ? data : [];
-    const keep = select ?? selectedId.value;
-    selectedId.value = racks.value.some((r) => r.id === keep) ? keep : (racks.value[0]?.id ?? null);
+    const [list, cables] = await Promise.all([api.getRacks(), api.getCabling()]);
+    racks.value = Array.isArray(list) ? list : [];
+    cabling.value = cables;
+    const keep = select ?? selectedRackId.value;
+    selectedRackId.value = racks.value.some((r) => r.id === keep) ? keep : (racks.value[0]?.id ?? null);
   } catch (err) {
     showToast('error', t('topology.tab_rack'), (err as Error).message);
   } finally {
     loading.value = false;
   }
 }
-onMounted(() => load());
 
-const rack = computed(() => racks.value.find((r) => r.id === selectedId.value) ?? null);
-const rackDevices = computed(() => (rack.value ? props.devices.filter((d) => d.rack_id === rack.value!.id) : []));
-const slots = computed(() => (rack.value ? rackSlots(rack.value.units, rackDevices.value) : []));
-const occupied = computed(() => occupiedUnits(rackDevices.value));
-const issues = computed(() => (rack.value ? placementIssues(rack.value.units, rackDevices.value) : []));
-const issueIds = computed(() => new Set(issues.value.map((i) => i.device.id)));
-const inventory = computed(() => [...rackDevices.value].sort((a, b) => (b.rack_unit ?? 0) - (a.rack_unit ?? 0)));
-
-// ── Create / delete ──────────────────────────────────────────────────────────
-const creating = ref(false);
-const form = ref({ name: '', units: 42, width: 19 });
-const saving = ref(false);
-
-function openCreate() {
-  form.value = { name: racks.value.length ? '' : 'Main Rack', units: 42, width: 19 };
-  creating.value = true;
+async function refreshCabling() {
+  try {
+    cabling.value = await api.getCabling();
+  } catch (err) {
+    showToast('error', t('gv.rack.cables_title'), (err as Error).message);
+  }
 }
 
-async function create() {
-  saving.value = true;
+onMounted(() => load());
+
+// ── What is shown ────────────────────────────────────────────────────────────
+const rack = computed(() => racks.value.find((r) => r.id === selectedRackId.value) ?? null);
+const entries = computed<RackEntry[]>(() => {
+  if (!rack.value) return [];
+  const devices = props.devices.filter((d) => d.rack_id === rack.value!.id).map((d) => deviceEntry(d, deviceLabel(d)));
+  const items = cabling.value.items.filter((i) => i.rack_id === rack.value!.id).map(itemEntry);
+  return [...devices, ...items];
+});
+const unplaced = computed(() => entries.value.filter((e) => e.unit === null));
+const unracked = computed<RackEntry[]>(() =>
+  props.devices.filter((d) => d.rack_id === null).map((d) => ({ ...deviceEntry(d, deviceLabel(d)), unit: null })),
+);
+const occupied = computed(() => occupiedUnits(entries.value));
+const issues = computed(() => (rack.value ? placementIssues(rack.value.units, entries.value).filter((i) => i.reason !== 'no_position') : []));
+
+const selected = computed<RackEntry | null>(() => entries.value.find((e) => e.key === selectedKey.value) ?? null);
+const selectedPosition = computed(() => {
+  const entry = selected.value;
+  return entry && entry.unit !== null ? t('gv.rack.position', { unit: entry.unit, count: entry.height }) : null;
+});
+
+// ── Ports and cables ─────────────────────────────────────────────────────────
+const portById = computed(() => new Map(cabling.value.ports.map((p) => [p.id, p])));
+const ownerLabels = computed(() => {
+  const labels = new Map<string, string>();
+  for (const d of props.devices) labels.set(entryKey('device', d.id), deviceLabel(d));
+  for (const item of cabling.value.items) labels.set(entryKey('item', item.id), item.name);
+  return labels;
+});
+const cableOfPort = computed(() => {
+  const map = new Map<number, RackCable>();
+  for (const cable of cabling.value.cables) {
+    map.set(cable.a_port_id, cable);
+    map.set(cable.b_port_id, cable);
+  }
+  return map;
+});
+const colourOfPort = computed(() => {
+  const colours: Record<number, string> = {};
+  for (const [portId, cable] of cableOfPort.value) colours[portId] = cable.color ?? '#c3cad4';
+  return colours;
+});
+const portStats = computed(() => {
+  const stats: Record<string, { cabled: number; total: number }> = {};
+  for (const port of cabling.value.ports) {
+    const stat = (stats[ownerKeyOf(port)] ??= { cabled: 0, total: 0 });
+    stat.total += 1;
+    if (cableOfPort.value.has(port.id)) stat.cabled += 1;
+  }
+  return stats;
+});
+const selectedPorts = computed<RackPort[]>(() => (selected.value ? portsOf(selected.value, cabling.value.ports) : []));
+const cableRows = computed<CableRow[]>(() => {
+  const own = new Set(selectedPorts.value.map((p) => p.id));
+  const rows: CableRow[] = [];
+  for (const cable of cabling.value.cables) {
+    const ownId = own.has(cable.a_port_id) ? cable.a_port_id : own.has(cable.b_port_id) ? cable.b_port_id : null;
+    if (ownId === null) continue;
+    const peer = portById.value.get(ownId === cable.a_port_id ? cable.b_port_id : cable.a_port_id);
+    const ownPort = portById.value.get(ownId);
+    if (!peer || !ownPort) continue;
+    rows.push({
+      id: cable.id,
+      cable: cable.cable,
+      colour: cable.color ?? '#c3cad4',
+      ownPortId: ownId,
+      ownNumber: ownPort.number,
+      peerLabel: ownerLabels.value.get(ownerKeyOf(peer)) ?? '?',
+      peerNumber: peer.number,
+    });
+  }
+  return rows.sort((a, b) => a.ownNumber - b.ownNumber);
+});
+const pendingLabel = computed(() => {
+  const port = pendingPortId.value !== null ? portById.value.get(pendingPortId.value) : undefined;
+  return port ? `${ownerLabels.value.get(ownerKeyOf(port)) ?? '?'} · ${t('gv.rack.port')} ${port.number}` : null;
+});
+
+// ── Selecting and opening ────────────────────────────────────────────────────
+function selectEntry(key: string) {
+  selectedKey.value = key;
+}
+
+function openItemEditor(item: RackItem) {
+  editingItem.value = item;
+  itemDialog.value = true;
+}
+
+function openEntry(key: string) {
+  const entry = entries.value.find((e) => e.key === key);
+  if (!entry) return;
+  if (entry.kind === 'device') {
+    const device = props.devices.find((d) => d.id === entry.id);
+    if (device) emit('openDevice', device);
+    return;
+  }
+  const item = cabling.value.items.find((i) => i.id === entry.id);
+  if (item) openItemEditor(item);
+}
+
+function addItem() {
+  editingItem.value = null;
+  itemDialog.value = true;
+}
+
+// ── Moving entries ───────────────────────────────────────────────────────────
+/** The rack's own entries, or a network device that has no rack yet. */
+function findEntry(key: string): RackEntry | undefined {
+  return entries.value.find((e) => e.key === key) ?? unracked.value.find((e) => e.key === key);
+}
+
+async function moveEntry(key: string, unit: number) {
+  const entry = findEntry(key);
+  const current = rack.value;
+  if (!entry || !current) return;
+  const inThisRack = entries.value.some((e) => e.key === key);
+  if (inThisRack && entry.unit === unit) return;
+  if (!fitsAt(current.units, entries.value, unit, entry.height, key)) {
+    showToast('error', t('gv.rack.drop_title'), t('gv.rack.no_room'));
+    return;
+  }
   try {
-    const created = await api.createRack({ name: form.value.name.trim() || `Rack ${racks.value.length + 1}`, units: form.value.units, width: form.value.width });
-    creating.value = false;
+    if (entry.kind === 'device') {
+      const patch = { rack_id: current.id, rack_unit: unit, rack_height: entry.height };
+      store.patchDevice(entry.id, patch);
+      await api.updateDevice(entry.id, patch);
+    } else {
+      await api.updateRackItem(entry.id, { rack_unit: unit });
+      cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, rack_unit: unit } : i)) };
+    }
+    emit('changed');
+  } catch (err) {
+    showToast('error', t('gv.rack.drop_title'), (err as Error).message);
+    void load(current.id);
+  }
+}
+
+/** Take an entry off its unit; it stays in the rack, in the tray. */
+async function unplace(key: string) {
+  const entry = entries.value.find((e) => e.key === key);
+  if (!entry || entry.unit === null) return;
+  try {
+    if (entry.kind === 'device') {
+      store.patchDevice(entry.id, { rack_unit: null });
+      await api.updateDevice(entry.id, { rack_unit: null });
+    } else {
+      await api.updateRackItem(entry.id, { rack_unit: null });
+      cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, rack_unit: null } : i)) };
+    }
+    emit('changed');
+  } catch (err) {
+    showToast('error', t('gv.rack.drop_title'), (err as Error).message);
+    void load(rack.value?.id);
+  }
+}
+
+/** Take a network device out of the rack altogether. */
+async function detach(key: string) {
+  const entry = entries.value.find((e) => e.key === key);
+  if (!entry || entry.kind !== 'device') return;
+  try {
+    store.patchDevice(entry.id, { rack_id: null, rack_unit: null });
+    await api.updateDevice(entry.id, { rack_id: null, rack_unit: null });
+    if (selectedKey.value === key) selectedKey.value = null;
+    emit('changed');
+  } catch (err) {
+    showToast('error', t('gv.rack.drop_title'), (err as Error).message);
+    void load(rack.value?.id);
+  }
+}
+
+// ── Ports and cables ─────────────────────────────────────────────────────────
+async function setPorts(count: number, kind: string) {
+  const entry = selected.value;
+  if (!entry) return;
+  try {
+    await api.setPorts({ owner_type: entry.kind, owner_id: entry.id, count, kind });
+    await refreshCabling();
+    showToast('success', t('gv.rack.ports_title'), t('gv.rack.ports_saved', { label: entry.label, count }));
+  } catch (err) {
+    showToast('error', t('gv.rack.ports_title'), (err as Error).message);
+  }
+}
+
+/** First click chooses the start port; the second click on another device's port makes the cable. */
+async function pickPort(port: RackPort) {
+  if (pendingPortId.value === null) {
+    if (cableOfPort.value.has(port.id)) {
+      showToast('info', t('gv.rack.cables_title'), t('gv.rack.port_busy'));
+      return;
+    }
+    pendingPortId.value = port.id;
+    return;
+  }
+  if (pendingPortId.value === port.id) {
+    pendingPortId.value = null;
+    return;
+  }
+  const from = portById.value.get(pendingPortId.value);
+  if (!from) {
+    pendingPortId.value = null;
+    return;
+  }
+  if (ownerKeyOf(from) === ownerKeyOf(port)) {
+    showToast('info', t('gv.rack.cables_title'), t('gv.rack.port_same_owner'));
+    return;
+  }
+  if (cableOfPort.value.has(port.id)) {
+    showToast('info', t('gv.rack.cables_title'), t('gv.rack.port_busy'));
+    return;
+  }
+  const defaults = cableDefaults(from.kind);
+  try {
+    await api.createCable({ a_port_id: from.id, b_port_id: port.id, cable: defaults.cable, color: defaults.colour });
+    pendingPortId.value = null;
+    await refreshCabling();
+    showToast(
+      'success',
+      t('gv.rack.cables_title'),
+      t('gv.rack.cable_connected', { a: ownerLabels.value.get(ownerKeyOf(from)) ?? '?', b: ownerLabels.value.get(ownerKeyOf(port)) ?? '?' }),
+    );
+  } catch (err) {
+    showToast('error', t('gv.rack.cables_title'), (err as Error).message);
+  }
+}
+
+async function removeCable(cableId: number) {
+  try {
+    await api.deleteCable(cableId);
+    await refreshCabling();
+    showToast('success', t('gv.rack.cables_title'), t('gv.rack.cable_removed'));
+  } catch (err) {
+    showToast('error', t('gv.rack.cables_title'), (err as Error).message);
+  }
+}
+
+async function deleteItem() {
+  const entry = selected.value;
+  if (!entry || entry.kind !== 'item') return;
+  const ok = await confirmAction({
+    title: t('gv.rack.delete_item'),
+    message: t('gv.rack.delete_item_confirm', { name: entry.label }),
+    confirmLabel: t('gv.rack.delete_item'),
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api.deleteRackItem(entry.id);
+    selectedKey.value = null;
+    await refreshCabling();
+    emit('changed');
+  } catch (err) {
+    showToast('error', t('gv.rack.delete_item'), (err as Error).message);
+  }
+}
+
+async function onItemSaved() {
+  await refreshCabling();
+  emit('changed');
+}
+
+// Escape drops a half-made cable before it closes anything else
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && pendingPortId.value !== null) pendingPortId.value = null;
+});
+
+// ── Racks ────────────────────────────────────────────────────────────────────
+function openCreate() {
+  rackForm.value = { name: '', units: 42, width: 19 };
+  creatingRack.value = true;
+}
+
+async function createRack() {
+  savingRack.value = true;
+  try {
+    const created = await api.createRack({
+      name: rackForm.value.name.trim() || `Rack ${racks.value.length + 1}`,
+      units: rackForm.value.units,
+      width: rackForm.value.width,
+    });
+    creatingRack.value = false;
     await load(created.id);
   } catch (err) {
     showToast('error', t('gv.racks.create'), (err as Error).message);
   } finally {
-    saving.value = false;
+    savingRack.value = false;
   }
 }
 
-async function remove() {
+async function removeRack() {
   if (!rack.value) return;
   const ok = await confirmAction({
     title: t('gv.racks.delete'),
-    message: t('gv.racks.delete_confirm', { name: rack.value.name, count: rackDevices.value.length }),
+    message: t('gv.racks.delete_confirm', { name: rack.value.name, count: entries.value.length }),
     confirmLabel: t('gv.racks.delete'),
     danger: true,
   });
   if (!ok) return;
   try {
     await api.deleteRack(rack.value.id);
+    selectedKey.value = null;
     await load();
     emit('changed');
   } catch (err) {
     showToast('error', t('gv.racks.delete'), (err as Error).message);
   }
 }
-
-const UNIT_REM = 1.75;
 </script>
 
 <template>
@@ -118,51 +400,33 @@ const UNIT_REM = 1.75;
             :key="r.id"
             type="button"
             class="h-7 shrink-0 rounded-sm px-3 text-xs font-semibold transition-colors"
-            :class="r.id === selectedId ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
-            :aria-pressed="r.id === selectedId"
-            @click="selectedId = r.id"
+            :class="r.id === selectedRackId ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
+            :aria-pressed="r.id === selectedRackId"
+            @click="selectedRackId = r.id"
           >
             {{ r.name }}
           </button>
         </div>
         <div class="ml-auto flex gap-1">
+          <Button size="sm" @click="addItem"><Plus aria-hidden="true" />{{ t('gv.rack.add_item') }}</Button>
           <Button size="sm" @click="openCreate"><Plus aria-hidden="true" />{{ t('gv.racks.new') }}</Button>
-          <Button size="icon-sm" variant="danger-ghost" :aria-label="t('gv.racks.delete')" :title="t('gv.racks.delete')" @click="remove"><Trash2 aria-hidden="true" /></Button>
+          <Button size="icon-sm" variant="danger-ghost" :aria-label="t('gv.racks.delete')" :title="t('gv.racks.delete')" @click="removeRack"><Trash2 aria-hidden="true" /></Button>
         </div>
       </header>
 
-      <div class="grid min-h-0 flex-1 gap-5 overflow-y-auto p-4 lg:grid-cols-[minmax(0,28rem)_1fr]">
-        <!-- The rack: rails with unit numbers, one row per unit, devices span their height -->
-        <div class="rounded-lg border-[6px] border-[color-mix(in_oklab,var(--gl-line-strong)_70%,transparent)] bg-sunken p-1.5 shadow-inner" role="list" :aria-label="rack.name">
-          <div v-for="slot in slots" :key="slot.unit" class="flex gap-1.5">
-            <span class="w-6 shrink-0 text-right font-mono text-[10px] leading-7 text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
-            <button
-              v-if="slot.device"
-              type="button"
-              role="listitem"
-              class="group relative my-px flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden rounded-[5px] border bg-raised pr-3 pl-1.5 text-left transition-colors hover:border-line-strong hover:bg-control-hover focus-visible:border-accent"
-              :class="[issueIds.has(slot.device.id) ? 'border-warn/60' : 'border-line', !slot.device.is_online && 'opacity-70']"
-              :style="{ height: `calc(${heightOf(slot.device) * UNIT_REM}rem - 2px)` }"
-              :title="t('gv.racks.open_hint')"
-              @click="emit('openDevice', slot.device)"
-            >
-              <LineBullet :color="networkColor(slot.device.subnet_id, slot.device.ip)" :label="lineLabelFor(slot.device.subnet_id)" size="sm" />
-              <StatusDot :state="slot.device.is_online ? 'online' : 'offline'" size="sm" :label="slot.device.is_online ? t('network.online') : t('network.offline')" />
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-xs font-semibold text-fg">{{ deviceLabel(slot.device) }}</span>
-                <span v-if="heightOf(slot.device) > 1" class="block truncate font-mono text-[10px] text-fg-subtle">{{ slot.device.ip }} · {{ t('rack.units', { count: heightOf(slot.device) }) }}</span>
-              </span>
-              <span v-if="heightOf(slot.device) === 1" class="hidden font-mono text-[10px] text-fg-subtle sm:inline">{{ slot.device.ip }}</span>
-              <span class="flex gap-1 opacity-60" aria-hidden="true">
-                <span class="size-1 rounded-full bg-fg-subtle" /><span class="size-1 rounded-full bg-fg-subtle" />
-              </span>
-            </button>
-            <span v-else class="my-px h-[calc(1.75rem-2px)] flex-1 rounded-[5px] border border-dashed border-line/70" aria-hidden="true" />
-            <span class="w-6 shrink-0 font-mono text-[10px] leading-7 text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
-          </div>
-        </div>
-
-        <aside class="space-y-4">
+      <div class="grid min-h-0 flex-1 gap-5 overflow-y-auto p-4 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+        <div class="space-y-3">
+          <RackElevation
+            :name="rack.name"
+            :units="rack.units"
+            :entries="entries"
+            :candidates="unracked"
+            :selected-key="selectedKey"
+            :port-stats="portStats"
+            @select="selectEntry"
+            @open="openEntry"
+            @move="moveEntry"
+          />
           <div class="gl-subcard space-y-2 p-4">
             <div class="flex items-baseline justify-between gap-3">
               <p class="gl-eyebrow">{{ t('rack.occupied') }}</p>
@@ -171,48 +435,68 @@ const UNIT_REM = 1.75;
             <div class="h-2 overflow-hidden rounded-full bg-sunken" role="progressbar" :aria-label="t('rack.occupied')" aria-valuemin="0" :aria-valuemax="rack.units" :aria-valuenow="occupied">
               <div class="h-full rounded-full bg-accent" :style="{ width: `${Math.min(100, (occupied / rack.units) * 100)}%` }" />
             </div>
-            <p class="text-xs text-fg-subtle">{{ t('rack.devices') }}: <span class="font-mono text-fg">{{ rackDevices.length }}</span> · {{ t('gv.racks.free', { count: Math.max(0, rack.units - occupied) }) }}</p>
+            <p class="text-xs text-fg-subtle">
+              {{ t('rack.devices') }}: <span class="font-mono text-fg">{{ entries.length }}</span> · {{ t('gv.racks.free', { count: Math.max(0, rack.units - occupied) }) }}
+            </p>
           </div>
-
           <div v-if="issues.length" class="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs" role="status">
             <p class="flex items-center gap-2 font-semibold text-warn-text"><AlertTriangle class="size-4" aria-hidden="true" />{{ t('gv.racks.issues', { count: issues.length }) }}</p>
             <ul class="space-y-1">
-              <li v-for="i in issues" :key="i.device.id">
-                <button type="button" class="text-left text-fg underline-offset-2 hover:underline" @click="emit('openDevice', i.device)">
-                  {{ deviceLabel(i.device) }}: {{ t(`gv.racks.issue_${i.reason}`) }}
+              <li v-for="i in issues" :key="i.entry.key">
+                <button type="button" class="text-left text-fg underline-offset-2 hover:underline" @click="selectEntry(i.entry.key)">
+                  {{ i.entry.label }}: {{ t(`gv.racks.issue_${i.reason}`) }}
                 </button>
               </li>
             </ul>
           </div>
+        </div>
 
-          <div class="gl-subcard p-4">
-            <h3 class="mb-2 text-sm font-bold text-fg">{{ t('rack.inventory') }}</h3>
-            <p v-if="inventory.length === 0" class="text-xs leading-relaxed text-fg-subtle">{{ t('rack.inventory_empty') }}</p>
-            <ul v-else class="divide-y divide-line">
-              <li v-for="d in inventory" :key="d.id">
-                <button type="button" class="flex w-full items-center gap-2.5 py-2 text-left hover:text-accent-text" @click="emit('openDevice', d)">
-                  <LineBullet :color="networkColor(d.subnet_id, d.ip)" :label="lineLabelFor(d.subnet_id)" size="sm" />
-                  <StatusDot :state="d.is_online ? 'online' : 'offline'" size="sm" :label="d.is_online ? t('network.online') : t('network.offline')" />
-                  <span class="min-w-0 flex-1 truncate text-sm text-fg">{{ deviceLabel(d) }}</span>
-                  <span class="shrink-0 font-mono text-[11px] text-fg-subtle">{{ d.rack_unit ? t('rack.position', { unit: d.rack_unit, count: heightOf(d) }) : '–' }}</span>
-                </button>
-              </li>
-            </ul>
-          </div>
+        <aside class="space-y-4">
+          <RackPortsPanel
+            v-if="selected"
+            :key="selected.key"
+            :entry="selected"
+            :ports="selectedPorts"
+            :cables="cableRows"
+            :colour-of-port="colourOfPort"
+            :pending-port-id="pendingPortId"
+            :pending-label="pendingLabel"
+            :position="selectedPosition"
+            @set-ports="setPorts"
+            @pick="pickPort"
+            @cancel="pendingPortId = null"
+            @remove-cable="removeCable"
+            @open="openEntry(selected.key)"
+            @remove="deleteItem"
+          />
+          <p v-else class="gl-subcard p-4 text-xs leading-relaxed text-fg-subtle">{{ t('gv.rack.select_hint') }}</p>
+
+          <RackTray
+            :rack-entries="entries"
+            :unplaced="unplaced"
+            :unracked="unracked"
+            :selected-key="selectedKey"
+            @select="selectEntry"
+            @open="openEntry"
+            @unplace="unplace"
+            @detach="detach"
+          />
         </aside>
       </div>
     </template>
 
-    <Dialog v-model:open="creating" :title="t('gv.racks.new')" size="sm">
-      <form :id="`${id}-form`" class="space-y-4" @submit.prevent="create">
+    <RackItemDialog v-if="rack" v-model:open="itemDialog" :rack-id="rack.id" :item="editingItem" @saved="onItemSaved" />
+
+    <Dialog v-model:open="creatingRack" :title="t('gv.racks.new')" size="sm">
+      <form :id="`${id}-form`" class="space-y-4" @submit.prevent="createRack">
         <div class="space-y-1.5">
           <label :for="`${id}-name`" class="text-xs font-medium text-fg">{{ t('gv.racks.name') }}</label>
-          <Input :id="`${id}-name`" v-model="form.name" :placeholder="`Rack ${racks.length + 1}`" autofocus />
+          <Input :id="`${id}-name`" v-model="rackForm.name" :placeholder="`Rack ${racks.length + 1}`" autofocus />
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="space-y-1.5">
             <label :for="`${id}-units`" class="text-xs font-medium text-fg">{{ t('gv.racks.units') }}</label>
-            <Input :id="`${id}-units`" :model-value="form.units" type="number" min="1" max="60" mono required @update:model-value="(v) => (form.units = Math.min(60, Math.max(1, Number(v) || 42)))" />
+            <Input :id="`${id}-units`" :model-value="rackForm.units" type="number" min="1" max="60" mono required @update:model-value="(v) => (rackForm.units = Math.min(60, Math.max(1, Number(v) || 42)))" />
           </div>
           <div class="space-y-1.5">
             <span class="text-xs font-medium text-fg">{{ t('gv.racks.width') }}</span>
@@ -222,9 +506,9 @@ const UNIT_REM = 1.75;
                 :key="w"
                 type="button"
                 class="h-7 flex-1 rounded-sm font-mono text-xs transition-colors"
-                :class="form.width === w ? 'bg-raised text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
-                :aria-pressed="form.width === w"
-                @click="form.width = w"
+                :class="rackForm.width === w ? 'bg-raised text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
+                :aria-pressed="rackForm.width === w"
+                @click="rackForm.width = w"
               >
                 {{ w }}″
               </button>
@@ -233,8 +517,8 @@ const UNIT_REM = 1.75;
         </div>
       </form>
       <template #footer>
-        <Button @click="creating = false">{{ t('common.cancel') }}</Button>
-        <Button variant="primary" type="submit" :form="`${id}-form`" :loading="saving"><Plus v-if="!saving" aria-hidden="true" />{{ t('gv.racks.create') }}</Button>
+        <Button @click="creatingRack = false">{{ t('common.cancel') }}</Button>
+        <Button variant="primary" type="submit" :form="`${id}-form`" :loading="savingRack"><Plus v-if="!savingRack" aria-hidden="true" />{{ t('gv.racks.create') }}</Button>
       </template>
     </Dialog>
   </div>

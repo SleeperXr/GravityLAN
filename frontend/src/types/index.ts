@@ -322,6 +322,43 @@ export interface Rack {
   notes: string | null;
 }
 
+/** Rack equipment outside the network inventory (switch without management, UPS, patch panel, blank, ...). */
+export interface RackItem {
+  id: number;
+  rack_id: number;
+  name: string;
+  kind: string;
+  rack_unit: number | null;
+  rack_height: number;
+  notes: string | null;
+}
+
+/** A port of a device or of a rack item; exactly one of device_id and rack_item_id is set. */
+export interface RackPort {
+  id: number;
+  device_id: number | null;
+  rack_item_id: number | null;
+  number: number;
+  kind: string;
+}
+
+/** A physical cable between two ports of the rack. */
+export interface RackCable {
+  id: number;
+  a_port_id: number;
+  b_port_id: number;
+  cable: string;
+  color: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface RackCabling {
+  items: RackItem[];
+  ports: RackPort[];
+  cables: RackCable[];
+}
+
 export interface TopologyLink {
   id: number;
   source_id: number;

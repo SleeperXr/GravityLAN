@@ -284,6 +284,19 @@ export const api = {
   getRacks: () => request<import('../types').Rack[]>('/api/topology/racks'),
   createRack: (data: Partial<import('../types').Rack>) => request<import('../types').Rack>('/api/topology/racks', { method: 'POST', body: JSON.stringify(data) }),
   deleteRack: (id: number) => request<void>(`/api/topology/racks/${id}`, { method: 'DELETE' }),
+  getCabling: () => request<import('../types').RackCabling>('/api/topology/cabling'),
+  createRackItem: (data: Partial<import('../types').RackItem> & { rack_id: number; name: string; port_count?: number; port_kind?: string }) =>
+    request<import('../types').RackItem>('/api/topology/rack-items', { method: 'POST', body: JSON.stringify(data) }),
+  updateRackItem: (id: number, data: Partial<import('../types').RackItem>) =>
+    request<import('../types').RackItem>(`/api/topology/rack-items/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteRackItem: (id: number) => request<void>(`/api/topology/rack-items/${id}`, { method: 'DELETE' }),
+  setPorts: (data: { owner_type: 'device' | 'item'; owner_id: number; count: number; kind: string }) =>
+    request<import('../types').RackPort[]>('/api/topology/ports', { method: 'PUT', body: JSON.stringify(data) }),
+  createCable: (data: { a_port_id: number; b_port_id: number; cable?: string; color?: string | null; notes?: string | null }) =>
+    request<import('../types').RackCable>('/api/topology/rack-cables', { method: 'POST', body: JSON.stringify(data) }),
+  updateCable: (id: number, data: Partial<import('../types').RackCable>) =>
+    request<import('../types').RackCable>(`/api/topology/rack-cables/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteCable: (id: number) => request<void>(`/api/topology/rack-cables/${id}`, { method: 'DELETE' }),
   getTopologyLinks: () => request<import('../types').TopologyLink[]>('/api/topology/links'),
   getTopologyMap: async () => {
     const [devices, links] = await Promise.all([

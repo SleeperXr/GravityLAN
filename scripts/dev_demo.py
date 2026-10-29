@@ -55,7 +55,9 @@ _BLOCKED_PATHS = re.compile(
     r")"
 )
 
-GRID_X, GRID_Y = 250, 150  # pixels per column/row of a scenario's React topology grid
+GRID_X, GRID_Y = 250, 150
+# Colours of the cables in the rack, by cable type (as the rack view gives new cables)
+CABLE_COLOURS = {"Cat6": "#2ec4a6", "DAC / Modul": "#5aa9ff", "OM4 LC-LC": "#ffb547", "Stromkabel C13": "#ff7eb6"}  # pixels per column/row of a scenario's React topology grid
 
 
 def _utcnow() -> datetime:
@@ -252,6 +254,29 @@ async def _seed(scenario: Scenario) -> dict[str, tuple[int, str, tuple]]:
                                 role=role[0] if role else "primary"))
         for name, message, minutes in scenario.down_events:
             db.add(DeviceHistory(device_id=by_name[name].id, status="down", message=message, timestamp=now - timedelta(minutes=minutes)))
+        # Rack equipment with its ports, port counts of devices, and the cables between ports
+        from app.models.rack_cabling import RackCable, RackItem, RackPort
+
+        items: dict[str, RackItem] = {}
+        ports: dict[tuple[str, int], RackPort] = {}
+        for name, rack, kind, unit, height, port_count, port_kind in scenario.rack_items:
+            item = RackItem(rack_id=racks[rack].id, name=name, kind=kind, rack_unit=unit, rack_height=height)
+            db.add(item)
+            await db.flush()
+            items[name] = item
+            for number in range(1, port_count + 1):
+                port = RackPort(rack_item_id=item.id, number=number, kind=port_kind)
+                db.add(port)
+                ports[(name, number)] = port
+        for name, (count, kind) in scenario.port_counts.items():
+            for number in range(1, count + 1):
+                port = RackPort(device_id=by_name[name].id, number=number, kind=kind)
+                db.add(port)
+                ports[(name, number)] = port
+        await db.flush()
+        for owner_a, number_a, owner_b, number_b, cable in scenario.cables:
+            db.add(RackCable(a_port_id=ports[(owner_a, number_a)].id, b_port_id=ports[(owner_b, number_b)].id, cable=cable,
+                             color=CABLE_COLOURS.get(cable)))
         await db.commit()
         return agents
 

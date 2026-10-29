@@ -367,6 +367,7 @@ from app.api.notifications import router as notifications_router  # noqa: E402
 from app.api.health import router as health_router  # noqa: E402
 from app.api.ssh import router as ssh_router, ws_router as ssh_ws_router  # noqa: E402
 from app.api.interfaces import router as interfaces_router  # noqa: E402
+from app.api.rack_cabling import router as rack_cabling_router  # noqa: E402
 from app.api.router_import import router as router_import_router  # noqa: E402
 from app.api.telemetry import router as telemetry_router  # noqa: E402
 
@@ -377,6 +378,7 @@ app.include_router(backup_router, dependencies=[Depends(get_current_admin)])
 app.include_router(network_router, dependencies=[Depends(get_current_admin)])
 app.include_router(router_import_router, dependencies=[Depends(get_current_admin)])
 app.include_router(topology_router, dependencies=[Depends(get_current_admin)])
+app.include_router(rack_cabling_router, dependencies=[Depends(get_current_admin)])
 app.include_router(devices_router, dependencies=[Depends(get_current_admin)])
 app.include_router(interfaces_router, dependencies=[Depends(get_current_admin)])
 app.include_router(groups_router, dependencies=[Depends(get_current_admin)])

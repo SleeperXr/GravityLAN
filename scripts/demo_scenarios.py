@@ -39,6 +39,12 @@ class Scenario:
     patches: dict[str, tuple[int, int]] = field(default_factory=dict)  # device -> (available, security)
     reboot_required: set[str] = field(default_factory=set)
     link_colors: dict[str, str] = field(default_factory=dict)
+    # Rack equipment: (name, rack, kind, top unit, height, ports, port kind)
+    rack_items: list[tuple] = field(default_factory=list)
+    # Ports of devices: device name -> (count, kind)
+    port_counts: dict[str, tuple] = field(default_factory=dict)
+    # Cables: (owner, port number, owner, port number, cable type); owners are device or rack item names
+    cables: list[tuple] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------------------------- home
@@ -382,6 +388,25 @@ def company() -> Scenario:
         patches={"pve-02": (12, 3), "Archiv-NAS": (5, 1), "ws-entwicklung-02": (23, 6), "gitlab": (4, 0), "pbs-01": (2, 0)},
         reboot_required={"pve-03", "ws-entwicklung-02"},
         link_colors={"Fiber": "#f5a524", "10GbE": "#dfe6ee", "2.5GbE": "#3db8f5", "1GbE": "#a6e35b", "WLAN": "#2ec4a6"},
+        rack_items=[
+            ("USV Netzwerkschrank", "Netzwerkschrank Verwaltung", "ups", 18, 2, 4, "Power"),
+            ("Patchfeld Kupfer EG", "Netzwerkschrank Verwaltung", "patch_copper", 23, 1, 24, "RJ45"),
+            ("Telefonanlage", "Netzwerkschrank Verwaltung", "phone_system", 16, 1, 8, "RJ45"),
+            ("Blende", "Netzwerkschrank Verwaltung", "blank", 19, 1, 0, "RJ45"),
+            ("Kabelführung", "Serverraum Rack A", "cable_management", 35, 1, 0, "RJ45"),
+            ("Patchfeld Glasfaser", "Serverraum Rack B", "patch_fiber", 41, 1, 12, "LC"),
+            ("Switch Lager (unmanaged)", "Verteiler Lager", "switch_unmanaged", 11, 1, 8, "RJ45"),
+        ],
+        port_counts={"ToR Rack A": (48, "RJ45"), "ToR Rack B": (48, "RJ45"), "Access EG": (48, "RJ45"), "Access OG1": (48, "RJ45"),
+                     "pve-01": (4, "RJ45"), "pve-02": (4, "RJ45"), "pve-03": (4, "RJ45"), "pve-04": (4, "RJ45")},
+        cables=[
+            ("ToR Rack A", 1, "pve-01", 1, "DAC / Modul"),
+            ("ToR Rack A", 2, "pve-02", 1, "DAC / Modul"),
+            ("ToR Rack B", 3, "pve-03", 1, "DAC / Modul"),
+            ("Access EG", 1, "Telefonanlage", 1, "Cat6"),
+            ("Patchfeld Kupfer EG", 1, "Access EG", 2, "Cat6"),
+            ("Patchfeld Kupfer EG", 2, "Access OG1", 1, "Cat6"),
+        ],
     )
 
 

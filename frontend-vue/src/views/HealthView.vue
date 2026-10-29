@@ -19,6 +19,7 @@ import HealthDetailSheet from '@/components/health/HealthDetailSheet.vue';
 import DeviceEditor from '@/components/editor/DeviceEditor.vue';
 import { hasAgentWarning, ms, periodHours, scoreText, scoreTone, sslWarnings } from '@/components/health/healthModel';
 import { t } from '@/i18n';
+import ResilienceCard from '@/components/health/ResilienceCard.vue';
 
 /** Health & availability (port of React HealthView): network score, per-device SLA table, incidents. */
 type Period = '24h' | '7d' | '30d';
@@ -164,6 +165,8 @@ const sortOptions = computed(() => [
         <span v-if="kpis && !kpis.active_issues_count && !kpis.ssl_warning_count && !kpis.patch_warning_count" class="text-fg-subtle">{{ t('health_page.no_security_warnings') }}</span>
       </div>
     </div>
+
+    <ResilienceCard />
 
     <div class="flex flex-wrap items-center gap-2">
       <label class="relative min-w-0 flex-1 sm:max-w-xs">

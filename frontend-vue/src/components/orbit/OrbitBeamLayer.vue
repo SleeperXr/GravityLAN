@@ -75,7 +75,7 @@ const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
         class="photon-pulse"
       />
       <!-- Link type at the middle of the beam -->
-      <g v-if="beam.linkType && (beam.isPrimaryBridge || beam.isBackup || selectedId === beam.id)" :transform="`translate(${mid.x}, ${mid.y})`">
+      <g v-if="beam.linkType && (beam.isPrimaryBridge || beam.failover || selectedId === beam.id)" :transform="`translate(${mid.x}, ${mid.y})`">
         <rect
           :x="beam.failover ? -52 : beam.isBackup ? -40 : -22"
           y="-9"
