@@ -44,6 +44,15 @@ const rows = computed<LineRow[]>(() =>
   }),
 );
 
+/**
+ * Networks without devices fold into one line under the board instead of a full cell each, so a
+ * bare guest network does not weigh as much as the busy ones. Still a button each, to filter on.
+ * When every network is empty, folding would leave only that line, so they keep their cells.
+ */
+const filledRows = computed(() => rows.value.filter((r) => r.total > 0));
+const emptyRows = computed(() => (filledRows.value.length > 0 ? rows.value.filter((r) => r.total === 0) : []));
+const boardRows = computed(() => (filledRows.value.length > 0 ? filledRows.value : rows.value));
+
 function statusText(row: LineRow) {
   if (row.paused) return { text: t('gv.lines.paused'), tone: 'text-fg-subtle' };
   // A network without devices is not "stable", it is empty
@@ -57,7 +66,7 @@ function statusText(row: LineRow) {
 <template>
   <section :aria-label="t('gv.lines.title')" class="gl-card overflow-hidden">
     <ul class="grid divide-y divide-line sm:grid-cols-2 sm:divide-y-0 xl:grid-cols-[repeat(auto-fit,minmax(16rem,1fr))]">
-      <li v-for="row in rows" :key="row.id" class="sm:border-r sm:border-b sm:border-line">
+      <li v-for="row in boardRows" :key="row.id" class="sm:border-r sm:border-b sm:border-line">
         <button
           type="button"
           class="flex h-full w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-raised"
@@ -69,9 +78,9 @@ function statusText(row: LineRow) {
           <span class="min-w-0 flex-1">
             <span class="flex items-baseline gap-2">
               <span class="truncate text-sm font-bold text-fg">{{ row.name }}</span>
-              <span class="hidden truncate font-mono text-[11px] text-fg-subtle 2xl:inline">{{ row.cidr }}</span>
+              <span class="hidden truncate font-mono text-xs text-fg-subtle 2xl:inline">{{ row.cidr }}</span>
             </span>
-            <span class="mt-0.5 block truncate text-[13px] font-semibold" :class="statusText(row).tone">{{ statusText(row).text }}</span>
+            <span class="mt-0.5 block truncate text-sm font-semibold" :class="statusText(row).tone">{{ statusText(row).text }}</span>
           </span>
           <span class="shrink-0 text-right font-mono text-xs text-fg-muted tabular">
             <span class="block text-base font-semibold text-fg">{{ row.online }}<span class="text-fg-subtle">/{{ row.total }}</span></span>
@@ -80,5 +89,22 @@ function statusText(row: LineRow) {
         </button>
       </li>
     </ul>
+    <!-- -mt-px: on wider screens the line sits on the cells' bottom border instead of doubling it -->
+    <div v-if="emptyRows.length > 0" class="-mt-px flex flex-wrap items-center gap-x-1 gap-y-1 border-t border-line px-4 py-2">
+      <span class="mr-2 text-xs text-fg-subtle">{{ t('gv.lines.empty_folded', { count: emptyRows.length }) }}</span>
+      <button
+        v-for="row in emptyRows"
+        :key="row.id"
+        type="button"
+        class="inline-flex items-center gap-2 rounded-md py-1 pr-2.5 pl-1 text-xs font-semibold text-fg-muted transition-colors hover:bg-raised hover:text-fg max-md:min-h-11"
+        :class="active === row.id && 'bg-raised text-fg shadow-[inset_0_-2px_0_0_var(--gl-accent)]'"
+        :aria-pressed="active === row.id"
+        :title="`${row.cidr} · ${statusText(row).text}`"
+        @click="emit('select', active === row.id ? null : row.id)"
+      >
+        <LineBullet :color="row.color" :label="row.bullet" />
+        {{ row.name }}
+      </button>
+    </div>
   </section>
 </template>

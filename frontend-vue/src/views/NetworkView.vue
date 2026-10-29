@@ -16,6 +16,8 @@ import Skeleton from '@/components/ui/Skeleton.vue';
 import IpTile from '@/components/network/IpTile.vue';
 import LineBullet from '@/components/common/LineBullet.vue';
 import { lineLabel, networkColor } from '@/lib/networks';
+import { busiestPrefix } from '@/lib/subnetPick';
+import { stackedLayers } from '@/lib/meter';
 import SubnetModeBadge from '@/components/network/SubnetModeBadge.vue';
 import AddSubnetDialog from '@/components/network/AddSubnetDialog.vue';
 import SubnetSettingsDialog from '@/components/network/SubnetSettingsDialog.vue';
@@ -68,6 +70,8 @@ const segments = computed(() => [
   { key: 'offline', label: t('network.offline'), value: usage.value.offline, cls: 'bg-danger' },
   { key: 'reserved', label: t('gv.network.legend_reserved'), value: usage.value.reserved, cls: 'bg-fg-subtle' },
 ]);
+/** The usage bar as layers that move with `transform`, so a changing count does not relayout the bar */
+const segmentLayers = computed(() => stackedLayers(segments.value, 254));
 
 async function loadAreas() {
   try {
@@ -78,11 +82,10 @@ async function loadAreas() {
   }
 }
 
+/** Until the user picks a subnet, open on the busiest one rather than the first (often an empty guest net). */
 function pickDefaultPrefix() {
   if (prefix.value) return;
-  const fromSubnet = store.subnets[0]?.cidr.match(/^(\d+\.\d+\.\d+)/)?.[1];
-  const fromDevice = store.devices[0]?.ip?.match(/(\d+\.\d+\.\d+)\./)?.[1];
-  prefix.value = fromSubnet || fromDevice || '';
+  prefix.value = busiestPrefix(store.subnets, store.devices, discovery.hosts);
 }
 
 async function reload() {
@@ -271,9 +274,9 @@ function openEditor(device: Device) {
         >
           <LineBullet :color="networkColor(sub.id)" :label="lineLabel(sub)" size="sm" />
           <span class="font-medium text-fg">{{ sub.name }}</span>
-          <span v-if="sub.vlan_id != null" class="font-mono text-[11px] text-fg-subtle">VLAN {{ sub.vlan_id }}</span>
+          <span v-if="sub.vlan_id != null" class="font-mono text-xs text-fg-subtle">VLAN {{ sub.vlan_id }}</span>
           <SubnetModeBadge :subnet="sub" />
-          <span v-if="sub.is_enabled === false" class="text-[11px] text-warn-text">{{ t('network.subnet_paused') }}</span>
+          <span v-if="sub.is_enabled === false" class="text-xs text-warn-text">{{ t('network.subnet_paused') }}</span>
         </button>
         <button
           v-if="prefix === prefixOf(sub.cidr)"
@@ -313,11 +316,13 @@ function openEditor(device: Device) {
           </p>
           <SubnetModeBadge v-if="currentSubnet" :subnet="currentSubnet" long class="ml-auto" />
         </div>
-        <div class="mt-3 flex h-2 overflow-hidden rounded-full bg-sunken" role="img" :aria-label="segments.map((s) => `${s.label}: ${s.value}`).join(', ')">
-          <div v-for="seg in segments" :key="seg.key" :class="seg.cls" class="h-full transition-[width] duration-500" :style="{ width: `${(seg.value / 254) * 100}%` }" />
+        <!-- Nothing in use yet: say so instead of a bar and a legend of zeros -->
+        <p v-if="usage.used === 0" class="mt-2 max-w-[65ch] text-sm text-fg-muted">{{ t('gv.network.empty_subnet') }}</p>
+        <div v-else class="relative mt-3 h-2 overflow-hidden rounded-full bg-sunken" role="img" :aria-label="segments.map((s) => `${s.label}: ${s.value}`).join(', ')">
+          <div v-for="layer in segmentLayers" :key="layer.key" :class="layer.cls" class="absolute inset-0 origin-left transition-transform duration-500 ease-out" :style="{ transform: layer.transform }" />
         </div>
         <ul class="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-fg-muted">
-          <li v-for="seg in segments" :key="seg.key" class="flex items-center gap-1.5"><span class="size-2 rounded-[3px]" :class="seg.cls" aria-hidden="true" />{{ seg.label }} <span class="font-mono text-fg tabular">{{ seg.value }}</span></li>
+          <li v-for="seg in usage.used > 0 ? segments : []" :key="seg.key" class="flex items-center gap-1.5"><span class="size-2 rounded-[3px]" :class="seg.cls" aria-hidden="true" />{{ seg.label }} <span class="font-mono text-fg tabular">{{ seg.value }}</span></li>
           <li v-for="area in currentAreas" :key="`area-${area.name}`" class="flex items-center gap-1.5">
             <span class="size-2 rounded-[3px]" :style="{ backgroundColor: area.color }" aria-hidden="true" />{{ area.name }} <span class="font-mono text-fg-subtle">.{{ area.start }}–.{{ area.end }}</span>
           </li>

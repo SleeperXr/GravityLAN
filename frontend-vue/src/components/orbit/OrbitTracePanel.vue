@@ -37,9 +37,9 @@ const emit = defineEmits<{ close: [] }>();
 
     <ol v-if="hops.length" class="max-h-44 space-y-1 overflow-y-auto text-xs">
       <li v-for="(hop, i) in hops" :key="hop.id" class="flex items-center gap-2">
-        <span class="flex size-4 shrink-0 items-center justify-center rounded-full bg-accent font-mono text-[10px] font-bold text-sign-ink">{{ i + 1 }}</span>
+        <span class="flex size-4 shrink-0 items-center justify-center rounded-full bg-accent font-mono text-micro font-bold text-sign-ink">{{ i + 1 }}</span>
         <span class="min-w-0 flex-1 truncate text-fg">{{ hop.label }}</span>
-        <span v-if="hop.linkType" class="font-mono text-[10px]" :class="hop.interrupted ? 'text-danger-text' : 'text-fg-subtle'">{{ hop.linkType }}</span>
+        <span v-if="hop.linkType" class="font-mono text-xs" :class="hop.interrupted ? 'text-danger-text' : 'text-fg-subtle'">{{ hop.linkType }}</span>
       </li>
     </ol>
   </div>

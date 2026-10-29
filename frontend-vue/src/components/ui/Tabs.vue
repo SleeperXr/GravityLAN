@@ -27,7 +27,7 @@ const props = defineProps<{
       >
         <component :is="tab.icon" v-if="tab.icon" aria-hidden="true" />
         {{ tab.label }}
-        <span v-if="tab.badge !== undefined" class="rounded-sm bg-raised px-1 font-mono text-[10px] text-fg-subtle">{{ tab.badge }}</span>
+        <span v-if="tab.badge !== undefined" class="rounded-sm bg-raised px-1 font-mono text-micro text-fg-subtle">{{ tab.badge }}</span>
       </TabsTrigger>
     </TabsList>
     <TabsContent v-for="tab in props.tabs" :key="tab.value" :value="tab.value" class="min-h-0 flex-1 focus-visible:outline-none">

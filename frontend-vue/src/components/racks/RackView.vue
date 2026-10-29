@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, useId } from 'vue';
+import { computed, nextTick, onMounted, ref, useId, watch } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import { AlertTriangle, Loader2, Pencil, Plus, Server, Trash2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
@@ -17,7 +17,24 @@ import RackElevation from './RackElevation.vue';
 import RackItemDialog from './RackItemDialog.vue';
 import RackPortsPanel, { type CableRow } from './RackPortsPanel.vue';
 import RackTray from './RackTray.vue';
-import { cableDefaults, deviceEntry, entryKey, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, type PortSide, type RackEntry } from './rackModel';
+import {
+  cableDefaults,
+  deviceEntry,
+  entryKey,
+  fitsAt,
+  itemEntry,
+  nearestFreeUnit,
+  occupiedUnits,
+  ownerKeyOf,
+  placementIssues,
+  portsOf,
+  rackCandidates,
+  type PortSide,
+  type RackEntry,
+} from './rackModel';
+import { placeTargets } from './rackPlacement';
+import { apiErrorMessage } from '@/lib/apiErrors';
+import { fillShift } from '@/lib/meter';
 
 /**
  * Racks with their equipment: network devices and rack equipment (unmanaged switches, UPS, patch panels,
@@ -27,7 +44,7 @@ import { cableDefaults, deviceEntry, entryKey, fitsAt, itemEntry, occupiedUnits,
 const props = defineProps<{ devices: Device[] }>();
 const emit = defineEmits<{ openDevice: [device: Device]; changed: [] }>();
 
-const { showToast } = useToast();
+const { showToast, removeToast, isShowing } = useToast();
 const store = useNetworkStore();
 const id = useId();
 
@@ -45,6 +62,14 @@ const savingRack = ref(false);
 const side = ref<PortSide>('front');
 const sides: PortSide[] = ['front', 'rear'];
 const rackEditing = ref(false);
+/** Tray entry picked for placing by click or keyboard, waiting for a free unit */
+const placingKey = ref<string | null>(null);
+/** What the screen reader hears about placing: the pick, then where it went */
+const placeAnnouncement = ref('');
+const elevationRef = ref<InstanceType<typeof RackElevation> | null>(null);
+const rackColumnRef = ref<HTMLElement | null>(null);
+/** The tray button that started placing, to give focus back when it is cancelled */
+let placeOrigin: HTMLElement | null = null;
 
 async function load(select?: number) {
   try {
@@ -54,7 +79,7 @@ async function load(select?: number) {
     const keep = select ?? selectedRackId.value;
     selectedRackId.value = racks.value.some((r) => r.id === keep) ? keep : (racks.value[0]?.id ?? null);
   } catch (err) {
-    showToast('error', t('topology.tab_rack'), (err as Error).message);
+    showToast('error', t('topology.tab_rack'), apiErrorMessage(err));
   } finally {
     loading.value = false;
   }
@@ -64,7 +89,7 @@ async function refreshCabling() {
   try {
     cabling.value = await api.getCabling();
   } catch (err) {
-    showToast('error', t('gv.rack.cables_title'), (err as Error).message);
+    showToast('error', t('gv.rack.cables_title'), apiErrorMessage(err));
   }
 }
 
@@ -82,7 +107,12 @@ const unplaced = computed(() => entries.value.filter((e) => e.unit === null));
 const unracked = computed<RackEntry[]>(() =>
   props.devices.filter((d) => d.rack_id === null).map((d) => ({ ...deviceEntry(d, deviceLabel(d)), unit: null })),
 );
-const occupied = computed(() => occupiedUnits(entries.value));
+// The tray offers rack-mountable devices unless the user asks for all of them
+const showAllCandidates = ref(false);
+const rackable = computed(() => new Set(rackCandidates(props.devices, false).map((d) => entryKey('device', d.id))));
+const trayUnracked = computed(() => (showAllCandidates.value ? unracked.value : unracked.value.filter((e) => rackable.value.has(e.key))));
+const hiddenCandidates = computed(() => unracked.value.filter((e) => !rackable.value.has(e.key)).length);
+const occupied = computed(() => occupiedUnits(entries.value, rack.value?.units));
 const issues = computed(() => (rack.value ? placementIssues(rack.value.units, entries.value).filter((i) => i.reason !== 'no_position') : []));
 
 const selected = computed<RackEntry | null>(() => entries.value.find((e) => e.key === selectedKey.value) ?? null);
@@ -112,6 +142,15 @@ const colourOfPort = computed(() => {
   for (const [portId, cable] of cableOfPort.value) colours[portId] = cable.color ?? '#c3cad4';
   return colours;
 });
+/** Where the cable on each cabled port leads, for the names of the jacks in the rack */
+const cableTargets = computed(() => {
+  const targets: Record<number, string> = {};
+  for (const [portId, cable] of cableOfPort.value) {
+    const peer = portById.value.get(cable.a_port_id === portId ? cable.b_port_id : cable.a_port_id);
+    if (peer) targets[portId] = t('gv.rack.jack_cabled', { peer: ownerLabels.value.get(ownerKeyOf(peer)) ?? '?', number: peer.number });
+  }
+  return targets;
+});
 const portStats = computed(() => {
   const stats: Record<string, { cabled: number; total: number }> = {};
   for (const port of cabling.value.ports) {
@@ -121,6 +160,8 @@ const portStats = computed(() => {
   }
   return stats;
 });
+/** Whether any placed entry has a cable: only then are there lines for the legend to explain */
+const hasCables = computed(() => entries.value.some((e) => e.unit !== null && (portStats.value[e.key]?.cabled ?? 0) > 0));
 const selectedPorts = computed<RackPort[]>(() => (selected.value ? portsOf(selected.value, cabling.value.ports) : []));
 const cableRows = computed<CableRow[]>(() => {
   const own = new Set(selectedPorts.value.map((p) => p.id));
@@ -159,7 +200,7 @@ function openItemEditor(item: RackItem) {
 }
 
 function openEntry(key: string) {
-  const entry = entries.value.find((e) => e.key === key);
+  const entry = findEntry(key);
   if (!entry) return;
   if (entry.kind === 'device') {
     const device = props.devices.find((d) => d.id === entry.id);
@@ -181,48 +222,172 @@ function findEntry(key: string): RackEntry | undefined {
   return entries.value.find((e) => e.key === key) ?? unracked.value.find((e) => e.key === key);
 }
 
-async function moveEntry(key: string, unit: number) {
-  const entry = findEntry(key);
+/** Where an entry was before a change: its rack (null: none) and its top unit (null: in the tray). */
+interface Placement {
+  key: string;
+  rackId: number | null;
+  unit: number | null;
+}
+
+/** The toast that can undo the last change; a series of moves of one entry shares it. */
+let lastUndo: { toastId: number; before: Placement } | null = null;
+
+function placementOf(entry: RackEntry): Placement {
+  const rackId = entry.kind === 'device' ? (props.devices.find((d) => d.id === entry.id)?.rack_id ?? null) : (rack.value?.id ?? null);
+  return { key: entry.key, rackId, unit: rackId === null ? null : entry.unit };
+}
+
+/** Saves where an entry sits. Rack items always stay in their rack, so only their unit changes. */
+async function savePlacement(entry: RackEntry, rackId: number | null, unit: number | null) {
+  if (entry.kind === 'device') {
+    const patch = { rack_id: rackId, rack_unit: unit, rack_height: entry.height };
+    store.patchDevice(entry.id, patch);
+    await api.updateDevice(entry.id, patch);
+  } else {
+    await api.updateRackItem(entry.id, { rack_unit: unit });
+    cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, rack_unit: unit } : i)) };
+  }
+}
+
+/** Confirms a change with a toast that can undo it. Moving the same entry again (arrow keys) keeps the first place. */
+function offerUndo(before: Placement, message: string) {
+  const series = lastUndo && lastUndo.before.key === before.key && isShowing(lastUndo.toastId);
+  const origin = series && lastUndo ? lastUndo.before : before;
+  if (lastUndo) removeToast(lastUndo.toastId);
+  const toastId = showToast('success', t('gv.rack.drop_title'), message, { label: t('gv.toast.undo'), run: () => void restore(origin) });
+  lastUndo = { toastId, before: origin };
+}
+
+/** Puts an entry back where it was before the change. */
+async function restore(before: Placement) {
+  lastUndo = null;
+  const entry = findEntry(before.key);
   const current = rack.value;
-  if (!entry || !current) return;
-  const inThisRack = entries.value.some((e) => e.key === key);
-  if (inThisRack && entry.unit === unit) return;
-  if (!fitsAt(current.units, entries.value, unit, entry.height, key)) {
-    showToast('error', t('gv.rack.drop_title'), t('gv.rack.no_room'));
+  if (!entry) return;
+  if (before.unit !== null && current && before.rackId === current.id && !fitsAt(current.units, entries.value, before.unit, entry.height, entry.key)) {
+    showToast('error', t('gv.toast.undo'), t('gv.rack.no_room'));
     return;
   }
   try {
-    if (entry.kind === 'device') {
-      const patch = { rack_id: current.id, rack_unit: unit, rack_height: entry.height };
-      store.patchDevice(entry.id, patch);
-      await api.updateDevice(entry.id, patch);
-    } else {
-      await api.updateRackItem(entry.id, { rack_unit: unit });
-      cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, rack_unit: unit } : i)) };
-    }
+    await savePlacement(entry, before.rackId, before.unit);
     emit('changed');
   } catch (err) {
-    showToast('error', t('gv.rack.drop_title'), (err as Error).message);
-    void load(current.id);
+    showToast('error', t('gv.toast.undo'), apiErrorMessage(err));
+    void load(current?.id);
   }
+}
+
+/** Put an entry on `unit`; true once it is saved there. */
+async function moveEntry(key: string, unit: number): Promise<boolean> {
+  const entry = findEntry(key);
+  const current = rack.value;
+  if (!entry || !current) return false;
+  const inThisRack = entries.value.some((e) => e.key === key);
+  if (inThisRack && entry.unit === unit) return true;
+  if (!fitsAt(current.units, entries.value, unit, entry.height, key)) {
+    showToast('error', t('gv.rack.drop_title'), t('gv.rack.no_room'));
+    return false;
+  }
+  const before = placementOf(entry);
+  try {
+    await savePlacement(entry, current.id, unit);
+    emit('changed');
+    offerUndo(before, t('gv.rack.moved', { label: entry.label, unit }));
+    return true;
+  } catch (err) {
+    showToast('error', t('gv.rack.drop_title'), apiErrorMessage(err));
+    void load(current.id);
+    return false;
+  }
+}
+
+// ── Placing without a drag ───────────────────────────────────────────────────
+/** The picked entry while it still waits for a unit (a drag may have placed it meanwhile). */
+const placing = computed<RackEntry | null>(() => {
+  const entry = placingKey.value ? findEntry(placingKey.value) : undefined;
+  return entry && entry.unit === null ? entry : null;
+});
+/** Whether the picked entry fits anywhere in this rack; if not, the placing bar says so instead of asking for a unit */
+const placingFits = computed(() => !!placing.value && !!rack.value && placeTargets(rack.value.units, entries.value, placing.value).length > 0);
+const placingMessage = computed(() => {
+  const entry = placing.value;
+  if (!entry) return '';
+  return t(placingFits.value ? 'gv.rack.place_pending' : 'gv.rack.place_no_room', { label: entry.label, count: entry.height });
+});
+
+/**
+ * A tray entry was clicked (or Enter / Space): it waits for a free unit. From the keyboard, focus goes to the
+ * first free unit; with a pointer, the rack scrolls into view when it is out of sight (phones, rack above the tray).
+ */
+async function startPlacing(key: string, keyboard: boolean) {
+  if (placingKey.value === key) return cancelPlacing();
+  placeOrigin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  placingKey.value = key;
+  placeAnnouncement.value = '';
+  await nextTick();
+  if (keyboard && elevationRef.value?.focusPlaceTarget()) return;
+  const column = rackColumnRef.value;
+  const box = column?.getBoundingClientRect();
+  if (column && box && (box.bottom < 120 || box.top > window.innerHeight - 120)) {
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    column.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+  }
+}
+
+function cancelPlacing() {
+  if (!placingKey.value) return;
+  placingKey.value = null;
+  placeAnnouncement.value = t('gv.rack.place_cancelled');
+  if (placeOrigin?.isConnected) placeOrigin.focus();
+  placeOrigin = null;
+}
+
+/**
+ * A free unit was chosen: the same fit check, save and undo toast as a drop. The toast is what is announced,
+ * so the live region of the placing bar goes quiet instead of saying it a second time.
+ */
+async function placeAt(key: string, unit: number) {
+  if (!(await moveEntry(key, unit))) return;
+  placingKey.value = null;
+  placeOrigin = null;
+  selectedKey.value = key;
+  placeAnnouncement.value = '';
+}
+
+// Another rack shows other free units: drop the pick
+watch(selectedRackId, () => {
+  placingKey.value = null;
+  placeOrigin = null;
+});
+
+/** Moves an entry that overlaps or sticks out to the nearest place where it fits. */
+async function placeFree(entry: RackEntry) {
+  const current = rack.value;
+  if (!current) return;
+  const unit = nearestFreeUnit(current.units, entries.value, entry);
+  if (unit === null) {
+    showToast('error', t('gv.racks.find_free'), t('gv.racks.no_free'));
+    return;
+  }
+  selectEntry(entry.key);
+  // The issue and its button go away once it fits, so focus moves on to the entry in its new place
+  elevationRef.value?.followFocus(entry.key, unit);
+  await moveEntry(entry.key, unit);
 }
 
 /** Take an entry off its unit; it stays in the rack, in the tray. */
 async function unplace(key: string) {
   const entry = entries.value.find((e) => e.key === key);
-  if (!entry || entry.unit === null) return;
+  const current = rack.value;
+  if (!entry || entry.unit === null || !current) return;
+  const before = placementOf(entry);
   try {
-    if (entry.kind === 'device') {
-      store.patchDevice(entry.id, { rack_unit: null });
-      await api.updateDevice(entry.id, { rack_unit: null });
-    } else {
-      await api.updateRackItem(entry.id, { rack_unit: null });
-      cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, rack_unit: null } : i)) };
-    }
+    await savePlacement(entry, current.id, null);
     emit('changed');
+    offerUndo(before, t('gv.rack.unplaced', { label: entry.label }));
   } catch (err) {
-    showToast('error', t('gv.rack.drop_title'), (err as Error).message);
-    void load(rack.value?.id);
+    showToast('error', t('gv.rack.drop_title'), apiErrorMessage(err));
+    void load(current.id);
   }
 }
 
@@ -230,13 +395,14 @@ async function unplace(key: string) {
 async function detach(key: string) {
   const entry = entries.value.find((e) => e.key === key);
   if (!entry || entry.kind !== 'device') return;
+  const before = placementOf(entry);
   try {
-    store.patchDevice(entry.id, { rack_id: null, rack_unit: null });
-    await api.updateDevice(entry.id, { rack_id: null, rack_unit: null });
+    await savePlacement(entry, null, null);
     if (selectedKey.value === key) selectedKey.value = null;
     emit('changed');
+    offerUndo(before, t('gv.rack.detached', { label: entry.label }));
   } catch (err) {
-    showToast('error', t('gv.rack.drop_title'), (err as Error).message);
+    showToast('error', t('gv.rack.drop_title'), apiErrorMessage(err));
     void load(rack.value?.id);
   }
 }
@@ -250,7 +416,7 @@ async function setPorts(count: number, kind: string, side: PortSide) {
     await refreshCabling();
     showToast('success', t('gv.rack.ports_title'), t('gv.rack.ports_saved', { label: entry.label, count }));
   } catch (err) {
-    showToast('error', t('gv.rack.ports_title'), (err as Error).message);
+    showToast('error', t('gv.rack.ports_title'), apiErrorMessage(err));
   }
 }
 
@@ -292,17 +458,35 @@ async function pickPort(port: RackPort) {
       t('gv.rack.cable_connected', { a: ownerLabels.value.get(ownerKeyOf(from)) ?? '?', b: ownerLabels.value.get(ownerKeyOf(port)) ?? '?' }),
     );
   } catch (err) {
-    showToast('error', t('gv.rack.cables_title'), (err as Error).message);
+    showToast('error', t('gv.rack.cables_title'), apiErrorMessage(err));
   }
 }
 
+/** A jack in the rack was used: select its entry and treat it like a port in the panel. */
+function pickJack(key: string, port: RackPort) {
+  selectEntry(key);
+  void pickPort(port);
+}
+
+/** Removes a cable at once; the toast can put it back, with its type, colour and notes. */
 async function removeCable(cableId: number) {
+  const removed = cabling.value.cables.find((c) => c.id === cableId);
   try {
     await api.deleteCable(cableId);
     await refreshCabling();
-    showToast('success', t('gv.rack.cables_title'), t('gv.rack.cable_removed'));
+    const undo = removed ? { label: t('gv.toast.undo'), run: () => void restoreCable(removed) } : undefined;
+    showToast('success', t('gv.rack.cables_title'), t('gv.rack.cable_removed'), undo);
   } catch (err) {
-    showToast('error', t('gv.rack.cables_title'), (err as Error).message);
+    showToast('error', t('gv.rack.cables_title'), apiErrorMessage(err));
+  }
+}
+
+async function restoreCable(cable: RackCable) {
+  try {
+    await api.createCable({ a_port_id: cable.a_port_id, b_port_id: cable.b_port_id, cable: cable.cable, color: cable.color, notes: cable.notes });
+    await refreshCabling();
+  } catch (err) {
+    showToast('error', t('gv.toast.undo'), apiErrorMessage(err));
   }
 }
 
@@ -322,7 +506,7 @@ async function deleteItem() {
     await refreshCabling();
     emit('changed');
   } catch (err) {
-    showToast('error', t('gv.rack.delete_item'), (err as Error).message);
+    showToast('error', t('gv.rack.delete_item'), apiErrorMessage(err));
   }
 }
 
@@ -331,9 +515,11 @@ async function onItemSaved() {
   emit('changed');
 }
 
-// Escape drops a half-made cable before it closes anything else
+// Escape drops a pick for placing or a half-made cable before it closes anything else
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && pendingPortId.value !== null) pendingPortId.value = null;
+  if (event.key !== 'Escape') return;
+  if (placingKey.value !== null) cancelPlacing();
+  else if (pendingPortId.value !== null) pendingPortId.value = null;
 });
 
 // ── Racks ────────────────────────────────────────────────────────────────────
@@ -362,7 +548,7 @@ async function saveRack() {
     await load(current.id);
     emit('changed');
   } catch (err) {
-    showToast('error', t('gv.rack.save_rack'), (err as Error).message);
+    showToast('error', t('gv.rack.save_rack'), apiErrorMessage(err));
   } finally {
     savingRack.value = false;
   }
@@ -379,7 +565,7 @@ async function createRack() {
     creatingRack.value = false;
     await load(created.id);
   } catch (err) {
-    showToast('error', t('gv.racks.create'), (err as Error).message);
+    showToast('error', t('gv.racks.create'), apiErrorMessage(err));
   } finally {
     savingRack.value = false;
   }
@@ -400,7 +586,7 @@ async function removeRack() {
     await load();
     emit('changed');
   } catch (err) {
-    showToast('error', t('gv.racks.delete'), (err as Error).message);
+    showToast('error', t('gv.racks.delete'), apiErrorMessage(err));
   }
 }
 </script>
@@ -428,7 +614,7 @@ async function removeRack() {
             v-for="r in racks"
             :key="r.id"
             type="button"
-            class="h-7 shrink-0 rounded-sm px-3 text-xs font-semibold transition-colors"
+            class="h-7 shrink-0 rounded-sm px-3 text-xs font-semibold transition-colors max-md:h-11"
             :class="r.id === selectedRackId ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
             :aria-pressed="r.id === selectedRackId"
             @click="selectedRackId = r.id"
@@ -441,7 +627,7 @@ async function removeRack() {
             v-for="s in sides"
             :key="s"
             type="button"
-            class="h-7 rounded-sm px-3 text-xs font-semibold transition-colors"
+            class="h-7 rounded-sm px-3 text-xs font-semibold transition-colors max-md:h-11"
             :class="side === s ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
             :aria-pressed="side === s"
             @click="side = s"
@@ -449,7 +635,7 @@ async function removeRack() {
             {{ t('gv.rack.side_' + s) }}
           </button>
         </div>
-        <div class="ml-auto flex gap-1">
+        <div class="ml-auto flex flex-wrap justify-end gap-1">
           <Button size="sm" @click="openEditRack"><Pencil aria-hidden="true" />{{ t('gv.rack.edit_rack') }}</Button>
           <Button size="sm" @click="addItem"><Plus aria-hidden="true" />{{ t('gv.rack.add_item') }}</Button>
           <Button size="sm" @click="openCreate"><Plus aria-hidden="true" />{{ t('gv.racks.new') }}</Button>
@@ -457,9 +643,33 @@ async function removeRack() {
         </div>
       </header>
 
-      <div class="grid min-h-0 flex-1 gap-5 overflow-y-auto p-4 xl:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
-        <div class="space-y-3">
+      <!-- From lg the tray is a column beside the rack and each column scrolls on its own, so both stay in reach -->
+      <div
+        class="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,18rem)] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]"
+      >
+        <div ref="rackColumnRef" class="min-w-0 space-y-3 lg:min-h-0 lg:overflow-y-auto">
+          <p class="sr-only" aria-live="polite">{{ placing ? placingMessage : placeAnnouncement }}</p>
+          <div
+            v-if="placing"
+            class="sticky top-0 z-10 flex items-center gap-2 rounded-md border bg-surface px-3 py-1.5 text-xs text-fg shadow-pop"
+            :class="placingFits ? 'border-accent' : 'border-warn'"
+          >
+            <p class="min-w-0 flex-1">{{ placingMessage }}</p>
+            <Button size="sm" variant="ghost" @click="cancelPlacing">{{ t('common.cancel') }}</Button>
+          </div>
+          <div v-if="issues.length" class="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs" role="status">
+            <p class="flex items-center gap-2 font-semibold text-warn-text"><AlertTriangle class="size-4" aria-hidden="true" />{{ t('gv.racks.issues', { count: issues.length }) }}</p>
+            <ul class="space-y-1">
+              <li v-for="i in issues" :key="i.entry.key" class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <button type="button" class="min-w-0 text-left text-fg underline-offset-2 hover:underline" @click="selectEntry(i.entry.key)">
+                  {{ i.entry.label }}: {{ t(`gv.racks.issue_${i.reason}`) }}
+                </button>
+                <Button size="sm" @click="placeFree(i.entry)">{{ t('gv.racks.find_free') }}</Button>
+              </li>
+            </ul>
+          </div>
           <RackElevation
+            ref="elevationRef"
             :name="rack.name"
             :units="rack.units"
             :entries="entries"
@@ -471,36 +681,31 @@ async function removeRack() {
             :ports="cabling.ports"
             :cables="cabling.cables"
             :colour-of-port="colourOfPort"
+            :placing="placing"
+            :cable-targets="cableTargets"
             @select="selectEntry"
             @open="openEntry"
             @move="moveEntry"
+            @place="placeAt"
+            @pick-port="pickJack"
           />
-          <p class="text-xs leading-relaxed text-fg-subtle">{{ t('gv.rack.legend') }}</p>
+          <p class="text-xs leading-relaxed text-fg-subtle">{{ t('gv.rack.place_hint') }} {{ t('gv.rack.entry_hint') }}</p>
+          <p v-if="hasCables" class="text-xs leading-relaxed text-fg-subtle">{{ t('gv.rack.legend') }}</p>
           <div class="gl-subcard space-y-2 p-4">
             <div class="flex items-baseline justify-between gap-3">
               <p class="gl-eyebrow">{{ t('rack.occupied') }}</p>
-              <p class="font-mono text-sm text-fg tabular"><span class="text-xl font-semibold">{{ occupied }}</span> / {{ rack.units }} HE</p>
+              <p class="font-mono text-sm text-fg tabular"><span class="text-xl font-semibold">{{ occupied }}</span> / {{ t('rack.units', { count: rack.units }) }}</p>
             </div>
             <div class="h-2 overflow-hidden rounded-full bg-sunken" role="progressbar" :aria-label="t('rack.occupied')" aria-valuemin="0" :aria-valuemax="rack.units" :aria-valuenow="occupied">
-              <div class="h-full rounded-full bg-accent" :style="{ width: `${Math.min(100, (occupied / rack.units) * 100)}%` }" />
+              <div class="h-full rounded-full bg-accent" :style="{ transform: fillShift((occupied / rack.units) * 100) }" />
             </div>
             <p class="text-xs text-fg-subtle">
               {{ t('rack.devices') }}: <span class="font-mono text-fg">{{ entries.length }}</span> · {{ t('gv.racks.free', { count: Math.max(0, rack.units - occupied) }) }}
             </p>
           </div>
-          <div v-if="issues.length" class="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs" role="status">
-            <p class="flex items-center gap-2 font-semibold text-warn-text"><AlertTriangle class="size-4" aria-hidden="true" />{{ t('gv.racks.issues', { count: issues.length }) }}</p>
-            <ul class="space-y-1">
-              <li v-for="i in issues" :key="i.entry.key">
-                <button type="button" class="text-left text-fg underline-offset-2 hover:underline" @click="selectEntry(i.entry.key)">
-                  {{ i.entry.label }}: {{ t(`gv.racks.issue_${i.reason}`) }}
-                </button>
-              </li>
-            </ul>
-          </div>
         </div>
 
-        <aside class="space-y-4">
+        <aside class="min-w-0 space-y-4 lg:min-h-0 lg:overflow-y-auto">
           <RackPortsPanel
             v-if="selected"
             :key="selected.key"
@@ -523,12 +728,16 @@ async function removeRack() {
           <RackTray
             :rack-entries="entries"
             :unplaced="unplaced"
-            :unracked="unracked"
+            v-model:show-all="showAllCandidates"
+            :unracked="trayUnracked"
+            :hidden-count="hiddenCandidates"
             :selected-key="selectedKey"
+            :placing-key="placing?.key ?? null"
             @select="selectEntry"
             @open="openEntry"
             @unplace="unplace"
             @detach="detach"
+            @place="startPlacing"
           />
         </aside>
       </div>

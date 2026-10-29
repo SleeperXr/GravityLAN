@@ -62,7 +62,7 @@ const isUp = (item: DeviceHistoryResponse) => item.status === 'online' || item.s
             v-for="p in periods"
             :key="p"
             type="button"
-            class="rounded px-2 py-0.5 text-[11px] font-semibold"
+            class="rounded px-2 py-0.5 text-xs font-semibold"
             :class="period === p ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
             :aria-pressed="period === p"
             @click="period = p"
@@ -78,8 +78,8 @@ const isUp = (item: DeviceHistoryResponse) => item.status === 'online' || item.s
     <Timeline v-else :items="history.map(historyEntry)" :label="t('gv.timeline.history')" no-cards>
       <template #default="{ item }">
         <div class="flex flex-wrap items-center gap-2">
-          <span class="text-[11px] font-semibold" :class="isUp(item) ? 'text-accent-text' : 'text-danger-text'">{{ statusWord(item.status) }}</span>
-          <span v-if="item.service_id" class="rounded-sm bg-raised px-1.5 text-[10px] font-medium text-fg-muted">SERVICE</span>
+          <span class="text-xs font-semibold" :class="isUp(item) ? 'text-accent-text' : 'text-danger-text'">{{ statusWord(item.status) }}</span>
+          <span v-if="item.service_id" class="rounded-sm bg-raised px-1.5 text-micro font-medium text-fg-muted">SERVICE</span>
           <span class="ml-auto text-xs text-fg-subtle"><RelativeTime :date="item.timestamp" /></span>
         </div>
         <p class="mt-0.5 text-sm text-fg">{{ item.message }}</p>

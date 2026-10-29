@@ -148,7 +148,7 @@ defineExpose({ compact });
         <h2 :id="`${sectionId}-title`" class="truncate text-sm font-semibold text-fg">
           {{ group ? group.name : t('dashboard.unassigned_devices') }}
         </h2>
-        <span class="rounded-sm bg-raised px-1.5 font-mono text-[11px] text-fg-subtle tabular">{{ devices.length }}</span>
+        <span class="rounded-sm bg-raised px-1.5 font-mono text-micro text-fg-subtle tabular">{{ devices.length }}</span>
       </button>
       <div v-if="editMode && group" class="flex gap-1">
         <button

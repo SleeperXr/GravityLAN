@@ -164,7 +164,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
 
             <span class="grid grid-cols-2 gap-3">
               <span v-for="m in [{ label: 'CPU', value: agent.cpu_usage }, { label: 'RAM', value: agent.ram_usage }]" :key="m.label" class="space-y-1">
-                <span class="flex justify-between font-mono text-[11px]">
+                <span class="flex justify-between font-mono text-xs">
                   <span class="text-fg-subtle">{{ m.label }}</span>
                   <span class="font-semibold tabular" :class="toneText[loadTone(m.value)]">{{ m.value.toFixed(1) }} %</span>
                 </span>

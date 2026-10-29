@@ -3,7 +3,7 @@ import { CheckCircle2, AlertCircle, Info, X } from 'lucide-vue-next';
 import { useToast } from '@/composables/useToast';
 import { t } from '@/i18n';
 
-const { toasts, removeToast } = useToast();
+const { toasts, removeToast, runToastAction } = useToast();
 const icons = { success: CheckCircle2, error: AlertCircle, info: Info };
 const tones = { success: 'text-accent-text', error: 'text-danger-text', info: 'text-info-text' };
 </script>
@@ -26,8 +26,16 @@ const tones = { success: 'text-accent-text', error: 'text-danger-text', info: 't
           <p v-if="toast.message" class="mt-0.5 text-xs break-words text-fg-muted">{{ toast.message }}</p>
         </div>
         <button
+          v-if="toast.action"
           type="button"
-          class="-m-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg"
+          class="-my-1 inline-flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-semibold text-accent-text hover:bg-control-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          @click="runToastAction(toast.id)"
+        >
+          {{ toast.action.label }}
+        </button>
+        <button
+          type="button"
+          class="-m-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           :aria-label="t('common.close')"
           @click="removeToast(toast.id)"
         >

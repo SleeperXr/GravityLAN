@@ -358,7 +358,7 @@ onBeforeUnmount(() => {
       </button>
       <span class="mx-1 h-5 w-px bg-line" aria-hidden="true" />
       <Button size="icon-sm" variant="ghost" :aria-label="t('ssh.terminal.smaller')" :title="t('ssh.terminal.smaller')" @click="setTerminalPrefs({ fontSize: terminalPrefs.fontSize - 1 })"><Minus aria-hidden="true" /></Button>
-      <span class="w-9 text-center font-mono text-[11px] text-fg-subtle tabular" aria-live="polite">{{ terminalPrefs.fontSize }}px</span>
+      <span class="w-9 text-center font-mono text-xs text-fg-subtle tabular" aria-live="polite">{{ terminalPrefs.fontSize }}px</span>
       <Button size="icon-sm" variant="ghost" :aria-label="t('ssh.terminal.larger')" :title="t('ssh.terminal.larger')" @click="setTerminalPrefs({ fontSize: terminalPrefs.fontSize + 1 })"><Plus aria-hidden="true" /></Button>
       <TerminalSettings />
     </div>

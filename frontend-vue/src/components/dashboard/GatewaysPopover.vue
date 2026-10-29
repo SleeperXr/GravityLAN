@@ -159,14 +159,14 @@ function onKeydown(event: KeyboardEvent) {
                 <span class="h-8 w-1 shrink-0 rounded-full" :style="{ backgroundColor: networkColor(entry.subnet_id, entry.gateway_ip) }" aria-hidden="true" />
                 <span class="min-w-0 flex-1">
                   <span class="flex items-center gap-1.5">
-                    <span v-if="entry.vlan_id != null" class="rounded-sm bg-raised px-1 font-mono text-[10px] text-fg-muted">VLAN {{ entry.vlan_id }}</span>
+                    <span v-if="entry.vlan_id != null" class="rounded-sm bg-raised px-1 font-mono text-micro text-fg-muted">VLAN {{ entry.vlan_id }}</span>
                     <span class="truncate text-sm font-medium text-fg">{{ entry.subnet_name }}</span>
-                    <span class="hidden truncate font-mono text-[11px] text-fg-subtle sm:inline">{{ entry.cidr }}</span>
+                    <span class="hidden truncate font-mono text-xs text-fg-subtle sm:inline">{{ entry.cidr }}</span>
                   </span>
                   <span class="mt-0.5 flex items-center gap-1.5 text-xs text-fg-muted">
                     <StatusDot size="sm" :state="status(entry).state" />
                     <span class="font-mono">{{ entry.gateway_ip ?? '—' }}</span>
-                    <span v-if="entry.source && entry.source !== 'configured'" class="rounded-sm border border-line px-1 text-[10px] text-fg-subtle">
+                    <span v-if="entry.source && entry.source !== 'configured'" class="rounded-sm border border-line px-1 text-micro text-fg-subtle">
                       {{ t(`gateways.source_${entry.source}`) }}
                     </span>
                     <ArrowRight class="size-3 text-fg-subtle" aria-hidden="true" />

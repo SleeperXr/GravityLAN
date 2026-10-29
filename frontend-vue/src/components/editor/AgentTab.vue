@@ -171,7 +171,7 @@ function addDiskPath() {
 
       <section v-if="panel.deployLog.value.length > 0" class="space-y-2">
         <h4 class="flex items-center gap-1.5 text-xs font-medium text-fg-muted"><Terminal class="size-3.5" aria-hidden="true" />{{ t('agent.deployment_logs') }}</h4>
-        <pre class="max-h-40 overflow-y-auto rounded-md border border-line bg-[#06080a] p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[#4ade80]" role="log">{{ panel.deployLog.value.join('\n') }}</pre>
+        <pre class="max-h-40 overflow-y-auto rounded-md border border-line bg-[#06080a] p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-[#4ade80]" role="log">{{ panel.deployLog.value.join('\n') }}</pre>
       </section>
     </div>
   </div>

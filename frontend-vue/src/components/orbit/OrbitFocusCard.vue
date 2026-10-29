@@ -39,7 +39,7 @@ const emit = defineEmits<{ close: []; open: []; toHub: []; centre: []; trace: []
     <dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
       <dt class="text-fg-subtle">{{ t('gv.orbit.kind') }}</dt>
       <dd class="text-fg">
-        {{ t(`gv.orbit.role_${roleOf(body)}`) }}<span v-if="badge" class="font-mono text-[10px] text-fg-muted"> · {{ badge }}</span>
+        {{ t(`gv.orbit.role_${roleOf(body)}`) }}<span v-if="badge" class="font-mono text-xs text-fg-muted"> · {{ badge }}</span>
       </dd>
       <dt class="text-fg-subtle">{{ t('gv.orbit.status') }}</dt>
       <dd class="text-fg">{{ t(`gv.orbit.state_${body.state}`) }}</dd>
@@ -57,7 +57,7 @@ const emit = defineEmits<{ close: []; open: []; toHub: []; centre: []; trace: []
         <dd v-else class="text-accent-text">{{ t('gv.orbit.redundant') }}</dd>
         <template v-if="resilience.cutOff">
           <dt class="text-fg-subtle">{{ t('gv.orbit.if_fails') }}</dt>
-          <dd class="text-warn-text">{{ t('gv.orbit.spof_cuts', { count: resilience.cutOff }) }}</dd>
+          <dd class="text-warn-text">{{ t('gv.orbit.if_fails_cuts', { count: resilience.cutOff }) }}</dd>
         </template>
       </template>
     </dl>

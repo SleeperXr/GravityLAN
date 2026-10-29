@@ -65,7 +65,7 @@ async function logout() {
       >
         <ArrowLeftRight class="size-3.5 text-accent-text" aria-hidden="true" />
         <span class="flex-1 truncate">{{ t('gv.legacy.switch') }}</span>
-        <span class="rounded-sm border border-line px-1 font-mono text-[10px] text-fg-subtle">{{ t('gv.legacy.badge') }}</span>
+        <span class="rounded-sm border border-line px-1 font-mono text-micro text-fg-subtle">{{ t('gv.legacy.badge') }}</span>
       </a>
       <button
         type="button"

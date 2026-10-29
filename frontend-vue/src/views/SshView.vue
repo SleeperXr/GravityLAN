@@ -243,7 +243,7 @@ const statusDot: Record<TerminalStatus, string> = {
     <header class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 md:px-6">
       <div class="min-w-0">
         <h1 class="sr-only text-xl font-bold text-fg md:not-sr-only">{{ t('ssh.title') }}</h1>
-        <p class="text-sm text-fg-muted">{{ t('ssh.subtitle') }}</p>
+        <p class="max-w-prose text-sm text-fg-muted">{{ t('ssh.subtitle') }}</p>
       </div>
       <div class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('ssh.title')">
         <button
@@ -256,7 +256,7 @@ const statusDot: Record<TerminalStatus, string> = {
           @click="pickSection(s.id)"
         >
           <component :is="s.icon" class="size-3.5" aria-hidden="true" />{{ s.label }}
-          <span v-if="s.count" class="rounded-sm bg-raised px-1 font-mono text-[10px] text-fg-subtle">{{ s.count }}</span>
+          <span v-if="s.count" class="rounded-sm bg-raised px-1 font-mono text-micro text-fg-subtle">{{ s.count }}</span>
         </button>
       </div>
     </header>

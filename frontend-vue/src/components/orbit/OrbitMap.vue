@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useFullscreen, useResizeObserver, useStorage } from '@vueuse/core';
-import { Check, Expand, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, ShieldAlert, Shrink, Sparkles, TriangleAlert, Wand2 } from 'lucide-vue-next';
+import { useEventListener, useFullscreen, useMediaQuery, useResizeObserver, useStorage } from '@vueuse/core';
+import { Check, Expand, Hand, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, ShieldAlert, Shrink, Sparkles, TriangleAlert, Wand2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
 import { useNetworkStore } from '@/stores/network';
@@ -82,7 +82,24 @@ const hoveredBodyId = ref<number | null>(null);
 const loaded = ref(false);
 
 const svgRef = ref<SVGSVGElement | null>(null);
-const view = useOrbitViewport(svgRef, prefersReducedMotion);
+
+/**
+ * The read-only map is the one embedded in a scrolling page (the dashboard), so the page keeps the plain wheel
+ * and one-finger swipes there: Ctrl/⌘ + wheel zooms, and on touch the map takes gestures only after a tap on it
+ * (or on "Use map") until "Done", a tap outside it or Esc. In fullscreen it behaves like the full map.
+ */
+const pageScrolls = computed(() => !props.editable && !isFullscreen.value);
+const coarsePointer = useMediaQuery('(pointer: coarse)');
+const touchActive = ref(false);
+const touchLocked = computed(() => pageScrolls.value && !touchActive.value);
+const modifierKey = computed(() => (/Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : t('gv.orbit.key_ctrl')));
+/** A finger that moves less than this between down and up is a tap, not a swipe */
+const TAP_SLOP_PX = 10;
+let tapStart: Point | null = null;
+const wheelHint = ref(false);
+let wheelHintTimer = 0;
+
+const view = useOrbitViewport(svgRef, prefersReducedMotion, pageScrolls);
 
 // Dragging a body or drawing a beam
 const draggingBodyId = ref<number | null>(null);
@@ -279,11 +296,29 @@ const flyToBodies = (ids: number[]) => view.flyTo(ids.map(posOf));
 
 function onCanvasPointerDown(e: PointerEvent) {
   if (e.button !== 0) return;
+  // The page scrolls under a finger until the map is tapped
+  if (touchLocked.value && e.pointerType === 'touch') {
+    tapStart = { x: e.clientX, y: e.clientY };
+    return;
+  }
   if (view.pointerDown(e) === 'pinch') return;
   selectedLinkId.value = null;
   selectedDeviceId.value = null;
   focusedId.value = null;
 }
+
+/** A plain wheel that the map left to the page shows briefly how to zoom instead. */
+function onCanvasWheel(e: WheelEvent) {
+  if (view.onWheel(e)) return;
+  wheelHint.value = true;
+  window.clearTimeout(wheelHintTimer);
+  wheelHintTimer = window.setTimeout(() => (wheelHint.value = false), 1500);
+}
+
+// A tap outside the map gives the gestures back to the page
+useEventListener(window, 'pointerdown', (e: PointerEvent) => {
+  if (touchActive.value && canvasRef.value && !canvasRef.value.contains(e.target as Node)) touchActive.value = false;
+});
 
 function onCanvasDoubleClick() {
   focusedId.value = null;
@@ -365,6 +400,13 @@ function onWindowPointerMove(e: PointerEvent) {
 }
 
 async function onWindowPointerUp(e: PointerEvent) {
+  if (tapStart) {
+    const start = tapStart;
+    tapStart = null;
+    // A cancelled pointer is a swipe the page took over for scrolling
+    if (e.type === 'pointerup' && Math.hypot(e.clientX - start.x, e.clientY - start.y) < TAP_SLOP_PX) touchActive.value = true;
+    return;
+  }
   if (view.pointerUp(e)) return;
   if (connectingFromId.value != null) {
     const fromId = connectingFromId.value;
@@ -631,7 +673,7 @@ function onWindowKeyDown(e: KeyboardEvent) {
   else if (focusedId.value != null) {
     focusedId.value = null;
     fitView(true);
-  }
+  } else if (touchActive.value) touchActive.value = false;
 }
 
 /** What stays lit: focus, search and tracing dim the rest hard, hover only softly. */
@@ -682,6 +724,14 @@ const focusedInfo = computed(() => {
 const resiliencePoints = computed(() =>
   resilience.value.singlePoints.map((p) => ({ id: p.id, label: deviceLabel(devicesById.value.get(p.id)!), cutOff: p.cutOff.length })),
 );
+/** Online devices nothing reaches now; `unlinked` when no link on the map leads to the core at all */
+const cutOffDevices = computed(() =>
+  [...failover.value.cutOffIds].map((id) => ({
+    id,
+    label: devicesById.value.get(id) ? deviceLabel(devicesById.value.get(id)!) : String(id),
+    unlinked: resilience.value.unconnectedIds.has(id),
+  })),
+);
 /** Resilience list: focus the device with its card, like a problem from the warning button. */
 function focusSinglePoint(id: number) {
   focusedId.value = id;
@@ -717,6 +767,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointerup', onWindowPointerUp);
   window.removeEventListener('pointercancel', onWindowPointerUp);
   window.removeEventListener('keydown', onWindowKeyDown);
+  window.clearTimeout(wheelHintTimer);
   view.cancel();
 });
 
@@ -741,7 +792,16 @@ useResizeObserver(svgRef, initialFit);
     :class="[editing && 'is-editing', vitalityMode === 'subtle' && 'vitality-subtle', vitalityMode === 'lively' && 'vitality-lively']"
   >
     <!-- A group, not an image: the bodies inside are buttons that assistive technology must reach -->
-    <svg ref="svgRef" class="h-full w-full touch-none" role="group" :aria-label="t('gv.plan.title')" @wheel="view.onWheel" @pointerdown="onCanvasPointerDown" @dblclick="onCanvasDoubleClick">
+    <svg
+      ref="svgRef"
+      class="h-full w-full"
+      :class="touchLocked ? 'touch-pan-y' : 'touch-none'"
+      role="group"
+      :aria-label="t('gv.plan.title')"
+      @wheel="onCanvasWheel"
+      @pointerdown="onCanvasPointerDown"
+      @dblclick="onCanvasDoubleClick"
+    >
       <defs>
         <radialGradient v-for="body in bodyList" :id="`${flowId}-nebula-${body.id}`" :key="`nebula-${body.id}`" cx="50%" cy="50%" r="50%">
           <stop offset="0%" :stop-color="body.color" stop-opacity="0.32" />
@@ -868,7 +928,7 @@ useResizeObserver(svgRef, initialFit);
     <!-- Search: highlights matches, Enter flies there -->
     <div
       v-if="!editing"
-      class="absolute top-3 left-3 z-10 flex h-9 items-center gap-2 rounded-md border border-line bg-surface/95 px-2.5 shadow-pop backdrop-blur focus-within:border-accent"
+      class="absolute top-3 left-3 z-10 flex h-9 items-center gap-2 rounded-md bg-surface/95 px-2.5 shadow-pop backdrop-blur focus-within:ring-1 focus-within:ring-accent"
       :class="editable ? 'w-[min(16rem,calc(100%-12rem))]' : 'w-[min(16rem,calc(100%-1.5rem))]'"
       @pointerdown.stop
     >
@@ -881,7 +941,7 @@ useResizeObserver(svgRef, initialFit);
         :aria-label="t('gv.orbit.search_label')"
         @keydown.enter.prevent="submitSearch"
       />
-      <span v-if="searchQuery" class="font-mono text-[10px] text-fg-subtle" aria-live="polite">{{ searchHits.length }}</span>
+      <span v-if="searchQuery" class="font-mono text-micro text-fg-subtle" aria-live="polite">{{ searchHits.length }}</span>
     </div>
 
     <OrbitFocusCard
@@ -900,17 +960,38 @@ useResizeObserver(svgRef, initialFit);
     />
 
     <p
-      v-if="!editing && !focusedInfo && !searchQuery && traceFromId == null"
-      class="pointer-events-none absolute bottom-3 left-3 z-10 hidden max-w-xs rounded-md border border-line bg-surface/90 px-2.5 py-1.5 text-[11px] text-fg-muted backdrop-blur sm:block"
+      v-if="!editing && !focusedInfo && !searchQuery && traceFromId == null && !(coarsePointer && pageScrolls)"
+      class="pointer-events-none absolute bottom-3 left-3 z-10 hidden max-w-xs rounded-md border border-line bg-surface/90 px-2.5 py-1.5 text-xs text-fg-muted backdrop-blur sm:block"
     >
-      {{ t('gv.orbit.hint') }}
+      {{ pageScrolls ? t('gv.orbit.hint_embedded', { key: modifierKey }) : t('gv.orbit.hint') }}
     </p>
+
+    <!-- Plain wheel over the embedded map: the page scrolls, this says how to zoom -->
+    <p
+      v-if="pageScrolls"
+      class="pointer-events-none absolute top-1/2 left-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface/95 px-3 py-1.5 text-xs font-medium text-fg shadow-pop backdrop-blur transition-opacity duration-200"
+      :class="wheelHint ? 'opacity-100' : 'opacity-0'"
+      aria-hidden="true"
+    >
+      {{ t('gv.orbit.wheel_hint', { key: modifierKey }) }}
+    </p>
+
+    <!-- Touch on the embedded map: take the gestures from the page, and give them back -->
+    <button
+      v-if="coarsePointer && pageScrolls && !resilienceMode"
+      type="button"
+      class="absolute top-14 right-3 z-20 inline-flex h-11 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold shadow-pop backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+      :class="touchActive ? 'bg-accent text-accent-fg' : 'bg-surface/95 text-fg'"
+      @click="touchActive = !touchActive"
+    >
+      <component :is="touchActive ? Check : Hand" class="size-3.5" aria-hidden="true" />{{ touchActive ? t('gv.orbit.touch_release') : t('gv.orbit.touch_activate') }}
+    </button>
 
     <OrbitResiliencePanel
       v-if="resilienceMode && !editing && traceFromId == null"
       :points="resiliencePoints"
       :active-backups="failover.activeBackupIds.size"
-      :cut-off="failover.cutOffIds.size"
+      :cut-off="cutOffDevices"
       @select="focusSinglePoint"
       @close="resilienceMode = false"
     />
@@ -918,11 +999,11 @@ useResizeObserver(svgRef, initialFit);
     <OrbitTracePanel v-if="!editing && traceFromId != null" :start-label="traceStartLabel" :has-target="traceToId != null" :path="tracedPath" :hops="traceHops" @close="cancelTrace" />
 
     <!-- Motion and zoom controls; a row on phones, where a column of 44 px buttons covered the map height -->
-    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-surface shadow-pop max-md:flex-row">
+    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md bg-surface shadow-pop max-md:flex-row">
       <button
         v-if="problemIds.length && !editing"
         type="button"
-        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 max-md:h-11 max-md:min-w-11 max-md:border-r max-md:border-b-0 px-1 font-mono text-[11px] font-semibold text-danger-text hover:bg-danger/20"
+        class="flex h-8 items-center justify-center gap-0.5 border-b border-line bg-danger/10 max-md:h-11 max-md:min-w-11 max-md:border-r max-md:border-b-0 px-1 font-mono text-xs font-semibold text-danger-text hover:bg-danger/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
         :title="t('gv.orbit.problems_label', { count: problemIds.length })"
         :aria-label="t('gv.orbit.problems_label', { count: problemIds.length })"
         @click="focusNextProblem"
@@ -932,44 +1013,44 @@ useResizeObserver(svgRef, initialFit);
       <button
         v-if="!editing"
         type="button"
-        class="flex size-8 items-center justify-center border-b border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-r max-md:border-b-0"
+        class="flex size-8 items-center justify-center border-b border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-r max-md:border-b-0"
         :class="resilienceMode && 'bg-warn/10 text-warn-text'"
         :title="t('gv.orbit.resilience')"
         :aria-label="t('gv.orbit.resilience')"
         :aria-pressed="resilienceMode"
         @click="resilienceMode = !resilienceMode"
       >
-        <ShieldAlert class="size-3.5" />
+        <ShieldAlert class="size-3.5" aria-hidden="true" />
       </button>
       <button
         type="button"
-        class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11"
+        class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11"
         :class="vitalityMode !== 'off' && 'text-accent-text'"
         :title="t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) })"
         :aria-label="t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) })"
         @click="cycleVitality"
       >
-        <Sparkles class="size-3.5" />
+        <Sparkles class="size-3.5" aria-hidden="true" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
-        <Plus class="size-4" />
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
+        <Plus class="size-4" aria-hidden="true" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_out')" @click="view.zoomBy(0.82)">
-        <Minus class="size-4" />
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_out')" @click="view.zoomBy(0.82)">
+        <Minus class="size-4" aria-hidden="true" />
       </button>
-      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
-        <Maximize class="size-3.5" />
+      <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.fit')" @click="fitView(true)">
+        <Maximize class="size-3.5" aria-hidden="true" />
       </button>
       <button
         v-if="fullscreenSupported"
         type="button"
-        class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-t-0 max-md:border-l"
+        class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-t-0 max-md:border-l"
         :aria-label="isFullscreen ? t('gv.orbit.exit_fullscreen') : t('gv.orbit.fullscreen')"
         :title="isFullscreen ? t('gv.orbit.exit_fullscreen') : t('gv.orbit.fullscreen')"
         :aria-pressed="isFullscreen"
         @click="toggleFullscreen()"
       >
-        <component :is="isFullscreen ? Shrink : Expand" class="size-3.5" />
+        <component :is="isFullscreen ? Shrink : Expand" class="size-3.5" aria-hidden="true" />
       </button>
     </div>
 

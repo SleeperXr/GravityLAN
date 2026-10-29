@@ -18,14 +18,14 @@ const activeId = computed(() => route.meta.navId as string | undefined);
 <template>
   <aside class="hidden h-dvh w-60 shrink-0 flex-col border-r border-line bg-chrome md:flex">
     <div class="flex h-14 items-center gap-2 px-5">
-      <span class="text-[15px] font-semibold tracking-tight text-fg">{{ t('app.title') }}</span>
-      <span v-if="props.version" class="font-mono text-[11px] text-fg-subtle">v{{ props.version }}</span>
-      <span class="ml-auto rounded-sm border border-accent/25 bg-accent/10 px-1.5 py-px text-[10px] font-semibold text-accent-text">
+      <span class="text-base font-semibold tracking-tight text-fg">{{ t('app.title') }}</span>
+      <span v-if="props.version" class="font-mono text-micro text-fg-subtle">v{{ props.version }}</span>
+      <span class="ml-auto rounded-sm border border-accent/25 bg-accent/10 px-1.5 py-px text-micro font-semibold text-accent-text">
         {{ t('gv.brand_tag') }}
       </span>
     </div>
 
-    <!-- The pages as stops on one route: each has its own line sign, the current stop is filled -->
+    <!-- The pages as stops on one route: each has its own line sign, the current stop is filled, a hairline joins the stops -->
     <nav :aria-label="t('sidebar.navigation')" class="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
       <RouterLink
         v-for="(item, index) in NAV_ITEMS"
@@ -37,8 +37,7 @@ const activeId = computed(() => route.meta.navId as string | undefined);
       >
         <span
           v-if="index < NAV_ITEMS.length - 1"
-          class="absolute top-[calc(50%+13px)] left-[calc(0.5rem+12px)] h-3 w-0.5 opacity-50"
-          :style="{ background: `linear-gradient(${lineVar(item)}, ${lineVar(NAV_ITEMS[index + 1])})` }"
+          class="absolute top-[calc(50%+13px)] left-[calc(0.5rem+12px)] h-3 w-0.5 bg-line-strong"
           aria-hidden="true"
         />
         <span
@@ -55,14 +54,14 @@ const activeId = computed(() => route.meta.navId as string | undefined);
         <span class="flex-1 truncate">{{ t(item.label) }}</span>
         <span
           v-if="item.id === 'dashboard' && store.totalCount > 0"
-          class="font-mono text-[11px] text-fg-subtle tabular"
+          class="font-mono text-xs text-fg-subtle tabular"
           :aria-label="`${store.onlineCount} / ${store.totalCount}`"
         >
           {{ store.onlineCount }}/{{ store.totalCount }}
         </span>
         <span
           v-else-if="item.id === 'ssh' && ssh.liveCount > 0"
-          class="rounded-sm bg-accent/15 px-1.5 font-mono text-[11px] text-accent-text"
+          class="rounded-sm bg-accent/15 px-1.5 font-mono text-micro text-accent-text"
           :title="t('ssh.sessions.open_in_background', { count: ssh.liveCount })"
         >
           {{ ssh.liveCount }}

@@ -81,8 +81,8 @@ async function revoke(token: ApiTokenResponse) {
     </div>
 
     <EmptyState v-if="tokens.length === 0" compact :icon="KeyRound" :title="t('settings.no_tokens')" />
-    <ul v-else class="divide-y divide-line rounded-md border border-line">
-      <li v-for="token in tokens" :key="token.id" class="flex items-center gap-3 px-3 py-2.5">
+    <ul v-else class="divide-y divide-line border-y border-line">
+      <li v-for="token in tokens" :key="token.id" class="flex items-center gap-3 py-2.5">
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-fg">{{ token.name }}</p>
           <p class="mt-0.5 flex flex-wrap gap-x-2 text-xs text-fg-subtle">

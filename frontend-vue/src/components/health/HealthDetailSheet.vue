@@ -102,12 +102,12 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
         <div class="rounded-md border border-line bg-raised p-3">
           <p class="gl-eyebrow">{{ t('health_page.table_uptime') }}</p>
           <p class="mt-1 font-mono text-xl font-semibold text-accent-text tabular">{{ dev.uptime.uptime_pct.toFixed(1) }}%</p>
-          <p class="mt-0.5 font-mono text-[11px] text-fg-subtle">24h {{ dev.uptime.uptime_24h.toFixed(1) }}% · 7d {{ dev.uptime.uptime_7d.toFixed(1) }}%</p>
+          <p class="mt-0.5 font-mono text-xs text-fg-subtle">24h {{ dev.uptime.uptime_24h.toFixed(1) }}% · 7d {{ dev.uptime.uptime_7d.toFixed(1) }}%</p>
         </div>
         <div class="rounded-md border border-line bg-raised p-3">
           <p class="gl-eyebrow">{{ t('health_page.avg_latency') }}</p>
           <p class="mt-1 font-mono text-xl font-semibold text-info-text tabular">{{ ms(dev.latency.avg_ms) }}</p>
-          <p class="mt-0.5 font-mono text-[11px] text-fg-subtle">Jitter ±{{ ms(dev.latency.jitter_ms) }}</p>
+          <p class="mt-0.5 font-mono text-xs text-fg-subtle">Jitter ±{{ ms(dev.latency.jitter_ms) }}</p>
         </div>
         <StatusMonitor
           class="col-span-2 rounded-md border border-line bg-raised p-3"
@@ -134,7 +134,7 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
               <Badge v-else-if="srv.ssl_expiry_days !== null" :tone="srv.ssl_expiry_days <= 0 ? 'danger' : srv.ssl_expiry_days <= 14 ? 'warn' : 'neutral'">
                 <Lock aria-hidden="true" />{{ srv.ssl_expiry_days <= 0 ? t('health_page.ssl_expired') : t('health_page.ssl_days_left', { days: srv.ssl_expiry_days }) }}
               </Badge>
-              <Button v-if="isSslCandidate(srv)" size="sm" variant="ghost" class="h-6 px-1.5 text-[11px]" :loading="togglingSvc === srv.id" :title="t('health_page.ignore_ssl_hint')" @click="toggleSsl(srv.id, !!srv.ignore_ssl)">
+              <Button v-if="isSslCandidate(srv)" size="sm" variant="ghost" class="h-6 px-1.5 text-xs" :loading="togglingSvc === srv.id" :title="t('health_page.ignore_ssl_hint')" @click="toggleSsl(srv.id, !!srv.ignore_ssl)">
                 <component :is="srv.ignore_ssl ? ShieldCheck : ShieldOff" v-if="togglingSvc !== srv.id" aria-hidden="true" />
                 {{ srv.ignore_ssl ? t('health_page.unignore_ssl_btn') : t('health_page.ignore_ssl_btn') }}
               </Button>
@@ -148,9 +148,9 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
         <div class="space-y-3 rounded-md border border-line bg-raised p-3">
           <p class="flex justify-between font-mono text-xs"><span class="text-fg-subtle">{{ t('health_page.agent_version_label') }}</span><span class="text-fg">{{ dev.agent.agent_version || '–' }}</span></p>
           <div class="grid grid-cols-3 gap-2 text-center font-mono text-xs">
-            <div class="rounded-sm border border-line bg-surface p-2"><p class="flex items-center justify-center gap-1 text-[10px] text-fg-subtle"><Cpu class="size-3" />CPU</p><p class="mt-1 font-semibold text-fg">{{ dev.agent.cpu_percent !== null ? `${dev.agent.cpu_percent.toFixed(0)}%` : '–' }}</p></div>
-            <div class="rounded-sm border border-line bg-surface p-2"><p class="text-[10px] text-fg-subtle">RAM</p><p class="mt-1 font-semibold text-fg">{{ dev.agent.ram_percent !== null ? `${dev.agent.ram_percent.toFixed(0)}%` : '–' }}</p></div>
-            <div class="rounded-sm border border-line bg-surface p-2"><p class="flex items-center justify-center gap-1 text-[10px] text-fg-subtle"><Thermometer class="size-3" />Temp</p><p class="mt-1 font-semibold text-fg">{{ dev.agent.temperature !== null ? `${dev.agent.temperature.toFixed(0)}°C` : '–' }}</p></div>
+            <div class="rounded-sm border border-line bg-surface p-2"><p class="flex items-center justify-center gap-1 text-xs text-fg-subtle"><Cpu class="size-3" />CPU</p><p class="mt-1 font-semibold text-fg">{{ dev.agent.cpu_percent !== null ? `${dev.agent.cpu_percent.toFixed(0)}%` : '–' }}</p></div>
+            <div class="rounded-sm border border-line bg-surface p-2"><p class="text-xs text-fg-subtle">RAM</p><p class="mt-1 font-semibold text-fg">{{ dev.agent.ram_percent !== null ? `${dev.agent.ram_percent.toFixed(0)}%` : '–' }}</p></div>
+            <div class="rounded-sm border border-line bg-surface p-2"><p class="flex items-center justify-center gap-1 text-xs text-fg-subtle"><Thermometer class="size-3" />Temp</p><p class="mt-1 font-semibold text-fg">{{ dev.agent.temperature !== null ? `${dev.agent.temperature.toFixed(0)}°C` : '–' }}</p></div>
           </div>
           <div v-if="dev.agent.patch_security > 0 || dev.agent.reboot_required" class="flex gap-2 rounded-sm border border-danger/30 bg-danger/10 p-2.5 text-xs text-danger-text">
             <ShieldAlert class="size-4 shrink-0" aria-hidden="true" />

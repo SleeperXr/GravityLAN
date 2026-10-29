@@ -318,7 +318,7 @@ const tabs = computed(() => [
               <span class="block h-1.5 overflow-hidden rounded-full bg-sunken">
                 <span class="block h-full rounded-full" :class="diskTone(disk.percent)" :style="{ width: `${Math.min(100, disk.percent)}%` }" />
               </span>
-              <p class="font-mono text-[11px] text-fg-subtle">{{ t('agent_detail.disk_used', { used: disk.used_gb.toFixed(1), total: disk.total_gb.toFixed(1) }) }}</p>
+              <p class="font-mono text-xs text-fg-subtle">{{ t('agent_detail.disk_used', { used: disk.used_gb.toFixed(1), total: disk.total_gb.toFixed(1) }) }}</p>
             </li>
           </ul>
         </section>
@@ -416,7 +416,7 @@ const tabs = computed(() => [
 
           <section v-if="output.length > 0 || patching" class="gl-subcard space-y-2 p-3">
             <h5 class="flex items-center gap-1.5 text-xs font-semibold text-fg"><Terminal class="size-3.5 text-fg-subtle" aria-hidden="true" />{{ t('agent_detail.live_output') }}</h5>
-            <div ref="outputBox" class="max-h-80 overflow-auto rounded-md bg-[#07090c] p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[#cfe9e1]" role="log" aria-live="polite">
+            <div ref="outputBox" class="max-h-80 overflow-auto rounded-md bg-[#07090c] p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-[#cfe9e1]" role="log" aria-live="polite">
               <span v-for="(chunk, idx) in output" :key="idx">{{ chunk }}</span>
             </div>
             <div v-if="!patching" class="flex justify-end">

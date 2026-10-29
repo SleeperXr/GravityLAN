@@ -9,6 +9,7 @@ import { useAppearance } from '@/stores/appearance';
 import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
 import { t } from '@/i18n';
+import { linePaletteHex } from '@/lib/palette';
 
 /**
  * One line colour per network, used on the network map, line signs, device chips and racks.
@@ -34,8 +35,7 @@ onMounted(async () => {
 const { resolved: theme } = useTheme();
 const palette = computed(() => {
   void theme.value; // light and dark have their own palette
-  const style = getComputedStyle(document.documentElement);
-  return Array.from({ length: 10 }, (_, i) => style.getPropertyValue(`--line-${i + 1}`).trim()).filter((c) => /^#[0-9a-f]{6}$/i.test(c));
+  return linePaletteHex();
 });
 
 const bullet = (s: Subnet) => lineLabel(s);
@@ -55,7 +55,7 @@ async function choose(s: Subnet, color: string | null) {
   <fieldset class="mt-6 border-t border-line pt-5">
     <legend class="sr-only">{{ t('gv.lines.colors_title') }}</legend>
     <p class="text-sm font-semibold text-fg">{{ t('gv.lines.colors_title') }}</p>
-    <p class="mt-0.5 text-xs leading-relaxed text-fg-subtle">{{ t('gv.lines.colors_desc') }}</p>
+    <p class="mt-0.5 max-w-prose text-xs leading-relaxed text-fg-subtle">{{ t('gv.lines.colors_desc') }}</p>
 
     <p v-if="loaded && subnets.length === 0" class="mt-3 text-xs text-fg-subtle">{{ t('gv.lines.colors_empty') }}</p>
     <ul v-else class="mt-3 divide-y divide-line">
@@ -64,7 +64,7 @@ async function choose(s: Subnet, color: string | null) {
           <LineBullet :color="networkColor(s.id)" :label="bullet(s)" />
           <span class="min-w-0">
             <span class="block truncate text-sm font-medium text-fg">{{ s.name || s.cidr }}</span>
-            <span class="block font-mono text-[11px] text-fg-subtle">{{ s.cidr }}<template v-if="s.vlan_id != null"> · VLAN {{ s.vlan_id }}</template></span>
+            <span class="block font-mono text-xs text-fg-subtle">{{ s.cidr }}<template v-if="s.vlan_id != null"> · VLAN {{ s.vlan_id }}</template></span>
           </span>
         </span>
         <span class="flex flex-wrap items-center gap-1.5" role="group" :aria-label="t('gv.lines.colors_for', { name: s.name || s.cidr })">
@@ -82,7 +82,7 @@ async function choose(s: Subnet, color: string | null) {
           </button>
           <label class="relative grid size-6 cursor-pointer place-items-center overflow-hidden rounded-full border border-dashed border-line-strong" :title="t('gv.lines.custom')">
             <span class="sr-only">{{ t('gv.lines.custom') }}</span>
-            <span class="text-[11px] font-bold text-fg-subtle" aria-hidden="true">+</span>
+            <span class="text-xs font-bold text-fg-subtle" aria-hidden="true">+</span>
             <input type="color" class="absolute inset-0 cursor-pointer opacity-0" :value="toHex(custom(s))" @change="choose(s, ($event.target as HTMLInputElement).value)" />
           </label>
           <button

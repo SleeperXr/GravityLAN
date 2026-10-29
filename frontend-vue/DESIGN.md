@@ -287,12 +287,14 @@ Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden 
 - **Body** (400–500, 0,875 rem): Fließtext, Navigation, Buttons (500, primär 600), Beschreibungen (`max-w-2xl`).
 - **Meta** (0,75 rem): Hilfetexte, Zähler, Zeitangaben.
 - **Label** (600, 0,75 rem, `fg-subtle`, normale Schreibung; Klasse `.gl-eyebrow`): Beschriftung direkt über einem Messwert oder einer Definitionsliste und kleine Listengruppen-Überschriften. Kein Versal-Satz, kein Vorspann über Seiten- oder Abschnittstiteln.
-- **Badge** (500, 11 px): Badges, mobile Tab-Beschriftungen, Versionsnummer.
-- **Mono** (11 px bis 0,875 rem): IPs, CIDRs, MACs, Ports, Latenzen („2,4 ms“), Online-Zähler („14/15“), Linktypen.
-- **Netzschild** (800, 10 px / 12 px / 14 px in sm/md/lg): VLAN-ID oder Anfangsbuchstabe.
-- **Körpername** (700, 13 px) mit Mono-Zeile (10,5 px) darunter: im Orbit-Netzplan auf Pille mit halbtransparentem Hintergrund für optimale Lesbarkeit bei jedem Zoom.
+- **Badge / Micro** (500, 11 px, Utility `text-micro`): Badges und Zähl-Pillen, mobile Tab-Beschriftungen, Versionsnummer, Rack-Höheneinheiten, Achsenbeschriftungen von Diagrammen und dichte Mono-Metadaten (IP/HE-Zeile im Rack-Einschub). Das ist die Untergrenze: nichts wird kleiner gesetzt.
+- **Mono** (11 px bis 0,875 rem): IPs, CIDRs, MACs, Ports, Latenzen („2,4 ms“), Online-Zähler („14/15“), Linktypen. In Listen, Hilfezeilen und Popovers 12 px (`text-xs`); 11 px nur dort, wo ein dichtes Raster sonst bricht.
+- **Netzschild** (800, 11 px / 12 px / 14 px in sm/md/lg): VLAN-ID oder Anfangsbuchstabe.
+- **Körpername** (700, 12 px) mit Mono-Zeile (11 px) darunter: im Orbit-Netzplan auf Pille mit halbtransparentem Hintergrund für optimale Lesbarkeit bei jedem Zoom.
 
 ### Named Rules
+**The Untergrenze Rule.** Fließtext, Hilfetexte, Beschriftungen, Buttons und Listen-Unterzeilen stehen mindestens in 12 px (`text-xs`); 11 px (`text-micro`) nur für die oben genannten Mikro-Beschriftungen, nie kleiner, keine freien Pixelwerte (`text-[10px]`). Passt eine Größe nicht in ein dichtes Raster (IP-Kacheln, Rack-Zeilen, Port-Leiste), wird Inhalt gekürzt oder ausgeblendet, nicht die Schrift verkleinert.
+
 **The Abgelesen-in-Mono Rule.** Alles, was eine Adresse, ein Zähler oder ein Messwert ist, steht in JetBrains Mono mit Tabellenziffern; Fließtext und Namen nie.
 
 ## Layout
@@ -311,6 +313,7 @@ Das System ist flach und tonal geschichtet: `canvas` → `surface` → `raised`,
 ### Shadow Vocabulary
 - **Kartenkante** (`--gl-shadow-card`; dunkel `0 1px 0 0 rgb(255 255 255 / 0.025) inset`, hell `0 1px 2px rgb(16 20 27 / 0.04)`): auf jeder `.gl-card`, kaum sichtbar.
 - **Schwebend** (`--gl-shadow-pop`; dunkel `0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04)`, hell `0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06)`): Dialoge, Sheets, Popover, Orbit-Bedienelemente und -Inspektorpanels.
+- Kleine Bedienelemente auf der Orbit-Karte (Suche, Zoom-/Bewegungsleiste, Hinweis- und Touch-Pillen) tragen nur `shadow-pop` ohne eigene Rahmenlinie: dessen 1-px-Ring ist ihre Kante. Fokus zeigt ein Akzent-Ring (in der Leiste nach innen, weil sie beschneidet).
 - Dialog-Overlay: Schwarz 55 % mit 2 px Unschärfe.
 
 ### Named Rules
@@ -397,7 +400,7 @@ Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rund
 - **Do** Zustand doppelt kodieren: Ring plus Durchstreichung, unterbrochene Umlaufbahn und Text-Badge („Offline“, „Störung“).
 - **Do** Text auf Tönungen in `*-text` setzen und neue Textfarben in beiden Themen gegen 4,5:1 prüfen.
 - **Do** Adressen, Zähler und Messwerte in JetBrains Mono mit Tabellenziffern setzen.
-- **Do** Bewegung auf `opacity`/`transform` begrenzen; `prefers-reduced-motion` schaltet kontinuierliche Orbit-/Puls-Animationen automatisch ab.
+- **Do** Bewegung auf `opacity`/`transform` begrenzen; `prefers-reduced-motion` schaltet kontinuierliche Orbit-/Puls-Animationen automatisch ab. Fortschritts- und Messbalken füllen sich über `fillShift()`/`fillScale()`/`stackedLayers()` aus `lib/meter.ts`, nie über `width`.
 
 ### Don't:
 - **Don't** Hex-Werte in Komponenten schreiben; Ausnahme ist die Schildtinte (`#0c0f14`) auf vollen Netzfarben.

@@ -18,7 +18,7 @@ const tones = { success: 'text-accent-text', error: 'text-danger-text', info: 't
         <Bell aria-hidden="true" />
         <span
           v-if="history.length > 0"
-          class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-info px-1 font-mono text-[10px] font-semibold text-canvas"
+          class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-info px-1 font-mono text-micro font-semibold text-canvas"
           aria-hidden="true"
         >
           {{ history.length > 9 ? '9+' : history.length }}
@@ -48,7 +48,7 @@ const tones = { success: 'text-accent-text', error: 'text-danger-text', info: 't
               <div class="min-w-0 flex-1">
                 <p class="text-sm font-medium text-fg">{{ toast.title }}</p>
                 <p v-if="toast.message" class="mt-0.5 text-xs leading-relaxed break-words text-fg-muted">{{ toast.message }}</p>
-                <p class="mt-1 font-mono text-[11px] text-fg-subtle">{{ formatDateTime(toast.timestamp, { timeStyle: 'medium' }) }}</p>
+                <p class="mt-1 font-mono text-xs text-fg-subtle">{{ formatDateTime(toast.timestamp, { timeStyle: 'medium' }) }}</p>
               </div>
             </li>
           </ul>

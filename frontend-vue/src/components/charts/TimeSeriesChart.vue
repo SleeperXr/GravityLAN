@@ -85,8 +85,8 @@ const summary = computed(() => `${props.label}: ${props.series.map((s) => `${s.l
         <path v-for="(d, i) in paths" :key="i" :d="d" fill="none" :stroke="series[i].color" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />
         <line v-if="active !== null" :x1="xOf(active)" :x2="xOf(active)" :y1="PAD.top" :y2="PAD.top + plotH" stroke="var(--gl-fg-subtle)" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" />
       </svg>
-      <span v-for="tk in ticks" :key="`t${tk.y}`" class="absolute left-0 -translate-y-1/2 font-mono text-[10px] text-fg-subtle" :style="{ top: `${(tk.y / height) * 100}%` }">{{ tk.label }}</span>
-      <span v-for="tk in xTicks" :key="`x${tk.x}`" class="absolute bottom-0 -translate-x-1/2 font-mono text-[10px] whitespace-nowrap text-fg-subtle" :style="{ left: `${(tk.x / W) * 100}%` }">{{ tk.label }}</span>
+      <span v-for="tk in ticks" :key="`t${tk.y}`" class="absolute left-0 -translate-y-1/2 font-mono text-micro text-fg-subtle" :style="{ top: `${(tk.y / height) * 100}%` }">{{ tk.label }}</span>
+      <span v-for="tk in xTicks" :key="`x${tk.x}`" class="absolute bottom-0 -translate-x-1/2 font-mono text-micro whitespace-nowrap text-fg-subtle" :style="{ left: `${(tk.x / W) * 100}%` }">{{ tk.label }}</span>
       <template v-if="active !== null">
         <span
           v-for="s in series"

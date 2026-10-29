@@ -9,6 +9,7 @@ import Select from '@/components/ui/Select.vue';
 import Textarea from '@/components/ui/Textarea.vue';
 import { useToast } from '@/composables/useToast';
 import { t } from '@/i18n';
+import { apiErrorMessage } from '@/lib/apiErrors';
 import { RACK_KINDS, kindOf } from './rackKinds';
 import { PORT_KINDS } from './rackModel';
 
@@ -61,7 +62,7 @@ async function save() {
     open.value = false;
     emit('saved', saved);
   } catch (err) {
-    showToast('error', t('gv.rack.item_save'), (err as Error).message);
+    showToast('error', t('gv.rack.item_save'), apiErrorMessage(err));
   } finally {
     saving.value = false;
   }
@@ -75,7 +76,7 @@ async function save() {
         <label :for="`${id}-name`" class="text-xs font-medium text-fg">{{ t('gv.rack.item_name') }}</label>
         <Input :id="`${id}-name`" v-model="form.name" :placeholder="t('gv.rack.item_name_hint')" required autofocus />
       </div>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-[minmax(0,1fr)_7.5rem] gap-3">
         <div class="space-y-1.5">
           <label :for="`${id}-kind`" class="text-xs font-medium text-fg">{{ t('gv.rack.item_kind') }}</label>
           <Select :id="`${id}-kind`" v-model="form.kind" :options="kindOptions" />
@@ -85,16 +86,19 @@ async function save() {
           <Input :id="`${id}-height`" :model-value="form.height" type="number" min="1" max="10" mono @update:model-value="(v) => (form.height = Math.min(10, Math.max(1, Number(v) || 1)))" />
         </div>
       </div>
-      <div v-if="!item" class="grid grid-cols-2 gap-3">
-        <div class="space-y-1.5">
-          <label :for="`${id}-ports`" class="text-xs font-medium text-fg">{{ t('gv.rack.ports_count') }}</label>
-          <Input :id="`${id}-ports`" :model-value="form.ports" type="number" min="0" max="96" mono @update:model-value="(v) => (form.ports = Math.min(96, Math.max(0, Number(v) || 0)))" />
+      <fieldset v-if="!item" class="space-y-2">
+        <legend class="gl-eyebrow mb-2">{{ t('gv.rack.ports_title') }}</legend>
+        <div class="grid grid-cols-[minmax(0,1fr)_7.5rem] gap-3">
+          <div class="space-y-1.5">
+            <label :for="`${id}-port-kind`" class="text-xs font-medium text-fg">{{ t('gv.rack.ports_kind') }}</label>
+            <Select :id="`${id}-port-kind`" v-model="form.portKind" :options="portKindOptions" />
+          </div>
+          <div class="space-y-1.5">
+            <label :for="`${id}-ports`" class="text-xs font-medium text-fg">{{ t('gv.rack.ports_count') }}</label>
+            <Input :id="`${id}-ports`" :model-value="form.ports" type="number" min="0" max="96" mono @update:model-value="(v) => (form.ports = Math.min(96, Math.max(0, Number(v) || 0)))" />
+          </div>
         </div>
-        <div class="space-y-1.5">
-          <label :for="`${id}-port-kind`" class="text-xs font-medium text-fg">{{ t('gv.rack.ports_kind') }}</label>
-          <Select :id="`${id}-port-kind`" v-model="form.portKind" :options="portKindOptions" />
-        </div>
-      </div>
+      </fieldset>
       <div class="space-y-1.5">
         <label :for="`${id}-notes`" class="text-xs font-medium text-fg">{{ t('gv.rack.item_notes') }}</label>
         <Textarea :id="`${id}-notes`" v-model="form.notes" rows="2" />

@@ -19,7 +19,7 @@ const tones: Record<BadgeTone, string> = {
 
 const classes = computed(() =>
   cn(
-    'inline-flex max-w-full items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap [&_svg]:size-3 [&_svg]:shrink-0',
+    'inline-flex max-w-full items-center gap-1 rounded-sm border px-1.5 py-0.5 text-micro leading-4 font-medium whitespace-nowrap [&_svg]:size-3 [&_svg]:shrink-0',
     tones[props.tone],
     props.mono && 'font-mono',
     props.class,

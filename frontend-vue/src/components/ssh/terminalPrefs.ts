@@ -45,8 +45,9 @@ export const FONT_OPTIONS: FontOption[] = [
   { id: 'courier', label: 'Courier New', css: "'Courier New', Courier, monospace" },
 ];
 
+/** Unknown or retired ids fall back to the default font (JetBrains Mono, the app mono). */
 function fontOption(id: string): FontOption {
-  return FONT_OPTIONS.find((f) => f.id === id) ?? FONT_OPTIONS[0];
+  return FONT_OPTIONS.find((f) => f.id === id) ?? FONT_OPTIONS.find((f) => f.id === DEFAULT_PREFS.fontFamily) ?? FONT_OPTIONS[0];
 }
 
 export function fontCss(value: TerminalPrefs): string {
@@ -133,7 +134,7 @@ export const THEMES: { id: string; label: string; theme: () => ITheme }[] = [
   },
 ];
 
-export const DEFAULT_PREFS: TerminalPrefs = { fontFamily: 'plex', fontSize: 13, theme: 'gravitylan', foreground: null, background: null };
+export const DEFAULT_PREFS: TerminalPrefs = { fontFamily: 'jetbrains', fontSize: 13, theme: 'gravitylan', foreground: null, background: null };
 
 const STORAGE_KEY = 'gravitylan.terminal';
 

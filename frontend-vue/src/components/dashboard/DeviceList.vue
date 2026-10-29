@@ -33,10 +33,10 @@ const emit = defineEmits<{ edit: [device: Device] }>();
       </div>
 
       <div v-if="device.has_agent && device.agent_info?.metrics" class="hidden shrink-0 gap-2 lg:flex">
-        <span class="inline-flex items-center gap-1 rounded-sm bg-raised px-1.5 py-0.5 font-mono text-[11px] text-fg-muted" title="CPU">
+        <span class="inline-flex items-center gap-1 rounded-sm bg-raised px-1.5 py-0.5 font-mono text-xs text-fg-muted" title="CPU">
           <Cpu class="size-3" aria-hidden="true" />{{ device.agent_info.metrics.cpu_usage }}%
         </span>
-        <span class="inline-flex items-center gap-1 rounded-sm bg-raised px-1.5 py-0.5 font-mono text-[11px] text-fg-muted" title="RAM">
+        <span class="inline-flex items-center gap-1 rounded-sm bg-raised px-1.5 py-0.5 font-mono text-xs text-fg-muted" title="RAM">
           <MemoryStick class="size-3" aria-hidden="true" />{{ device.agent_info.metrics.memory_usage }}%
         </span>
       </div>

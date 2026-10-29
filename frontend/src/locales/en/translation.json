@@ -521,7 +521,7 @@
     "scan_interval": "Scan Interval (Minutes)",
     "scan_interval_hint": "How often should the network be scanned in the background? 0 = Disabled.",
     "quick_scan": "Quick-Check Interval (Seconds)",
-    "quick_scan_hint": "How often should known devices be pinged? Recommended: 60-300 sec.",
+    "quick_scan_hint": "How often should known devices be pinged? Recommended: 60–300 sec.",
     "subnets": "Scan subnets",
     "subnets_desc": "These networks are scanned, and each one gets a tab in the network overview. Changes apply immediately.",
     "subnets_hint": "CIDR notation, e.g. 192.168.110.0/24. Routed networks (other VLANs) work too, but without an agent or a VLAN interface they show no MAC addresses.",
@@ -986,12 +986,12 @@
     }
   },
   "health_page": {
-    "title": "Health & Availability",
+    "title": "Health Radar",
     "subtitle": "Real-time SLA, latency telemetry, and incident history for all tracked network devices",
     "network_health_score": "Network Health",
     "devices_online": "Online",
     "devices_offline": "Offline",
-    "devices_flapping": "Unstable / Flapping",
+    "devices_flapping": "Unstable",
     "avg_latency": "Avg Latency (RTT)",
     "avg_jitter": "Avg Jitter",
     "active_issues": "Active Issues",

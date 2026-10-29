@@ -96,7 +96,7 @@ async function clearIpChange() {
         <h3 class="truncate text-sm font-semibold text-fg" :class="!device.is_online && 'text-fg-muted'" :title="name">{{ name }}</h3>
         <div class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-subtle">
           <span class="font-mono">{{ device.ip }}</span>
-          <Badge v-if="role" class="text-[10px]">{{ role }}</Badge>
+          <Badge v-if="role">{{ role }}</Badge>
           <span v-if="device.parent_id" class="truncate">{{ t('dashboard.on_host', { host: device.parent_name || 'Host' }) }}</span>
         </div>
       </div>
@@ -145,16 +145,16 @@ async function clearIpChange() {
       <Badge v-if="agentUpdate" tone="warn" :title="t('common.update_available', { version: device.agent_info?.latest_version })">
         <RefreshCw aria-hidden="true" />{{ t('dashboard.agent_update') }}
       </Badge>
-      <span v-if="pendingKey" class="inline-flex items-center gap-1 rounded-sm border border-danger/30 bg-danger/10 py-0.5 pr-0.5 pl-1.5 text-[11px] font-medium text-danger-text">
+      <span v-if="pendingKey" class="inline-flex items-center gap-1 rounded-sm border border-danger/30 bg-danger/10 py-0.5 pr-0.5 pl-1.5 text-micro font-medium text-danger-text">
         <ShieldAlert class="size-3" aria-hidden="true" />{{ t('dashboard.security_alert') }}
-        <button type="button" class="ml-1 rounded-[4px] bg-danger px-1.5 text-[10px] font-semibold text-danger-fg hover:opacity-90" @click.stop="adoptKey">
+        <button type="button" class="ml-1 rounded-[4px] bg-danger px-1.5 text-micro font-semibold text-danger-fg hover:opacity-90" @click.stop="adoptKey">
           {{ t('dashboard.adopt') }}
         </button>
       </span>
       <button
         v-if="device.old_ip"
         type="button"
-        class="inline-flex items-center gap-1 rounded-sm border border-info/25 bg-info/10 px-1.5 py-0.5 font-mono text-[11px] text-info-text hover:border-info/50"
+        class="inline-flex items-center gap-1 rounded-sm border border-info/25 bg-info/10 px-1.5 py-0.5 font-mono text-micro text-info-text hover:border-info/50"
         :title="t('dashboard.ip_changed_hint')"
         @click.stop="clearIpChange"
       >

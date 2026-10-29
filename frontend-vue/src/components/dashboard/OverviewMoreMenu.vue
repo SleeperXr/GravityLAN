@@ -1,19 +1,26 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui';
-import { Ellipsis, Pencil, RefreshCw } from 'lucide-vue-next';
+import { Check, Ellipsis, LayoutGrid, List, Pencil, RefreshCw } from 'lucide-vue-next';
 import Button from '@/components/ui/Button.vue';
 import { t } from '@/i18n';
 
 /**
- * The overview's less frequent actions on a phone, with their names: as a row of bare icons with
- * numbers ("5", pencil, arrows) nobody could tell them apart.
+ * The overview's less frequent actions, with their names: as a row of bare icons with numbers
+ * ("5", pencil, arrows) nobody could tell them apart, and next to search and scan they crowded
+ * the toolbar. Agent updates only come in here when the toolbar has no room for their own button
+ * (phones); `view` adds the tile/list choice where both exist.
  */
-const props = defineProps<{ updates: number; refreshing: boolean; scanning: boolean }>();
-const emit = defineEmits<{ updates: []; edit: []; refresh: [] }>();
+const props = defineProps<{ updates: number; refreshing: boolean; scanning: boolean; view?: 'grid' | 'list' }>();
+const emit = defineEmits<{ updates: []; edit: []; refresh: []; view: [mode: 'grid' | 'list'] }>();
 
 // The dot on the trigger says "agent updates pending"; screen readers get that in the name
 const triggerLabel = computed(() => (props.updates > 0 ? `${t('gv.dashboard.more_actions')}, ${props.updates} ${t('dashboard.agent_updates')}` : t('gv.dashboard.more_actions')));
+
+const viewModes = computed(() => [
+  { id: 'grid', icon: LayoutGrid, label: t('dashboard.view_grid') },
+  { id: 'list', icon: List, label: t('dashboard.view_list') },
+] as const);
 
 const open = ref(false);
 function pick(action: 'updates' | 'edit' | 'refresh') {
@@ -21,6 +28,10 @@ function pick(action: 'updates' | 'edit' | 'refresh') {
   if (action === 'updates') emit('updates');
   else if (action === 'edit') emit('edit');
   else emit('refresh');
+}
+function pickView(mode: 'grid' | 'list') {
+  open.value = false;
+  emit('view', mode);
 }
 
 const item = 'flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm transition-colors hover:bg-raised disabled:opacity-50 disabled:hover:bg-transparent';
@@ -43,6 +54,20 @@ const item = 'flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm tra
           <span class="flex-1">{{ t('dashboard.agent_updates') }}</span>
           <span class="font-mono text-xs tabular">{{ updates }}</span>
         </button>
+        <div v-if="view" role="group" :aria-label="t('dashboard.view_mode')" class="border-b border-line pb-1 mb-1">
+          <button
+            v-for="mode in viewModes"
+            :key="mode.id"
+            type="button"
+            :class="[item, view === mode.id ? 'text-fg' : 'text-fg-muted']"
+            :aria-pressed="view === mode.id"
+            @click="pickView(mode.id)"
+          >
+            <component :is="mode.icon" class="size-4 shrink-0 text-fg-subtle" aria-hidden="true" />
+            <span class="flex-1">{{ mode.label }}</span>
+            <Check v-if="view === mode.id" class="size-4 shrink-0 text-accent-text" aria-hidden="true" />
+          </button>
+        </div>
         <button type="button" :class="[item, 'text-fg']" @click="pick('edit')">
           <Pencil class="size-4 shrink-0 text-fg-subtle" aria-hidden="true" />{{ t('dashboard.edit_layout') }}
         </button>

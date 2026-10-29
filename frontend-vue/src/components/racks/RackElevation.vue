@@ -7,11 +7,15 @@ import { t } from '@/i18n';
 import type { RackCable, RackPort } from '@/types';
 import { draggingKey } from './rackDrag';
 import { kindOf } from './rackKinds';
-import { cableRoute, fitsAt, ownerKeyOf, portsOnSide, rackSlots, sideOf, type PortSide, type RackEntry } from './rackModel';
+import { channelWidth, laneCount, laneX } from './cableLanes';
+import { cableRoute, fitsAt, overlappingKeys, ownerKeyOf, portsOnSide, rackSlots, sideOf, type PortSide, type RackEntry, type RackSlot } from './rackModel';
+import { placeTargets, stepTarget } from './rackPlacement';
 
 /**
  * The rack as one row per unit, seen from the front or the rear. Entries are dragged to a free place (a place
  * that does not fit shows why before the mouse is released) or moved one unit at a time with the arrow keys.
+ * One unit is `--rack-unit` tall (set on the rail, taller on phones); rows, entries, overlap offsets and
+ * placement targets all derive from it, and the cables are measured from the jacks as drawn.
  *
  * Cables run in a channel on the right of the rail: a thick line with a dark edge from each jack to its lane,
  * so each cable is visible on its own. A cable whose other end is not on this side (or not in this rack) leaves
@@ -33,24 +37,27 @@ const props = defineProps<{
   ports: RackPort[];
   cables: RackCable[];
   colourOfPort: Record<number, string>;
+  /** An entry picked in the tray: free units turn into buttons that put it there */
+  placing?: RackEntry | null;
+  /** Where the cable on a port leads, for the jack's name; ports without a cable are left out */
+  cableTargets?: Record<number, string>;
 }>();
 const emit = defineEmits<{
   select: [key: string];
   open: [key: string];
   move: [key: string, unit: number];
+  place: [key: string, unit: number];
+  /** A jack was used: the start or the end of a cable */
+  pickPort: [key: string, port: RackPort];
 }>();
 
-const UNIT_REM = 1.75;
-/** Width of the cable channel right of the rail, in px */
-const CHANNEL_PX = 72;
-/** Distance between two cable lanes in the channel, in px; a lane is the vertical run of one cable */
-const LANE_PX = 7;
-const LANES = 8;
-
 const slots = computed(() => rackSlots(props.units, props.entries));
+const overlapping = computed(() => overlappingKeys(props.entries));
 const dragCandidates = computed(() => [...props.entries, ...props.candidates]);
 const hover = ref<{ unit: number; valid: boolean } | null>(null);
 const portById = computed(() => new Map(props.ports.map((p) => [p.id, p])));
+/** One lane per cable, the channel widening as needed: lanes reused after eight drew cable 9 over cable 1 */
+const channelPx = computed(() => channelWidth(laneCount(props.cables, portById.value, props.side)));
 const keysHere = computed(() => new Set(dragCandidates.value.map((e) => e.key)));
 
 const railRef = ref<HTMLElement | null>(null);
@@ -71,7 +78,7 @@ function measure() {
   const origin = rail.getBoundingClientRect();
   const width = rail.clientWidth;
   const channel = rail.querySelector<HTMLElement>('[data-channel]');
-  const channelLeft = channel ? channel.getBoundingClientRect().left - origin.left : width - CHANNEL_PX;
+  const channelLeft = channel ? channel.getBoundingClientRect().left - origin.left : width - channelPx.value;
   const centre = (portId: number) => {
     const el = rail.querySelector<HTMLElement>('[data-port="' + portId + '"]');
     if (!el) return null;
@@ -89,9 +96,8 @@ function measure() {
     const a = centre(pa.id);
     const b = centre(pb.id);
     if (a && b) {
-      const laneX = channelLeft + LANE_PX + (lane % LANES) * LANE_PX;
+      draws.push({ id: cable.id, d: cableRoute(a, b, laneX(channelLeft, lane)), colour, active, stub: false, label: null });
       lane += 1;
-      draws.push({ id: cable.id, d: cableRoute(a, b, laneX), colour, active, stub: false, label: null });
     } else if (a || b) {
       // The other end is not drawn here: on the other side of the rack, or in another rack
       const end = (a ?? b)!;
@@ -128,11 +134,54 @@ function jackClass(count: number): string {
   return 'size-1';
 }
 
+/** Height and place of an entry in its row: on its own top unit, cut off at the bottom of the rack. */
+function entryStyle(slot: RackSlot, entry: RackEntry): Record<string, string | undefined> {
+  const offset = slot.unit - (entry.unit ?? slot.unit);
+  const height = Math.min(entry.height, entry.unit ?? 1);
+  return {
+    height: 'calc(' + height + ' * var(--rack-unit) - 2px)',
+    marginTop: offset > 0 ? 'calc(' + offset + ' * var(--rack-unit) + 1px)' : undefined,
+  };
+}
+
+/** What a screen reader says for an entry: name, state, place, and a clash with another entry. */
+function entryName(entry: RackEntry): string {
+  const parts = [entry.label];
+  if (entry.kind === 'device') parts.push(entry.online ? t('network.online') : t('network.offline'));
+  if (entry.unit !== null) parts.push(t('gv.rack.position', { unit: entry.unit, count: entry.height }));
+  if (overlapping.value.has(entry.key)) parts.push(t('gv.racks.issue_overlap'));
+  return parts.join(', ');
+}
+
+/** A jack's name: port number, kind, side, and where its cable leads. */
+function jackName(port: RackPort): string {
+  const side = sideOf(port) === 'rear' ? t('gv.rack.side_rear') : t('gv.rack.side_front');
+  const target = props.cableTargets?.[port.id] ?? t('gv.rack.ports_free');
+  return t('gv.rack.port') + ' ' + port.number + ', ' + port.kind + ', ' + side + ', ' + target;
+}
+
+// The jacks of an entry are one tab stop; the arrow keys move between them
+const jackFocus = ref<Record<string, number>>({});
+const jackIndex = (entry: RackEntry): number => Math.min(jackFocus.value[entry.key] ?? 0, jacksOf(entry).length - 1);
+
+function jackKey(event: KeyboardEvent, entry: RackEntry, index: number) {
+  const last = jacksOf(entry).length - 1;
+  const next = { ArrowRight: index + 1, ArrowDown: index + 1, ArrowLeft: index - 1, ArrowUp: index - 1, Home: 0, End: last }[event.key];
+  if (next === undefined) return;
+  event.preventDefault();
+  const target = Math.min(last, Math.max(0, next));
+  const jacks = (event.currentTarget as HTMLElement).closest('ul')?.querySelectorAll<HTMLElement>('button');
+  jacks?.[target]?.focus();
+}
+
 function startDrag(event: DragEvent, entry: RackEntry) {
   draggingKey.value = entry.key;
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', entry.key);
+    // The button is an empty layer over the entry, so the entry itself is what is seen while dragging
+    const row = (event.currentTarget as HTMLElement | null)?.parentElement;
+    if (row) event.dataTransfer.setDragImage(row, event.offsetX, event.offsetY);
   }
 }
 
@@ -163,14 +212,76 @@ function leave(unit: number) {
   if (hover.value?.unit === unit) hover.value = null;
 }
 
+/** Arrow keys: one unit up or down. The entry is drawn anew on its new row, so focus follows it there. */
 function nudge(entry: RackEntry, delta: number) {
-  if (entry.unit !== null) emit('move', entry.key, entry.unit + delta);
+  if (entry.unit === null) return;
+  const unit = entry.unit + delta;
+  if (fitsAt(props.units, props.entries, unit, entry.height, entry.key)) followFocus(entry.key, unit);
+  emit('move', entry.key, unit);
 }
 
 function slotClass(unit: number): string {
   if (hover.value?.unit !== unit) return 'border-line/70 hover:border-line-strong';
   return hover.value.valid ? 'border-accent bg-accent/10' : 'border-warn/70 bg-warn/10';
 }
+
+// ── Placing a picked entry ───────────────────────────────────────────────────
+/** Units that take the picked entry, top first; one of them is in the tab order, the arrow keys walk them */
+const targets = computed(() => (props.placing ? placeTargets(props.units, props.entries, props.placing) : []));
+const activeTarget = ref<number | null>(null);
+watch(targets, (list) => {
+  if (activeTarget.value === null || !list.includes(activeTarget.value)) activeTarget.value = list[0] ?? null;
+});
+/**
+ * An entry about to be drawn on another row (placed, nudged, moved to a free place) gets a new button there, so
+ * focus is handed to it once it sits on `unit`, unless the user has meanwhile moved on outside the rack.
+ */
+let pendingFocus: { key: string; unit: number } | null = null;
+
+function followFocus(key: string, unit: number) {
+  pendingFocus = { key, unit };
+}
+
+function targetEl(unit: number): HTMLElement | null {
+  return railRef.value?.querySelector<HTMLElement>('[data-place-unit="' + unit + '"]') ?? null;
+}
+
+/** Focus the first free unit that fits (Enter or Space in the tray); false when there is none. */
+function focusPlaceTarget(): boolean {
+  const unit = activeTarget.value ?? targets.value[0];
+  if (unit === undefined || unit === null) return false;
+  targetEl(unit)?.focus();
+  return true;
+}
+defineExpose({ focusPlaceTarget, followFocus });
+
+function stepPlace(unit: number, direction: 'up' | 'down') {
+  const next = stepTarget(targets.value, unit, direction);
+  if (next === null) return;
+  activeTarget.value = next;
+  targetEl(next)?.focus();
+}
+
+/** A free unit was chosen (click, Enter or Space): the targets go away, so focus goes to the placed entry. */
+function placeAt(unit: number) {
+  if (!props.placing) return;
+  if (targets.value.includes(unit)) followFocus(props.placing.key, unit);
+  emit('place', props.placing.key, unit);
+}
+
+watch(
+  () => props.entries,
+  () => {
+    const wanted = pendingFocus;
+    if (!wanted || !props.entries.some((e) => e.key === wanted.key && e.unit === wanted.unit)) return;
+    pendingFocus = null;
+    void nextTick(() => {
+      const active = document.activeElement;
+      const lost = !active || active === document.body || !!railRef.value?.contains(active);
+      if (lost) railRef.value?.querySelector<HTMLElement>('[data-key="' + wanted.key + '"]')?.focus();
+    });
+  },
+);
 
 function portSummary(entry: RackEntry): string | null {
   const stat = props.portStats[entry.key];
@@ -204,8 +315,7 @@ function portSummary(entry: RackEntry): string | null {
           :y="c.label.y"
           text-anchor="end"
           fill="var(--gl-fg-muted)"
-          font-size="9"
-          class="font-mono"
+          class="font-mono text-micro"
         >
           {{ c.label.text }}
         </text>
@@ -220,77 +330,130 @@ function portSummary(entry: RackEntry): string | null {
       @dragleave="leave(slot.unit)"
       @drop="drop($event, slot.unit)"
     >
-      <span class="w-6 shrink-0 text-right font-mono text-[10px] leading-7 text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
+      <span class="w-6 shrink-0 text-right font-mono text-micro leading-[var(--rack-unit)] text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
 
-      <button
-        v-if="slot.entry"
-        type="button"
-        role="listitem"
-        draggable="true"
-        class="rack-entry group relative my-px flex min-w-0 flex-1 cursor-grab items-center gap-2 overflow-hidden rounded-[5px] border bg-raised pr-2 pl-1 text-left transition-[opacity,background-color,border-color] duration-150 hover:bg-control-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing"
-        :class="[
-          selectedKey === slot.entry.key ? 'border-accent ring-1 ring-accent' : 'border-line',
-          slot.entry.itemKind === 'blank' && 'rack-blank',
-          !slot.entry.online && 'opacity-70',
-          draggingKey === slot.entry.key && 'opacity-40',
-        ]"
-        :style="{ height: 'calc(' + slot.entry.height * UNIT_REM + 'rem - 2px)' }"
-        :aria-label="slot.entry.label + ', ' + t('gv.rack.position', { unit: slot.unit, count: slot.entry.height })"
-        :aria-pressed="selectedKey === slot.entry.key"
-        :title="t('gv.rack.entry_hint')"
-        @click="emit('select', slot.entry.key)"
-        @dblclick="emit('open', slot.entry.key)"
-        @keydown.up.prevent="nudge(slot.entry, 1)"
-        @keydown.down.prevent="nudge(slot.entry, -1)"
-        @dragstart="startDrag($event, slot.entry)"
-        @dragend="endDrag"
-      >
-        <GripVertical class="size-3.5 shrink-0 text-fg-subtle opacity-60" aria-hidden="true" />
-        <StatusDot
-          v-if="slot.entry.kind === 'device'"
-          :state="slot.entry.online ? 'online' : 'offline'"
-          size="sm"
-          :label="slot.entry.online ? t('network.online') : t('network.offline')"
-        />
-        <component :is="kindOf(slot.entry.itemKind ?? 'other').icon" v-else class="size-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
-        <span class="min-w-[5rem] flex-1">
-          <span class="block truncate text-xs font-semibold text-fg">{{ slot.entry.label }}</span>
-          <span v-if="slot.entry.detail || slot.entry.height > 1" class="block truncate font-mono text-[10px] text-fg-subtle">
-            {{ slot.entry.detail }}<template v-if="slot.entry.height > 1"> · {{ t('rack.units', { count: slot.entry.height }) }}</template>
-          </span>
-        </span>
-        <span v-if="jacksOf(slot.entry).length" class="flex max-w-[11rem] shrink-0 flex-wrap justify-end gap-[2px]">
-          <span
-            v-for="p in jacksOf(slot.entry)"
-            :key="p.id"
-            :data-port="p.id"
-            :title="t('gv.rack.port') + ' ' + p.number + ' · ' + p.kind"
-            class="rounded-[1px] border"
-            :class="[jackClass(jacksOf(slot.entry).length), colourOfPort[p.id] ? '' : 'border-fg-subtle/60']"
-            :style="colourOfPort[p.id] ? { backgroundColor: colourOfPort[p.id], borderColor: colourOfPort[p.id] } : undefined"
+      <!-- Entries that overlap share the row, side by side, each on its own units -->
+      <div v-if="slot.entries.length" class="flex min-w-0 flex-1 items-start gap-1" :style="{ height: 'calc(' + slot.height + ' * var(--rack-unit))' }">
+        <!-- The button covers the entry; the jacks sit above it as buttons of their own -->
+        <div
+          v-for="entry in slot.entries"
+          :key="entry.key"
+          role="listitem"
+          class="rack-entry group relative my-px flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-[5px] border bg-raised pr-2 pl-1 text-left transition-[opacity,background-color,border-color] duration-150 hover:bg-control-hover has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-accent"
+          :class="[
+            selectedKey === entry.key ? 'border-accent ring-1 ring-accent' : overlapping.has(entry.key) ? 'border-warn' : 'border-line',
+            entry.itemKind === 'blank' && 'rack-blank',
+            !entry.online && 'shadow-[inset_2px_0_0_var(--gl-danger)]',
+            draggingKey === entry.key && 'opacity-40',
+          ]"
+          :style="entryStyle(slot, entry)"
+        >
+          <button
+            type="button"
+            draggable="true"
+            :data-key="entry.key"
+            class="absolute inset-0 cursor-grab rounded-[5px] focus-visible:outline-none active:cursor-grabbing"
+            :aria-label="entryName(entry)"
+            :aria-pressed="selectedKey === entry.key"
+            aria-keyshortcuts="ArrowUp ArrowDown"
+            :title="t('gv.rack.entry_hint')"
+            @click="emit('select', entry.key)"
+            @dblclick="emit('open', entry.key)"
+            @keydown.up.prevent="nudge(entry, 1)"
+            @keydown.down.prevent="nudge(entry, -1)"
+            @dragstart="startDrag($event, entry)"
+            @dragend="endDrag"
           />
-        </span>
-        <span v-if="portSummary(slot.entry)" class="shrink-0 rounded-sm bg-sunken px-1.5 font-mono text-[10px] text-fg-muted tabular" :title="t('gv.rack.ports_summary')">
-          {{ portSummary(slot.entry) }}
-        </span>
-      </button>
+          <GripVertical class="size-3.5 shrink-0 text-fg-subtle opacity-60" aria-hidden="true" />
+          <StatusDot v-if="entry.kind === 'device'" :state="entry.online ? 'online' : 'offline'" size="sm" />
+          <component :is="kindOf(entry.itemKind ?? 'other').icon" v-else class="size-3.5 shrink-0 text-fg-muted" aria-hidden="true" />
+          <span class="min-w-[5rem] flex-1" aria-hidden="true">
+            <span class="block truncate text-xs leading-3.5 font-semibold text-fg">{{ entry.label }}</span>
+            <span v-if="entry.detail || entry.height > 1" class="block truncate font-mono text-micro leading-3 text-fg-subtle">
+              {{ entry.detail }}<template v-if="entry.height > 1"> · {{ t('rack.units', { count: entry.height }) }}</template>
+            </span>
+          </span>
+          <ul
+            v-if="jacksOf(entry).length"
+            role="list"
+            class="relative flex max-w-[11rem] shrink-0 flex-wrap justify-end gap-[2px]"
+            :aria-label="t('gv.rack.entry_ports', { label: entry.label })"
+          >
+            <li v-for="(p, i) in jacksOf(entry)" :key="p.id" class="flex">
+              <button
+                type="button"
+                :data-port="p.id"
+                :tabindex="i === jackIndex(entry) ? 0 : -1"
+                :aria-label="jackName(p)"
+                :title="jackName(p)"
+                class="rounded-[1px] border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                :class="[jackClass(jacksOf(entry).length), colourOfPort[p.id] ? '' : 'border-fg-subtle/60']"
+                :style="colourOfPort[p.id] ? { backgroundColor: colourOfPort[p.id], borderColor: colourOfPort[p.id] } : undefined"
+                @click="emit('pickPort', entry.key, p)"
+                @focus="jackFocus[entry.key] = i"
+                @keydown="jackKey($event, entry, i)"
+              />
+            </li>
+          </ul>
+          <span v-if="portSummary(entry)" class="shrink-0 rounded-sm bg-sunken px-1.5 font-mono text-micro text-fg-muted tabular" :title="t('gv.rack.ports_summary')" aria-hidden="true">
+            {{ portSummary(entry) }}
+          </span>
+        </div>
+      </div>
 
+      <!-- While placing, the free units join the list as buttons that put the picked entry there -->
+      <div v-else-if="placing" role="listitem" class="flex min-w-0 flex-1">
+        <button
+          type="button"
+          :data-place-unit="slot.unit"
+          class="my-px flex h-[calc(var(--rack-unit)_-_2px)] min-w-0 flex-1 items-center rounded-[5px] border border-dashed px-2 text-left text-xs text-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          :class="
+            targets.includes(slot.unit)
+              ? 'border-accent/60 hover:bg-accent/10 hover:text-fg-muted focus-visible:bg-accent/10 focus-visible:text-fg-muted'
+              : 'cursor-not-allowed border-line/70 hover:text-fg-subtle'
+          "
+          :tabindex="slot.unit === activeTarget ? 0 : -1"
+          :aria-disabled="!targets.includes(slot.unit) || undefined"
+          :aria-label="t('gv.rack.place_at', { label: placing.label, unit: slot.unit }) + (targets.includes(slot.unit) ? '' : ', ' + t('gv.rack.drop_blocked'))"
+          @click="placeAt(slot.unit)"
+          @focus="targets.includes(slot.unit) && (activeTarget = slot.unit)"
+          @keydown.up.prevent="stepPlace(slot.unit, 'up')"
+          @keydown.down.prevent="stepPlace(slot.unit, 'down')"
+        >
+          <span class="truncate">{{ targets.includes(slot.unit) ? t('gv.rack.drop_here') : t('gv.rack.drop_blocked') }}</span>
+        </button>
+      </div>
+
+      <!-- A free unit outside placing is only a drop zone for the mouse; it says nothing to a screen reader -->
       <span
         v-else
-        class="my-px flex h-[calc(1.75rem-2px)] flex-1 items-center rounded-[5px] border border-dashed px-2 text-[10px] transition-colors"
+        class="my-px flex h-[calc(var(--rack-unit)_-_2px)] flex-1 items-center rounded-[5px] border border-dashed px-2 text-xs transition-colors"
         :class="[slotClass(slot.unit), hover?.unit === slot.unit ? 'text-fg-muted' : 'text-transparent']"
+        aria-hidden="true"
       >
         <template v-if="hover?.unit === slot.unit">{{ hover.valid ? t('gv.rack.drop_here') : t('gv.rack.drop_blocked') }}</template>
       </span>
 
-      <span data-channel class="shrink-0" :style="{ width: CHANNEL_PX + 'px' }" aria-hidden="true" />
+      <span data-channel class="shrink-0" :style="{ width: channelPx + 'px' }" aria-hidden="true" />
 
-      <span class="w-6 shrink-0 font-mono text-[10px] leading-7 text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
+      <span class="w-6 shrink-0 font-mono text-micro leading-[var(--rack-unit)] text-fg-subtle tabular max-sm:hidden" aria-hidden="true">{{ slot.unit }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* One rack unit; every height in the elevation is a multiple of it */
+.rack-rail {
+  --rack-unit: 1.75rem;
+}
+
+/* Phones: one unit is a 44 px touch target (46 px row, 44 px entry) */
+@media (width < 48rem) {
+  .rack-rail {
+    --rack-unit: 2.875rem;
+  }
+}
+
 /* A blank panel is a faceplate without ports: hatched, so it reads as "nothing here" */
 .rack-blank {
   background-image: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in oklab, var(--gl-line-strong) 45%, transparent) 5px 6px);

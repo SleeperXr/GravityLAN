@@ -6,7 +6,15 @@ import { ref, type Ref } from 'vue';
 import type { Point } from './orbitModel';
 import { easeInOutCubic, fitTransform, lerpView, zoomAround, type ViewTransform } from './orbitFocus';
 
-export function useOrbitViewport(svgRef: Ref<SVGSVGElement | null>, reducedMotion: Ref<boolean>) {
+/**
+ * Whether a wheel event zooms the map. Where the page around the map scrolls (the dashboard), only Ctrl or ⌘
+ * with the wheel zooms, which is also what a trackpad pinch sends; a plain wheel is left to the page.
+ */
+export function wheelZooms(e: Pick<WheelEvent, 'ctrlKey' | 'metaKey'>, needsModifier: boolean): boolean {
+  return !needsModifier || e.ctrlKey || e.metaKey;
+}
+
+export function useOrbitViewport(svgRef: Ref<SVGSVGElement | null>, reducedMotion: Ref<boolean>, wheelNeedsModifier: Ref<boolean> = ref(false)) {
   const viewX = ref(0);
   const viewY = ref(0);
   const zoom = ref(1);
@@ -84,12 +92,15 @@ export function useOrbitViewport(svgRef: Ref<SVGSVGElement | null>, reducedMotio
     apply(zoomAround(current(), { x: s.width / 2, y: s.height / 2 }, factor));
   }
 
-  function onWheel(e: WheelEvent) {
+  /** Zoom around the cursor; false when the wheel was left to the page (see wheelZooms). */
+  function onWheel(e: WheelEvent): boolean {
+    if (!wheelZooms(e, wheelNeedsModifier.value)) return false;
     e.preventDefault();
     const rect = svgRef.value?.getBoundingClientRect();
-    if (!rect) return;
+    if (!rect) return true;
     cancel();
     apply(zoomAround(current(), { x: e.clientX - rect.left, y: e.clientY - rect.top }, e.deltaY < 0 ? 1.12 : 0.89));
+    return true;
   }
 
   const distance = () => {

@@ -30,5 +30,5 @@ const path = computed(() => {
   <svg v-if="path" :width="width" :height="height" class="shrink-0 overflow-visible" aria-hidden="true">
     <path :d="path" fill="none" stroke="var(--gl-info)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
   </svg>
-  <span v-else class="font-mono text-[11px] text-fg-subtle">–</span>
+  <span v-else class="font-mono text-xs text-fg-subtle">–</span>
 </template>

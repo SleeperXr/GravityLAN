@@ -30,7 +30,7 @@ watch(() => route.fullPath, () => (menuOpen.value = false));
       :key="item.id"
       :to="item.to"
       :aria-current="activeId === item.id ? 'page' : undefined"
-      class="relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors"
+      class="relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-micro font-medium transition-colors"
       :class="activeId === item.id ? 'text-fg' : 'text-fg-subtle'"
     >
       <span v-if="activeId === item.id" class="absolute inset-x-4 top-0 h-[3px] rounded-b-full" :style="{ background: lineVar(item) }" aria-hidden="true" />
@@ -39,7 +39,7 @@ watch(() => route.fullPath, () => (menuOpen.value = false));
     </RouterLink>
     <button
       type="button"
-      class="relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium"
+      class="relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-micro font-medium"
       :class="moreActive ? 'text-accent-text' : 'text-fg-subtle'"
       :aria-expanded="menuOpen"
       @click="menuOpen = true"

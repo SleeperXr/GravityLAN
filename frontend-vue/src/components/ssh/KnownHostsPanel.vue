@@ -41,8 +41,8 @@ async function remove(entry: SshKnownHost) {
           <span class="grid size-8 shrink-0 place-items-center rounded-md border border-line bg-raised text-accent-text" aria-hidden="true"><ShieldCheck class="size-4" /></span>
           <span class="min-w-0 flex-1 space-y-0.5">
             <span class="flex flex-wrap items-center gap-1.5 font-mono text-sm font-semibold text-fg">{{ entry.host }}:{{ entry.port }}<Badge mono>{{ entry.key_type }}</Badge></span>
-            <span class="block truncate font-mono text-[11px] text-fg-subtle">{{ entry.fingerprint }}</span>
-            <span class="block text-[11px] text-fg-subtle">{{ t('ssh.known_hosts.seen', { first: when(entry.first_seen), last: when(entry.last_seen) }) }}</span>
+            <span class="block truncate font-mono text-xs text-fg-subtle">{{ entry.fingerprint }}</span>
+            <span class="block text-xs text-fg-subtle">{{ t('ssh.known_hosts.seen', { first: when(entry.first_seen), last: when(entry.last_seen) }) }}</span>
           </span>
           <Button size="icon-sm" variant="danger-ghost" :title="t('ssh.known_hosts.remove')" :aria-label="t('ssh.known_hosts.remove')" @click="remove(entry)"><Trash2 aria-hidden="true" /></Button>
         </li>

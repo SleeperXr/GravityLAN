@@ -6,6 +6,7 @@ import { useAppearance } from '@/stores/appearance';
 import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
 import { t } from '@/i18n';
+import { linePaletteHex } from '@/lib/palette';
 
 /**
  * One beam colour per connection type (10GbE, 2.5GbE, 1GbE, 100Mb, WLAN, fibre) on the orbit map.
@@ -19,8 +20,7 @@ onMounted(() => void appearance.load());
 const { resolved: theme } = useTheme();
 const palette = computed(() => {
   void theme.value;
-  const style = getComputedStyle(document.documentElement);
-  return Array.from({ length: 10 }, (_, i) => style.getPropertyValue(`--line-${i + 1}`).trim()).filter((c) => /^#[0-9a-f]{6}$/i.test(c));
+  return linePaletteHex();
 });
 
 const custom = (type: string) => appearance.linkTypeColors[type] ?? null;
@@ -40,7 +40,7 @@ async function choose(type: string, color: string | null) {
   <fieldset class="mt-6 border-t border-line pt-5">
     <legend class="sr-only">{{ t('gv.link_types.title') }}</legend>
     <p class="text-sm font-semibold text-fg">{{ t('gv.link_types.title') }}</p>
-    <p class="mt-0.5 text-xs leading-relaxed text-fg-subtle">{{ t('gv.link_types.desc') }}</p>
+    <p class="mt-0.5 max-w-prose text-xs leading-relaxed text-fg-subtle">{{ t('gv.link_types.desc') }}</p>
 
     <ul class="mt-3 divide-y divide-line">
       <li v-for="type in LINK_TYPES" :key="type" class="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
@@ -50,7 +50,7 @@ async function choose(type: string, color: string | null) {
           </svg>
           <span class="min-w-0">
             <span class="block truncate font-mono text-sm font-medium text-fg">{{ label(type) }}</span>
-            <span class="block text-[11px] text-fg-subtle">{{ custom(type) ? custom(type) : t('gv.link_types.network') }}</span>
+            <span class="block text-xs text-fg-subtle">{{ custom(type) ? custom(type) : t('gv.link_types.network') }}</span>
           </span>
         </span>
         <span class="flex flex-wrap items-center gap-1.5" role="group" :aria-label="t('gv.link_types.for', { type: label(type) })">
@@ -68,7 +68,7 @@ async function choose(type: string, color: string | null) {
           </button>
           <label class="relative grid size-6 cursor-pointer place-items-center overflow-hidden rounded-full border border-dashed border-line-strong" :title="t('gv.lines.custom')">
             <span class="sr-only">{{ t('gv.lines.custom') }}</span>
-            <span class="text-[11px] font-bold text-fg-subtle" aria-hidden="true">+</span>
+            <span class="text-xs font-bold text-fg-subtle" aria-hidden="true">+</span>
             <input type="color" class="absolute inset-0 cursor-pointer opacity-0" :value="toHex(custom(type))" @change="choose(type, ($event.target as HTMLInputElement).value)" />
           </label>
           <button

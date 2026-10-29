@@ -95,13 +95,13 @@ const ariaLabel = computed(() => `${name.value} (${props.body.device.ip})${state
 
       <g v-if="body.kind === 'planet' && badge" :transform="`translate(${r + 1}, ${-r + 2})`">
         <rect x="-2" y="-8" width="26" height="13" rx="4" fill="var(--gl-surface)" :stroke="body.color" stroke-width="0.8" />
-        <text x="11" y="1.5" text-anchor="middle" :fill="body.color" class="font-mono text-[10px] font-bold">{{ badge }}</text>
+        <text x="11" y="1.5" text-anchor="middle" :fill="body.color" class="font-mono text-micro font-bold">{{ badge }}</text>
       </g>
 
       <line v-if="body.state === 'offline'" :x1="-r + 2" :y1="r - 2" :x2="r - 2" :y2="-r + 2" stroke="var(--gl-danger)" stroke-width="2.5" stroke-linecap="round" />
       <g v-if="body.state === 'degraded'" :transform="`translate(${r - 2}, ${-r + 2})`">
         <circle r="6" fill="var(--gl-warn)" />
-        <text x="0" y="3.5" text-anchor="middle" fill="var(--gl-sign-ink)" class="font-sans text-[10px] font-extrabold">!</text>
+        <text x="0" y="3.5" text-anchor="middle" fill="var(--gl-sign-ink)" class="font-sans text-micro font-extrabold">!</text>
       </g>
 
       <!-- Edit mode: drag from + to draw a light beam -->
@@ -113,16 +113,16 @@ const ariaLabel = computed(() => `${name.value} (${props.body.device.ip})${state
 
       <!-- Label on the free side chosen by placeLabels() -->
       <g v-if="label" :transform="`translate(${label.x}, ${label.y}) scale(${labelScale})`" class="pointer-events-none">
-        <text :text-anchor="label.anchor" fill="var(--gl-fg)" class="text-[12px] font-bold tracking-tight" :style="`${halo}; stroke-width: 4px`">
+        <text :text-anchor="label.anchor" fill="var(--gl-fg)" class="text-xs font-bold tracking-tight" :style="`${halo}; stroke-width: 4px`">
           {{ name }}
         </text>
-        <text y="13" :text-anchor="label.anchor" fill="var(--gl-fg-muted)" class="font-mono text-[10px]" :style="`${halo}; stroke-width: 3.5px`">{{ body.device.ip }}</text>
+        <text y="13" :text-anchor="label.anchor" fill="var(--gl-fg-muted)" class="font-mono text-micro" :style="`${halo}; stroke-width: 3.5px`">{{ body.device.ip }}</text>
         <text
           v-if="body.state !== 'online'"
           y="25"
           :text-anchor="label.anchor"
           :fill="body.state === 'offline' ? 'var(--gl-danger-text)' : 'var(--gl-warn-text)'"
-          class="text-[10px] font-semibold"
+          class="text-xs font-semibold"
           :style="`${halo}; stroke-width: 3.5px`"
         >
           {{ body.state === 'offline' ? t('gv.plan.dropped') : t('gv.plan.degraded') }}

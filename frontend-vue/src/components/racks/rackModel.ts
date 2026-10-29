@@ -22,9 +22,19 @@ export interface RackEntry {
   height: number;
 }
 
+/**
+ * One row of the elevation: a free unit, or the units one entry covers. Entries that overlap share one row
+ * that spans all of their units; each sits on its real units in its own column, so the rail numbers stay true.
+ */
 export interface RackSlot {
+  /** Top unit of the row */
   unit: number;
+  /** Units the row covers, downwards from `unit` */
+  height: number;
+  /** The first entry of the row; undefined for a free unit */
   entry?: RackEntry;
+  /** Every entry of the row, top first; more than one when they overlap */
+  entries: RackEntry[];
 }
 
 export type PlacementIssue = 'no_position' | 'outside' | 'overlap';
@@ -59,23 +69,103 @@ export function itemEntry(item: RackItem): RackEntry {
   };
 }
 
+/** Device types that are built for a rack, as the scanner or the user names them. */
+const RACK_TYPES = new Set(['firewall', 'router', 'switch', 'server', 'nas', 'ups', 'storage', 'patch']);
+
+/**
+ * Whether a network device is likely to sit in a rack: not a VM or container, not an access point and not a
+ * wireless client (phones, tablets, speakers). Rack gear types and hosts always count.
+ */
+export function isRackMountable(device: Device): boolean {
+  if (device.virtual_type) return false;
+  const type = (device.device_type || '').toLowerCase();
+  const subtype = (device.device_subtype || '').toLowerCase();
+  if (device.is_host || RACK_TYPES.has(type) || RACK_TYPES.has(subtype)) return true;
+  return !device.is_ap && !device.is_wlan;
+}
+
+/** The devices offered for a rack: those that look rack-mountable, or every one with `showAll`. */
+export function rackCandidates(devices: Device[], showAll: boolean): Device[] {
+  return showAll ? devices : devices.filter(isRackMountable);
+}
+
 /** The units a thing at `unit` covering `height` units downwards takes, top first. */
 export const spanOf = (unit: number, height: number): number[] => Array.from({ length: height }, (_, i) => unit - i);
 
-/** One slot per unit, top first; units covered by a taller entry above are left out. */
+/**
+ * The rows of the elevation, top first. A free unit is a row of its own; an entry takes a row as tall as it is.
+ * Entries whose units overlap are grouped into one row, so no unit is drawn twice and none is left out.
+ * Entries whose top unit is outside the rack are not drawn (they are placement issues).
+ */
 export function rackSlots(units: number, entries: RackEntry[]): RackSlot[] {
+  const placed = entries
+    .filter((e): e is RackEntry & { unit: number } => e.unit !== null && e.unit >= 1 && e.unit <= units)
+    .sort((a, b) => b.unit - a.unit || a.key.localeCompare(b.key));
   const slots: RackSlot[] = [];
-  for (let unit = units; unit >= 1; unit--) {
-    const entry = entries.find((e) => e.unit === unit);
-    const covered = entries.some((e) => e.unit !== null && e.unit > unit && e.unit - e.height < unit);
-    if (entry || !covered) slots.push({ unit, entry });
+  let unit = units;
+  let next = 0;
+  while (unit >= 1) {
+    if (next >= placed.length || placed[next].unit < unit) {
+      slots.push({ unit, height: 1, entries: [] });
+      unit -= 1;
+      continue;
+    }
+    // Take every entry that starts within the row, growing the row while they reach further down
+    const row: RackEntry[] = [];
+    let bottom = unit;
+    while (next < placed.length && placed[next].unit >= bottom) {
+      const entry = placed[next];
+      row.push(entry);
+      bottom = Math.max(1, Math.min(bottom, entry.unit - entry.height + 1));
+      next += 1;
+    }
+    slots.push({ unit, height: unit - bottom + 1, entry: row[0], entries: row });
+    unit = bottom - 1;
   }
   return slots;
 }
 
-/** Units taken by entries that sit in the rack (tray entries take none). */
-export function occupiedUnits(entries: RackEntry[]): number {
-  return entries.reduce((sum, e) => sum + (e.unit === null ? 0 : e.height), 0);
+/** Keys of the entries that share at least one unit with another entry in the rack. */
+export function overlappingKeys(entries: RackEntry[]): Set<string> {
+  const keys = new Set<string>();
+  const placed = entries.filter((e) => e.unit !== null);
+  placed.forEach((a, i) => {
+    const span = spanOf(a.unit!, a.height);
+    for (const b of placed.slice(i + 1)) {
+      if (spanOf(b.unit!, b.height).some((u) => span.includes(u))) {
+        keys.add(a.key);
+        keys.add(b.key);
+      }
+    }
+  });
+  return keys;
+}
+
+/**
+ * Units taken by entries that sit in the rack (tray entries take none). A unit counts once, however many
+ * entries overlap on it; with `units`, only units inside the rack count.
+ */
+export function occupiedUnits(entries: RackEntry[], units?: number): number {
+  const taken = new Set<number>();
+  for (const e of entries) {
+    if (e.unit === null) continue;
+    for (const u of spanOf(e.unit, e.height)) if (units === undefined || (u >= 1 && u <= units)) taken.add(u);
+  }
+  return taken.size;
+}
+
+/**
+ * The free place nearest to where the entry is now (or the top of the rack while it has no unit), as its new
+ * top unit; null when it fits nowhere. On a tie the higher place wins.
+ */
+export function nearestFreeUnit(units: number, entries: RackEntry[], entry: RackEntry): number | null {
+  const from = entry.unit === null ? units : Math.min(units, Math.max(1, entry.unit));
+  for (let distance = 0; distance < units; distance++) {
+    for (const unit of [from + distance, from - distance]) {
+      if (unit >= 1 && unit <= units && fitsAt(units, entries, unit, entry.height, entry.key)) return unit;
+    }
+  }
+  return null;
 }
 
 /** Whether an entry of `height` may have its top unit at `unit`: inside the rack, on units nothing else uses. */
