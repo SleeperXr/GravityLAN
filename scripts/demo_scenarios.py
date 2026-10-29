@@ -181,7 +181,9 @@ def company() -> Scenario:
     for name, (ip, uplink, kind) in access.items():
         tor = name.startswith("ToR")
         add(name, ip, "switch", "Netzwerk",
-            {"subtype": "Top of Rack" if tor else "Access PoE+", "vendor": "Juniper" if tor else "Aruba", "max_ports": 48},
+            {"subtype": "Top of Rack" if tor else "Access PoE+", "vendor": "Juniper" if tor else "Aruba", "max_ports": 48,
+             # Rack A's top-of-rack switch is down: its nodes and the TrueNAS fail over to rack B, the UPS is cut off
+             "offline": name == "ToR Rack A"},
             [_SSH, *_WEB])
         link(uplink, name, kind)
 

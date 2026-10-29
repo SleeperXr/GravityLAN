@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useFullscreen, useResizeObserver, useStorage } from '@vueuse/core';
-import { Check, Expand, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, Shrink, Sparkles, TriangleAlert, Wand2 } from 'lucide-vue-next';
+import { Check, Expand, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, ShieldAlert, Shrink, Sparkles, TriangleAlert, Wand2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
 import { useNetworkStore } from '@/stores/network';
@@ -29,12 +29,14 @@ import {
 import { labelRank, labelSize, orbitCenterId, placeLabels, problemBodyIds, radiusOf } from './orbitLayout';
 import { computeFocusSet, findPath, focusSetFromIds, matchBodies, type FocusSet, type TracedPath } from './orbitFocus';
 import { useOrbitViewport } from './useOrbitViewport';
+import { analyseResilience, failoverState } from './orbitResilience';
 import OrbitBodyNode from './OrbitBodyNode.vue';
 import OrbitBeamLayer from './OrbitBeamLayer.vue';
 import OrbitFocusCard from './OrbitFocusCard.vue';
 import OrbitTracePanel from './OrbitTracePanel.vue';
 import OrbitLinkInspector from './OrbitLinkInspector.vue';
 import OrbitBodyInspector from './OrbitBodyInspector.vue';
+import OrbitResiliencePanel from './OrbitResiliencePanel.vue';
 import { deviceLabel } from '@/lib/networks';
 import { t } from '@/i18n';
 
@@ -67,6 +69,8 @@ function cycleVitality() {
 }
 
 const editing = ref(props.editable && props.startEditing);
+/** Resilience view: single points of failure lit up, with their list */
+const resilienceMode = ref(false);
 const canvasRef = ref<HTMLElement | null>(null);
 const { isFullscreen, isSupported: fullscreenSupported, toggle: toggleFullscreen } = useFullscreen(canvasRef);
 const links = ref<OrbitLink[]>([]);
@@ -131,7 +135,12 @@ const positions = computed(() => {
 const posOf = (id: number): Point => positions.value.get(id) ?? { x: 0, y: 0 };
 
 const orbitRings = computed(() => computeOrbitRings(bodies.value, positions.value));
-const lightBeams = computed(() => computeLightBeams(links.value, bodies.value, appearance.linkTypeColors));
+const starIds = computed(() => bodyList.value.filter((b) => b.kind === 'star').map((b) => b.id));
+/** Live: backup links that took over for a failed primary path, and online devices nothing reaches */
+const failover = computed(() => failoverState(store.devices, links.value, starIds.value));
+/** Planning: devices whose failure would cut others off, and who hangs on whom alone */
+const resilience = computed(() => analyseResilience(store.devices, links.value, starIds.value));
+const lightBeams = computed(() => computeLightBeams(links.value, bodies.value, appearance.linkTypeColors, failover.value.activeBackupIds));
 
 /** The star at the root of a body's system. */
 function rootOf(id: number): number {
@@ -634,6 +643,7 @@ const spotlight = computed<{ set: FocusSet; strong: boolean } | null>(() => {
   }
   if (searchQuery.value.trim()) return { set: focusSetFromIds(searchHits.value.map((b) => b.id), lightBeams.value), strong: true };
   if (focusedId.value != null) return { set: computeFocusSet(focusedId.value, bodies.value, lightBeams.value), strong: true };
+  if (resilienceMode.value) return { set: focusSetFromIds(resilience.value.singlePoints.map((p) => p.id), lightBeams.value), strong: true };
   if (hoveredBodyId.value != null) return { set: computeFocusSet(hoveredBodyId.value, bodies.value, lightBeams.value), strong: false };
   return null;
 });
@@ -657,8 +667,26 @@ const focusedInfo = computed(() => {
     moons: bodyList.value.filter((o) => o.parentId === b.id).length,
     beams: lightBeams.value.filter((l) => l.sourceId === b.id || l.targetId === b.id).length,
     badge: roleBadge(b.device),
+    resilience:
+      b.kind === 'star'
+        ? null
+        : {
+            dependsOn: (resilience.value.dependsOn.get(b.id) ?? []).map((id) => deviceLabel(devicesById.value.get(id) ?? b.device)),
+            cutOff: resilience.value.singlePoints.find((p) => p.id === b.id)?.cutOff.length ?? 0,
+            unconnected: resilience.value.unconnectedIds.has(b.id),
+            cutOffNow: failover.value.cutOffIds.has(b.id),
+          },
   };
 });
+
+const resiliencePoints = computed(() =>
+  resilience.value.singlePoints.map((p) => ({ id: p.id, label: deviceLabel(devicesById.value.get(p.id)!), cutOff: p.cutOff.length })),
+);
+/** Resilience list: focus the device with its card, like a problem from the warning button. */
+function focusSinglePoint(id: number) {
+  focusedId.value = id;
+  flyToBodies([...computeFocusSet(id, bodies.value, lightBeams.value).bodyIds]);
+}
 
 /** Focus card "to hub": focus the body the focused one orbits. */
 function focusParent() {
@@ -863,6 +891,7 @@ useResizeObserver(svgRef, initialFit);
       :moons="focusedInfo.moons"
       :beams="focusedInfo.beams"
       :badge="focusedInfo.badge"
+      :resilience="focusedInfo.resilience"
       @close="focusedId = null; fitView(true)"
       @open="emit('openDevice', focusedInfo.body.device)"
       @to-hub="focusParent"
@@ -877,6 +906,15 @@ useResizeObserver(svgRef, initialFit);
       {{ t('gv.orbit.hint') }}
     </p>
 
+    <OrbitResiliencePanel
+      v-if="resilienceMode && !editing && traceFromId == null"
+      :points="resiliencePoints"
+      :active-backups="failover.activeBackupIds.size"
+      :cut-off="failover.cutOffIds.size"
+      @select="focusSinglePoint"
+      @close="resilienceMode = false"
+    />
+
     <OrbitTracePanel v-if="!editing && traceFromId != null" :start-label="traceStartLabel" :has-target="traceToId != null" :path="tracedPath" :hops="traceHops" @close="cancelTrace" />
 
     <!-- Motion and zoom controls; a row on phones, where a column of 44 px buttons covered the map height -->
@@ -890,6 +928,18 @@ useResizeObserver(svgRef, initialFit);
         @click="focusNextProblem"
       >
         <TriangleAlert class="size-3.5 shrink-0" aria-hidden="true" />{{ problemIds.length }}
+      </button>
+      <button
+        v-if="!editing"
+        type="button"
+        class="flex size-8 items-center justify-center border-b border-line text-fg-muted hover:bg-control-hover hover:text-fg max-md:size-11 max-md:border-r max-md:border-b-0"
+        :class="resilienceMode && 'bg-warn/10 text-warn-text'"
+        :title="t('gv.orbit.resilience')"
+        :aria-label="t('gv.orbit.resilience')"
+        :aria-pressed="resilienceMode"
+        @click="resilienceMode = !resilienceMode"
+      >
+        <ShieldAlert class="size-3.5" />
       </button>
       <button
         type="button"

@@ -95,6 +95,8 @@ export interface LightBeam {
   isPrimaryBridge: boolean;
   /** A standby/fallback path: drawn thin and dashed, without photons */
   isBackup: boolean;
+  /** A backup path carrying traffic now because the primary one failed (see orbitResilience) */
+  failover: boolean;
 }
 
 /** Radius tolerance (px) for snapping sibling moons onto a shared concentric orbit ring. */
@@ -358,6 +360,7 @@ export function computeLightBeams(
   links: OrbitLink[],
   bodies: Map<number, OrbitBody>,
   typeColors: Record<string, string> = {},
+  activeBackupIds: ReadonlySet<number> = new Set(),
 ): LightBeam[] {
   const beams: LightBeam[] = [];
   for (const l of links) {
@@ -377,6 +380,7 @@ export function computeLightBeams(
       isWireless: l.link_type === 'WLAN',
       isPrimaryBridge: isPrimaryBridge && !isBackupLink(l),
       isBackup: isBackupLink(l),
+      failover: isBackupLink(l) && activeBackupIds.has(l.id),
     });
   }
   return beams;

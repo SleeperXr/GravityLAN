@@ -6,7 +6,15 @@ import { deviceLabel } from '@/lib/networks';
 import { t } from '@/i18n';
 
 /** Details of the focused body in view mode, with the ways to move on from it. */
-defineProps<{ body: OrbitBody; parent: OrbitBody | null; moons: number; beams: number; badge: string | null }>();
+defineProps<{
+  body: OrbitBody;
+  parent: OrbitBody | null;
+  moons: number;
+  beams: number;
+  badge: string | null;
+  /** Labels of the devices it hangs on alone, how many fail with it, and whether anything reaches it */
+  resilience: { dependsOn: string[]; cutOff: number; unconnected: boolean; cutOffNow: boolean } | null;
+}>();
 const emit = defineEmits<{ close: []; open: []; toHub: []; centre: []; trace: [] }>();
 </script>
 
@@ -39,6 +47,19 @@ const emit = defineEmits<{ close: []; open: []; toHub: []; centre: []; trace: []
       <dd class="truncate text-fg">{{ parent ? deviceLabel(parent.device) : '–' }}</dd>
       <dt class="text-fg-subtle">{{ t('gv.orbit.moons_beams') }}</dt>
       <dd class="font-mono text-fg">{{ moons }} / {{ beams }}</dd>
+      <template v-if="resilience">
+        <dt class="text-fg-subtle">{{ t('gv.orbit.uplink') }}</dt>
+        <dd v-if="resilience.cutOffNow" class="text-danger-text">{{ t('gv.orbit.cut_off_now') }}</dd>
+        <dd v-else-if="resilience.unconnected" class="text-fg-muted">{{ t('gv.orbit.unconnected') }}</dd>
+        <dd v-else-if="resilience.dependsOn.length" class="text-warn-text" :title="resilience.dependsOn.join(', ')">
+          {{ t('gv.orbit.depends_on', { names: resilience.dependsOn.slice(0, 2).join(', ') }) }}<span v-if="resilience.dependsOn.length > 2"> +{{ resilience.dependsOn.length - 2 }}</span>
+        </dd>
+        <dd v-else class="text-accent-text">{{ t('gv.orbit.redundant') }}</dd>
+        <template v-if="resilience.cutOff">
+          <dt class="text-fg-subtle">{{ t('gv.orbit.if_fails') }}</dt>
+          <dd class="text-warn-text">{{ t('gv.orbit.spof_cuts', { count: resilience.cutOff }) }}</dd>
+        </template>
+      </template>
     </dl>
 
     <div class="flex flex-wrap items-center gap-1.5">

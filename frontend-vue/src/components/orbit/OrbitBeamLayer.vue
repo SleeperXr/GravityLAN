@@ -28,7 +28,9 @@ const paths = computed(() =>
 );
 const traceById = computed(() => new Map(paths.value.map((p) => [p.beam.id, p.d])));
 const traceD = (seg: { key: number; from: number; to: number }) => traceById.value.get(seg.key) ?? `M${props.pos(seg.from).x},${props.pos(seg.from).y} L${props.pos(seg.to).x},${props.pos(seg.to).y}`;
-const colourOf = (beam: LightBeam) => (beam.interrupted ? 'var(--gl-danger)' : beam.color);
+const colourOf = (beam: LightBeam) => (beam.interrupted ? 'var(--gl-danger)' : beam.failover ? 'var(--gl-warn)' : beam.color);
+/** A backup that took over is drawn as a live beam, an idle one thin and dashed */
+const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
 </script>
 
 <template>
@@ -48,7 +50,7 @@ const colourOf = (beam: LightBeam) => (beam.interrupted ? 'var(--gl-danger)' : b
         fill="none"
         :stroke="colourOf(beam)"
         :stroke-width="selectedId === beam.id ? 9 : beam.isPrimaryBridge ? 6 : 4"
-        :stroke-opacity="selectedId === beam.id ? 0.38 : beam.interrupted || beam.isBackup ? 0.08 : 0.2"
+        :stroke-opacity="selectedId === beam.id ? 0.38 : beam.failover ? 0.32 : beam.interrupted || beam.isBackup ? 0.08 : 0.2"
         stroke-linecap="round"
       />
       <!-- Core line -->
@@ -56,14 +58,14 @@ const colourOf = (beam: LightBeam) => (beam.interrupted ? 'var(--gl-danger)' : b
         :d="d"
         fill="none"
         :stroke="colourOf(beam)"
-        :stroke-width="selectedId === beam.id ? 3.2 : beam.isBackup ? 1.3 : beam.isPrimaryBridge ? 2.2 : 1.4"
-        :stroke-dasharray="beam.interrupted ? '2 9' : beam.isBackup ? '3 7' : beam.isWireless ? '6 6' : undefined"
-        :stroke-opacity="beam.interrupted ? 0.65 : beam.isBackup ? 0.6 : 0.9"
+        :stroke-width="selectedId === beam.id ? 3.2 : beam.failover ? 2.4 : beam.isBackup ? 1.3 : beam.isPrimaryBridge ? 2.2 : 1.4"
+        :stroke-dasharray="beam.interrupted ? '2 9' : idleBackup(beam) ? '3 7' : beam.isWireless ? '6 6' : undefined"
+        :stroke-opacity="beam.interrupted ? 0.65 : idleBackup(beam) ? 0.6 : 0.9"
         stroke-linecap="round"
       />
       <!-- Photon travelling along live beams -->
       <path
-        v-if="!beam.interrupted && !beam.isBackup && animated"
+        v-if="!beam.interrupted && !idleBackup(beam) && animated"
         :d="d"
         fill="none"
         stroke="var(--gl-fg)"
@@ -75,17 +77,17 @@ const colourOf = (beam: LightBeam) => (beam.interrupted ? 'var(--gl-danger)' : b
       <!-- Link type at the middle of the beam -->
       <g v-if="beam.linkType && (beam.isPrimaryBridge || beam.isBackup || selectedId === beam.id)" :transform="`translate(${mid.x}, ${mid.y})`">
         <rect
-          :x="beam.isBackup ? -40 : -22"
+          :x="beam.failover ? -52 : beam.isBackup ? -40 : -22"
           y="-9"
-          :width="beam.isBackup ? 80 : 44"
+          :width="beam.failover ? 104 : beam.isBackup ? 80 : 44"
           height="18"
           rx="9"
           fill="var(--gl-surface)"
-          :stroke="selectedId === beam.id ? 'var(--gl-fg)' : 'var(--gl-line-strong)'"
+          :stroke="selectedId === beam.id ? 'var(--gl-fg)' : beam.failover ? 'var(--gl-warn)' : 'var(--gl-line-strong)'"
           stroke-width="1"
-          :stroke-dasharray="beam.isBackup ? '3 3' : undefined"
+          :stroke-dasharray="idleBackup(beam) ? '3 3' : undefined"
         />
-        <text x="0" y="3.5" text-anchor="middle" fill="var(--gl-fg-muted)" class="pointer-events-none font-mono text-[10px] font-medium">{{ beam.isBackup ? `${t('gv.plan.backup')} · ${beam.linkType}` : beam.linkType }}</text>
+        <text x="0" y="3.5" text-anchor="middle" :fill="beam.failover ? 'var(--gl-warn-text)' : 'var(--gl-fg-muted)'" class="pointer-events-none font-mono text-[10px] font-medium">{{ beam.failover ? `${t('gv.plan.backup_active')} · ${beam.linkType}` : beam.isBackup ? `${t('gv.plan.backup')} · ${beam.linkType}` : beam.linkType }}</text>
       </g>
     </g>
 
