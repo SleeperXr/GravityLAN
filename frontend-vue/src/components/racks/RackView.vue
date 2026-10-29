@@ -121,6 +121,8 @@ const portStats = computed(() => {
   }
   return stats;
 });
+/** Whether any placed entry has a cable: only then are there lines for the legend to explain */
+const hasCables = computed(() => entries.value.some((e) => e.unit !== null && (portStats.value[e.key]?.cabled ?? 0) > 0));
 const selectedPorts = computed<RackPort[]>(() => (selected.value ? portsOf(selected.value, cabling.value.ports) : []));
 const cableRows = computed<CableRow[]>(() => {
   const own = new Set(selectedPorts.value.map((p) => p.id));
@@ -475,7 +477,8 @@ async function removeRack() {
             @open="openEntry"
             @move="moveEntry"
           />
-          <p class="text-xs leading-relaxed text-fg-subtle">{{ t('gv.rack.legend') }}</p>
+          <p class="text-xs leading-relaxed text-fg-subtle">{{ t('gv.rack.place_hint') }} {{ t('gv.rack.entry_hint') }}</p>
+          <p v-if="hasCables" class="text-xs leading-relaxed text-fg-subtle">{{ t('gv.rack.legend') }}</p>
           <div class="gl-subcard space-y-2 p-4">
             <div class="flex items-baseline justify-between gap-3">
               <p class="gl-eyebrow">{{ t('rack.occupied') }}</p>

@@ -57,7 +57,7 @@ const emit = defineEmits<{ close: []; open: []; toHub: []; centre: []; trace: []
         <dd v-else class="text-accent-text">{{ t('gv.orbit.redundant') }}</dd>
         <template v-if="resilience.cutOff">
           <dt class="text-fg-subtle">{{ t('gv.orbit.if_fails') }}</dt>
-          <dd class="text-warn-text">{{ t('gv.orbit.spof_cuts', { count: resilience.cutOff }) }}</dd>
+          <dd class="text-warn-text">{{ t('gv.orbit.if_fails_cuts', { count: resilience.cutOff }) }}</dd>
         </template>
       </template>
     </dl>

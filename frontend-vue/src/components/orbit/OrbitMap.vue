@@ -682,6 +682,14 @@ const focusedInfo = computed(() => {
 const resiliencePoints = computed(() =>
   resilience.value.singlePoints.map((p) => ({ id: p.id, label: deviceLabel(devicesById.value.get(p.id)!), cutOff: p.cutOff.length })),
 );
+/** Online devices nothing reaches now; `unlinked` when no link on the map leads to the core at all */
+const cutOffDevices = computed(() =>
+  [...failover.value.cutOffIds].map((id) => ({
+    id,
+    label: devicesById.value.get(id) ? deviceLabel(devicesById.value.get(id)!) : String(id),
+    unlinked: resilience.value.unconnectedIds.has(id),
+  })),
+);
 /** Resilience list: focus the device with its card, like a problem from the warning button. */
 function focusSinglePoint(id: number) {
   focusedId.value = id;
@@ -910,7 +918,7 @@ useResizeObserver(svgRef, initialFit);
       v-if="resilienceMode && !editing && traceFromId == null"
       :points="resiliencePoints"
       :active-backups="failover.activeBackupIds.size"
-      :cut-off="failover.cutOffIds.size"
+      :cut-off="cutOffDevices"
       @select="focusSinglePoint"
       @close="resilienceMode = false"
     />

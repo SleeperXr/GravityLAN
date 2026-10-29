@@ -273,7 +273,7 @@ describe('HealthView', () => {
     expect(within(flippedRows[2]).getByText('Home Server')).toBeInTheDocument();
 
     // Open sort menu
-    const sortBtn = screen.getByRole('button', { name: /By Score|Nach Score/i });
+    const sortBtn = screen.getByRole('button', { name: /By Score|Nach Health Score/i });
     await user.click(sortBtn);
 
     const nameOption = await screen.findByRole('option', { name: /By Name|Nach Name/i });
