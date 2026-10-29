@@ -21,7 +21,25 @@
       "checking_session": "Checking sign-in..."
     },
     "toast": {
-      "region": "Notifications"
+      "region": "Notifications",
+      "undo": "Undo"
+    },
+    "api_error": {
+      "unknown": "Unknown error",
+      "rack_not_found": "This rack no longer exists.",
+      "rack_item_not_found": "This rack item no longer exists.",
+      "rack_no_fit": "That does not fit inside the rack.",
+      "rack_unit_taken": "That place is already taken by “{{name}}”.",
+      "rack_too_small": "“{{name}}” sits on unit {{unit}}. Move it before making the rack smaller.",
+      "field_required": "This field cannot be empty.",
+      "port_removed_cabled": "A port that would be removed still has a cable. Remove the cable first.",
+      "owner_not_found": "This device or item no longer exists.",
+      "port_not_found": "This port no longer exists.",
+      "cable_same_port": "A cable needs two different ports.",
+      "cable_same_owner": "The cable has to lead to another device.",
+      "port_busy": "One of the ports already has a cable. Remove that cable first.",
+      "cable_not_found": "This cable no longer exists.",
+      "cable_type_required": "A cable needs a type."
     },
     "scan": {
       "running": "Scan running",
@@ -178,6 +196,8 @@
       "issue_no_position": "no unit set",
       "issue_outside": "reaches beyond the rack",
       "issue_overlap": "overlaps another device",
+      "find_free": "Find a free place",
+      "no_free": "There is no free place in this rack that fits.",
       "subtitle": "Where your devices physically sit. Set rack and position in the device editor – just click a device."
     },
     "status": {
@@ -402,6 +422,9 @@
       "drop_blocked": "Does not fit here",
       "drop_title": "Move",
       "no_room": "There is no free room for it here.",
+      "moved": "“{{label}}” on unit {{unit}}",
+      "unplaced": "“{{label}}” taken off its unit",
+      "detached": "“{{label}}” taken out of the rack",
       "tray_unplaced": "In the rack, no place yet",
       "tray_hint": "Drag onto a free place. Drag a placed entry here to take it off its place.",
       "tray_none": "Everything in the rack is placed.",
@@ -409,6 +432,9 @@
       "tray_unracked_hint": "Network devices without a rack. Drag onto a free place to install them. Drag one from the rack here to remove it.",
       "tray_search": "Search device …",
       "tray_unracked_none": "No devices without a rack found.",
+      "tray_show_all": "Show all ({{count}} hidden)",
+      "tray_show_rackable": "Rack gear only",
+      "tray_filter_hint": "Hidden: VMs, containers, access points and wireless devices.",
       "kind_switch_unmanaged": "Switch (unmanaged)",
       "kind_ups": "UPS",
       "kind_patch_copper": "Patch panel copper",
@@ -437,6 +463,8 @@
       "port": "Port",
       "ports_cabled": "in use",
       "ports_free": "free",
+      "entry_ports": "Ports of {{label}}",
+      "jack_cabled": "cable to {{peer}} · port {{number}}",
       "ports_hint": "Click one port, then a port of another device. The cable is made between them.",
       "ports_none": "No ports yet. Set the count and kind above.",
       "pending_here": "Start port chosen. Now click the port at the other end.",

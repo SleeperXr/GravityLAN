@@ -18,6 +18,8 @@ import RackItemDialog from './RackItemDialog.vue';
 import RackPortsPanel, { type CableRow } from './RackPortsPanel.vue';
 import RackTray from './RackTray.vue';
 import { cableDefaults, deviceEntry, entryKey, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, type PortSide, type RackEntry } from './rackModel';
+import { nearestFreeUnit, rackCandidates } from './rackModel';
+import { apiErrorMessage } from '@/lib/apiErrors';
 
 /**
  * Racks with their equipment: network devices and rack equipment (unmanaged switches, UPS, patch panels,
@@ -27,7 +29,7 @@ import { cableDefaults, deviceEntry, entryKey, fitsAt, itemEntry, occupiedUnits,
 const props = defineProps<{ devices: Device[] }>();
 const emit = defineEmits<{ openDevice: [device: Device]; changed: [] }>();
 
-const { showToast } = useToast();
+const { showToast, removeToast, isShowing } = useToast();
 const store = useNetworkStore();
 const id = useId();
 
@@ -54,7 +56,7 @@ async function load(select?: number) {
     const keep = select ?? selectedRackId.value;
     selectedRackId.value = racks.value.some((r) => r.id === keep) ? keep : (racks.value[0]?.id ?? null);
   } catch (err) {
-    showToast('error', t('topology.tab_rack'), (err as Error).message);
+    showToast('error', t('topology.tab_rack'), apiErrorMessage(err));
   } finally {
     loading.value = false;
   }
@@ -64,7 +66,7 @@ async function refreshCabling() {
   try {
     cabling.value = await api.getCabling();
   } catch (err) {
-    showToast('error', t('gv.rack.cables_title'), (err as Error).message);
+    showToast('error', t('gv.rack.cables_title'), apiErrorMessage(err));
   }
 }
 
@@ -82,7 +84,12 @@ const unplaced = computed(() => entries.value.filter((e) => e.unit === null));
 const unracked = computed<RackEntry[]>(() =>
   props.devices.filter((d) => d.rack_id === null).map((d) => ({ ...deviceEntry(d, deviceLabel(d)), unit: null })),
 );
-const occupied = computed(() => occupiedUnits(entries.value));
+// The tray offers rack-mountable devices unless the user asks for all of them
+const showAllCandidates = ref(false);
+const rackable = computed(() => new Set(rackCandidates(props.devices, false).map((d) => entryKey('device', d.id))));
+const trayUnracked = computed(() => (showAllCandidates.value ? unracked.value : unracked.value.filter((e) => rackable.value.has(e.key))));
+const hiddenCandidates = computed(() => unracked.value.filter((e) => !rackable.value.has(e.key)).length);
+const occupied = computed(() => occupiedUnits(entries.value, rack.value?.units));
 const issues = computed(() => (rack.value ? placementIssues(rack.value.units, entries.value).filter((i) => i.reason !== 'no_position') : []));
 
 const selected = computed<RackEntry | null>(() => entries.value.find((e) => e.key === selectedKey.value) ?? null);
@@ -111,6 +118,15 @@ const colourOfPort = computed(() => {
   const colours: Record<number, string> = {};
   for (const [portId, cable] of cableOfPort.value) colours[portId] = cable.color ?? '#c3cad4';
   return colours;
+});
+/** Where the cable on each cabled port leads, for the names of the jacks in the rack */
+const cableTargets = computed(() => {
+  const targets: Record<number, string> = {};
+  for (const [portId, cable] of cableOfPort.value) {
+    const peer = portById.value.get(cable.a_port_id === portId ? cable.b_port_id : cable.a_port_id);
+    if (peer) targets[portId] = t('gv.rack.jack_cabled', { peer: ownerLabels.value.get(ownerKeyOf(peer)) ?? '?', number: peer.number });
+  }
+  return targets;
 });
 const portStats = computed(() => {
   const stats: Record<string, { cabled: number; total: number }> = {};
@@ -181,6 +197,61 @@ function findEntry(key: string): RackEntry | undefined {
   return entries.value.find((e) => e.key === key) ?? unracked.value.find((e) => e.key === key);
 }
 
+/** Where an entry was before a change: its rack (null: none) and its top unit (null: in the tray). */
+interface Placement {
+  key: string;
+  rackId: number | null;
+  unit: number | null;
+}
+
+/** The toast that can undo the last change; a series of moves of one entry shares it. */
+let lastUndo: { toastId: number; before: Placement } | null = null;
+
+function placementOf(entry: RackEntry): Placement {
+  const rackId = entry.kind === 'device' ? (props.devices.find((d) => d.id === entry.id)?.rack_id ?? null) : (rack.value?.id ?? null);
+  return { key: entry.key, rackId, unit: rackId === null ? null : entry.unit };
+}
+
+/** Saves where an entry sits. Rack items always stay in their rack, so only their unit changes. */
+async function savePlacement(entry: RackEntry, rackId: number | null, unit: number | null) {
+  if (entry.kind === 'device') {
+    const patch = { rack_id: rackId, rack_unit: unit, rack_height: entry.height };
+    store.patchDevice(entry.id, patch);
+    await api.updateDevice(entry.id, patch);
+  } else {
+    await api.updateRackItem(entry.id, { rack_unit: unit });
+    cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, rack_unit: unit } : i)) };
+  }
+}
+
+/** Confirms a change with a toast that can undo it. Moving the same entry again (arrow keys) keeps the first place. */
+function offerUndo(before: Placement, message: string) {
+  const series = lastUndo && lastUndo.before.key === before.key && isShowing(lastUndo.toastId);
+  const origin = series && lastUndo ? lastUndo.before : before;
+  if (lastUndo) removeToast(lastUndo.toastId);
+  const toastId = showToast('success', t('gv.rack.drop_title'), message, { label: t('gv.toast.undo'), run: () => void restore(origin) });
+  lastUndo = { toastId, before: origin };
+}
+
+/** Puts an entry back where it was before the change. */
+async function restore(before: Placement) {
+  lastUndo = null;
+  const entry = findEntry(before.key);
+  const current = rack.value;
+  if (!entry) return;
+  if (before.unit !== null && current && before.rackId === current.id && !fitsAt(current.units, entries.value, before.unit, entry.height, entry.key)) {
+    showToast('error', t('gv.toast.undo'), t('gv.rack.no_room'));
+    return;
+  }
+  try {
+    await savePlacement(entry, before.rackId, before.unit);
+    emit('changed');
+  } catch (err) {
+    showToast('error', t('gv.toast.undo'), apiErrorMessage(err));
+    void load(current?.id);
+  }
+}
+
 async function moveEntry(key: string, unit: number) {
   const entry = findEntry(key);
   const current = rack.value;
@@ -191,38 +262,43 @@ async function moveEntry(key: string, unit: number) {
     showToast('error', t('gv.rack.drop_title'), t('gv.rack.no_room'));
     return;
   }
+  const before = placementOf(entry);
   try {
-    if (entry.kind === 'device') {
-      const patch = { rack_id: current.id, rack_unit: unit, rack_height: entry.height };
-      store.patchDevice(entry.id, patch);
-      await api.updateDevice(entry.id, patch);
-    } else {
-      await api.updateRackItem(entry.id, { rack_unit: unit });
-      cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, rack_unit: unit } : i)) };
-    }
+    await savePlacement(entry, current.id, unit);
     emit('changed');
+    offerUndo(before, t('gv.rack.moved', { label: entry.label, unit }));
   } catch (err) {
-    showToast('error', t('gv.rack.drop_title'), (err as Error).message);
+    showToast('error', t('gv.rack.drop_title'), apiErrorMessage(err));
     void load(current.id);
   }
+}
+
+/** Moves an entry that overlaps or sticks out to the nearest place where it fits. */
+async function placeFree(entry: RackEntry) {
+  const current = rack.value;
+  if (!current) return;
+  const unit = nearestFreeUnit(current.units, entries.value, entry);
+  if (unit === null) {
+    showToast('error', t('gv.racks.find_free'), t('gv.racks.no_free'));
+    return;
+  }
+  selectEntry(entry.key);
+  await moveEntry(entry.key, unit);
 }
 
 /** Take an entry off its unit; it stays in the rack, in the tray. */
 async function unplace(key: string) {
   const entry = entries.value.find((e) => e.key === key);
-  if (!entry || entry.unit === null) return;
+  const current = rack.value;
+  if (!entry || entry.unit === null || !current) return;
+  const before = placementOf(entry);
   try {
-    if (entry.kind === 'device') {
-      store.patchDevice(entry.id, { rack_unit: null });
-      await api.updateDevice(entry.id, { rack_unit: null });
-    } else {
-      await api.updateRackItem(entry.id, { rack_unit: null });
-      cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, rack_unit: null } : i)) };
-    }
+    await savePlacement(entry, current.id, null);
     emit('changed');
+    offerUndo(before, t('gv.rack.unplaced', { label: entry.label }));
   } catch (err) {
-    showToast('error', t('gv.rack.drop_title'), (err as Error).message);
-    void load(rack.value?.id);
+    showToast('error', t('gv.rack.drop_title'), apiErrorMessage(err));
+    void load(current.id);
   }
 }
 
@@ -230,13 +306,14 @@ async function unplace(key: string) {
 async function detach(key: string) {
   const entry = entries.value.find((e) => e.key === key);
   if (!entry || entry.kind !== 'device') return;
+  const before = placementOf(entry);
   try {
-    store.patchDevice(entry.id, { rack_id: null, rack_unit: null });
-    await api.updateDevice(entry.id, { rack_id: null, rack_unit: null });
+    await savePlacement(entry, null, null);
     if (selectedKey.value === key) selectedKey.value = null;
     emit('changed');
+    offerUndo(before, t('gv.rack.detached', { label: entry.label }));
   } catch (err) {
-    showToast('error', t('gv.rack.drop_title'), (err as Error).message);
+    showToast('error', t('gv.rack.drop_title'), apiErrorMessage(err));
     void load(rack.value?.id);
   }
 }
@@ -250,7 +327,7 @@ async function setPorts(count: number, kind: string, side: PortSide) {
     await refreshCabling();
     showToast('success', t('gv.rack.ports_title'), t('gv.rack.ports_saved', { label: entry.label, count }));
   } catch (err) {
-    showToast('error', t('gv.rack.ports_title'), (err as Error).message);
+    showToast('error', t('gv.rack.ports_title'), apiErrorMessage(err));
   }
 }
 
@@ -292,17 +369,35 @@ async function pickPort(port: RackPort) {
       t('gv.rack.cable_connected', { a: ownerLabels.value.get(ownerKeyOf(from)) ?? '?', b: ownerLabels.value.get(ownerKeyOf(port)) ?? '?' }),
     );
   } catch (err) {
-    showToast('error', t('gv.rack.cables_title'), (err as Error).message);
+    showToast('error', t('gv.rack.cables_title'), apiErrorMessage(err));
   }
 }
 
+/** A jack in the rack was used: select its entry and treat it like a port in the panel. */
+function pickJack(key: string, port: RackPort) {
+  selectEntry(key);
+  void pickPort(port);
+}
+
+/** Removes a cable at once; the toast can put it back, with its type, colour and notes. */
 async function removeCable(cableId: number) {
+  const removed = cabling.value.cables.find((c) => c.id === cableId);
   try {
     await api.deleteCable(cableId);
     await refreshCabling();
-    showToast('success', t('gv.rack.cables_title'), t('gv.rack.cable_removed'));
+    const undo = removed ? { label: t('gv.toast.undo'), run: () => void restoreCable(removed) } : undefined;
+    showToast('success', t('gv.rack.cables_title'), t('gv.rack.cable_removed'), undo);
   } catch (err) {
-    showToast('error', t('gv.rack.cables_title'), (err as Error).message);
+    showToast('error', t('gv.rack.cables_title'), apiErrorMessage(err));
+  }
+}
+
+async function restoreCable(cable: RackCable) {
+  try {
+    await api.createCable({ a_port_id: cable.a_port_id, b_port_id: cable.b_port_id, cable: cable.cable, color: cable.color, notes: cable.notes });
+    await refreshCabling();
+  } catch (err) {
+    showToast('error', t('gv.toast.undo'), apiErrorMessage(err));
   }
 }
 
@@ -322,7 +417,7 @@ async function deleteItem() {
     await refreshCabling();
     emit('changed');
   } catch (err) {
-    showToast('error', t('gv.rack.delete_item'), (err as Error).message);
+    showToast('error', t('gv.rack.delete_item'), apiErrorMessage(err));
   }
 }
 
@@ -362,7 +457,7 @@ async function saveRack() {
     await load(current.id);
     emit('changed');
   } catch (err) {
-    showToast('error', t('gv.rack.save_rack'), (err as Error).message);
+    showToast('error', t('gv.rack.save_rack'), apiErrorMessage(err));
   } finally {
     savingRack.value = false;
   }
@@ -379,7 +474,7 @@ async function createRack() {
     creatingRack.value = false;
     await load(created.id);
   } catch (err) {
-    showToast('error', t('gv.racks.create'), (err as Error).message);
+    showToast('error', t('gv.racks.create'), apiErrorMessage(err));
   } finally {
     savingRack.value = false;
   }
@@ -400,7 +495,7 @@ async function removeRack() {
     await load();
     emit('changed');
   } catch (err) {
-    showToast('error', t('gv.racks.delete'), (err as Error).message);
+    showToast('error', t('gv.racks.delete'), apiErrorMessage(err));
   }
 }
 </script>
@@ -459,6 +554,17 @@ async function removeRack() {
 
       <div class="grid min-h-0 flex-1 gap-5 overflow-y-auto p-4 xl:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
         <div class="space-y-3">
+          <div v-if="issues.length" class="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs" role="status">
+            <p class="flex items-center gap-2 font-semibold text-warn-text"><AlertTriangle class="size-4" aria-hidden="true" />{{ t('gv.racks.issues', { count: issues.length }) }}</p>
+            <ul class="space-y-1">
+              <li v-for="i in issues" :key="i.entry.key" class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <button type="button" class="min-w-0 text-left text-fg underline-offset-2 hover:underline" @click="selectEntry(i.entry.key)">
+                  {{ i.entry.label }}: {{ t(`gv.racks.issue_${i.reason}`) }}
+                </button>
+                <Button size="sm" @click="placeFree(i.entry)">{{ t('gv.racks.find_free') }}</Button>
+              </li>
+            </ul>
+          </div>
           <RackElevation
             :name="rack.name"
             :units="rack.units"
@@ -471,9 +577,11 @@ async function removeRack() {
             :ports="cabling.ports"
             :cables="cabling.cables"
             :colour-of-port="colourOfPort"
+            :cable-targets="cableTargets"
             @select="selectEntry"
             @open="openEntry"
             @move="moveEntry"
+            @pick-port="pickJack"
           />
           <p class="text-xs leading-relaxed text-fg-subtle">{{ t('gv.rack.legend') }}</p>
           <div class="gl-subcard space-y-2 p-4">
@@ -487,16 +595,6 @@ async function removeRack() {
             <p class="text-xs text-fg-subtle">
               {{ t('rack.devices') }}: <span class="font-mono text-fg">{{ entries.length }}</span> · {{ t('gv.racks.free', { count: Math.max(0, rack.units - occupied) }) }}
             </p>
-          </div>
-          <div v-if="issues.length" class="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs" role="status">
-            <p class="flex items-center gap-2 font-semibold text-warn-text"><AlertTriangle class="size-4" aria-hidden="true" />{{ t('gv.racks.issues', { count: issues.length }) }}</p>
-            <ul class="space-y-1">
-              <li v-for="i in issues" :key="i.entry.key">
-                <button type="button" class="text-left text-fg underline-offset-2 hover:underline" @click="selectEntry(i.entry.key)">
-                  {{ i.entry.label }}: {{ t(`gv.racks.issue_${i.reason}`) }}
-                </button>
-              </li>
-            </ul>
           </div>
         </div>
 
@@ -523,7 +621,9 @@ async function removeRack() {
           <RackTray
             :rack-entries="entries"
             :unplaced="unplaced"
-            :unracked="unracked"
+            v-model:show-all="showAllCandidates"
+            :unracked="trayUnracked"
+            :hidden-count="hiddenCandidates"
             :selected-key="selectedKey"
             @select="selectEntry"
             @open="openEntry"

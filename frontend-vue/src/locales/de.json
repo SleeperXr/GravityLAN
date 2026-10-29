@@ -21,7 +21,25 @@
       "checking_session": "Anmeldung wird geprüft..."
     },
     "toast": {
-      "region": "Benachrichtigungen"
+      "region": "Benachrichtigungen",
+      "undo": "Rückgängig"
+    },
+    "api_error": {
+      "unknown": "Unbekannter Fehler",
+      "rack_not_found": "Das Rack gibt es nicht mehr.",
+      "rack_item_not_found": "Das Rack-Element gibt es nicht mehr.",
+      "rack_no_fit": "Das passt nicht ins Rack, es ragt über den Rand hinaus.",
+      "rack_unit_taken": "Der Platz ist schon belegt von „{{name}}“.",
+      "rack_too_small": "„{{name}}“ sitzt auf HE {{unit}}. Erst verschieben, dann das Rack verkleinern.",
+      "field_required": "Dieses Feld darf nicht leer sein.",
+      "port_removed_cabled": "Ein Anschluss, der wegfallen würde, hat noch ein Kabel. Erst das Kabel lösen.",
+      "owner_not_found": "Das Gerät oder Element gibt es nicht mehr.",
+      "port_not_found": "Den Anschluss gibt es nicht mehr.",
+      "cable_same_port": "Ein Kabel braucht zwei verschiedene Anschlüsse.",
+      "cable_same_owner": "Das Kabel muss zu einem anderen Gerät führen.",
+      "port_busy": "Einer der Anschlüsse ist schon belegt. Erst das Kabel lösen.",
+      "cable_not_found": "Das Kabel gibt es nicht mehr.",
+      "cable_type_required": "Ein Kabel braucht einen Typ."
     },
     "scan": {
       "running": "Scan läuft",
@@ -178,6 +196,8 @@
       "issue_no_position": "keine Höheneinheit gesetzt",
       "issue_outside": "ragt über das Rack hinaus",
       "issue_overlap": "überschneidet sich mit einem anderen Gerät",
+      "find_free": "Freien Platz suchen",
+      "no_free": "Im Rack ist kein passender Platz frei.",
       "subtitle": "Wo deine Geräte physisch stecken. Rack und Position legst du im Geräte-Editor fest – ein Klick aufs Gerät genügt."
     },
     "status": {
@@ -402,6 +422,9 @@
       "drop_blocked": "Passt hier nicht",
       "drop_title": "Verschieben",
       "no_room": "Dafür ist hier kein Platz frei.",
+      "moved": "„{{label}}“ auf HE {{unit}}",
+      "unplaced": "„{{label}}“ vom Platz genommen",
+      "detached": "„{{label}}“ aus dem Rack genommen",
       "tray_unplaced": "Im Rack, ohne Platz",
       "tray_hint": "Auf einen freien Platz ziehen. Ein platziertes Element hierher ziehen, um es vom Platz zu nehmen.",
       "tray_none": "Alles im Rack ist platziert.",
@@ -409,6 +432,9 @@
       "tray_unracked_hint": "Netzwerkgeräte ohne Rack. Auf einen freien Platz ziehen, um sie einzusetzen. Aus dem Rack hierher ziehen, um sie herauszunehmen.",
       "tray_search": "Gerät suchen …",
       "tray_unracked_none": "Keine Geräte ohne Rack gefunden.",
+      "tray_show_all": "Alle anzeigen ({{count}} ausgeblendet)",
+      "tray_show_rackable": "Nur Rack-Geräte",
+      "tray_filter_hint": "Ausgeblendet sind VMs, Container, Access Points und WLAN-Geräte.",
       "kind_switch_unmanaged": "Switch (unmanaged)",
       "kind_ups": "USV",
       "kind_patch_copper": "Patchfeld Kupfer",
@@ -437,6 +463,8 @@
       "port": "Port",
       "ports_cabled": "belegt",
       "ports_free": "frei",
+      "entry_ports": "Anschlüsse von {{label}}",
+      "jack_cabled": "Kabel zu {{peer}} · Port {{number}}",
       "ports_hint": "Einen Anschluss anklicken, dann einen Anschluss eines anderen Geräts. Dazwischen entsteht das Kabel.",
       "ports_none": "Noch keine Anschlüsse. Anzahl und Art oben festlegen.",
       "pending_here": "Startport gewählt. Jetzt den Anschluss des Ziels anklicken.",

@@ -25,6 +25,18 @@ const props = withDefaults(
 );
 
 const widths = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl', xl: 'sm:max-w-4xl' };
+
+/**
+ * reka-ui focuses the first tabbable element on open, which is the close button. A field marked
+ * `autofocus` is where the dialog wants the user to start, so it gets the focus instead.
+ */
+function focusAutofocusField(event: Event) {
+  const content = event.target instanceof HTMLElement ? event.target : null;
+  const field = content?.querySelector<HTMLElement>('[autofocus]');
+  if (!field) return;
+  event.preventDefault();
+  field.focus();
+}
 </script>
 
 <template>
@@ -42,6 +54,7 @@ const widths = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl', xl: '
             props.class,
           )
         "
+        @open-auto-focus="focusAutofocusField"
       >
         <header class="flex items-start gap-3 border-b border-line px-5 py-4">
           <div class="min-w-0 flex-1">
