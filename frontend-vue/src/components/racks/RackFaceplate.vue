@@ -56,7 +56,9 @@ const bays = computed(() => {
   return perRow > 0 ? { rows, perRow, h: Math.max(3, (inner.value - (rows - 1) * 2) / rows) } : null;
 });
 /** Rear without ports: power supplies, and fans on a server */
-const rearParts = computed(() => props.side === 'rear' && !props.layout.jacks.length && !['blank', 'cable', 'patch', 'fiber'].includes(props.entry.face) && room.value > 40);
+const rearParts = computed(() => props.side === 'rear' && !props.layout.jacks.length && !['blank', 'cable', 'patch', 'fiber', 'ups', 'power'].includes(props.entry.face) && room.value > 40);
+/** Rear of a UPS without ports: its outlets, not power supplies of its own */
+const outlets = computed(() => (props.side === 'rear' && props.entry.face === 'ups' && !props.layout.jacks.length ? Math.min(6, Math.floor((room.value + 20) / 18)) : 0));
 const fans = computed(() => (rearParts.value && (props.entry.face === 'server' || props.entry.face === 'storage') && room.value > 110 ? 2 : 0));
 const dRings = computed(() => (props.entry.face === 'cable' ? Math.max(2, Math.floor((props.width - 2 * props.layout.earPx - 150) / 46)) : 0));
 
@@ -112,6 +114,9 @@ const ledRow = computed(() => {
         <span v-for="p in 2" :key="`psu-${p}`" class="rack-psu" :style="{ height: `${inner}px` }"><i class="rack-led is-small" :class="entry.online ? 'is-on' : 'is-idle'" /></span>
       </span>
 
+      <span v-if="outlets > 0" class="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+        <span v-for="o in outlets" :key="o" class="rack-outlet" />
+      </span>
       <span v-if="entry.face === 'ups' && side === 'front' && room > 20" class="rack-display" :style="{ height: `${Math.min(inner, 20)}px` }" aria-hidden="true">
         <Bolt class="size-3" :class="entry.online ? 'text-accent-text' : 'text-fg-subtle'" />
       </span>
@@ -223,6 +228,32 @@ const ledRow = computed(() => {
   box-shadow:
     inset 4px 0 0 color-mix(in oklab, var(--gl-fg-subtle) 45%, transparent),
     inset 0 1px 0 color-mix(in oklab, var(--gl-fg) 8%, transparent);
+}
+/* A UPS outlet (C13 style): a socket with two pin holes, wider at the top */
+.rack-outlet {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 1px solid var(--gl-line-strong);
+  border-radius: 2px 2px 5px 5px;
+  background: var(--gl-sunken);
+}
+.rack-outlet::before,
+.rack-outlet::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  width: 2px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--gl-line-strong);
+}
+.rack-outlet::before {
+  left: 2px;
+}
+.rack-outlet::after {
+  right: 2px;
 }
 .rack-psu {
   display: flex;
