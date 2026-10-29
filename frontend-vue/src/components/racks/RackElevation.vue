@@ -8,6 +8,7 @@ import type { RackCable, RackPort } from '@/types';
 import { draggingKey } from './rackDrag';
 import { kindOf } from './rackKinds';
 import { cableRoute, fitsAt, ownerKeyOf, portsOnSide, rackSlots, sideOf, type PortSide, type RackEntry } from './rackModel';
+import { placeTargets, stepTarget } from './rackPlacement';
 
 /**
  * The rack as one row per unit, seen from the front or the rear. Entries are dragged to a free place (a place
@@ -33,11 +34,14 @@ const props = defineProps<{
   ports: RackPort[];
   cables: RackCable[];
   colourOfPort: Record<number, string>;
+  /** An entry picked in the tray: free units turn into buttons that put it there */
+  placing?: RackEntry | null;
 }>();
 const emit = defineEmits<{
   select: [key: string];
   open: [key: string];
   move: [key: string, unit: number];
+  place: [key: string, unit: number];
 }>();
 
 const UNIT_REM = 1.75;
@@ -172,6 +176,52 @@ function slotClass(unit: number): string {
   return hover.value.valid ? 'border-accent bg-accent/10' : 'border-warn/70 bg-warn/10';
 }
 
+// ── Placing a picked entry ───────────────────────────────────────────────────
+/** Units that take the picked entry, top first; one of them is in the tab order, the arrow keys walk them */
+const targets = computed(() => (props.placing ? placeTargets(props.units, props.entries, props.placing) : []));
+const activeTarget = ref<number | null>(null);
+watch(targets, (list) => {
+  if (activeTarget.value === null || !list.includes(activeTarget.value)) activeTarget.value = list[0] ?? null;
+});
+/** After a place by keyboard, focus goes to the placed entry once it is drawn */
+let focusAfterPlace: string | null = null;
+
+function targetEl(unit: number): HTMLElement | null {
+  return railRef.value?.querySelector<HTMLElement>('[data-place-unit="' + unit + '"]') ?? null;
+}
+
+/** Focus the first free unit that fits (Enter or Space in the tray); false when there is none. */
+function focusPlaceTarget(): boolean {
+  const unit = activeTarget.value ?? targets.value[0];
+  if (unit === undefined || unit === null) return false;
+  targetEl(unit)?.focus();
+  return true;
+}
+defineExpose({ focusPlaceTarget });
+
+function stepPlace(unit: number, direction: 'up' | 'down') {
+  const next = stepTarget(targets.value, unit, direction);
+  if (next === null) return;
+  activeTarget.value = next;
+  targetEl(next)?.focus();
+}
+
+function placeAt(unit: number, event: MouseEvent) {
+  if (!props.placing) return;
+  if (event.detail === 0) focusAfterPlace = props.placing.key;
+  emit('place', props.placing.key, unit);
+}
+
+watch(
+  () => props.entries,
+  () => {
+    const key = focusAfterPlace;
+    if (!key || !props.entries.some((e) => e.key === key && e.unit !== null)) return;
+    focusAfterPlace = null;
+    void nextTick(() => railRef.value?.querySelector<HTMLElement>('[data-key="' + key + '"]')?.focus());
+  },
+);
+
 function portSummary(entry: RackEntry): string | null {
   const stat = props.portStats[entry.key];
   return stat && stat.total > 0 ? stat.cabled + '/' + stat.total : null;
@@ -220,13 +270,14 @@ function portSummary(entry: RackEntry): string | null {
       @dragleave="leave(slot.unit)"
       @drop="drop($event, slot.unit)"
     >
-      <span class="w-6 shrink-0 text-right font-mono text-[10px] leading-7 text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
+      <span class="w-6 shrink-0 text-right font-mono text-[10px] leading-[var(--rack-unit,1.75rem)] text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
 
       <button
         v-if="slot.entry"
         type="button"
         role="listitem"
         draggable="true"
+        :data-key="slot.entry.key"
         class="rack-entry group relative my-px flex min-w-0 flex-1 cursor-grab items-center gap-2 overflow-hidden rounded-[5px] border bg-raised pr-2 pl-1 text-left transition-[opacity,background-color,border-color] duration-150 hover:bg-control-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing"
         :class="[
           selectedKey === slot.entry.key ? 'border-accent ring-1 ring-accent' : 'border-line',
@@ -234,7 +285,7 @@ function portSummary(entry: RackEntry): string | null {
           !slot.entry.online && 'opacity-70',
           draggingKey === slot.entry.key && 'opacity-40',
         ]"
-        :style="{ height: 'calc(' + slot.entry.height * UNIT_REM + 'rem - 2px)' }"
+        :style="{ height: 'calc(' + slot.entry.height + ' * var(--rack-unit, ' + UNIT_REM + 'rem) - 2px)' }"
         :aria-label="slot.entry.label + ', ' + t('gv.rack.position', { unit: slot.unit, count: slot.entry.height })"
         :aria-pressed="selectedKey === slot.entry.key"
         :title="t('gv.rack.entry_hint')"
@@ -275,9 +326,30 @@ function portSummary(entry: RackEntry): string | null {
         </span>
       </button>
 
+      <button
+        v-else-if="placing"
+        type="button"
+        :data-place-unit="slot.unit"
+        class="my-px flex h-[calc(var(--rack-unit,1.75rem)_-_2px)] min-w-0 flex-1 items-center rounded-[5px] border border-dashed px-2 text-left text-xs text-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        :class="
+          targets.includes(slot.unit)
+            ? 'border-accent/60 hover:bg-accent/10 hover:text-fg-muted focus-visible:bg-accent/10 focus-visible:text-fg-muted'
+            : 'cursor-not-allowed border-line/70 hover:text-fg-subtle'
+        "
+        :tabindex="slot.unit === activeTarget ? 0 : -1"
+        :aria-disabled="!targets.includes(slot.unit) || undefined"
+        :aria-label="t('gv.rack.place_at', { label: placing.label, unit: slot.unit }) + (targets.includes(slot.unit) ? '' : ', ' + t('gv.rack.drop_blocked'))"
+        @click="placeAt(slot.unit, $event)"
+        @focus="targets.includes(slot.unit) && (activeTarget = slot.unit)"
+        @keydown.up.prevent="stepPlace(slot.unit, 'up')"
+        @keydown.down.prevent="stepPlace(slot.unit, 'down')"
+      >
+        <span class="truncate">{{ targets.includes(slot.unit) ? t('gv.rack.drop_here') : t('gv.rack.drop_blocked') }}</span>
+      </button>
+
       <span
         v-else
-        class="my-px flex h-[calc(1.75rem-2px)] flex-1 items-center rounded-[5px] border border-dashed px-2 text-[10px] transition-colors"
+        class="my-px flex h-[calc(var(--rack-unit,1.75rem)_-_2px)] flex-1 items-center rounded-[5px] border border-dashed px-2 text-[10px] transition-colors"
         :class="[slotClass(slot.unit), hover?.unit === slot.unit ? 'text-fg-muted' : 'text-transparent']"
       >
         <template v-if="hover?.unit === slot.unit">{{ hover.valid ? t('gv.rack.drop_here') : t('gv.rack.drop_blocked') }}</template>
@@ -285,12 +357,19 @@ function portSummary(entry: RackEntry): string | null {
 
       <span data-channel class="shrink-0" :style="{ width: CHANNEL_PX + 'px' }" aria-hidden="true" />
 
-      <span class="w-6 shrink-0 font-mono text-[10px] leading-7 text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
+      <span class="w-6 shrink-0 font-mono text-[10px] leading-[var(--rack-unit,1.75rem)] text-fg-subtle tabular max-sm:hidden" aria-hidden="true">{{ slot.unit }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* Phones: one unit is a 44 px touch target (46 px row, 44 px entry) */
+@media (width < 48rem) {
+  .rack-rail {
+    --rack-unit: 2.875rem;
+  }
+}
+
 /* A blank panel is a faceplate without ports: hatched, so it reads as "nothing here" */
 .rack-blank {
   background-image: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in oklab, var(--gl-line-strong) 45%, transparent) 5px 6px);

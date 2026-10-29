@@ -45,7 +45,7 @@ const views = [
           v-for="v in views"
           :key="v.id"
           type="button"
-          class="inline-flex h-8 items-center gap-1.5 rounded-[7px] px-3 text-xs font-semibold transition-colors"
+          class="inline-flex h-8 max-md:h-11 items-center gap-1.5 rounded-[7px] px-3 text-xs font-semibold transition-colors"
           :class="view === v.id ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
           :aria-pressed="view === v.id"
           @click="view = v.id"
