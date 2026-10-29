@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- dnspython 2.9.0 (Dependabot alert #50, `dns.name.from_wire_parser()` excessive CPU use). A crafted DNS answer, e.g. from a DNS server in the scanned network, could keep name decompression busy during hostname lookups. Minimum version raised in `requirements.txt` and `pyproject.toml`, lockfile updated.
+
 ### Added
 - GravityUI orbit map: port limit per device, like the React topology. In edit mode the inspector of a selected device shows how many of its ports are in use ("6 of 24 ports in use") and lets you change `max_ports` (0 means no limit). Drawing a new light beam to a full device, or moving a device onto a full hub, is refused with "Port limit reached: Core Switch already uses 6 of 6 ports."
 - GravityUI orbit map: full-screen button next to the zoom controls.
