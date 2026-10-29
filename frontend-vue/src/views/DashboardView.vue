@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useEventListener, useMediaQuery, useStorage } from '@vueuse/core';
 import { useRouter } from 'vue-router';
-import { Check, LayoutGrid, List, Pencil, Radar, RefreshCw, RotateCcw, Search, Server, Trash2, X } from 'lucide-vue-next';
+import { Check, LayoutGrid, Pencil, Radar, RefreshCw, RotateCcw, Search, Server, Trash2, X } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
 import { useNetworkStore } from '@/stores/network';
@@ -261,43 +261,23 @@ function clearFilters() {
             Ctrl K
           </kbd>
         </label>
-        <div v-if="!isMobile" class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('dashboard.view_mode')">
-          <button
-            v-for="mode in [{ id: 'grid', icon: LayoutGrid, label: t('dashboard.view_grid') }, { id: 'list', icon: List, label: t('dashboard.view_list') }] as const"
-            :key="mode.id"
-            type="button"
-            class="inline-flex size-8 items-center justify-center rounded-[5px] transition-colors"
-            :class="storedView === mode.id ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
-            :aria-pressed="storedView === mode.id"
-            :aria-label="mode.label"
-            :title="mode.label"
-            @click="storedView = mode.id"
-          >
-            <component :is="mode.icon" class="size-4" aria-hidden="true" />
-          </button>
-        </div>
         <GatewaysPopover @open-device="(id, tab) => openDeviceById(id, tab)" />
         <NotificationCenter />
+        <!-- Pending agent updates are status, so they keep a button of their own where there is room -->
+        <Button v-if="!isMobile && outdatedAgents > 0" class="border-warn/40 text-warn-text" @click="updateCenterOpen = true">
+          <RefreshCw aria-hidden="true" />{{ outdatedAgents }}<span class="hidden sm:inline">{{ t('dashboard.agent_updates') }}</span>
+        </Button>
+        <!-- View, layout and refresh-all are rare: one menu instead of three more buttons -->
         <OverviewMoreMenu
-          v-if="isMobile"
-          :updates="outdatedAgents"
+          :updates="isMobile ? outdatedAgents : 0"
+          :view="isMobile ? undefined : storedView"
           :refreshing="refreshingAll"
           :scanning="store.isScanning"
           @updates="updateCenterOpen = true"
           @edit="toggleEdit"
           @refresh="refreshAll"
+          @view="(mode) => (storedView = mode)"
         />
-        <template v-else>
-          <Button v-if="outdatedAgents > 0" class="border-warn/40 text-warn-text" @click="updateCenterOpen = true">
-            <RefreshCw aria-hidden="true" />{{ outdatedAgents }}<span class="hidden sm:inline">{{ t('dashboard.agent_updates') }}</span>
-          </Button>
-          <Button :aria-label="t('dashboard.edit_layout')" :title="t('dashboard.edit_layout')" @click="toggleEdit">
-            <Pencil aria-hidden="true" /><span class="hidden xl:inline">{{ t('dashboard.edit_layout') }}</span>
-          </Button>
-          <Button :disabled="refreshingAll || store.isScanning" :aria-label="t('dashboard.refresh_all')" @click="refreshAll">
-            <RefreshCw :class="refreshingAll && 'animate-spin'" aria-hidden="true" /><span class="hidden xl:inline">{{ refreshingAll ? t('dashboard.refreshing') : t('dashboard.refresh_all') }}</span>
-          </Button>
-        </template>
         <Button variant="primary" :disabled="store.isScanning" @click="scan.openDialog()">
           <Radar :class="store.isScanning && 'animate-spin'" aria-hidden="true" />{{ store.isScanning ? t('dashboard.scanning') : t('dashboard.scan') }}
         </Button>

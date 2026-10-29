@@ -2,6 +2,7 @@ import type { BadgeTone } from '@/components/ui/Badge.vue';
 import type { DeviceHealthItem, DeviceHistoryResponse, HealthIncident, ServiceHealthItem } from '@/types';
 import type { TimelineEntry } from '@/components/common/timeline';
 import { t } from '@/i18n';
+import { parseDate, relativeTimeText } from '@/lib/relativeTime';
 
 export type HealthStatus = DeviceHealthItem['health_status'];
 
@@ -58,6 +59,24 @@ const isRecovery = (status: string) => ['online', 'up', 'service_up'].includes(s
 export function incidentEntry(incident: HealthIncident): TimelineEntry<HealthIncident> {
   const tone = isRecovery(incident.status) ? 'accent' : incident.status === 'flapping' || incident.severity === 'warn' ? 'warn' : incident.severity === 'critical' ? 'danger' : 'info';
   return { key: incident.id, tone, hollow: isRecovery(incident.status), data: incident };
+}
+
+/**
+ * The relative time most incidents share ("vor 4 Tagen"), so a list says it once instead of on
+ * every row; rows with a different time keep their own. Null when no time is shared by two or more.
+ */
+export function sharedIncidentTime(incidents: Pick<HealthIncident, 'timestamp'>[], now: number = Date.now()): { text: string; all: boolean } | null {
+  const counts = new Map<string, number>();
+  for (const incident of incidents) {
+    const date = parseDate(incident.timestamp);
+    if (!date) continue;
+    const text = relativeTimeText(date, now);
+    counts.set(text, (counts.get(text) ?? 0) + 1);
+  }
+  let best: { text: string; count: number } | null = null;
+  for (const [text, count] of counts) if (!best || count > best.count) best = { text, count };
+  if (!best || best.count < 2) return null;
+  return { text: best.text, all: best.count === incidents.length };
 }
 
 /** Timeline dot of a status history record: up is a hollow green dot, anything else a red one. */

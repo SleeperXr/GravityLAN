@@ -47,6 +47,7 @@
       "free": "frei",
       "used": "belegt",
       "usage": "Adressbelegung",
+      "empty_subnet": "Hier ist noch keine Adresse belegt. Ein Scan füllt das Raster, oder wähle oben ein anderes Subnetz.",
       "legend_device": "In der Übersicht",
       "legend_discovered": "Nur entdeckt",
       "legend_reserved": "Reserviert",
@@ -94,6 +95,8 @@
       "dropped_other": "{{count}} Geräte offline",
       "degraded_one": "{{count}} Gerät mit gestörtem Dienst",
       "degraded_other": "{{count}} Geräte mit gestörten Diensten",
+      "empty_folded_one": "Leeres Netz:",
+      "empty_folded_other": "{{count}} leere Netze:",
       "colors_title": "Orbit- & Netzfarben",
       "colors_desc": "Jedes Netz hat eine eigene Orbit-Farbe – auf Umlaufbahnen, Light-Beams, Geräte-Chips und im Rack. Änderungen gelten sofort.",
       "colors_empty": "Noch keine Subnetze angelegt.",
@@ -270,6 +273,8 @@
       "summary": "{{title}}: {{uptime}} % Uptime, {{down}} Ausfälle und {{partial}} Störungen in {{count}} Abschnitten. Pfeiltasten zeigen einzelne Abschnitte."
     },
     "timeline": {
+      "all_at": "Alle {{when}}",
+      "mostly_at": "Meist {{when}}, sonst am Eintrag",
       "incidents": "Vorfälle im Zeitverlauf",
       "history": "Statusverlauf"
     },

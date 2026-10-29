@@ -128,12 +128,13 @@ async function purge(request: TelemetryPurge | null) {
 <template>
   <SettingsSection id="telemetry" :title="t('telemetry_settings.title')" :description="t('telemetry_settings.description')">
     <div class="space-y-3">
-      <div class="grid grid-cols-2 gap-3">
-        <div class="rounded-md border border-line bg-raised p-3">
+      <!-- Two figures split by a rule; boxes inside the section card read as cards in cards -->
+      <div class="grid grid-cols-2 divide-x divide-line">
+        <div class="pr-4">
           <p class="gl-eyebrow">{{ t('telemetry_settings.size_telemetry') }}</p>
           <p class="mt-1 font-mono text-xl font-semibold text-fg tabular">{{ status ? formatBytes(status.sizes.telemetry_bytes) : '…' }}</p>
         </div>
-        <div class="rounded-md border border-line bg-raised p-3">
+        <div class="pl-4">
           <p class="gl-eyebrow">{{ t('telemetry_settings.size_inventory') }}</p>
           <p class="mt-1 font-mono text-xl font-semibold text-fg tabular">{{ status ? formatBytes(status.sizes.inventory_bytes) : '…' }}</p>
         </div>
@@ -144,8 +145,8 @@ async function purge(request: TelemetryPurge | null) {
       </div>
     </div>
 
-    <ul v-if="status" class="divide-y divide-line rounded-md border border-line" :aria-label="t('telemetry_settings.tiers_label')">
-      <li v-for="tier in tiers" :key="tier.key" class="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2.5">
+    <ul v-if="status" class="divide-y divide-line border-y border-line" :aria-label="t('telemetry_settings.tiers_label')">
+      <li v-for="tier in tiers" :key="tier.key" class="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5">
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium text-fg">{{ t(`telemetry_settings.tier_${tier.key}`) }}</p>
           <p class="text-xs text-fg-subtle">{{ t(`telemetry_settings.tier_${tier.key}_desc`) }}</p>

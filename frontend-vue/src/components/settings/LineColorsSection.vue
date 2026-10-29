@@ -55,7 +55,7 @@ async function choose(s: Subnet, color: string | null) {
   <fieldset class="mt-6 border-t border-line pt-5">
     <legend class="sr-only">{{ t('gv.lines.colors_title') }}</legend>
     <p class="text-sm font-semibold text-fg">{{ t('gv.lines.colors_title') }}</p>
-    <p class="mt-0.5 text-xs leading-relaxed text-fg-subtle">{{ t('gv.lines.colors_desc') }}</p>
+    <p class="mt-0.5 max-w-prose text-xs leading-relaxed text-fg-subtle">{{ t('gv.lines.colors_desc') }}</p>
 
     <p v-if="loaded && subnets.length === 0" class="mt-3 text-xs text-fg-subtle">{{ t('gv.lines.colors_empty') }}</p>
     <ul v-else class="mt-3 divide-y divide-line">

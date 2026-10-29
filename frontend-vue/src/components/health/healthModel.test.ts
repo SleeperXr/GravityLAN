@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DeviceHistoryResponse, HealthIncident } from '@/types';
-import { historyEntry, incidentEntry } from './healthModel';
+import { historyEntry, incidentEntry, sharedIncidentTime } from './healthModel';
+import { relativeTimeText } from '@/lib/relativeTime';
 
 const incident = (over: Partial<HealthIncident>): HealthIncident => ({
   id: 1,
@@ -30,5 +31,27 @@ describe('historyEntry', () => {
     expect(historyEntry(rec('online'))).toMatchObject({ key: 7, tone: 'accent', hollow: true });
     expect(historyEntry(rec('UP')).hollow).toBe(true);
     expect(historyEntry(rec('offline'))).toMatchObject({ tone: 'danger', hollow: false });
+  });
+});
+
+describe('sharedIncidentTime', () => {
+  const now = Date.parse('2026-10-29T12:00:00Z');
+  const at = (iso: string) => ({ timestamp: iso });
+  const fourDays = relativeTimeText(new Date('2026-10-25T12:00:00Z'), now);
+
+  it('names the time every incident shares once', () => {
+    const list = [at('2026-10-25T10:00:00Z'), at('2026-10-25T12:00:00Z'), at('2026-10-25T14:00:00Z')];
+    expect(sharedIncidentTime(list, now)).toEqual({ text: fourDays, all: true });
+  });
+
+  it('names the most common time when some differ', () => {
+    const list = [at('2026-10-25T10:00:00Z'), at('2026-10-29T11:00:00Z'), at('2026-10-25T12:00:00Z')];
+    expect(sharedIncidentTime(list, now)).toEqual({ text: fourDays, all: false });
+  });
+
+  it('names nothing when no two incidents share a time', () => {
+    expect(sharedIncidentTime([at('2026-10-25T12:00:00Z'), at('2026-10-29T11:00:00Z')], now)).toBeNull();
+    expect(sharedIncidentTime([at('2026-10-25T12:00:00Z')], now)).toBeNull();
+    expect(sharedIncidentTime([], now)).toBeNull();
   });
 });

@@ -40,7 +40,7 @@ async function choose(type: string, color: string | null) {
   <fieldset class="mt-6 border-t border-line pt-5">
     <legend class="sr-only">{{ t('gv.link_types.title') }}</legend>
     <p class="text-sm font-semibold text-fg">{{ t('gv.link_types.title') }}</p>
-    <p class="mt-0.5 text-xs leading-relaxed text-fg-subtle">{{ t('gv.link_types.desc') }}</p>
+    <p class="mt-0.5 max-w-prose text-xs leading-relaxed text-fg-subtle">{{ t('gv.link_types.desc') }}</p>
 
     <ul class="mt-3 divide-y divide-line">
       <li v-for="type in LINK_TYPES" :key="type" class="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
