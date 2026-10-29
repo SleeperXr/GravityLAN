@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Device, RackItem, RackPort } from '@/types';
-import { cableCurve, cableDefaults, deviceEntry, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, portsOnSide, rackSlots, sideOf, spanOf, type RackEntry } from './rackModel';
+import { cableRoute, cableDefaults, deviceEntry, fitsAt, itemEntry, occupiedUnits, ownerKeyOf, placementIssues, portsOf, portsOnSide, rackSlots, sideOf, spanOf, type RackEntry } from './rackModel';
 
 const dev = (id: number, rack_unit: number | null, rack_height = 1): RackEntry =>
   deviceEntry({ id, ip: `10.0.0.${id}`, rack_id: 1, rack_unit, rack_height, is_online: true } as Device, `Dev ${id}`);
@@ -64,6 +64,7 @@ describe('front and rear', () => {
   });
 
   it('draws a cable as a curve through its lane', () => {
-    expect(cableCurve({ x: 10, y: 20 }, { x: 30, y: 40 }, 100)).toBe('M 10 20 C 100 20, 100 40, 30 40');
+    expect(cableRoute({ x: 10, y: 20 }, { x: 30, y: 40 }, 100)).toBe('M 10 20 H 94 Q 100 20 100 26 V 34 Q 100 40 94 40 H 30');
+    expect(cableRoute({ x: 10, y: 20 }, { x: 30, y: 20 }, 100)).toBe('M 10 20 H 30');
   });
 });

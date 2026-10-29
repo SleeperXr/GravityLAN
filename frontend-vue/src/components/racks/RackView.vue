@@ -457,7 +457,7 @@ async function removeRack() {
         </div>
       </header>
 
-      <div class="grid min-h-0 flex-1 gap-5 overflow-y-auto p-4 xl:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+      <div class="grid min-h-0 flex-1 gap-5 overflow-y-auto p-4 xl:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
         <div class="space-y-3">
           <RackElevation
             :name="rack.name"
@@ -475,6 +475,7 @@ async function removeRack() {
             @open="openEntry"
             @move="moveEntry"
           />
+          <p class="text-xs leading-relaxed text-fg-subtle">{{ t('gv.rack.legend') }}</p>
           <div class="gl-subcard space-y-2 p-4">
             <div class="flex items-baseline justify-between gap-3">
               <p class="gl-eyebrow">{{ t('rack.occupied') }}</p>

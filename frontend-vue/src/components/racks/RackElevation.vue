@@ -7,13 +7,15 @@ import { t } from '@/i18n';
 import type { RackCable, RackPort } from '@/types';
 import { draggingKey } from './rackDrag';
 import { kindOf } from './rackKinds';
-import { cableCurve, fitsAt, portsOnSide, rackSlots, type PortSide, type RackEntry } from './rackModel';
+import { cableRoute, fitsAt, ownerKeyOf, portsOnSide, rackSlots, sideOf, type PortSide, type RackEntry } from './rackModel';
 
 /**
  * The rack as one row per unit, seen from the front or the rear. Entries are dragged to a free place (a place
  * that does not fit shows why before the mouse is released) or moved one unit at a time with the arrow keys.
- * Ports sit on the faceplate as jacks; cables run as lines down the right-hand side of the rack. A cable whose
- * other end is on the other side of the rack leaves as a dashed stub. The parent decides what a move means.
+ *
+ * Cables run in a channel on the right of the rail: a thick line with a dark edge from each jack to its lane,
+ * so each cable is visible on its own. A cable whose other end is not on this side (or not in this rack) leaves
+ * as a dashed line to the edge with a label. Selecting an entry highlights its cables and dims the others.
  */
 const props = defineProps<{
   name: string;
@@ -39,49 +41,75 @@ const emit = defineEmits<{
 }>();
 
 const UNIT_REM = 1.75;
+/** Width of the cable channel right of the rail, in px */
+const CHANNEL_PX = 72;
+/** Distance between two cable lanes in the channel, in px; a lane is the vertical run of one cable */
+const LANE_PX = 7;
+const LANES = 8;
+
 const slots = computed(() => rackSlots(props.units, props.entries));
 const dragCandidates = computed(() => [...props.entries, ...props.candidates]);
 const hover = ref<{ unit: number; valid: boolean } | null>(null);
 const portById = computed(() => new Map(props.ports.map((p) => [p.id, p])));
+const keysHere = computed(() => new Set(dragCandidates.value.map((e) => e.key)));
 
 const railRef = ref<HTMLElement | null>(null);
-const railWidth = ref(0);
-type CablePath = { id: number; d: string; colour: string; partial: boolean };
-const cablePaths = ref<CablePath[]>([]);
+type CableDraw = {
+  id: number;
+  d: string;
+  colour: string;
+  active: boolean;
+  stub: boolean;
+  label: { x: number; y: number; text: string } | null;
+};
+const cableDraws = ref<CableDraw[]>([]);
 
-/** Where each cable is drawn: between its two jacks when both are on this side, else a dashed stub to the lane. */
+/** Where each cable is drawn, measured from the jacks as they are on screen. */
 function measure() {
   const rail = railRef.value;
   if (!rail) return;
   const origin = rail.getBoundingClientRect();
-  railWidth.value = rail.clientWidth;
+  const width = rail.clientWidth;
+  const channel = rail.querySelector<HTMLElement>('[data-channel]');
+  const channelLeft = channel ? channel.getBoundingClientRect().left - origin.left : width - CHANNEL_PX;
   const centre = (portId: number) => {
     const el = rail.querySelector<HTMLElement>('[data-port="' + portId + '"]');
     if (!el) return null;
     const r = el.getBoundingClientRect();
     return { x: r.left + r.width / 2 - origin.left, y: r.top + r.height / 2 - origin.top };
   };
-  const paths: CablePath[] = [];
+  const draws: CableDraw[] = [];
   let lane = 0;
   for (const cable of props.cables) {
-    if (!portById.value.has(cable.a_port_id) || !portById.value.has(cable.b_port_id)) continue;
-    const a = centre(cable.a_port_id);
-    const b = centre(cable.b_port_id);
+    const pa = portById.value.get(cable.a_port_id);
+    const pb = portById.value.get(cable.b_port_id);
+    if (!pa || !pb) continue;
     const colour = cable.color ?? '#c3cad4';
+    const active = props.selectedKey !== null && (ownerKeyOf(pa) === props.selectedKey || ownerKeyOf(pb) === props.selectedKey);
+    const a = centre(pa.id);
+    const b = centre(pb.id);
     if (a && b) {
-      const laneX = railWidth.value - 8 - (lane % 8) * 4;
-      paths.push({ id: cable.id, d: cableCurve(a, b, laneX), colour, partial: false });
+      const laneX = channelLeft + LANE_PX + (lane % LANES) * LANE_PX;
       lane += 1;
+      draws.push({ id: cable.id, d: cableRoute(a, b, laneX), colour, active, stub: false, label: null });
     } else if (a || b) {
+      // The other end is not drawn here: on the other side of the rack, or in another rack
       const end = (a ?? b)!;
-      paths.push({ id: cable.id, d: 'M ' + end.x + ' ' + end.y + ' H ' + (railWidth.value - 4), colour, partial: true });
+      const other = a ? pb : pa;
+      const text = !keysHere.value.has(ownerKeyOf(other))
+        ? t('gv.rack.stub_elsewhere')
+        : sideOf(other) === 'rear'
+          ? t('gv.rack.stub_rear')
+          : t('gv.rack.stub_front');
+      const endX = width - 4;
+      draws.push({ id: cable.id, d: 'M ' + end.x + ' ' + end.y + ' H ' + endX, colour, active, stub: true, label: { x: endX - 2, y: end.y - 4, text } });
     }
   }
-  cablePaths.value = paths;
+  cableDraws.value = draws;
 }
 
 watch(
-  () => [props.entries, props.ports, props.cables, props.side, props.units],
+  () => [props.entries, props.ports, props.cables, props.side, props.units, props.selectedKey],
   () => nextTick(measure),
 );
 onMounted(() => nextTick(measure));
@@ -91,6 +119,13 @@ const dragged = (): RackEntry | null => dragCandidates.value.find((e) => e.key =
 
 function jacksOf(entry: RackEntry): RackPort[] {
   return portsOnSide(entry, props.ports, props.side);
+}
+
+/** Jacks shrink with the number of ports, so a 48-port panel still fits on one unit */
+function jackClass(count: number): string {
+  if (count <= 12) return 'size-2';
+  if (count <= 24) return 'size-[6px]';
+  return 'size-1';
 }
 
 function startDrag(event: DragEvent, entry: RackEntry) {
@@ -146,29 +181,41 @@ function portSummary(entry: RackEntry): string | null {
 <template>
   <div
     ref="railRef"
-    class="rack-rail relative rounded-lg border-[6px] border-[color-mix(in_oklab,var(--gl-line-strong)_70%,transparent)] bg-sunken p-1.5 pr-8 shadow-inner"
-    :style="{ maxWidth: width === 10 ? '17rem' : undefined }"
+    class="rack-rail relative rounded-lg border-[6px] border-[color-mix(in_oklab,var(--gl-line-strong)_70%,transparent)] bg-sunken p-1.5 shadow-inner"
+    :style="{ maxWidth: width === 10 ? '24rem' : undefined }"
     role="list"
     :aria-label="name + ', ' + (side === 'front' ? t('gv.rack.side_front') : t('gv.rack.side_rear'))"
   >
     <svg class="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
-      <path
-        v-for="c in cablePaths"
-        :key="c.id"
-        :d="c.d"
-        fill="none"
-        :stroke="c.colour"
-        :stroke-width="c.partial ? 1.25 : 1.6"
-        :stroke-dasharray="c.partial ? '3 3' : undefined"
-        stroke-linecap="round"
-        opacity="0.85"
-      />
+      <g v-for="c in cableDraws" :key="c.id" :opacity="selectedKey && !c.active ? 0.3 : 1">
+        <path :d="c.d" fill="none" stroke="var(--gl-sunken)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+        <path
+          :d="c.d"
+          fill="none"
+          :stroke="c.colour"
+          :stroke-width="c.active ? 4.5 : 3"
+          :stroke-dasharray="c.stub ? '5 4' : undefined"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <text
+          v-if="c.label"
+          :x="c.label.x"
+          :y="c.label.y"
+          text-anchor="end"
+          fill="var(--gl-fg-muted)"
+          font-size="9"
+          class="font-mono"
+        >
+          {{ c.label.text }}
+        </text>
+      </g>
     </svg>
 
     <div
       v-for="slot in slots"
       :key="slot.unit"
-      class="flex gap-1.5"
+      class="flex items-stretch gap-1.5"
       @dragover="over($event, slot.unit)"
       @dragleave="leave(slot.unit)"
       @drop="drop($event, slot.unit)"
@@ -180,7 +227,7 @@ function portSummary(entry: RackEntry): string | null {
         type="button"
         role="listitem"
         draggable="true"
-        class="rack-entry group relative my-px flex min-w-0 flex-1 cursor-grab items-center gap-2 overflow-hidden rounded-[5px] border bg-raised pr-2.5 pl-1 text-left transition-[opacity,background-color,border-color] duration-150 hover:bg-control-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing"
+        class="rack-entry group relative my-px flex min-w-0 flex-1 cursor-grab items-center gap-2 overflow-hidden rounded-[5px] border bg-raised pr-2 pl-1 text-left transition-[opacity,background-color,border-color] duration-150 hover:bg-control-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing"
         :class="[
           selectedKey === slot.entry.key ? 'border-accent ring-1 ring-accent' : 'border-line',
           slot.entry.itemKind === 'blank' && 'rack-blank',
@@ -212,13 +259,14 @@ function portSummary(entry: RackEntry): string | null {
             {{ slot.entry.detail }}<template v-if="slot.entry.height > 1"> · {{ t('rack.units', { count: slot.entry.height }) }}</template>
           </span>
         </span>
-        <span v-if="jacksOf(slot.entry).length" class="flex shrink-0 items-center gap-px" aria-hidden="true">
+        <span v-if="jacksOf(slot.entry).length" class="flex max-w-[11rem] shrink-0 flex-wrap justify-end gap-[2px]">
           <span
             v-for="p in jacksOf(slot.entry)"
             :key="p.id"
             :data-port="p.id"
+            :title="t('gv.rack.port') + ' ' + p.number + ' · ' + p.kind"
             class="rounded-[1px] border"
-            :class="[jacksOf(slot.entry).length > 24 ? 'size-[3px]' : 'size-[5px]', colourOfPort[p.id] ? '' : 'border-fg-subtle/60']"
+            :class="[jackClass(jacksOf(slot.entry).length), colourOfPort[p.id] ? '' : 'border-fg-subtle/60']"
             :style="colourOfPort[p.id] ? { backgroundColor: colourOfPort[p.id], borderColor: colourOfPort[p.id] } : undefined"
           />
         </span>
@@ -234,6 +282,8 @@ function portSummary(entry: RackEntry): string | null {
       >
         <template v-if="hover?.unit === slot.unit">{{ hover.valid ? t('gv.rack.drop_here') : t('gv.rack.drop_blocked') }}</template>
       </span>
+
+      <span data-channel class="shrink-0" :style="{ width: CHANNEL_PX + 'px' }" aria-hidden="true" />
 
       <span class="w-6 shrink-0 font-mono text-[10px] leading-7 text-fg-subtle tabular" aria-hidden="true">{{ slot.unit }}</span>
     </div>

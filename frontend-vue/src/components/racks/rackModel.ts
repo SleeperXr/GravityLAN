@@ -150,9 +150,12 @@ export function portsOnSide(entry: RackEntry, ports: RackPort[], side: PortSide)
 }
 
 /**
- * A cable as a curve: it leaves its port to the right, runs down the cable lane at laneX and comes back to the
- * other port, so cables do not cross the faceplates they are plugged into.
+ * A cable as a route: it leaves its jack to the right, runs up or down the lane at laneX with rounded corners,
+ * and comes back to the other jack. Cables in one lane do not cross the faceplates they are plugged into.
  */
-export function cableCurve(a: { x: number; y: number }, b: { x: number; y: number }, laneX: number): string {
-  return 'M ' + a.x + ' ' + a.y + ' C ' + laneX + ' ' + a.y + ', ' + laneX + ' ' + b.y + ', ' + b.x + ' ' + b.y;
+export function cableRoute(a: { x: number; y: number }, b: { x: number; y: number }, laneX: number, radius = 6): string {
+  if (a.y === b.y) return `M ${a.x} ${a.y} H ${b.x}`;
+  const dir = b.y > a.y ? 1 : -1;
+  const r = Math.min(radius, Math.abs(b.y - a.y) / 2);
+  return `M ${a.x} ${a.y} H ${laneX - r} Q ${laneX} ${a.y} ${laneX} ${a.y + dir * r} V ${b.y - dir * r} Q ${laneX} ${b.y} ${laneX - r} ${b.y} H ${b.x}`;
 }

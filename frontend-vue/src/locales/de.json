@@ -455,7 +455,11 @@
       "side_title": "Ansicht",
       "side_front": "Vorderseite",
       "side_rear": "Rückseite",
-      "side_label": "Seite der Ports"
+      "side_label": "Seite der Ports",
+      "legend": "Die Linien rechts sind die Kabel zwischen den Anschlüssen. Gestrichelt: das andere Ende liegt auf der anderen Seite oder in einem anderen Rack. Die Farbe zeigt den Kabeltyp. Ein ausgewähltes Gerät hebt seine Kabel hervor.",
+      "stub_rear": "→ hinten",
+      "stub_front": "→ vorn",
+      "stub_elsewhere": "→ anderes Rack"
     },
     "editor": {
       "tile_size": "Kachelgröße auf der Übersicht (Breite × Höhe)",

@@ -455,7 +455,11 @@
       "side_title": "View",
       "side_front": "Front",
       "side_rear": "Rear",
-      "side_label": "Port side"
+      "side_label": "Port side",
+      "legend": "The lines on the right are the cables between ports. Dashed: the other end is on the other side or in another rack. The colour shows the cable type. A selected device highlights its cables.",
+      "stub_rear": "→ rear",
+      "stub_front": "→ front",
+      "stub_elsewhere": "→ other rack"
     },
     "editor": {
       "tile_size": "Tile size on the overview (width × height)",
