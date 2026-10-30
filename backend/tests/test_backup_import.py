@@ -201,3 +201,88 @@ async def test_export_and_import_preserves_device_interfaces_and_clears_stale_on
     # Importing the exported backup restores the device and its interface
     backup._write_db(import_endpoint_db, body)
     assert _query(import_endpoint_db, "SELECT device_id, ip, label FROM device_interfaces") == [(1, "192.168.110.1", "VLAN 110")]
+
+
+# --- rack cabling ---------------------------------------------------------------
+
+def _seed_rack_cabling(db_path):
+    """Rack 1 with a patch panel; the panel's port 1 is cabled to port 1 of device 1."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript("""
+            INSERT INTO racks (id, name, units, width) VALUES (1, 'A', 12, 19);
+            INSERT INTO rack_items (id, rack_id, name, kind, rack_unit, rack_height) VALUES (1, 1, 'Panel', 'patch_panel', 11, 1);
+            INSERT INTO rack_ports (id, rack_item_id, number, kind, side) VALUES (1, 1, 1, 'RJ45', 'front');
+            INSERT INTO rack_ports (id, device_id, number, kind, side) VALUES (2, 1, 1, 'RJ45', 'rear');
+            INSERT INTO rack_cables (id, a_port_id, b_port_id, cable, color) VALUES (1, 1, 2, 'Cat6', '#3b82f6');
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _rack_rows(db_path):
+    return {
+        "items": _query(db_path, "SELECT id, rack_id, name FROM rack_items"),
+        "ports": _query(db_path, "SELECT id, device_id, rack_item_id FROM rack_ports ORDER BY id"),
+        "cables": _query(db_path, "SELECT id, a_port_id, b_port_id, color FROM rack_cables"),
+    }
+
+
+@pytest.mark.asyncio
+async def test_rack_cabling_survives_export_and_import(client, admin_token, import_endpoint_db):
+    _seed_rack_cabling(import_endpoint_db)
+    before = _rack_rows(import_endpoint_db)
+
+    exported = await client.get("/api/backup/export", headers={"Authorization": f"Bearer {admin_token}"})
+    body = exported.json()
+    assert len(body["rack_items"]) == 1 and len(body["rack_ports"]) == 2 and len(body["rack_cables"]) == 1
+
+    conn = sqlite3.connect(import_endpoint_db)
+    conn.executescript("DELETE FROM rack_cables; DELETE FROM rack_ports; DELETE FROM rack_items;")
+    conn.close()
+    backup._write_db(import_endpoint_db, body)
+
+    assert _rack_rows(import_endpoint_db) == before
+
+
+def test_backup_with_empty_rack_lists_empties_them(backup_db):
+    _seed_rack_cabling(backup_db)
+
+    imported = backup._write_db(backup_db, {"rack_items": [], "rack_ports": [], "rack_cables": []})
+
+    assert imported == {"rack_items": 0, "rack_ports": 0, "rack_cables": 0}
+    assert _rack_rows(backup_db) == {"items": [], "ports": [], "cables": []}
+    assert _query(backup_db, "SELECT name FROM racks") == [("A",)]
+
+
+def test_older_backup_keeps_cabling_of_the_same_device(backup_db):
+    _seed_rack_cabling(backup_db)
+    before = _rack_rows(backup_db)
+
+    backup._write_db(backup_db, {"devices": [{"id": 1, "ip": "10.0.0.1", "display_name": "nas"}]})
+
+    assert _rack_rows(backup_db) == before
+
+
+def test_older_backup_drops_cabling_of_a_reassigned_device(backup_db):
+    _seed_rack_cabling(backup_db)
+
+    # Id 1 now names another device (#47): its port and the cable on it belonged to the old one
+    backup._write_db(backup_db, {"devices": [{"id": 1, "ip": "10.0.0.50", "display_name": "printer"}]})
+
+    rows = _rack_rows(backup_db)
+    assert rows["ports"] == [(1, None, 1)]
+    assert rows["cables"] == []
+    assert rows["items"] == [(1, 1, "Panel")]
+
+
+def test_replaced_racks_drop_items_on_racks_that_are_gone(backup_db):
+    _seed_rack_cabling(backup_db)
+
+    backup._write_db(backup_db, {"racks": [{"id": 2, "name": "B", "units": 42, "width": 19}]})
+
+    rows = _rack_rows(backup_db)
+    assert rows["items"] == []
+    assert rows["ports"] == [(2, 1, None)]
+    assert rows["cables"] == []

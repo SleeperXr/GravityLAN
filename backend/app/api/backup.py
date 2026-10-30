@@ -31,7 +31,14 @@ ALLOWED_TABLE_MAP = {
     "subnets": "subnets",
     "topology_links": "topology_links",
     "racks": "racks",
+    "rack_items": "rack_items",
+    "rack_ports": "rack_ports",
+    "rack_cables": "rack_cables",
 }
+
+# Rack cabling came into backups after 0.6.0: a backup that has these keys is complete for them, so an
+# empty list empties the table. Older backups leave them out and keep what the instance has.
+REPLACE_WHEN_EMPTY = frozenset({"rack_items", "rack_ports", "rack_cables"})
 
 # Credentials and setup state of the running instance. An import never deletes or
 # replaces them: a backup from another instance (or a tampered one) would otherwise
@@ -102,20 +109,8 @@ async def export_backup():
             "discovered_hosts": [],
             "settings": [],
         }
-        tables = {
-            "device_groups": "device_groups",
-            "devices": "devices",
-            "device_interfaces": "device_interfaces",
-            "services": "services",
-            "discovered_hosts": "discovered_hosts",
-            "settings": "app_settings",
-            # "agent_tokens": "agent_tokens", # EXCLUDED for security (Issue 13)
-            "agent_configs": "agent_configs",
-            "subnets": "subnets",
-            "topology_links": "topology_links",
-            "racks": "racks",
-        }
-        for key, table in tables.items():
+        # The tables an import may restore; agent_tokens is excluded for security (Issue 13)
+        for key, table in ALLOWED_TABLE_MAP.items():
             try:
                 cursor.execute(f"SELECT * FROM {table}")
                 data[key] = [dict(row) for row in cursor.fetchall()]
@@ -186,7 +181,7 @@ def _clean_rows(cursor, table: str, rows: list[dict]) -> list[dict]:
 
 # Rows outside the backup that belong to one device (#47): when a device id names another
 # device after the import, these are deleted, the saved SSH connections are only unbound.
-DEVICE_BOUND_DELETE = ("agent_tokens", "device_interfaces", "device_history")
+DEVICE_BOUND_DELETE = ("agent_tokens", "device_interfaces", "device_history", "rack_ports")
 DEVICE_BOUND_UNLINK = ("ssh_profiles", "ssh_history")
 
 
@@ -238,6 +233,26 @@ def _detach_reassigned_devices(
     return reassigned
 
 
+def _drop_orphaned_rack_rows(cursor) -> None:
+    """Do what ON DELETE CASCADE would have done: the import runs with foreign keys off.
+
+    Rack items on a rack the backup no longer has, ports of a device or item that is gone, and
+    cables on a port that is gone are deleted, so no cable ends up in another rack.
+    """
+    cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    if not {"racks", "rack_items", "rack_ports", "rack_cables"} <= {row[0] for row in cursor.fetchall()}:
+        return
+    cursor.execute("DELETE FROM rack_items WHERE rack_id NOT IN (SELECT id FROM racks)")
+    cursor.execute(
+        "DELETE FROM rack_ports WHERE (device_id IS NOT NULL AND device_id NOT IN (SELECT id FROM devices))"
+        " OR (rack_item_id IS NOT NULL AND rack_item_id NOT IN (SELECT id FROM rack_items))"
+    )
+    cursor.execute(
+        "DELETE FROM rack_cables WHERE a_port_id NOT IN (SELECT id FROM rack_ports)"
+        " OR b_port_id NOT IN (SELECT id FROM rack_ports)"
+    )
+
+
 def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str, int]:
     """Replace the allowed tables with the backup rows in a single transaction.
 
@@ -259,15 +274,15 @@ def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str,
         imported: dict[str, int] = {}
 
         for key, rows in data.items():
-            if key == "metadata" or not rows:
+            if key == "metadata" or (not rows and key not in REPLACE_WHEN_EMPTY):
                 continue
             if key not in ALLOWED_TABLE_MAP:
                 logger.warning(f"Backup: Skipping unauthorized table key '{key}'")
                 continue
 
             table = ALLOWED_TABLE_MAP[key]
-            valid_rows = _clean_rows(cursor, table, rows)
-            if not valid_rows:
+            valid_rows = _clean_rows(cursor, table, rows) if rows else []
+            if not valid_rows and key not in REPLACE_WHEN_EMPTY:
                 continue
 
             if table == "app_settings":
@@ -275,19 +290,21 @@ def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str,
                 cursor.execute(f"DELETE FROM app_settings WHERE key NOT IN ({placeholders})", PROTECTED_SETTING_KEYS)
             else:
                 cursor.execute(f"DELETE FROM {table}")
-            columns = list(valid_rows[0].keys())
-            placeholders = ", ".join(["?"] * len(columns))
-            col_names = ", ".join(columns)
-            cursor.executemany(
-                f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})",
-                [tuple(r.get(c) for c in columns) for r in valid_rows],
-            )
+            if valid_rows:
+                columns = list(valid_rows[0].keys())
+                placeholders = ", ".join(["?"] * len(columns))
+                col_names = ", ".join(columns)
+                cursor.executemany(
+                    f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})",
+                    [tuple(r.get(c) for c in columns) for r in valid_rows],
+                )
             imported[table] = len(valid_rows)
 
         if _read_protected_settings(cursor) != protected_before:
             raise RuntimeError("Backup import would change protected settings")
 
         reassigned = _detach_reassigned_devices(cursor, devices_before, frozenset(imported))
+        _drop_orphaned_rack_rows(cursor)
         if report is not None:
             cursor.execute("SELECT COUNT(*) FROM agent_tokens")
             report["agent_tokens_revoked"] = tokens_before - cursor.fetchone()[0]

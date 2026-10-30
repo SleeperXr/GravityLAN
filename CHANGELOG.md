@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Backups contain the rack equipment, ports and cables (`rack_items`, `rack_ports`, `rack_cables`). Since 0.6.0 a backup kept the racks and the devices in them, but importing it lost every patch panel, UPS, power strip, port and cable. A backup that has these lists replaces them, even when they are empty; an older backup without them keeps what the instance has, except equipment on a rack the backup no longer has, ports of a device that is gone or whose id now names another device, and the cables on those ports.
+
 ### Changed
 - Releases: CI publishes the Docker images from tags. `vX.Y.Z` gives `:X.Y.Z` and `:latest`; a release candidate `vX.Y.Z-rc.N` gives `:X.Y.Z-rc.N` and `:next`, never `:latest`, and the final release re-tags the tested RC image instead of rebuilding it. `:dev` is built from `main` on request. [docs/RELEASING.md](docs/RELEASING.md) describes branches, how long each kind of release is tested, and the checklist (fresh install, upgrade with real data, backup and restore on a fresh host, agents).
 - CI starts the database of the previous release (`backend/tests/fixtures/db/`, frozen by `scripts/freeze_release_db.py`) and fails on a model column without a migration or a lost row; a backup exported from it and imported on a fresh instance has to export the same again. A pull request that changes `agent/` without raising the agent version fails too.
