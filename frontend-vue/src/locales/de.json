@@ -219,6 +219,10 @@
       "service_up": "Dienst wieder da",
       "service_down": "Dienst ausgefallen"
     },
+    "build": {
+      "label": "Testbuild {{build}}",
+      "title": "Ein Testbuild aus main (Image :dev), kein Release"
+    },
     "orbit": {
       "search": "Gerät suchen …",
       "search_label": "Gerät in der Karte suchen",

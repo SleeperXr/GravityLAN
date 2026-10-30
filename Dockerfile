@@ -80,6 +80,10 @@ VOLUME ["/app/data"]
 # Environment
 ENV GRAVITYLAN_DATA_DIR=/app/data
 ENV GRAVITYLAN_DEBUG=false
+# Which build this is, shown next to the version: "dev+<commit>" for the :dev image, empty for releases
+# (a release is the tested release candidate image, re-tagged, so its version says it all)
+ARG GRAVITYLAN_BUILD=""
+ENV GRAVITYLAN_BUILD=${GRAVITYLAN_BUILD}
 
 # Expose port
 EXPOSE 8000
