@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Backups contain the rack equipment, ports and cables (`rack_items`, `rack_ports`, `rack_cables`). Since 0.6.0 a backup kept the racks and the devices in them, but importing it lost every patch panel, UPS, power strip, port and cable. A backup that has these lists replaces them, even when they are empty; an older backup without them keeps what the instance has, except equipment on a rack the backup no longer has, ports of a device that is gone or whose id now names another device, and the cables on those ports.
+
 ### Changed
 - GravityUI is the default interface: the start address `/` opens it unless Settings → System → Default interface says "Classic view" or this browser chose the classic view with the sidebar switch (`/?ui=react`). Both choices are kept. The "in development" strip is gone. Saving the settings no longer pins the classic view on an installation that never chose one: both settings forms used to send `react` as the default value.
 - **The classic React interface stays for this release only and is removed with the next one** ([ADR-003](docs/adr/003-react-retirement.md)). It gets bug fixes until then.
