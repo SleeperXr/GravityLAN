@@ -5,9 +5,9 @@
 # GravityLAN
 
 **Your homelab, mapped and maintained.**<br>
-Scan the network, keep an inventory of every device, draw the topology, watch and update your Linux hosts, and open a shell on any of them from the browser.
+Scan the network, keep an inventory of every device, see it as a living orbit map and as racks you can cable, watch and update your Linux hosts, and open a shell on any of them from the browser.
 
-<sub>DE: Dein Homelab im Blick. Netz scannen, Geräte inventarisieren, Topologie zeichnen, Linux-Hosts überwachen und aktualisieren, Shell im Browser.</sub>
+<sub>DE: Dein Homelab im Blick. Netz scannen, Geräte inventarisieren, als lebendigen Orbit-Netzplan und verkabelbare Racks sehen, Linux-Hosts überwachen und aktualisieren, Shell im Browser.</sub>
 
 [![Release](https://img.shields.io/badge/release-v0.6.0-3DB8F5?style=flat-square&labelColor=151A21)](https://github.com/SleeperXr/GravityLAN/releases)
 [![Agent](https://img.shields.io/badge/agent-v0.3.10-3DB8F5?style=flat-square&labelColor=151A21)](AGENT.md)
@@ -15,12 +15,12 @@ Scan the network, keep an inventory of every device, draw the topology, watch an
 [![Docker Pulls](https://img.shields.io/docker/pulls/sleeperxr/gravitylan?style=flat-square&labelColor=151A21&color=3DB8F5&logo=docker&logoColor=white)](https://hub.docker.com/r/sleeperxr/gravitylan)
 [![License: MIT](https://img.shields.io/badge/license-MIT-5B6674?style=flat-square&labelColor=151A21)](LICENSE)
 
-[Quick start](#quick-start) · [Features](#features) · [Screenshots](#screenshots) · [Agent](#the-agent) · [API for AI assistants](#ai-assistants-and-agents) · [Security](#security-and-operation) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/SleeperXr/GravityLAN/releases) · [Docker Hub](https://hub.docker.com/r/sleeperxr/gravitylan) · [Deutsch](#deutsch)
+[Quick start](#quick-start) · [GravityUI](#gravityui-at-a-glance) · [Features](#features) · [Agent](#the-agent) · [API for AI assistants](#ai-assistants-and-agents) · [Security](#security-and-operation) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/SleeperXr/GravityLAN/releases) · [Docker Hub](https://hub.docker.com/r/sleeperxr/gravitylan) · [Deutsch](#deutsch)
 
 </div>
 
 <p align="center">
-  <img src="./docs/screenshots/react/dashboard.png" alt="GravityLAN overview: devices grouped into sections, with live CPU, RAM, disk and temperature from the agent and one-click service links" width="100%">
+  <img src="./docs/screenshots/vue/overview.png" alt="GravityUI overview: a status line naming the offline devices, one line per network, system notices, the live orbit map and the device groups" width="100%">
 </p>
 
 > [!NOTE]
@@ -30,84 +30,77 @@ Scan the network, keep an inventory of every device, draw the topology, watch an
 
 ## What it is
 
-GravityLAN is a self-hosted dashboard for the network at home or in the lab. It sweeps your subnets, keeps every device it finds in one inventory, and lets you add what a scanner can't know: groups, racks, cabling, which VM runs on which host. Install the optional agent on your Linux machines and the same inventory shows their load, disks and temperatures, counts pending package updates and installs them on request.
+GravityLAN is a self-hosted dashboard for the network at home or in the lab. It sweeps your subnets, keeps every device it finds in one inventory, and lets you add what a scanner can't know: groups, racks and cabling, which VM runs on which host. Install the optional agent on your Linux machines and the same inventory shows their load, disks and temperatures, counts pending package updates and installs them on request.
 
-Everything runs in **one container** on **SQLite**: a FastAPI backend, the inventory in `gravitylan.db`, measurement data in a separate `telemetry.db`, and a React interface in English and German that also works on a phone. A second interface, **GravityUI**, ships alongside as a preview (see [New interface](#new-interface-preview-in-development)). It is built for a **trusted home network**, not for direct exposure to the internet.
+You work with it in **GravityUI**, a web interface built on Vue 3 that shows the state of the network first: which device is down, which service fails, which switch would take others with it. It draws the network as an orbit map and your racks as hardware you mount and cable, and it works on a phone as well as on a wall monitor, in English and German, dark or light.
+
+Everything runs in **one container** on **SQLite**: a FastAPI backend, the inventory in `gravitylan.db` and measurement data in a separate `telemetry.db`. It is built for a **trusted home network**, not for direct exposure to the internet. The original React interface still ships alongside as a fallback (see [Classic interface](#classic-interface-react)).
+
+## GravityUI at a glance
+
+All screenshots use the [demo data](#development): the homelab, and the small company network for the racks and the resilience view.
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/orbit.png" alt="Orbit map with the gateway as the star, switches and hosts on orbits around it and their devices as moons, offline devices marked red"><br><sub><b>Orbit map</b>: the topology as a solar system</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/racks.png" alt="Rack view with switches, a copper patch panel, a UPS and a power strip, cables hanging between their jacks, and the equipment list on the left"><br><sub><b>Racks</b>: faceplates, ports and cables</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/health.png" alt="Health Radar with network score, single points of failure and an SLA table with uptime bars and latency"><br><sub><b>Health Radar</b>: score, SLA, single points of failure</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/resilience.png" alt="Resilience view of the orbit map listing the single points of failure of a company network and how many devices each would cut off"><br><sub><b>Resilience</b>: what each device would cut off</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/ip-addresses.png" alt="IP address map of a /24 subnet with subnet tabs, VLAN and L2 or L3 badges, used and free addresses"><br><sub><b>IP addresses</b>: every address of a subnet</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/agents.png" alt="Agents page with OS, pending updates, live CPU and RAM and 24-hour uptime per agent"><br><sub><b>Agents</b>: load, updates, uptime</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/ssh.png" alt="SSH terminal with a saved connection, devices with SSH and an open shell"><br><sub><b>SSH terminal</b>: tabs, saved connections, agent update</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/device-editor.png" alt="Device editor with group, physical host, rack and units, tile size and 24/7 monitoring"><br><sub><b>Device editor</b>: group, host, rack position</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/settings.png" alt="Settings with a section index, network scan options and the list of scan subnets"><br><sub><b>Settings</b>: scan, subnets, appearance, access</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/tutorials.png" alt="Tutorials page with a guide, its steps and a diagram"><br><sub><b>Tutorials</b>: guides with steps and diagrams</sub></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="./docs/screenshots/vue/mobile-overview.png" alt="GravityUI overview on a phone with the status line, the networks and the bottom tab bar" width="260">
+  &nbsp;&nbsp;
+  <img src="./docs/screenshots/vue/mobile-orbit.png" alt="Orbit map on a phone with the map controls along the bottom" width="260">
+</p>
 
 ## Features
 
+### In GravityUI
+
+| Page | What you get |
+|---|---|
+| **Overview** | A status line first: "All good · 29 of 31 devices online", or which devices are offline or have a service down, how fresh that is, and **Go to problem**. Then one line per network with its devices online, system notices (devices and services down, security updates, new agent keys, IP changes, agent updates), the live orbit map, and your devices in your own groups, as tiles or a list, with live agent metrics and service links that open the web UI, copy the SMB path or download an RDP file. Search name, IP, MAC or service with `Ctrl+K`; gateways, notifications, scan, the Agent Update Center and layout editing sit in the toolbar. |
+| **Orbit map** | The topology as a solar system: the router is the star, switches, access points and hosts are planets on its orbits, and endpoints, VMs and Wi-Fi clients circle their planet as moons. Links are light beams in the colour of their type (100 Mb to 10 GbE, Wi-Fi, fibre). Click to focus a device, trace the path between two devices hop by hop, search, zoom and pinch; a button jumps from one problem to the next. A link marked **Backup** stays thin and dashed until a device fails and it carries the traffic, then it lights up amber. The **Resilience** view lists the single points of failure and how many devices each one would cut off. In edit mode you draw links, move devices, choose each one's role and set a port limit. |
+| **Racks** | Topology → Rack view. Faceplates that look like the hardware (switches with link LEDs, servers with drive bays, a UPS with its display, patch panels), each in its network's colour. Drag a faceplate onto free units, on a phone after a short hold, and pull in equipment that has no IP from **Install**: unmanaged switches, UPS units, copper and fibre patch panels, power strips, blanking panels, cable management. Give devices and equipment ports (RJ45, SFP, SFP+, LC, power, console) on the front or rear, and pull a cable from one free jack to another. Turn the rack around, change its height (1 to 60 U) and width (19 or 10 inch); every change can be undone from its toast. |
+| **Health Radar** | A network score from availability, latency and jitter, flapping, SSL certificate expiry and pending security patches, over 24 hours, 7 or 30 days. An SLA table with uptime per time slice, latency and services, the network's single points of failure, incidents on a timeline, and per device a latency chart, SSL and agent health. Devices that aren't on 24/7 (laptops, TVs, phones) count as clients: asleep, they don't pull the score down. |
+| **IP addresses** | A map of each subnet's address space: used, free, online, offline. A badge on every subnet shows how GravityLAN reaches it: **L2 Direct** on one of its own interfaces, **L3 Routed** through a router, or **L2 Probe** through an agent inside it. Every scan subnet has its own tab; a paused one stays there, greyed out. Each address opens a popover to reserve, monitor, rename, add, port-scan or refresh it; plus named areas, live discovery and recent findings. |
+| **Agents** | Every agent with OS, pending and security updates, reboot and release-upgrade tags, live CPU and RAM and 24-hour uptime. A row opens its telemetry (CPU, RAM, temperature, disks) and its package updates: log in over SSH by password, key or stored key, review the packages and install security updates only or all of them, with live output. Changed agent keys are adopted here. |
+| **SSH terminal** | Shells on your devices in the browser, also on phones: tabs that keep running while you use the rest of GravityLAN, saved and recent connections, host key check, copy, paste and "copy last command", fonts and colour schemes, and an **Agent update** button. Keys (OpenSSH, PEM, PuTTY `.ppk`) are stored encrypted on the server; known hosts are managed on the same page. |
+| **Device editor** | Five tabs: general (name, group, physical host, rack and units, tile size, 24/7 monitoring, notes), services and ports, interfaces with merge suggestions, history and status with an availability monitor and timeline, and the agent (install, update, uninstall, configuration, Layer-2 probe). |
+| **Logs** | The live backend log, split into time, level, logger and message, with a filter for warnings and errors, search, pause, copy and **Jump to newest**. It reconnects on its own after a backend restart. |
+| **Settings** | Scan schedule, offline threshold and DNS server; the scan subnets (add, pause, remove, take a network detected on the host, import from the router); system (retention, log level, start page, default interface, server URL); measurement data; groups; language and appearance (theme, language, a colour per network and per link type); password, API tokens, backup and restore, database reset. |
+| **Setup, Tutorials, About** | A setup wizard on first start. Thirteen tutorials with steps, examples and diagrams: setup and scan subnets, overview and groups, IP addresses and VLANs, router import, topology and racks, installing the agent, package updates, SSH, Health, measurement data, API tokens and webhooks, backup, Unraid. About shows the server and agent version, the MIT licence with third-party notices and the project links. |
+| **Everywhere** | Dark (the default), light or the system's theme; English and German; on phones a bottom tab bar, 44 px touch targets and pinch-to-zoom; keyboard access and screen reader labels on the orbit map; animations stop when the system asks for reduced motion. |
+
+### Underneath
+
 | Area | What you get |
 |---|---|
-| **Health & Availability** | Real-time SLA radar, latency & jitter telemetry, flapping detection, SSL certificate expiry checks, pending security patches, and 24/7 server vs client classification with dedicated interactive charts and mobile touch cards. |
-| **Discovery** | Scheduled Nmap and ARP scans of your scan subnets (one list, kept in Settings and on the IP addresses page), plus a lighter presence check in between: hosts, open ports, services, hostnames (DNS, mDNS) and vendors. Containers with their own LAN address are found too, also `ipvlan` setups where several of them share the host's MAC. A device only counts as offline after several failed checks in a row (ping, ARP and TCP; 3 by default), so busy hosts don't flap. |
-| **Overview** | Your devices in your own sections, as tiles or a list, with live agent metrics and service links that open the web UI (or copy the SMB path). IP changes, issues and a notification feed; tiles can be arranged freely. |
-| **IP addresses** | A map of each subnet's address space: used, free, online, offline. A badge on every subnet shows how GravityLAN reaches it: **L2 Direct** on one of its own interfaces, **L3 Routed** through a router, or **L2 Probe** through an agent inside it. Every scan subnet has its own tab; a paused one stays there, greyed out. Manage subnets, named areas and per-subnet scan settings. |
+| **Discovery** | Scheduled Nmap and ARP scans of your scan subnets, plus a lighter presence check in between: hosts, open ports, services, hostnames (DNS, mDNS, NetBIOS) and vendors. Containers with their own LAN address are found too, also `ipvlan` setups where several of them share the host's MAC. A device only counts as offline after several failed checks in a row (ping, ARP and TCP; 3 by default), so busy hosts don't flap. |
 | **Routed subnets & VLANs** | ARP stops at the router, so in a routed subnet a scan finds the hosts but not their MAC addresses, and GravityLAN won't hand the router's MAC (proxy ARP) to every host there. For the real MACs and vendors, let an agent in that subnet work as a [Layer-2 probe](#the-agent), or give the container an address in each VLAN with the [multi-VLAN compose variant](#quick-start). |
-| **One router, many VLANs** | A router that is the gateway of several subnets stays one device: its address in each VLAN is an interface with its own online state, shown in every IP tab and as one topology node, with a colour chip per network. Each subnet can store its gateway and VLAN tag; a "Gateways" list in the dashboard shows them all, and duplicates are offered for merging as interfaces. |
-| **Topology & racks** | Draw how devices are connected, with link speeds (1, 2.5, 10 GbE …) and an animated data flow, or switch to the rack view and place devices by height unit. |
+| **One router, many VLANs** | A router that is the gateway of several subnets stays one device: its address in each VLAN is an interface with its own online state, shown in every IP tab and as one body on the orbit map, with a colour chip per network. Each subnet can store its gateway and VLAN tag; the "Gateways" list on the overview shows them all, and duplicates are offered for merging as interfaces. |
 | **Router import** | Settings → Scan subnets → Import from router reads the networks your router routes, with gateway, name and VLAN, and adds only the ones you pick. Read-only SNMP (v1/v2c/v3; OPNsense, pfSense, OpenWrt, MikroTik and most business routers) or the UniFi Network API with an API key. Credentials are stored encrypted. |
-| **Linux agent** | One Python script per host, reporting CPU, RAM, disks, network and temperature (every 30 s by default). Detects the OS and knows LXC containers and ZFS pools. |
-| **Measurement data** | Health probes and agent metrics live in their own `telemetry.db`, so they don't bloat the inventory or backups. Raw values are kept 48 h, then folded into hourly (30 days) and daily values (365 days); charts pick the right tier for the time window. Settings → Measurement data shows the sizes and clears old data per device or in full. |
-| **Package updates** | The agent counts pending updates (apt, dnf, yum), and you install them over SSH from the Agents page with live output, also as a sudo user. |
-| **SSH terminal** | Shells on your devices in the browser, also on phones: tabs that stay open while you use the rest of GravityLAN, saved and recent connections, host key check, copy, paste and "copy last command", fonts and colour schemes. Keys (OpenSSH, PEM, PuTTY `.ppk`) are stored encrypted on the server. |
+| **Linux agent** | One Python script per host, reporting CPU, RAM, disks, network and temperature (every 30 s by default) and pending package updates (apt, dnf, yum), which you install over SSH from the Agents page, also as a sudo user. Detects the OS and knows LXC containers and ZFS pools. |
 | **Agent rollout** | Install or update agents over SSH (with a saved key connection or credentials you type in), with a one-line installer carrying a one-time code, for all outdated agents at once in the Agent Update Center, or straight from an open terminal. |
+| **Measurement data** | Health probes and agent metrics live in their own `telemetry.db`, so they don't bloat the inventory or backups. Raw values are kept 48 h, then folded into hourly (30 days) and daily values (365 days); charts pick the right tier for the time window. Settings → Measurement data shows the sizes and clears old data per device or in full. |
 | **API & integrations** | REST API with Swagger UI at `/docs`, a Python client ([`gravitylan_api`](gravitylan_api)), read-only API tokens (finer scopes through the API) and webhooks for `device.offline` and `scan.complete`. A read-only token is a good fit for [AI assistants and agents](#ai-assistants-and-agents). |
-| **Backup & restore** | Export and import devices, groups and settings as JSON. An import never touches the admin password, the master token or the setup state. |
-| **Setup & settings** | A setup wizard on first start; the list of scan subnets (add, pause, remove, or take a network detected on the host with one click), device groups (create, rename, sort), scan schedule, offline threshold, DNS server, history retention, log level, language, password, API tokens and a live log viewer. |
-| **Default interface** | Settings → Default interface picks what the start address `/` opens: the classic React view (default) or GravityUI. The switch in each sidebar remembers your choice in the browser, whatever the server default is. |
-| **About** | Server and agent version, the MIT licence with third-party notices, and links to the repository, issues, releases and Docker Hub, in both interfaces. |
-
-## Screenshots
-
-The classic React interface, which `/` opens by default. All screenshots use the [demo data](#development).
-
-<table>
-  <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/health.png" alt="Health page with network score, availability per device, latency and pending patches"><br><sub><b>Health &amp; availability</b>: score, SLA, latency, patches</sub></td>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/topology.png" alt="Topology map: gateway, core switch, floor switches and connected devices with link speeds"><br><sub><b>Topology</b>: devices, links and link speeds</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/agents.png" alt="Agents page with 24-hour availability and CPU, memory and temperature graphs"><br><sub><b>Agents</b>: live load, availability, history</sub></td>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/ip-addresses.png" alt="IP address map of a /24 subnet with used and free addresses"><br><sub><b>IP addresses</b>: every address of a subnet</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/ssh.png" alt="SSH terminal with saved connections, recent connections and an open shell"><br><sub><b>SSH terminal</b>: tabs, saved connections, agent update</sub></td>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/device-editor.png" alt="Device editor side panel with group, physical host and rack position"><br><sub><b>Device editor</b>: group, host, rack position</sub></td>
-  </tr>
-</table>
-
-<p align="center">
-  <img src="./docs/screenshots/react/mobile-overview.png" alt="Overview on a phone with the bottom tab bar" width="260">
-  &nbsp;&nbsp;
-  <img src="./docs/screenshots/react/mobile-ssh.png" alt="SSH terminal on a phone" width="260">
-</p>
-
-<details>
-<summary>Agent tab of the device editor</summary>
-<br>
-<img src="./docs/screenshots/react/device-editor-agent.png" alt="Agent tab of the device editor, updating the agent through a saved SSH key connection">
-</details>
-
-## New interface (preview, in development)
-
-**GravityUI** is a second interface built on Vue, shipped in the same image at `/frontend-vue/`. It covers every page of the classic view and adds an orbit map of your network, guided tutorials with diagrams, and a service status per network on the overview. It is still in development, so details change between versions; feedback is welcome in the [issues](https://github.com/SleeperXr/GravityLAN/issues).
-
-To try it, use the **GravityUI** switch at the bottom of the sidebar, or open `/?ui=vue`. To make it what `/` opens for everyone, choose it under **Settings → Default interface**. `/?ui=react` always leads back.
-
-<table>
-  <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/vue/overview.png" alt="GravityUI overview with service status per network, live network map and service notices"><br><sub><b>Overview</b>: status per network, live map, notices</sub></td>
-    <td width="50%" valign="top"><img src="./docs/screenshots/vue/orbit.png" alt="GravityUI orbit map with the gateway as the star and switches, hosts and access points on orbits around it"><br><sub><b>Orbit map</b>: the topology as a solar system</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/vue/health.png" alt="GravityUI health page with network score, availability bars and latency"><br><sub><b>Health radar</b>: availability, latency, incidents</sub></td>
-    <td width="50%" valign="top"><img src="./docs/screenshots/vue/tutorials.png" alt="GravityUI tutorials page with a guide, steps and a diagram"><br><sub><b>Tutorials</b>: guides with steps and diagrams</sub></td>
-  </tr>
-</table>
-
-<p align="center">
-  <img src="./docs/screenshots/vue/mobile-health.png" alt="GravityUI health page on a phone" width="260">
-</p>
+| **Backup & restore** | Export and import devices, groups, interfaces and settings as JSON. An import never touches the admin password, the master token or the setup state. |
 
 ## Quick start
 
@@ -121,7 +114,7 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-Open `http://<your-host>:8000` and go through the setup wizard: it detects your subnets and saves them as scan subnets, runs the first scan and sets the admin password. Subnets the container can't see directly, such as an IoT VLAN behind the router, can be added in the same step.
+Open `http://<your-host>:8000/frontend-vue/` and go through the setup wizard: it detects your subnets and saves them as scan subnets, runs the first scan and sets the admin password. Subnets the container can't see directly, such as an IoT VLAN behind the router, can be added in the same step. To make GravityUI what `http://<your-host>:8000` opens for everyone, choose it under **Settings → System → Default interface**.
 
 > [!IMPORTANT]
 > **Finish the setup wizard right after the first start.** Until then only the wizard's own routes answer, but whoever opens the page first chooses the admin password. The same applies after a factory reset.
@@ -138,7 +131,16 @@ Open `http://<your-host>:8000` and go through the setup wizard: it detects your 
 
 **Unraid.** The template in [`templates/gravitylan.xml`](templates/gravitylan.xml) sets `PUID=99` and `PGID=100` (Unraid's `nobody:users`), keeps appdata under `/mnt/user/appdata/gravitylan` and needs no privileged mode: `NET_RAW` and `NET_ADMIN` are enough for scanning. It explains which network type to pick (host, or a custom `br0` network with its own address). More: [docs/unraid-template.md](docs/unraid-template.md).
 
-The image is multi-stage (Vite build, then a slim Python runtime) and the server runs as a non-root user; Nmap gets only the capabilities it needs. To build it yourself: `docker build -t gravitylan:local .`
+The image is multi-stage (Vite builds of both interfaces, then a slim Python runtime) and the server runs as a non-root user; Nmap gets only the capabilities it needs. To build it yourself: `docker build -t gravitylan:local .`
+
+## Classic interface (React)
+
+GravityLAN started with a React interface, and the image still ships it. Until GravityUI takes over, the start address `/` opens the classic view unless you choose otherwise:
+
+- **for everyone**: Settings → System → Default interface → GravityUI;
+- **for this browser**: the switch at the bottom of the sidebar, or `/?ui=vue` and `/?ui=react`. The choice is kept in this browser, whatever the server default is.
+
+GravityUI itself lives at `/frontend-vue/`. The classic view gets bug fixes only; new features go into GravityUI. Once GravityUI covers everything the classic view does, it becomes the default, the React interface stays for one more version as a fallback and is removed after that ([ADR-003](docs/adr/003-react-retirement.md)).
 
 ## The agent
 
@@ -234,7 +236,7 @@ More: [SECURITY.md](SECURITY.md) · [Threat model](docs/threat-model.md) · [Con
 ```mermaid
 flowchart TB
   subgraph clients [Clients]
-    SPA[Web UI: React, or GravityUI on Vue]
+    SPA[GravityUI on Vue 3, classic React view as fallback]
     PY[gravitylan_api, scripts, AI agents]
   end
   subgraph server [GravityLAN container]
@@ -260,7 +262,7 @@ Architecture decisions are recorded in [docs/adr/](docs/adr).
 
 ## Development
 
-**Windows:** `.\start_gravitylan.ps1` installs the dependencies and starts Uvicorn on `:8000` and Vite on `:5173`.
+**Windows:** `.\start_gravitylan.ps1` installs the dependencies and starts Uvicorn on `:8000`, GravityUI on `:5174` and the classic view on `:5173`.
 
 **Linux and macOS:**
 
@@ -270,27 +272,28 @@ cd backend
 pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Frontend (Node 20+), in a second terminal; proxies /api to :8000
-cd frontend
+# GravityUI (Node 20+), in a second terminal: http://localhost:5174/frontend-vue/, proxies /api to :8000
+cd frontend-vue
 npm install
 npm run dev
 
-# GravityUI, optional, on :5174
-cd frontend-vue
+# Classic view, optional, on :5173
+cd frontend
 npm install
 npm run dev
 ```
 
-**Without touching your network:** `python scripts/dev_demo.py` (in the backend virtualenv) starts the API on `127.0.0.1:8000` with a throw-away demo database, simulated agents with 24 hours of history and a fake SSH shell, but no scans. Start a frontend as above and log in with `demo`. `--reset` seeds the demo data again, `--fresh` starts like a new install, `--company` loads a small company network instead (8 VLANs, a four-node Proxmox cluster, about 130 devices, own database). The screenshots in this README come from it.
+GravityUI takes its API client, types and texts from `frontend/src`, so `frontend/` has to stay next to it even when you only work on GravityUI.
+
+**Without touching your network:** `python scripts/dev_demo.py` (in the backend virtualenv) starts the API on `127.0.0.1:8000` with a throw-away demo database, simulated agents with 24 hours of history and a fake SSH shell, but no scans. Start GravityUI as above and log in with `demo`. `--reset` seeds the demo data again, `--fresh` starts like a new install, `--company` loads a small company network instead (8 VLANs, a four-node Proxmox cluster, about 130 devices, four racks with ports and cables, backup links, own database). The screenshots in this README come from it.
 
 **Tests and checks:**
 
 ```bash
-cd backend && python -m pytest          # backend
-python -m pytest gravitylan_api/tests   # Python client, from the repository root
-cd frontend && npm test                 # frontend (Vitest)
-cd frontend && npm run typecheck        # TypeScript
-cd frontend-vue && npm test && npm run typecheck && npm run lint   # GravityUI
+cd frontend-vue && npm test && npm run typecheck && npm run lint   # GravityUI (Vitest, vue-tsc, ESLint)
+cd backend && python -m pytest                                    # backend
+python -m pytest gravitylan_api/tests                             # Python client, from the repository root
+cd frontend && npm test && npm run typecheck                      # classic view
 ```
 
 **Repository layout:**
@@ -299,15 +302,15 @@ cd frontend-vue && npm test && npm run typecheck && npm run lint   # GravityUI
 agent/            Linux agent (gravitylan-agent.py) and systemd unit
 backend/app/      FastAPI app: api/, models/, schemas/, scanner/, services/, database/
 backend/tests/    Backend tests (pytest)
-frontend/         React UI (Vite, TypeScript, Tailwind)
-frontend-vue/     GravityUI preview (Vue 3, Vite, Tailwind); shares API client and texts with frontend/
+frontend-vue/     GravityUI (Vue 3, Vite, Tailwind, Pinia); design system in DESIGN.md
+frontend/         Classic React interface (fallback); src/ also holds the API client, types and texts GravityUI uses
 gravitylan_api/   Python client
-docs/             Security and design docs, ADRs, screenshots (react/, vue/)
+docs/             Security and design docs, ADRs, screenshots (vue/, react/)
 scripts/          Demo backend and maintenance scripts
 templates/        Unraid template
 ```
 
-Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). What changed in each version: [CHANGELOG.md](CHANGELOG.md).
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Interface work goes into `frontend-vue/`. What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
@@ -319,84 +322,77 @@ Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). What changed 
 
 ### Worum es geht
 
-GravityLAN ist ein selbst gehostetes Dashboard fürs Heim- oder Labornetz. Es durchsucht deine Subnetze, führt jedes gefundene Gerät in einem Inventar und lässt dich ergänzen, was ein Scanner nicht wissen kann: Gruppen, Racks, Verkabelung, welche VM auf welchem Host läuft. Mit dem optionalen Agenten auf deinen Linux-Rechnern zeigt dasselbe Inventar deren Auslastung, Laufwerke und Temperaturen, zählt offene Paket-Updates und spielt sie auf Wunsch ein.
+GravityLAN ist ein selbst gehostetes Dashboard fürs Heim- oder Labornetz. Es durchsucht deine Subnetze, führt jedes gefundene Gerät in einem Inventar und lässt dich ergänzen, was ein Scanner nicht wissen kann: Gruppen, Racks und Verkabelung, welche VM auf welchem Host läuft. Mit dem optionalen Agenten auf deinen Linux-Rechnern zeigt dasselbe Inventar deren Auslastung, Laufwerke und Temperaturen, zählt offene Paket-Updates und spielt sie auf Wunsch ein.
 
-Alles läuft in **einem Container** auf **SQLite**: ein FastAPI-Backend, das Inventar in `gravitylan.db`, die Messdaten in einer eigenen `telemetry.db` und eine React-Oberfläche auf Deutsch und Englisch, die auch am Handy funktioniert. Eine zweite Oberfläche, **GravityUI**, liegt als Vorschau bei (siehe [Neue Oberfläche](#neue-oberfläche-vorschau-in-entwicklung)). GravityLAN ist für ein **vertrauenswürdiges Heimnetz** gebaut, nicht für den direkten Betrieb im Internet.
+Bedient wird es über **GravityUI**, eine Weboberfläche auf Basis von Vue 3, die zuerst den Zustand des Netzes zeigt: welches Gerät ausgefallen ist, welcher Dienst hakt, welcher Switch andere mitreißen würde. Sie zeichnet das Netz als Orbit-Netzplan und deine Racks als Hardware, die du einbaust und verkabelst, und funktioniert am Handy genauso wie am Wandmonitor, auf Deutsch und Englisch, dunkel oder hell.
+
+Alles läuft in **einem Container** auf **SQLite**: ein FastAPI-Backend, das Inventar in `gravitylan.db` und die Messdaten in einer eigenen `telemetry.db`. GravityLAN ist für ein **vertrauenswürdiges Heimnetz** gebaut, nicht für den direkten Betrieb im Internet. Die ursprüngliche React-Oberfläche liegt noch als Rückfallebene bei (siehe [Klassische Oberfläche](#klassische-oberfläche-react)).
+
+### GravityUI im Überblick
+
+Alle Screenshots zeigen die [Demo-Daten](#entwicklung): das Homelab, für die Racks und die Ausfallsicherheit das kleine Firmennetz.
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/orbit.png" alt="Orbit-Netzplan mit dem Gateway als Stern, Switches und Hosts auf Umlaufbahnen und ihren Geräten als Monde, ausgefallene Geräte rot markiert"><br><sub><b>Orbit-Netzplan</b>: die Topologie als Sonnensystem</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/racks.png" alt="Rack-Ansicht mit Switches, Kupfer-Patchfeld, USV und Steckdosenleiste, Kabel hängen zwischen den Buchsen, links die Liste zum Einbauen"><br><sub><b>Racks</b>: Frontblenden, Ports und Kabel</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/health.png" alt="Health-Radar mit Netzwerk-Score, Single Points of Failure und SLA-Tabelle mit Verfügbarkeitsbalken und Latenz"><br><sub><b>Health-Radar</b>: Score, SLA, Single Points of Failure</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/resilience.png" alt="Ausfallsicherheit im Orbit-Netzplan: die Single Points of Failure eines Firmennetzes und wie viele Geräte jeder abschneiden würde"><br><sub><b>Ausfallsicherheit</b>: was jedes Gerät mitreißen würde</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/ip-addresses.png" alt="IP-Adresskarte eines /24-Subnetzes mit Subnetz-Reitern, VLAN- und L2/L3-Badges, belegten und freien Adressen"><br><sub><b>IP-Adressen</b>: jede Adresse eines Subnetzes</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/agents.png" alt="Agents-Seite mit Betriebssystem, offenen Updates, Live-CPU und -RAM und 24-Stunden-Verfügbarkeit pro Agent"><br><sub><b>Agents</b>: Last, Updates, Verfügbarkeit</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/ssh.png" alt="SSH-Terminal mit gespeicherter Verbindung, Geräten mit SSH und einer offenen Shell"><br><sub><b>SSH-Terminal</b>: Tabs, Verbindungen, Agent-Update</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/device-editor.png" alt="Geräte-Editor mit Gruppe, physischem Host, Rack und Höheneinheiten, Kachelgröße und 24/7-Überwachung"><br><sub><b>Geräte-Editor</b>: Gruppe, Host, Rack-Position</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/settings.png" alt="Einstellungen mit Abschnittsliste, Netzwerk-Scan und der Liste der Scan-Subnetze"><br><sub><b>Einstellungen</b>: Scan, Subnetze, Darstellung, Zugang</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/tutorials.png" alt="Tutorials-Seite mit einer Anleitung, ihren Schritten und einem Diagramm"><br><sub><b>Tutorials</b>: Anleitungen mit Schritten und Diagrammen</sub></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="./docs/screenshots/vue/mobile-overview.png" alt="GravityUI-Übersicht am Handy mit Statuszeile, Netzen und der Tab-Leiste unten" width="260">
+  &nbsp;&nbsp;
+  <img src="./docs/screenshots/vue/mobile-orbit.png" alt="Orbit-Netzplan am Handy mit den Kartensteuerungen am unteren Rand" width="260">
+</p>
 
 ### Funktionen
 
+#### In GravityUI
+
+| Seite | Was du bekommst |
+|---|---|
+| **Übersicht** | Zuerst eine Statuszeile: „Alles in Ordnung · 29 von 31 Geräten online“ oder welche Geräte offline sind oder einen ausgefallenen Dienst haben, wie aktuell das ist, und **Zum Problem**. Darunter eine Zeile pro Netz mit den Geräten online, Systemhinweise (ausgefallene Geräte und Dienste, Sicherheits-Updates, neue Agent-Keys, IP-Wechsel, Agent-Updates), der Live-Orbit-Netzplan und deine Geräte in eigenen Gruppen, als Kacheln oder Liste, mit Live-Werten vom Agenten und Dienst-Links, die die Weboberfläche öffnen, den SMB-Pfad kopieren oder eine RDP-Datei laden. Suche nach Name, IP, MAC oder Dienst mit `Strg+K`; Gateways, Benachrichtigungen, Scan, das Agent-Update-Center und das Bearbeiten des Layouts sitzen in der Werkzeugleiste. |
+| **Orbit-Netzplan** | Die Topologie als Sonnensystem: Der Router ist der Stern, Switches, Access Points und Hosts sind Planeten auf seinen Umlaufbahnen, Endgeräte, VMs und WLAN-Clients kreisen als Monde um ihren Planeten. Verbindungen sind Lichtstrahlen in der Farbe ihres Typs (100 Mb bis 10 GbE, WLAN, Glasfaser). Klick fokussiert ein Gerät; den Weg zwischen zwei Geräten verfolgen, Hop für Hop; suchen, zoomen, mit zwei Fingern ziehen; eine Schaltfläche springt von Problem zu Problem. Eine Verbindung mit der Rolle **Backup** bleibt dünn und gestrichelt, bis ein Gerät ausfällt und sie den Verkehr übernimmt, dann leuchtet sie bernsteinfarben. Die Ansicht **Ausfallsicherheit** listet die Single Points of Failure und wie viele Geräte jeder abschneiden würde. Im Bearbeitungsmodus ziehst du Verbindungen, verschiebst Geräte, wählst ihre Rolle und setzt ein Port-Limit. |
+| **Racks** | Topologie → Rack-Ansicht. Frontblenden, die wie die Hardware aussehen (Switches mit Link-LEDs, Server mit Laufwerksschächten, eine USV mit Display, Patchfelder), jeweils in der Farbe ihres Netzes. Eine Blende auf freie Höheneinheiten ziehen, am Handy nach kurzem Halten, und Ausstattung ohne IP aus **Einbauen** hereinziehen: unmanaged Switches, USVs, Kupfer- und Glasfaser-Patchfelder, Steckdosenleisten, Blindblenden, Kabelführungen. Geräten und Ausstattung Ports geben (RJ45, SFP, SFP+, LC, Strom, Konsole), vorne oder hinten, und ein Kabel von einer freien Buchse zur anderen ziehen. Das Rack umdrehen, Höhe (1 bis 60 HE) und Breite (19 oder 10 Zoll) ändern; jede Änderung lässt sich in ihrem Toast rückgängig machen. |
+| **Health-Radar** | Ein Netzwerk-Score aus Verfügbarkeit, Latenz und Jitter, flackernden Verbindungen, Ablauf von SSL-Zertifikaten und offenen Sicherheits-Patches, über 24 Stunden, 7 oder 30 Tage. Eine SLA-Tabelle mit Verfügbarkeit pro Zeitabschnitt, Latenz und Diensten, die Single Points of Failure des Netzes, Vorfälle auf einer Zeitleiste und pro Gerät ein Latenzdiagramm, SSL und Agent-Zustand. Geräte, die nicht rund um die Uhr laufen (Laptops, Fernseher, Handys), zählen als Clients: Im Standby ziehen sie den Score nicht herunter. |
+| **IP-Adressen** | Eine Karte des Adressraums jedes Subnetzes: belegt, frei, online, offline. Ein Badge an jedem Subnetz zeigt, wie GravityLAN es erreicht: **L2 Direkt** über eine eigene Schnittstelle, **L3 Geroutet** über einen Router oder **L2 Probe** über einen Agenten darin. Jedes Scan-Subnetz hat einen eigenen Reiter; ein pausiertes bleibt ausgegraut stehen. Jede Adresse öffnet ein Popover zum Reservieren, Überwachen, Umbenennen, Hinzufügen, Port-Scannen oder Auffrischen; dazu benannte Bereiche, Live-Erkennung und aktuelle Funde. |
+| **Agents** | Jeder Agent mit Betriebssystem, offenen und Sicherheits-Updates, Hinweisen auf Neustart und Release-Upgrade, Live-CPU und -RAM und 24-Stunden-Verfügbarkeit. Eine Zeile öffnet seine Telemetrie (CPU, RAM, Temperatur, Laufwerke) und seine Paket-Updates: per SSH anmelden mit Passwort, Key oder gespeichertem Key, Pakete prüfen und nur Sicherheits-Updates oder alle einspielen, mit Live-Ausgabe. Geänderte Agent-Keys werden hier übernommen. |
+| **SSH-Terminal** | Shells auf deine Geräte im Browser, auch am Handy: Tabs, die weiterlaufen, während du den Rest von GravityLAN nutzt, gespeicherte und zuletzt genutzte Verbindungen, Host-Key-Prüfung, Kopieren, Einfügen und „Letzten Befehl kopieren“, Schriften und Farbschemata und eine Schaltfläche **Agent-Update**. Keys (OpenSSH, PEM, PuTTY `.ppk`) liegen verschlüsselt auf dem Server; bekannte Hosts verwaltest du auf derselben Seite. |
+| **Geräte-Editor** | Fünf Tabs: Allgemein (Name, Gruppe, physischer Host, Rack und Höheneinheiten, Kachelgröße, 24/7-Überwachung, Notizen), Dienste und Ports, Schnittstellen mit Vorschlägen zum Zusammenführen, Verlauf und Status mit Verfügbarkeitsmonitor und Zeitleiste sowie der Agent (installieren, aktualisieren, deinstallieren, Konfiguration, Layer-2-Probe). |
+| **Logs** | Das Live-Log des Backends, aufgeteilt in Zeit, Level, Logger und Meldung, mit Filter für Warnungen und Fehler, Suche, Pause, Kopieren und **Zu den neuesten**. Nach einem Neustart des Backends verbindet es sich von selbst wieder. |
+| **Einstellungen** | Scan-Zeitplan, Offline-Schwelle und DNS-Server; die Scan-Subnetze (hinzufügen, pausieren, entfernen, ein auf dem Host erkanntes Netz übernehmen, vom Router importieren); System (Aufbewahrung, Log-Level, Startseite, Standard-Oberfläche, Server-URL); Messdaten; Gruppen; Sprache und Darstellung (Theme, Sprache, eine Farbe pro Netz und pro Verbindungstyp); Passwort, API-Token, Backup und Wiederherstellung, Datenbank-Reset. |
+| **Einrichtung, Tutorials, Über** | Ein Setup-Wizard beim ersten Start. Dreizehn Tutorials mit Schritten, Beispielen und Diagrammen: Einrichtung und Scan-Subnetze, Übersicht und Gruppen, IP-Adressen und VLANs, Router-Import, Topologie und Racks, Agent installieren, Paket-Updates, SSH, Health, Messdaten, API-Token und Webhooks, Backup, Unraid. „Über“ zeigt Server- und Agent-Version, die MIT-Lizenz mit Hinweisen zu Drittanbietern und die Projekt-Links. |
+| **Überall** | Dunkel (Standard), hell oder wie das System; Deutsch und Englisch; am Handy eine Tab-Leiste unten, 44-px-Bedienelemente und Zoomen mit zwei Fingern; Tastaturbedienung und Screenreader-Beschriftungen im Orbit-Netzplan; Animationen halten an, wenn das System reduzierte Bewegung wünscht. |
+
+#### Darunter
+
 | Bereich | Was du bekommst |
 |---|---|
-| **Health & Verfügbarkeit** | Echtzeit-SLA-Radar, Latenz und Jitter, Erkennung flackernder Verbindungen, Ablauf von SSL-Zertifikaten, offene Sicherheits-Patches und die Einteilung in 24/7-Server und Clients, mit eigenen interaktiven Diagrammen und Karten fürs Handy. |
-| **Erkennung** | Geplante Nmap- und ARP-Scans deiner Scan-Subnetze (eine Liste, gepflegt in den Einstellungen und auf der Seite IP-Adressen), dazwischen ein leichterer Anwesenheits-Check: Hosts, offene Ports, Dienste, Hostnamen (DNS, mDNS) und Hersteller. Auch Container mit eigener LAN-Adresse werden gefunden, ebenso `ipvlan`-Setups, in denen sich mehrere die MAC des Hosts teilen. Offline gilt ein Gerät erst nach mehreren Fehlversuchen in Folge (Ping, ARP und TCP; standardmäßig 3), damit ausgelastete Hosts nicht flackern. |
-| **Übersicht** | Deine Geräte in eigenen Bereichen, als Kacheln oder Liste, mit Live-Werten vom Agenten und Dienst-Links, die die Weboberfläche öffnen (oder den SMB-Pfad kopieren). IP-Wechsel, Probleme und ein Benachrichtigungs-Feed; die Kacheln lassen sich frei anordnen. |
-| **IP-Adressen** | Eine Karte des Adressraums jedes Subnetzes: belegt, frei, online, offline. Ein Badge an jedem Subnetz zeigt, wie GravityLAN es erreicht: **L2 Direkt** über eine eigene Schnittstelle, **L3 Geroutet** über einen Router oder **L2 Probe** über einen Agenten darin. Jedes Scan-Subnetz hat einen eigenen Reiter; ein pausiertes bleibt ausgegraut stehen. Subnetze, benannte Bereiche und Scan-Einstellungen pro Subnetz verwalten. |
+| **Erkennung** | Geplante Nmap- und ARP-Scans deiner Scan-Subnetze, dazwischen ein leichterer Anwesenheits-Check: Hosts, offene Ports, Dienste, Hostnamen (DNS, mDNS, NetBIOS) und Hersteller. Auch Container mit eigener LAN-Adresse werden gefunden, ebenso `ipvlan`-Setups, in denen sich mehrere die MAC des Hosts teilen. Offline gilt ein Gerät erst nach mehreren Fehlversuchen in Folge (Ping, ARP und TCP; standardmäßig 3), damit ausgelastete Hosts nicht flackern. |
 | **Geroutete Subnetze & VLANs** | ARP endet am Router, deshalb findet ein Scan in einem gerouteten Subnetz zwar die Hosts, aber nicht ihre MAC-Adressen, und die MAC des Routers (Proxy-ARP) überträgt GravityLAN dort nicht auf jeden Host. Für die echten MACs und Hersteller lass einen Agenten in diesem Subnetz als [Layer-2-Probe](#der-agent) arbeiten oder gib dem Container mit der [Multi-VLAN-Compose-Variante](#schnellstart) eine Adresse in jedem VLAN. |
-| **Ein Router, viele VLANs** | Ein Router, der Gateway mehrerer Subnetze ist, bleibt ein Gerät: Seine Adresse in jedem VLAN ist eine Schnittstelle mit eigenem Online-Status, sichtbar in jedem IP-Reiter und als ein Knoten in der Topologie, mit einem Farb-Chip pro Netz. Jedes Subnetz kann sein Gateway und seinen VLAN-Tag speichern; die Liste „Gateways“ im Dashboard zeigt alle, Doppelte werden zum Zusammenführen als Schnittstelle angeboten. |
-| **Topologie & Racks** | Zeichne, wie Geräte verbunden sind, mit Link-Geschwindigkeiten (1, 2,5, 10 GbE …) und animiertem Datenfluss, oder wechsle in die Rack-Ansicht und setze Geräte auf Höheneinheiten. |
+| **Ein Router, viele VLANs** | Ein Router, der Gateway mehrerer Subnetze ist, bleibt ein Gerät: Seine Adresse in jedem VLAN ist eine Schnittstelle mit eigenem Online-Status, sichtbar in jedem IP-Reiter und als ein Himmelskörper im Orbit-Netzplan, mit einem Farb-Chip pro Netz. Jedes Subnetz kann sein Gateway und seinen VLAN-Tag speichern; die Liste „Gateways“ in der Übersicht zeigt alle, Doppelte werden zum Zusammenführen als Schnittstelle angeboten. |
 | **Router-Import** | Einstellungen → Scan-Subnetze → Vom Router importieren liest die Netze, die dein Router routet, mit Gateway, Name und VLAN, und übernimmt nur die ausgewählten. Schreibgeschütztes SNMP (v1/v2c/v3; OPNsense, pfSense, OpenWrt, MikroTik und die meisten Business-Router) oder die UniFi Network API mit API-Key. Zugangsdaten liegen verschlüsselt. |
-| **Linux-Agent** | Ein Python-Skript pro Host, das CPU, RAM, Laufwerke, Netzwerk und Temperatur meldet (standardmäßig alle 30 s). Erkennt das Betriebssystem und kennt LXC-Container und ZFS-Pools. |
-| **Messdaten** | Health-Proben und Agent-Metriken liegen in einer eigenen `telemetry.db` und blähen weder Inventar noch Backups auf. Rohwerte bleiben 48 Stunden, danach werden sie zu Stundenwerten (30 Tage) und Tageswerten (365 Tage) verdichtet; Diagramme wählen die passende Stufe zum Zeitraum. Einstellungen → Messdaten zeigt die Größen und löscht alte Daten pro Gerät oder komplett. |
-| **Paket-Updates** | Der Agent zählt offene Updates (apt, dnf, yum), eingespielt werden sie per SSH aus der Agents-Seite mit Live-Ausgabe, auch mit einem sudo-Benutzer. |
-| **SSH-Terminal** | Shells auf deine Geräte im Browser, auch am Handy: Tabs, die offen bleiben, während du den Rest von GravityLAN nutzt, gespeicherte und zuletzt genutzte Verbindungen, Host-Key-Prüfung, Kopieren, Einfügen und „Letzten Befehl kopieren“, Schriften und Farbschemata. Keys (OpenSSH, PEM, PuTTY `.ppk`) liegen verschlüsselt auf dem Server. |
+| **Linux-Agent** | Ein Python-Skript pro Host, das CPU, RAM, Laufwerke, Netzwerk und Temperatur meldet (standardmäßig alle 30 s) und offene Paket-Updates (apt, dnf, yum), die du per SSH aus der Agents-Seite einspielst, auch mit einem sudo-Benutzer. Erkennt das Betriebssystem und kennt LXC-Container und ZFS-Pools. |
 | **Agent-Verteilung** | Agenten per SSH installieren oder aktualisieren (mit gespeicherter Key-Verbindung oder eingegebenen Zugangsdaten), per Einzeiler mit Einmal-Code, alle veralteten auf einmal im Agent-Update-Center oder direkt aus einem offenen Terminal. |
+| **Messdaten** | Health-Proben und Agent-Metriken liegen in einer eigenen `telemetry.db` und blähen weder Inventar noch Backups auf. Rohwerte bleiben 48 Stunden, danach werden sie zu Stundenwerten (30 Tage) und Tageswerten (365 Tage) verdichtet; Diagramme wählen die passende Stufe zum Zeitraum. Einstellungen → Messdaten zeigt die Größen und löscht alte Daten pro Gerät oder komplett. |
 | **API & Integrationen** | REST-API mit Swagger UI unter `/docs`, ein Python-Client ([`gravitylan_api`](gravitylan_api)), schreibgeschützte API-Token (feinere Scopes über die API) und Webhooks für `device.offline` und `scan.complete`. Ein schreibgeschütztes Token eignet sich gut für [KI-Assistenten und Agenten](#ki-assistenten-und-agenten). |
-| **Backup & Wiederherstellung** | Geräte, Gruppen und Einstellungen als JSON exportieren und importieren. Ein Import ändert nie Admin-Passwort, Master-Token oder Setup-Status. |
-| **Einrichtung & Einstellungen** | Setup-Wizard beim ersten Start; die Liste der Scan-Subnetze (hinzufügen, pausieren, entfernen oder ein auf dem Host erkanntes Netz mit einem Klick übernehmen), Gerätegruppen (anlegen, umbenennen, sortieren), Scan-Zeitplan, Offline-Schwelle, DNS-Server, Aufbewahrung der Historie, Log-Level, Sprache, Passwort, API-Token und eine Live-Log-Ansicht. |
-| **Standard-Oberfläche** | Einstellungen → Standard-Oberfläche legt fest, was die Startadresse `/` öffnet: die klassische React-Ansicht (Standard) oder GravityUI. Der Umschalter in der Seitenleiste merkt sich deine Wahl im Browser, egal was der Server vorgibt. |
-| **Über** | Server- und Agent-Version, die MIT-Lizenz mit Hinweisen zu Drittanbietern und Links zu Repository, Issues, Releases und Docker Hub, in beiden Oberflächen. |
-
-### Screenshots
-
-Die klassische React-Oberfläche, die `/` standardmäßig öffnet. Alle Screenshots zeigen die [Demo-Daten](#entwicklung).
-
-<table>
-  <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/health.png" alt="Health-Seite mit Netzwerk-Score, Verfügbarkeit pro Gerät, Latenz und offenen Patches"><br><sub><b>Health &amp; Verfügbarkeit</b>: Score, SLA, Latenz, Patches</sub></td>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/topology.png" alt="Topologie-Karte: Gateway, Core-Switch, Etagen-Switches und angeschlossene Geräte mit Link-Geschwindigkeiten"><br><sub><b>Topologie</b>: Geräte, Verbindungen, Geschwindigkeiten</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/agents.png" alt="Agents-Seite mit 24-Stunden-Verfügbarkeit und Verläufen für CPU, Speicher und Temperatur"><br><sub><b>Agents</b>: Live-Last, Verfügbarkeit, Verlauf</sub></td>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/ip-addresses.png" alt="IP-Adresskarte eines /24-Subnetzes mit belegten und freien Adressen"><br><sub><b>IP-Adressen</b>: jede Adresse eines Subnetzes</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/ssh.png" alt="SSH-Terminal mit gespeicherten und zuletzt genutzten Verbindungen und einer offenen Shell"><br><sub><b>SSH-Terminal</b>: Tabs, Verbindungen, Agent-Update</sub></td>
-    <td width="50%" valign="top"><img src="./docs/screenshots/react/device-editor.png" alt="Geräte-Editor als Seitenleiste mit Gruppe, physischem Host und Rack-Position"><br><sub><b>Geräte-Editor</b>: Gruppe, Host, Rack-Position</sub></td>
-  </tr>
-</table>
-
-<p align="center">
-  <img src="./docs/screenshots/react/mobile-overview.png" alt="Übersicht am Handy mit der Tab-Leiste unten" width="260">
-  &nbsp;&nbsp;
-  <img src="./docs/screenshots/react/mobile-ssh.png" alt="SSH-Terminal am Handy" width="260">
-</p>
-
-<details>
-<summary>Agent-Tab des Geräte-Editors</summary>
-<br>
-<img src="./docs/screenshots/react/device-editor-agent.png" alt="Agent-Tab des Geräte-Editors, Agent-Update über eine gespeicherte SSH-Key-Verbindung">
-</details>
-
-### Neue Oberfläche (Vorschau, in Entwicklung)
-
-**GravityUI** ist eine zweite Oberfläche auf Basis von Vue und steckt im selben Image unter `/frontend-vue/`. Sie deckt jede Seite der klassischen Ansicht ab und bringt dazu eine Orbit-Karte deines Netzes, geführte Tutorials mit Diagrammen und in der Übersicht einen Dienststatus pro Netz. Sie ist noch in Entwicklung, Details ändern sich also zwischen Versionen; Rückmeldungen gern in den [Issues](https://github.com/SleeperXr/GravityLAN/issues).
-
-Zum Ausprobieren den Umschalter **GravityUI** unten in der Seitenleiste nutzen oder `/?ui=vue` öffnen. Damit `/` für alle GravityUI öffnet, unter **Einstellungen → Standard-Oberfläche** auswählen. `/?ui=react` führt immer zurück.
-
-<table>
-  <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/vue/overview.png" alt="GravityUI-Übersicht mit Dienststatus pro Netz, Live-Netzkarte und Service-Hinweisen"><br><sub><b>Übersicht</b>: Status pro Netz, Live-Karte, Hinweise</sub></td>
-    <td width="50%" valign="top"><img src="./docs/screenshots/vue/orbit.png" alt="GravityUI-Orbit-Karte mit dem Gateway als Stern und Switches, Hosts und Access Points auf Umlaufbahnen"><br><sub><b>Orbit-Karte</b>: die Topologie als Sonnensystem</sub></td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/vue/health.png" alt="GravityUI-Health-Seite mit Netzwerk-Score, Verfügbarkeitsbalken und Latenz"><br><sub><b>Health-Radar</b>: Verfügbarkeit, Latenz, Vorfälle</sub></td>
-    <td width="50%" valign="top"><img src="./docs/screenshots/vue/tutorials.png" alt="GravityUI-Tutorials-Seite mit einer Anleitung, Schritten und einem Diagramm"><br><sub><b>Tutorials</b>: Anleitungen mit Schritten und Diagrammen</sub></td>
-  </tr>
-</table>
-
-<p align="center">
-  <img src="./docs/screenshots/vue/mobile-health.png" alt="GravityUI-Health-Seite am Handy" width="260">
-</p>
+| **Backup & Wiederherstellung** | Geräte, Gruppen, Schnittstellen und Einstellungen als JSON exportieren und importieren. Ein Import ändert nie Admin-Passwort, Master-Token oder Setup-Status. |
 
 ### Schnellstart
 
@@ -410,7 +406,7 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-`http://<dein-host>:8000` öffnen und den Setup-Wizard durchgehen: Er erkennt deine Subnetze und speichert sie als Scan-Subnetze, startet den ersten Scan und legt das Admin-Passwort fest. Subnetze, die der Container nicht direkt sieht, etwa ein IoT-VLAN hinter dem Router, lassen sich im selben Schritt ergänzen.
+`http://<dein-host>:8000/frontend-vue/` öffnen und den Setup-Wizard durchgehen: Er erkennt deine Subnetze und speichert sie als Scan-Subnetze, startet den ersten Scan und legt das Admin-Passwort fest. Subnetze, die der Container nicht direkt sieht, etwa ein IoT-VLAN hinter dem Router, lassen sich im selben Schritt ergänzen. Damit `http://<dein-host>:8000` für alle GravityUI öffnet, unter **Einstellungen → System → Standard-Oberfläche** auswählen.
 
 > [!IMPORTANT]
 > **Schließ den Setup-Wizard direkt nach dem ersten Start ab.** Bis dahin antworten nur die Routen des Wizards, aber wer die Seite zuerst öffnet, wählt das Admin-Passwort. Das gilt genauso nach einem Werksreset.
@@ -427,7 +423,16 @@ docker run -d --name gravitylan \
 
 **Unraid.** Die Vorlage [`templates/gravitylan.xml`](templates/gravitylan.xml) setzt `PUID=99` und `PGID=100` (Unraids `nobody:users`), legt die Daten unter `/mnt/user/appdata/gravitylan` ab und braucht keinen Privileged-Modus: `NET_RAW` und `NET_ADMIN` reichen zum Scannen. Sie erklärt, welcher Netzwerktyp passt (Host oder ein eigenes `br0`-Netz mit eigener Adresse). Mehr: [docs/unraid-template.md](docs/unraid-template.md).
 
-Das Image ist mehrstufig gebaut (Vite-Build, dann eine schlanke Python-Laufzeit), und der Server läuft als Nicht-root-Benutzer; Nmap bekommt nur die Capabilities, die es braucht. Selbst bauen: `docker build -t gravitylan:local .`
+Das Image ist mehrstufig gebaut (Vite-Builds beider Oberflächen, dann eine schlanke Python-Laufzeit), und der Server läuft als Nicht-root-Benutzer; Nmap bekommt nur die Capabilities, die es braucht. Selbst bauen: `docker build -t gravitylan:local .`
+
+### Klassische Oberfläche (React)
+
+GravityLAN hat mit einer React-Oberfläche angefangen, und das Image bringt sie noch mit. Bis GravityUI übernimmt, öffnet die Startadresse `/` die klassische Ansicht, solange du nichts anderes wählst:
+
+- **für alle**: Einstellungen → System → Standard-Oberfläche → GravityUI;
+- **für diesen Browser**: der Umschalter unten in der Seitenleiste oder `/?ui=vue` und `/?ui=react`. Die Wahl bleibt in diesem Browser, egal was der Server vorgibt.
+
+GravityUI selbst liegt unter `/frontend-vue/`. Die klassische Ansicht bekommt nur noch Fehlerbehebungen, neue Funktionen kommen in GravityUI. Sobald GravityUI alles abdeckt, was die klassische Ansicht kann, wird sie Standard; die React-Oberfläche bleibt noch eine Version als Rückfallebene und wird danach entfernt ([ADR-003](docs/adr/003-react-retirement.md)).
 
 ### Der Agent
 
@@ -523,7 +528,7 @@ Mehr: [SECURITY.md](SECURITY.md) · [Bedrohungsmodell](docs/threat-model.md) · 
 ```mermaid
 flowchart TB
   subgraph clients [Clients]
-    SPA[Weboberfläche: React oder GravityUI auf Vue]
+    SPA[GravityUI auf Vue 3, klassische React-Ansicht als Rückfallebene]
     PY[gravitylan_api, Skripte, KI-Agenten]
   end
   subgraph server [GravityLAN-Container]
@@ -549,7 +554,7 @@ Architekturentscheidungen stehen in [docs/adr/](docs/adr).
 
 ### Entwicklung
 
-**Windows:** `.\start_gravitylan.ps1` installiert die Abhängigkeiten und startet Uvicorn auf `:8000` und Vite auf `:5173`.
+**Windows:** `.\start_gravitylan.ps1` installiert die Abhängigkeiten und startet Uvicorn auf `:8000`, GravityUI auf `:5174` und die klassische Ansicht auf `:5173`.
 
 **Linux und macOS:**
 
@@ -559,27 +564,28 @@ cd backend
 pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Frontend (Node 20+), in einem zweiten Terminal; leitet /api an :8000 weiter
-cd frontend
+# GravityUI (Node 20+), in einem zweiten Terminal: http://localhost:5174/frontend-vue/, leitet /api an :8000 weiter
+cd frontend-vue
 npm install
 npm run dev
 
-# GravityUI, optional, auf :5174
-cd frontend-vue
+# Klassische Ansicht, optional, auf :5173
+cd frontend
 npm install
 npm run dev
 ```
 
-**Ohne dein Netz anzufassen:** `python scripts/dev_demo.py` (in der Backend-venv) startet die API auf `127.0.0.1:8000` mit einer Wegwerf-Demo-Datenbank, simulierten Agenten mit 24 Stunden Verlauf und einer Demo-Shell für SSH, aber ohne Scans. Ein Frontend wie oben starten, Passwort `demo`. `--reset` befüllt die Demo-Daten neu, `--fresh` startet wie eine Neuinstallation, `--company` lädt stattdessen ein kleines Firmennetz (8 VLANs, Proxmox-Cluster mit vier Knoten, rund 130 Geräte, eigene Datenbank). Die Screenshots in dieser README stammen daraus.
+GravityUI holt API-Client, Typen und Texte aus `frontend/src`; `frontend/` muss daneben liegen bleiben, auch wenn du nur an GravityUI arbeitest.
+
+**Ohne dein Netz anzufassen:** `python scripts/dev_demo.py` (in der Backend-venv) startet die API auf `127.0.0.1:8000` mit einer Wegwerf-Demo-Datenbank, simulierten Agenten mit 24 Stunden Verlauf und einer Demo-Shell für SSH, aber ohne Scans. GravityUI wie oben starten, Passwort `demo`. `--reset` befüllt die Demo-Daten neu, `--fresh` startet wie eine Neuinstallation, `--company` lädt stattdessen ein kleines Firmennetz (8 VLANs, Proxmox-Cluster mit vier Knoten, rund 130 Geräte, vier Racks mit Ports und Kabeln, Backup-Verbindungen, eigene Datenbank). Die Screenshots in dieser README stammen daraus.
 
 **Tests und Prüfungen:**
 
 ```bash
-cd backend && python -m pytest          # Backend
-python -m pytest gravitylan_api/tests   # Python-Client, aus dem Repo-Root
-cd frontend && npm test                 # Frontend (Vitest)
-cd frontend && npm run typecheck        # TypeScript
-cd frontend-vue && npm test && npm run typecheck && npm run lint   # GravityUI
+cd frontend-vue && npm test && npm run typecheck && npm run lint   # GravityUI (Vitest, vue-tsc, ESLint)
+cd backend && python -m pytest                                    # Backend
+python -m pytest gravitylan_api/tests                             # Python-Client, aus dem Repo-Root
+cd frontend && npm test && npm run typecheck                      # klassische Ansicht
 ```
 
 **Repo-Übersicht:**
@@ -588,15 +594,15 @@ cd frontend-vue && npm test && npm run typecheck && npm run lint   # GravityUI
 agent/            Linux-Agent (gravitylan-agent.py) und systemd-Unit
 backend/app/      FastAPI-App: api/, models/, schemas/, scanner/, services/, database/
 backend/tests/    Backend-Tests (pytest)
-frontend/         React-Oberfläche (Vite, TypeScript, Tailwind)
-frontend-vue/     GravityUI-Vorschau (Vue 3, Vite, Tailwind); teilt API-Client und Texte mit frontend/
+frontend-vue/     GravityUI (Vue 3, Vite, Tailwind, Pinia); Designsystem in DESIGN.md
+frontend/         Klassische React-Oberfläche (Rückfallebene); src/ enthält auch API-Client, Typen und Texte für GravityUI
 gravitylan_api/   Python-Client
-docs/             Sicherheits- und Design-Doku, ADRs, Screenshots (react/, vue/)
+docs/             Sicherheits- und Design-Doku, ADRs, Screenshots (vue/, react/)
 scripts/          Demo-Backend und Wartungsskripte
 templates/        Unraid-Vorlage
 ```
 
-Beiträge sind willkommen: siehe [CONTRIBUTING.md](CONTRIBUTING.md). Was sich pro Version geändert hat: [CHANGELOG.md](CHANGELOG.md).
+Beiträge sind willkommen: siehe [CONTRIBUTING.md](CONTRIBUTING.md). Arbeit an der Oberfläche gehört nach `frontend-vue/`. Was sich pro Version geändert hat: [CHANGELOG.md](CHANGELOG.md).
 
 ### Lizenz
 
