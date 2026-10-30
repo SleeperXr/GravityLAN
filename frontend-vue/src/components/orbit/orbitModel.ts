@@ -47,6 +47,13 @@ export type BodyKind = 'star' | 'planet' | 'moon';
 export type OrbitRole = 'star' | 'planet' | 'dwarf' | 'moon';
 /** Chosen roles per device id (setting `ui.orbit_roles`); a missing id means automatic. */
 export type OrbitRoles = Record<string, OrbitRole>;
+/** Orbit map visibility the user chose per device (`ui.orbit_visibility`, JSON {deviceId: shown}) */
+export type OrbitVisibility = Record<string, boolean>;
+
+/** Whether a device is on the orbit map: the user's choice, else whether the dashboard shows it. */
+export function isOnOrbit(device: Pick<Device, 'id' | 'is_hidden'>, visibility: OrbitVisibility): boolean {
+  return visibility[String(device.id)] ?? !device.is_hidden;
+}
 
 /** Switches and APs carrying fewer devices than this are dwarf planets unless chosen otherwise. */
 export const DWARF_MAX_CHILDREN = 4;

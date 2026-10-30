@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { X } from 'lucide-vue-next';
+import { EyeOff, X } from 'lucide-vue-next';
 import type { Device } from '@/types';
 import { roleOf, type OrbitBody, type OrbitRole } from './orbitModel';
 import Button from '@/components/ui/Button.vue';
@@ -12,7 +12,7 @@ import { t } from '@/i18n';
  * and a link to its editor. A body that others orbit cannot become a moon.
  */
 const props = defineProps<{ device: Device; body: OrbitBody; parents: OrbitBody[]; chosenRole: OrbitRole | null; hasOrbiters: boolean; links: number }>();
-const emit = defineEmits<{ open: []; close: []; assign: [targetId: number]; role: [role: OrbitRole | null]; maxPorts: [value: number] }>();
+const emit = defineEmits<{ open: []; close: []; hide: []; assign: [targetId: number]; role: [role: OrbitRole | null]; maxPorts: [value: number] }>();
 
 const roles: OrbitRole[] = ['star', 'planet', 'dwarf', 'moon'];
 const field = 'h-8 rounded-md border border-line bg-sunken px-2 text-xs text-fg focus:border-accent focus:outline-none';
@@ -74,5 +74,6 @@ function onMaxPorts(e: Event) {
         {{ maxPorts > 0 ? t('gv.orbit.ports_used', { used: links, max: maxPorts }) : t('gv.orbit.ports_unlimited', { used: links }) }}
       </span>
     </label>
+    <Button size="sm" variant="ghost" class="w-full justify-start" @click="emit('hide')"><EyeOff aria-hidden="true" />{{ t('gv.orbit.hide') }}</Button>
   </div>
 </template>

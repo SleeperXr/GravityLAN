@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { Bell, BellOff, Radio, RefreshCw, Server, Wifi } from 'lucide-vue-next';
+import { Bell, BellOff, Orbit, Radio, RefreshCw, Server, Wifi } from 'lucide-vue-next';
 import type { Device, DeviceGroup, Rack } from '@/types';
 import type { DeviceFormData } from '@/lib/deviceForm';
 import Button from '@/components/ui/Button.vue';
@@ -10,12 +10,26 @@ import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Textarea from '@/components/ui/Textarea.vue';
 import { deviceLabel } from '@/lib/networks';
+import { isOnOrbit } from '@/components/orbit/orbitModel';
+import { useAppearance } from '@/stores/appearance';
+import { useToast } from '@/composables/useToast';
 import { t } from '@/i18n';
 
 /** "General" tab: identity, placement, role and monitoring of a device. */
 const form = defineModel<DeviceFormData>('form', { required: true });
 const props = defineProps<{ device: Device; devices: Device[]; groups: DeviceGroup[]; racks: Rack[]; refreshing: boolean }>();
 const emit = defineEmits<{ refreshInfo: []; submit: [] }>();
+
+/** Orbit map visibility is an appearance setting, saved right away rather than with the form */
+const appearance = useAppearance();
+const { showToast } = useToast();
+void appearance.load();
+const onOrbit = computed({
+  get: () => isOnOrbit(props.device, appearance.orbitVisibility),
+  set: (shown: boolean) => {
+    appearance.setOrbitVisible(props.device.id, shown).catch((err: Error) => showToast('error', t('notifications.save_failed'), err.message));
+  },
+});
 
 const groupOptions = computed(() => [
   { value: null, label: t('dashboard.unassigned_devices') },
@@ -141,6 +155,17 @@ function intOrNull(value: string | number | null | undefined): number | null {
         <span id="alert-offline-hint" class="block text-xs text-fg-subtle">{{ t('health_page.alert_offline_hint') }}</span>
       </span>
       <Switch v-model="form.alert_offline" :aria-label="t('health_page.alert_offline_24_7')" aria-describedby="alert-offline-hint" />
+    </label>
+
+    <label class="flex cursor-pointer items-center gap-3 rounded-md border p-3 transition-colors" :class="onOrbit ? 'border-accent/40 bg-accent/[0.06]' : 'border-line bg-raised'">
+      <span class="flex size-8 shrink-0 items-center justify-center rounded-md" :class="onOrbit ? 'bg-accent text-accent-fg' : 'bg-sunken text-fg-subtle'">
+        <Orbit class="size-4" aria-hidden="true" />
+      </span>
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm font-medium text-fg">{{ t('gv.orbit.show_on_orbit') }}</span>
+        <span id="on-orbit-hint" class="block text-xs text-fg-subtle">{{ t('gv.orbit.show_on_orbit_hint') }}</span>
+      </span>
+      <Switch v-model="onOrbit" :aria-label="t('gv.orbit.show_on_orbit')" aria-describedby="on-orbit-hint" />
     </label>
 
     <Field v-slot="{ id }" :label="t('editor.notes')">

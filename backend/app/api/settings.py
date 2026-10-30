@@ -1,4 +1,5 @@
 import hmac
+import json
 import re
 from urllib.parse import urlparse
 from pydantic import RootModel
@@ -32,7 +33,7 @@ WRITABLE_KEYS = frozenset({
     "server_url_override", "server.url", "system.log_level", "ui.start_page", "ui.default_frontend",
     "ui.health_resilience",
     # Network view groups, topology flow controls, GravityUI appearance
-    "network_groups", "ui.line_colors", "ui.orbit_layout", "ui.orbit_roles", "ui.link_type_colors",
+    "network_groups", "ui.line_colors", "ui.orbit_layout", "ui.orbit_roles", "ui.orbit_visibility", "ui.link_type_colors",
     # Telemetry retention (clamped when read) and agent adoption
     "telemetry.raw_retention_hours", "telemetry.hourly_retention_days", "telemetry.daily_retention_days",
     "agent.allow_auto_adoption",
@@ -163,6 +164,21 @@ def _validate_default_frontend(value: str) -> None:
         )
 
 
+def _validate_orbit_visibility(value: str) -> None:
+    """Orbit map visibility per device: a JSON object {"<device id>": true|false}."""
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        parsed = None
+    if not isinstance(parsed, dict) or not all(
+        key.isdigit() and isinstance(shown, bool) for key, shown in parsed.items()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail='Invalid orbit visibility: expected a JSON object {"<device id>": true|false}.'
+        )
+
+
 _VALIDATORS = {
     "server.url": _validate_server_url,
     "server_url_override": _validate_server_url,
@@ -172,6 +188,7 @@ _VALIDATORS = {
     "ui.start_page": _validate_start_page,
     "ui.default_frontend": _validate_default_frontend,
     "ui.health_resilience": _validate_health_resilience,
+    "ui.orbit_visibility": _validate_orbit_visibility,
 }
 
 

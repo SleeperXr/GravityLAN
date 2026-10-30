@@ -3,6 +3,7 @@ import type { Device } from '@/types';
 import {
   autoOrbitLayout,
   isBackupLink,
+  isOnOrbit,
   computeLightBeams,
   computeOrbitRings,
   findDropTargetBody,
@@ -269,5 +270,18 @@ describe('backup links', () => {
     expect(beam.isPrimaryBridge).toBe(false);
     expect(isBackupLink(backup)).toBe(true);
     expect(isBackupLink(primary[0])).toBe(false);
+  });
+});
+
+describe('isOnOrbit', () => {
+  it('follows the dashboard until the user chooses', () => {
+    expect(isOnOrbit({ id: 1, is_hidden: false }, {})).toBe(true);
+    expect(isOnOrbit({ id: 2, is_hidden: true }, {})).toBe(false);
+  });
+
+  it('lets the user hide a dashboard device or show a hidden one', () => {
+    const visibility = { '1': false, '2': true };
+    expect(isOnOrbit({ id: 1, is_hidden: false }, visibility)).toBe(false);
+    expect(isOnOrbit({ id: 2, is_hidden: true }, visibility)).toBe(true);
   });
 });

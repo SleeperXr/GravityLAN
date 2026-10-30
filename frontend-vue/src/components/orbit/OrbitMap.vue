@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useEventListener, useFullscreen, useIntersectionObserver, useMediaQuery, useResizeObserver, useStorage } from '@vueuse/core';
-import { Check, Expand, Hand, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, ShieldAlert, Shrink, Sparkles, TriangleAlert, Wand2 } from 'lucide-vue-next';
+import { Check, Expand, Eye, EyeOff, Hand, Maximize, Minus, MousePointer2, Orbit, Pencil, Plus, Search, ShieldAlert, Shrink, Sparkles, TriangleAlert, Wand2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
 import { useNetworkStore } from '@/stores/network';
@@ -18,6 +18,7 @@ import {
   linkCount,
   moveWithDescendants,
   portLimitReached,
+  isOnOrbit,
   resolveOrbitSystem,
   snapToOrbitRing,
   type LightBeam,
@@ -155,10 +156,26 @@ async function load() {
 }
 
 // ── Bodies and positions ────────────────────────────────────────────────────
-const devicesById = computed(() => new Map(store.devices.map((d) => [d.id, d])));
-const bodies = computed(() => resolveOrbitSystem(store.devices, links.value, gatewayIds.value, appearance.orbitRoles));
+/**
+ * What the orbit map works with: the dashboard's devices plus the dashboard-hidden ones the user put on
+ * the orbit. The resilience analysis uses all of them; the map draws only those on the orbit.
+ */
+const orbitUniverse = computed(() => [
+  ...store.devices,
+  ...store.hiddenDevices.filter((d) => appearance.orbitVisibility[String(d.id)] === true),
+]);
+const orbitDevices = computed(() => orbitUniverse.value.filter((d) => isOnOrbit(d, appearance.orbitVisibility)));
+/** Devices the user took off the orbit, or that the dashboard hides; edit mode lists them to show again */
+const offOrbit = computed(() =>
+  [...store.devices, ...store.hiddenDevices]
+    .filter((d) => !isOnOrbit(d, appearance.orbitVisibility))
+    .sort((a, b) => deviceLabel(a).localeCompare(deviceLabel(b))),
+);
+const hiddenListOpen = ref(false);
+const devicesById = computed(() => new Map(orbitUniverse.value.map((d) => [d.id, d])));
+const bodies = computed(() => resolveOrbitSystem(orbitDevices.value, links.value, gatewayIds.value, appearance.orbitRoles));
 const bodyList = computed(() => [...bodies.value.values()]);
-const autoLayout = computed(() => autoOrbitLayout(store.devices, links.value, gatewayIds.value, appearance.orbitRoles));
+const autoLayout = computed(() => autoOrbitLayout(orbitDevices.value, links.value, gatewayIds.value, appearance.orbitRoles));
 
 /**
  * Drag positions of this session first; then, once the user arranged the orbit themselves, the
@@ -167,7 +184,7 @@ const autoLayout = computed(() => autoOrbitLayout(store.devices, links.value, ga
  */
 const positions = computed(() => {
   const map = new Map<number, Point>();
-  for (const d of store.devices) {
+  for (const d of orbitDevices.value) {
     const local = localPositions.value.get(d.id);
     if (local) map.set(d.id, local);
     else if (appearance.orbitCustom && d.topology_x != null && d.topology_y != null) map.set(d.id, { x: d.topology_x, y: d.topology_y });
@@ -180,9 +197,9 @@ const posOf = (id: number): Point => positions.value.get(id) ?? { x: 0, y: 0 };
 const orbitRings = computed(() => computeOrbitRings(bodies.value, positions.value));
 const starIds = computed(() => bodyList.value.filter((b) => b.kind === 'star').map((b) => b.id));
 /** Live: backup links that took over for a failed primary path, and online devices nothing reaches */
-const failover = computed(() => failoverState(store.devices, links.value, starIds.value));
+const failover = computed(() => failoverState(orbitUniverse.value, links.value, starIds.value));
 /** Planning: devices whose failure would cut others off, and who hangs on whom alone */
-const resilience = computed(() => analyseResilience(store.devices, links.value, starIds.value));
+const resilience = computed(() => analyseResilience(orbitUniverse.value, links.value, starIds.value));
 const lightBeams = computed(() => computeLightBeams(links.value, bodies.value, appearance.linkTypeColors, failover.value.activeBackupIds));
 
 /** The star at the root of a body's system. */
@@ -457,6 +474,21 @@ async function onWindowPointerUp(e: PointerEvent) {
   }
 }
 
+/** Take a device off the orbit map (or put it back); the toast can undo hiding it. */
+async function setOnOrbit(device: Device, shown: boolean) {
+  try {
+    await appearance.setOrbitVisible(device.id, shown);
+    if (shown) return;
+    if (selectedDeviceId.value === device.id) selectedDeviceId.value = null;
+    showToast('success', t('gv.orbit.hidden_toast', { name: deviceLabel(device) }), '', {
+      label: t('gv.toast.undo'),
+      run: () => void setOnOrbit(device, true),
+    });
+  } catch (err) {
+    showToast('error', t('notifications.save_failed'), (err as Error).message);
+  }
+}
+
 /** Pin the selected body's role (or back to automatic); an auto-laid-out map rearranges itself. */
 async function setRole(role: OrbitRole | null) {
   const body = selectedBody.value;
@@ -578,7 +610,7 @@ async function deleteLink() {
 async function arrange() {
   const ok = await confirm({ title: t('gv.plan.arrange'), message: t('gv.plan.arrange_confirm') });
   if (!ok) return;
-  const layout = autoOrbitLayout(store.devices, links.value, gatewayIds.value, appearance.orbitRoles);
+  const layout = autoOrbitLayout(orbitDevices.value, links.value, gatewayIds.value, appearance.orbitRoles);
   localPositions.value = new Map(layout);
   await Promise.all([...layout].map(([id, p]) => api.updateDevice(id, { topology_x: p.x, topology_y: p.y }).catch(() => {})));
   await appearance.setOrbitCustom(true).catch(() => {});
@@ -1077,6 +1109,28 @@ useResizeObserver(svgRef, initialFit);
     </div>
 
     <div v-if="editable" class="absolute top-3 right-3 z-10 flex gap-2">
+      <div v-if="editing && offOrbit.length" class="relative">
+        <Button size="sm" :aria-expanded="hiddenListOpen" @click="hiddenListOpen = !hiddenListOpen">
+          <EyeOff aria-hidden="true" />{{ t('gv.orbit.hidden_count', { count: offOrbit.length }) }}
+        </Button>
+        <div
+          v-if="hiddenListOpen"
+          class="absolute top-full right-0 mt-1.5 w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-line-strong bg-surface p-2 shadow-pop"
+          @pointerdown.stop
+        >
+          <p class="px-1.5 pt-0.5 text-xs font-semibold text-fg">{{ t('gv.orbit.hidden_title') }}</p>
+          <p class="px-1.5 pb-1.5 text-xs text-fg-subtle">{{ t('gv.orbit.hidden_hint') }}</p>
+          <ul class="max-h-72 overflow-y-auto">
+            <li v-for="d in offOrbit" :key="d.id" class="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-control-hover">
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm text-fg">{{ deviceLabel(d) }}</span>
+                <span class="block truncate font-mono text-xs text-fg-subtle">{{ d.ip }}<template v-if="d.is_hidden"> · {{ t('gv.orbit.hidden_dashboard') }}</template></span>
+              </span>
+              <Button size="sm" variant="ghost" @click="setOnOrbit(d, true)"><Eye aria-hidden="true" />{{ t('gv.orbit.show_again') }}</Button>
+            </li>
+          </ul>
+        </div>
+      </div>
       <Button v-if="editing" size="sm" @click="arrange"><Wand2 aria-hidden="true" />{{ t('gv.plan.arrange') }}</Button>
       <Button size="sm" :variant="editing ? 'primary' : 'secondary'" @click="toggleEditing">
         <component :is="editing ? Check : Pencil" aria-hidden="true" />
@@ -1104,6 +1158,7 @@ useResizeObserver(svgRef, initialFit);
       :links="linkCount(selectedBody.id, links)"
       @max-ports="(value) => selectedDevice && setMaxPorts(selectedDevice, value)"
       @role="setRole"
+      @hide="selectedDevice && setOnOrbit(selectedDevice, false)"
       @open="emit('openDevice', selectedDevice)"
       @close="selectedDeviceId = null"
       @assign="(targetId) => { const tgt = bodies.get(targetId); if (tgt && selectedBody) assignOrbitToTarget(selectedBody.id, tgt); }"
