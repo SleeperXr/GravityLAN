@@ -703,6 +703,7 @@
     "dns_label": "DNS server (optional)",
     "skip_scan": "Skip scan",
     "scan_progress_label": "Scan progress",
+    "scanning_subnet": "Scanning {{subnet}}…",
     "hosts_checked": "Hosts checked",
     "devices_label": "Devices found",
     "scan_failed": "Scan failed",

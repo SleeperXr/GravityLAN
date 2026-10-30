@@ -77,6 +77,15 @@ const scanTitle = computed(() =>
   ({ completed: 'setup.scan_completed', failed: 'setup.scan_failed', cancelled: 'setup.scan_cancelled' } as Partial<Record<string, string>>)[scanStatus.value] ?? 'setup.scan_in_progress',
 );
 
+/** The line under the heading, in the UI language: the backend's messages are English log lines */
+const scanMessage = computed(() => {
+  const p = progress.value;
+  if (!p || p.status === 'completed' || p.status === 'cancelled') return '';
+  if (p.status === 'failed') return p.message;
+  if (p.current_subnet) return t('setup.scanning_subnet', { subnet: p.current_subnet });
+  return scanRunning.value ? t('setup.initializing_scan') : '';
+});
+
 async function startScan() {
   if (selected.value.length === 0) return;
   step.value = SCAN_STEP;
@@ -320,7 +329,7 @@ const features = [
           <div v-else-if="step === SCAN_STEP" class="space-y-5">
             <div>
               <h1 id="setup-title" ref="heading" tabindex="-1" class="text-xl font-bold text-fg focus:outline-none">{{ t(scanTitle) }}</h1>
-              <p class="mt-1.5 min-h-5 text-sm text-fg-muted" role="status">{{ progress?.message || (scanRunning ? t('setup.initializing_scan') : '') }}</p>
+              <p class="mt-1.5 min-h-5 text-sm text-fg-muted" role="status">{{ scanMessage }}</p>
             </div>
 
             <div v-if="showMeter" class="space-y-4">

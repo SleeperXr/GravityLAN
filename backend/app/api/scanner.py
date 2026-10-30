@@ -289,19 +289,33 @@ async def start_scan(request: ScanRequest) -> Dict[str, str]:
     
     state.last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Planner Scan...", progress=0)
     await state.broadcast(state.last_progress)
-    
+
+    # Every update carries the host count, so the setup wizard and the scan strip can show it
+    counts = {"subnet": "", "scanned": 0, "total": 0}
+
+    def snapshot(status: ScanStatus, message: str, **extra) -> ScanProgress:
+        percent = round(counts["scanned"] / counts["total"] * 100, 1) if counts["total"] else 0.0
+        return ScanProgress(
+            status=status, message=message, current_subnet=counts["subnet"],
+            hosts_scanned=counts["scanned"], hosts_total=counts["total"], progress=percent, **extra,
+        )
+
     async def progress_cb(msg: str):
         status = ScanStatus.RUNNING
         if msg == "EVENT:RELOAD_DEVICES":
             status = ScanStatus.DEVICES_UPDATED
             msg = "Host discovered..."
-        await state.broadcast(ScanProgress(status=status, message=msg, progress=50))
+        await state.broadcast(snapshot(status, msg))
+
+    async def hosts_cb(subnet: str, scanned: int, total: int):
+        counts.update(subnet=subnet, scanned=scanned, total=total)
+        await state.broadcast(snapshot(ScanStatus.RUNNING, f"Scanner: Scanning {subnet}..."))
 
     async def run_scan_task():
         try:
             subnets = await _requested_or_enabled_subnets(request)
-            found_count = await run_planner_scan(subnets, progress_callback=progress_cb)
-            await state.broadcast(ScanProgress(status=ScanStatus.COMPLETED, message="Scan complete", devices_found=found_count))
+            found_count = await run_planner_scan(subnets, progress_callback=progress_cb, hosts_callback=hosts_cb)
+            await state.broadcast(snapshot(ScanStatus.COMPLETED, "Scan complete", devices_found=found_count))
         except Exception as e:
             logger.error("Manual scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.FAILED, message=f"Scan error: {str(e)}"))
