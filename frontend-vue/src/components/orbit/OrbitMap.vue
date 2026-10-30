@@ -63,10 +63,26 @@ const prefersReducedMotion = ref(Boolean(reduceMotionQuery?.matches));
 
 /** Ambient motion: 'off' | 'subtle' | 'lively' (off under reduced motion). */
 const vitalityMode = useStorage<'off' | 'subtle' | 'lively'>('gravityui.orbit.vitality', prefersReducedMotion.value ? 'off' : 'subtle');
-function cycleVitality() {
-  const order = ['off', 'subtle', 'lively'] as const;
-  vitalityMode.value = order[(order.indexOf(vitalityMode.value) + 1) % order.length];
+const VITALITY_ORDER = ['off', 'subtle', 'lively'] as const;
+/** 0, 1 or 2 lit level marks on the motion button */
+const vitalityLevel = computed(() => VITALITY_ORDER.indexOf(vitalityMode.value));
+/** Short label next to the controls after a click: the tooltip alone never shows on touch */
+const vitalityHint = ref(false);
+/** Distance from the map's bottom edge that centres the label on the button (the column is laid out in CSS) */
+const vitalityHintBottom = ref<number | null>(null);
+let vitalityHintTimer: ReturnType<typeof setTimeout> | undefined;
+function cycleVitality(event: MouseEvent) {
+  vitalityMode.value = VITALITY_ORDER[(vitalityLevel.value + 1) % VITALITY_ORDER.length];
+  const button = event.currentTarget as HTMLElement;
+  const map = button.parentElement?.offsetParent;
+  vitalityHintBottom.value = map
+    ? map.getBoundingClientRect().bottom - button.getBoundingClientRect().bottom + (button.offsetHeight - 28) / 2
+    : null;
+  vitalityHint.value = true;
+  clearTimeout(vitalityHintTimer);
+  vitalityHintTimer = setTimeout(() => { vitalityHint.value = false; }, 1600);
 }
+onBeforeUnmount(() => clearTimeout(vitalityHintTimer));
 
 const editing = ref(props.editable && props.startEditing);
 /** Resilience view: single points of failure lit up, with their list */
@@ -984,6 +1000,23 @@ useResizeObserver(svgRef, initialFit);
 
     <OrbitTracePanel v-if="!editing && traceFromId != null" :start-label="traceStartLabel" :has-target="traceToId != null" :path="tracedPath" :hops="traceHops" @close="cancelTrace" />
 
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="translate-x-1 opacity-0"
+      leave-active-class="transition duration-200 ease-in"
+      leave-to-class="opacity-0"
+    >
+      <p
+        v-if="vitalityHint"
+        class="pointer-events-none absolute right-14 bottom-3 z-10 h-7 rounded-md bg-surface px-2.5 text-xs leading-7 font-medium whitespace-nowrap text-fg shadow-pop max-md:right-3 max-md:!bottom-16"
+        :style="vitalityHintBottom != null ? { bottom: `${vitalityHintBottom}px` } : undefined"
+      >
+        {{ t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) }) }}
+      </p>
+    </Transition>
+    <!-- Screen readers hear the new level once, without the visual hint's timing -->
+    <p class="sr-only" role="status" aria-live="polite">{{ vitalityHint ? t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) }) : '' }}</p>
+
     <!-- Motion and zoom controls; a row on phones, where a column of 44 px buttons covered the map height -->
     <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md bg-surface shadow-pop max-md:flex-row">
       <button
@@ -1010,13 +1043,16 @@ useResizeObserver(svgRef, initialFit);
       </button>
       <button
         type="button"
-        class="flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11"
+        class="relative flex size-8 items-center justify-center text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11"
         :class="vitalityMode !== 'off' && 'text-accent-text'"
         :title="t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) })"
         :aria-label="t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) })"
         @click="cycleVitality"
       >
-        <Sparkles class="size-3.5" aria-hidden="true" />
+        <Sparkles class="size-3.5 -translate-y-0.5" aria-hidden="true" />
+        <span class="absolute bottom-1 left-1/2 flex -translate-x-1/2 gap-0.5 max-md:bottom-2" aria-hidden="true">
+          <span v-for="mark in 2" :key="mark" class="h-0.5 w-1.5 rounded-full transition-colors duration-150" :class="mark <= vitalityLevel ? 'bg-accent' : 'bg-fg-subtle/40'" />
+        </span>
       </button>
       <button type="button" class="flex size-8 items-center justify-center border-t border-line text-fg-muted hover:bg-control-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-md:size-11 max-md:border-t-0 max-md:border-l" :aria-label="t('gv.plan.zoom_in')" @click="view.zoomBy(1.2)">
         <Plus class="size-4" aria-hidden="true" />

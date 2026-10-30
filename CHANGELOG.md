@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- GravityUI orbit map: the motion button shows its level. Two small marks under the icon light up for subtle (one) and lively (two), and a click shows "Motion: lively" next to the controls for a moment, also for screen readers. Before, subtle and lively looked the same and the level was only in the tooltip, which phones never show.
+
 ## [0.7.0] - 2026-10-30
 
 ### Changed
