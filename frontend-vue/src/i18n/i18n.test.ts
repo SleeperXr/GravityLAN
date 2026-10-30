@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatNumber, i18next, locale, setLocale, t } from './index';
-import de from '@shared/locales/de/translation.json';
+import de from '@/locales/base/de.json';
 import gvDe from '@/locales/de.json';
 import gvEn from '@/locales/en.json';
 

@@ -9,7 +9,7 @@ import { useNetworkStore } from '@/stores/network';
 import { useDashboardScan } from '@/composables/useDashboardScan';
 import { useToast } from '@/composables/useToast';
 import { useConfirm } from '@/composables/useConfirm';
-import { swapGroupOrder } from '@shared/components/Dashboard/overview/layout';
+import { swapGroupOrder } from '@/lib/dashboardLayout';
 import { isAgentOutdated } from '@/lib/agent';
 import { deviceLabel } from '@/lib/networks';
 import PageHeader from '@/components/ui/PageHeader.vue';
@@ -28,7 +28,7 @@ import LineStatusBoard from '@/components/dashboard/LineStatusBoard.vue';
 import ServiceNotices from '@/components/dashboard/ServiceNotices.vue';
 import NetworkPulse from '@/components/dashboard/NetworkPulse.vue';
 import OrbitMap from '@/components/orbit/OrbitMap.vue';
-import type { EditorTab } from '@shared/components/Dashboard/editor/deviceForm';
+import type { EditorTab } from '@/lib/deviceForm';
 import { t } from '@/i18n';
 
 const store = useNetworkStore();

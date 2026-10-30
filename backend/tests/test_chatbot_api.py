@@ -181,16 +181,12 @@ async def test_chatbot_api_endpoints(client, db, admin_token):
     )
     assert response.status_code == 404
 
-    # 11. Test GET /api/scan-profiles
+    # 11. GET /api/scan-profiles is gone (the profiles never reached a scan)
     response = await client.get(
         "/api/scan-profiles",
         headers={"Authorization": f"Bearer {admin_token}"}
     )
-    assert response.status_code == 200
-    profiles = response.json()
-    assert isinstance(profiles, list)
-    assert len(profiles) == 3
-    assert profiles[0]["name"] == "Standard Discovery"
+    assert response.status_code == 404
 
     # 12. Test GET /api/notifications and filtering
     from app.models.device import DeviceHistory

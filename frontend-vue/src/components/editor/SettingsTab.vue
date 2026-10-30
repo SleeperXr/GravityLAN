@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { Bell, BellOff, Radio, RefreshCw, Server, Wifi } from 'lucide-vue-next';
 import type { Device, DeviceGroup, Rack } from '@/types';
-import type { DeviceFormData } from '@shared/components/Dashboard/editor/deviceForm';
+import type { DeviceFormData } from '@/lib/deviceForm';
 import Button from '@/components/ui/Button.vue';
 import Field from '@/components/ui/Field.vue';
 import Input from '@/components/ui/Input.vue';

@@ -169,17 +169,6 @@ def test_auth_endpoints(mock_request):
 
 
 @patch("gravitylan_api.client.GravityLANClient._request")
-def test_scan_profiles_endpoints(mock_request):
-    """Test scan_profiles.list() resource method."""
-    mock_request.return_value = []
-    client = GravityLANClient(token="test")
-
-    res = client.scan_profiles.list()
-    assert res == []
-    mock_request.assert_called_with("GET", "/api/scan-profiles")
-
-
-@patch("gravitylan_api.client.GravityLANClient._request")
 def test_health_endpoints(mock_request):
     """Test health.summary() resource method."""
     mock_request.return_value = {"api_version": "0.3.0"}

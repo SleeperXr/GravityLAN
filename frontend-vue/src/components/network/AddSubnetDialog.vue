@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { canonicalCidr } from '@shared/components/Network/subnet/model';
+import { canonicalCidr } from '@/lib/subnetModel';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Field from '@/components/ui/Field.vue';

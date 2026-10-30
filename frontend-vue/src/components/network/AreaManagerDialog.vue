@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { Plus, Trash2 } from 'lucide-vue-next';
-import type { NetworkArea } from '@shared/components/Network/subnet/model';
+import type { NetworkArea } from '@/lib/subnetModel';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Input from '@/components/ui/Input.vue';

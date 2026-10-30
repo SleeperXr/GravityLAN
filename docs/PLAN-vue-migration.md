@@ -166,7 +166,8 @@ zwei Aufrufe gleich, alle Einstellungsfelder sind vorhanden.
 - [x] **Vollbild für die Karte**: Knopf in den Zoom-Steuerelementen der Orbit-Karte.
 - [x] ~~KPI „aktive Probleme“~~: kein Fehlen, GravityUI zeigt `active_issues_count` als Badge, sobald > 0
       (Fehlalarm der ersten Suche).
-- [ ] **Rack-Ansicht**: Meldung „Rack-Ansicht fehlt in Vue“ (2026-10-26) ist noch offen, nicht nachgestellt.
+- [x] **Rack-Ansicht**: in GravityUI neu gebaut (0.6.0): Faceplates, Drag & Drop, Rack-Einbauten, Ports und Kabel,
+      Vorder- und Rückseite, Größe; geht über die React-Ansicht hinaus. Gegengeprüft 2026-10-30.
 
 ### 7.2 Bewusst nicht übernommen
 
@@ -180,15 +181,17 @@ zwei Aufrufe gleich, alle Einstellungsfelder sind vorhanden.
 
 ### 7.3 Standard-Wechsel (Release N)
 
-- [ ] Lücken aus 7.1 geschlossen
-- [ ] Fallback in `backend/app/main.py::_default_frontend` von `"react"` auf `"vue"` (gilt nur, wenn
+- [x] Lücken aus 7.1 geschlossen
+- [x] Fallback in `backend/app/main.py::_default_frontend` von `"react"` auf `"vue"` (gilt nur, wenn
       `ui.default_frontend` nicht gesetzt ist; eine bewusste Wahl im Browser-Cookie `gl_ui` bleibt)
-- [ ] Hinweis „in Entwicklung“ (`DevNotice`) entfernen, README/Screenshots auf GravityUI als Standard
-- [ ] CHANGELOG: Ankündigung, dass React mit Release N+1 entfällt
+- [x] Hinweis „in Entwicklung“ (`DevNotice`) entfernen, README/Screenshots auf GravityUI als Standard
+- [x] CHANGELOG: Ankündigung, dass React mit Release N+1 entfällt
 
 ### 7.4 React entfernen (Release N+1)
 
-Voraussetzung: GravityUI darf nichts mehr aus `frontend/src` importieren. Heute kommen über `@shared` noch:
+Voraussetzung: GravityUI darf nichts mehr aus `frontend/src` importieren. **Erledigt 2026-10-30:** der Alias `@shared` ist
+entfernt, die Dateien liegen als Kopien in `frontend-vue/` (`src/api/core.ts`, `src/types/`, `src/locales/base/`,
+`src/lib/{deviceForm,dashboardLayout,subnetModel,version}.ts`). Vorher kamen über `@shared`:
 
 | Import | Nutzer | Ziel |
 |---|---|---|
