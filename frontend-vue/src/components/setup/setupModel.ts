@@ -1,6 +1,6 @@
 /** First-run wizard logic, ported from the React UI (Setup/SetupWizard.tsx, Setup/setupHooks.ts). */
 import type { ScanProgress, SubnetInfo } from '@/types';
-import { canonicalCidr } from '@shared/components/Network/subnet/model';
+import { canonicalCidr } from '@/lib/subnetModel';
 
 export const STEP_KEYS = ['step_welcome', 'step_networks', 'step_scan', 'step_security'] as const;
 export const NETWORKS_STEP = 1;

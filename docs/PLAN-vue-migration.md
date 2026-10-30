@@ -189,7 +189,9 @@ zwei Aufrufe gleich, alle Einstellungsfelder sind vorhanden.
 
 ### 7.4 React entfernen (Release N+1)
 
-Voraussetzung: GravityUI darf nichts mehr aus `frontend/src` importieren. Heute kommen über `@shared` noch:
+Voraussetzung: GravityUI darf nichts mehr aus `frontend/src` importieren. **Erledigt 2026-10-30:** der Alias `@shared` ist
+entfernt, die Dateien liegen als Kopien in `frontend-vue/` (`src/api/core.ts`, `src/types/`, `src/locales/base/`,
+`src/lib/{deviceForm,dashboardLayout,subnetModel,version}.ts`). Vorher kamen über `@shared`:
 
 | Import | Nutzer | Ziel |
 |---|---|---|

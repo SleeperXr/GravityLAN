@@ -4,7 +4,7 @@ import { useMediaQuery, useStorage } from '@vueuse/core';
 import { Grid3x3, LayoutGrid, Plus, Radar, Search, Settings2, Trash2 } from 'lucide-vue-next';
 import { api, createScanSocket } from '@/api/client';
 import type { Device, Subnet } from '@/types';
-import { buildTiles, countOnline, parseAreas, prefixOf, recentFindings, type AreasByPrefix, type NetworkArea } from '@shared/components/Network/subnet/model';
+import { buildTiles, countOnline, parseAreas, prefixOf, recentFindings, type AreasByPrefix, type NetworkArea } from '@/lib/subnetModel';
 import { useNetworkStore } from '@/stores/network';
 import { useDiscoveryStore } from '@/stores/discovery';
 import { useToast } from '@/composables/useToast';
