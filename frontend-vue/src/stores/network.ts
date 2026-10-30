@@ -9,6 +9,8 @@ export const SCAN_ACTIVE: ScanProgress['status'][] = ['running', 'discovering', 
 /** Inventory shared by the dashboard, the sidebar counts and the editors. */
 export const useNetworkStore = defineStore('network', () => {
   const devices = ref<Device[]>([]);
+  /** Devices hidden from the dashboard; only the orbit map may show them (`ui.orbit_visibility`) */
+  const hiddenDevices = ref<Device[]>([]);
   const groups = ref<DeviceGroup[]>([]);
   const subnets = ref<Subnet[]>([]);
   const isLoading = ref(true);
@@ -34,11 +36,12 @@ export const useNetworkStore = defineStore('network', () => {
     inflight = (async () => {
       try {
         const [devs, grps, subs] = await Promise.all([
-          api.getDevices(),
+          api.getDevices(true),
           api.getGroups(),
           api.getSubnetsList().catch(() => subnets.value),
         ]);
-        devices.value = devs;
+        devices.value = devs.filter((d) => !d.is_hidden);
+        hiddenDevices.value = devs.filter((d) => d.is_hidden);
         groups.value = grps;
         subnets.value = subs;
         loaded.value = true;
@@ -61,7 +64,9 @@ export const useNetworkStore = defineStore('network', () => {
   }
 
   function patchDevice(id: number, data: Partial<Device>) {
-    devices.value = devices.value.map((d) => (d.id === id ? { ...d, ...data } : d));
+    const all = [...devices.value, ...hiddenDevices.value].map((d) => (d.id === id ? { ...d, ...data } : d));
+    devices.value = all.filter((d) => !d.is_hidden);
+    hiddenDevices.value = all.filter((d) => d.is_hidden);
   }
 
   function markScanStarted(subnet: string) {
@@ -97,6 +102,7 @@ export const useNetworkStore = defineStore('network', () => {
 
   return {
     devices,
+    hiddenDevices,
     groups,
     sortedGroups,
     subnets,

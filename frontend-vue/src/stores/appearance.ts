@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { api } from '@/api/client';
-import type { OrbitRole, OrbitRoles } from '@/components/orbit/orbitModel';
+import type { OrbitRole, OrbitRoles, OrbitVisibility } from '@/components/orbit/orbitModel';
 
 const SETTING_KEY = 'ui.line_colors';
 const ORBIT_KEY = 'ui.orbit_layout';
 const ROLES_KEY = 'ui.orbit_roles';
+const VISIBILITY_KEY = 'ui.orbit_visibility';
 const LINK_TYPE_KEY = 'ui.link_type_colors';
 const ROLES: OrbitRole[] = ['star', 'planet', 'dwarf', 'moon'];
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -24,6 +25,8 @@ export const useAppearance = defineStore('appearance', () => {
   const orbitCustom = ref(false);
   /** Orbit roles the user chose per device (`ui.orbit_roles`, JSON {deviceId: role}) */
   const orbitRoles = ref<OrbitRoles>({});
+  /** Devices shown on or hidden from the orbit map regardless of the dashboard (`ui.orbit_visibility`) */
+  const orbitVisibility = ref<OrbitVisibility>({});
   /** Beam colour per connection type (`ui.link_type_colors`, JSON {"10GbE": "#rrggbb"}); a link's own colour wins */
   const linkTypeColors = ref<Record<string, string>>({});
   let loaded: Promise<void> | null = null;
@@ -40,6 +43,8 @@ export const useAppearance = defineStore('appearance', () => {
         const types = settings[LINK_TYPE_KEY] ? (JSON.parse(settings[LINK_TYPE_KEY]) as Record<string, string>) : {};
         linkTypeColors.value = Object.fromEntries(Object.entries(types).filter(([, v]) => HEX.test(v)));
         orbitRoles.value = Object.fromEntries(Object.entries(roles).filter(([, r]) => ROLES.includes(r as OrbitRole))) as OrbitRoles;
+        const visibility = settings[VISIBILITY_KEY] ? (JSON.parse(settings[VISIBILITY_KEY]) as Record<string, unknown>) : {};
+        orbitVisibility.value = Object.fromEntries(Object.entries(visibility).filter(([, v]) => typeof v === 'boolean')) as OrbitVisibility;
       } catch {
         lineColors.value = {};
       }
@@ -61,6 +66,19 @@ export const useAppearance = defineStore('appearance', () => {
     await api.updateSettings({ [ROLES_KEY]: JSON.stringify(next) });
   }
 
+  /** Show or hide a device on the orbit map, whatever the dashboard does with it; a failed save puts it back. */
+  async function setOrbitVisible(deviceId: number, shown: boolean) {
+    const previous = orbitVisibility.value;
+    const next = { ...previous, [String(deviceId)]: shown };
+    orbitVisibility.value = next;
+    try {
+      await api.updateSettings({ [VISIBILITY_KEY]: JSON.stringify(next) });
+    } catch (err) {
+      orbitVisibility.value = previous;
+      throw err;
+    }
+  }
+
   async function setLinkTypeColor(type: string, color: string | null) {
     const next = { ...linkTypeColors.value };
     if (color && HEX.test(color)) next[type] = color;
@@ -77,5 +95,5 @@ export const useAppearance = defineStore('appearance', () => {
     await api.updateSettings({ [SETTING_KEY]: JSON.stringify(next) });
   }
 
-  return { lineColors, linkTypeColors, orbitCustom, orbitRoles, load, setLineColor, setLinkTypeColor, setOrbitCustom, setOrbitRole };
+  return { lineColors, linkTypeColors, orbitCustom, orbitRoles, orbitVisibility, load, setLineColor, setLinkTypeColor, setOrbitCustom, setOrbitRole, setOrbitVisible };
 });

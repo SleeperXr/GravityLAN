@@ -53,6 +53,22 @@ describe('network store', () => {
     expect(store.sortedGroups.map((g) => g.name)).toEqual(['A', 'B']);
   });
 
+  it('keeps dashboard-hidden devices apart, for the orbit map only', async () => {
+    api.getDevices.mockResolvedValue([device(1), device(2, { is_hidden: true })]);
+    const store = useNetworkStore();
+    await store.loadData();
+
+    expect(api.getDevices).toHaveBeenCalledWith(true);
+    expect(store.devices.map((d) => d.id)).toEqual([1]);
+    expect(store.hiddenDevices.map((d) => d.id)).toEqual([2]);
+    expect(store.totalCount).toBe(1);
+
+    // Showing it on the dashboard again moves it over
+    store.patchDevice(2, { is_hidden: false });
+    expect(store.devices.map((d) => d.id)).toEqual([1, 2]);
+    expect(store.hiddenDevices).toEqual([]);
+  });
+
   it('shares one request between overlapping loads', async () => {
     const store = useNetworkStore();
     await Promise.all([store.loadData(), store.loadData(true)]);

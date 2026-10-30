@@ -94,3 +94,15 @@ async def test_health_resilience_card_mode_is_writable_and_checked(client, admin
     assert stored.json()["ui.health_resilience"] == "off"
     bad = await client.post("/api/settings", json={"ui.health_resilience": "sometimes"}, headers=headers)
     assert bad.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_orbit_visibility_is_writable_and_checked(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    ok = await client.post("/api/settings", json={"ui.orbit_visibility": '{"3": false, "7": true}'}, headers=headers)
+    assert ok.status_code == 200
+    stored = await client.get("/api/settings", headers=headers)
+    assert stored.json()["ui.orbit_visibility"] == '{"3": false, "7": true}'
+    for bad in ("not json", "[3]", '{"router": false}', '{"3": "no"}'):
+        res = await client.post("/api/settings", json={"ui.orbit_visibility": bad}, headers=headers)
+        assert res.status_code == 400, bad

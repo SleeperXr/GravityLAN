@@ -136,7 +136,8 @@ export const api = {
     request<{ status: string; hosts_found: number }>(`/api/scanner/quick-subnet-scan?subnets=${subnets}`, { method: 'POST' }),
 
   // Devices
-  getDevices: () => request<import('../types').Device[]>('/api/devices'),
+  getDevices: (includeHidden = false) =>
+    request<import('../types').Device[]>(includeHidden ? '/api/devices?include_hidden=true' : '/api/devices'),
   getDevice: (id: number) => request<import('../types').Device>(`/api/devices/${id}`),
   addDeviceFromIp: (ip: string) => request<import('../types').Device>(`/api/devices/add-from-ip?ip=${ip}`, { method: 'POST' }),
   updateDevice: (id: number, data: Partial<import('../types').Device>) =>
