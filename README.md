@@ -38,11 +38,11 @@ Everything runs in **one container** on **SQLite**: a FastAPI backend, the inven
 
 ## GravityUI at a glance
 
-All screenshots use the [demo data](#development): the homelab, and the small company network for the racks and the resilience view.
+All screenshots show the company network of the [demo backend](#development) (`--company`): 133 devices in eight VLANs, a Proxmox cluster, four racks with ports and cables, and backup links.
 
 <table>
   <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/vue/orbit.png" alt="Orbit map with the gateway as the star, switches and hosts on orbits around it and their devices as moons, offline devices marked red"><br><sub><b>Orbit map</b>: the topology as a solar system</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/orbit.png" alt="Orbit map of a company network with the firewall as the star, core, aggregation and access switches on orbits around it and their devices as moons, offline devices marked red"><br><sub><b>Orbit map</b>: the topology as a solar system</sub></td>
     <td width="50%" valign="top"><img src="./docs/screenshots/vue/racks.png" alt="Rack view with switches, a copper patch panel, a UPS and a power strip, cables hanging between their jacks, and the equipment list on the left"><br><sub><b>Racks</b>: faceplates, ports and cables</sub></td>
   </tr>
   <tr>
@@ -285,7 +285,7 @@ npm run dev
 
 GravityUI takes its API client, types and texts from `frontend/src`, so `frontend/` has to stay next to it even when you only work on GravityUI.
 
-**Without touching your network:** `python scripts/dev_demo.py` (in the backend virtualenv) starts the API on `127.0.0.1:8000` with a throw-away demo database, simulated agents with 24 hours of history and a fake SSH shell, but no scans. Start GravityUI as above and log in with `demo`. `--reset` seeds the demo data again, `--fresh` starts like a new install, `--company` loads a small company network instead (8 VLANs, a four-node Proxmox cluster, about 130 devices, four racks with ports and cables, backup links, own database). The screenshots in this README come from it.
+**Without touching your network:** `python scripts/dev_demo.py` (in the backend virtualenv) starts the API on `127.0.0.1:8000` with a throw-away demo database, simulated agents with 24 hours of history and a fake SSH shell, but no scans. Start GravityUI as above and log in with `demo`. `--reset` seeds the demo data again, `--fresh` starts like a new install, `--company` loads a small company network instead (8 VLANs, a four-node Proxmox cluster, about 130 devices, four racks with ports and cables, backup links, own database). The screenshots in this README come from `--company`.
 
 **Tests and checks:**
 
@@ -330,11 +330,11 @@ Alles läuft in **einem Container** auf **SQLite**: ein FastAPI-Backend, das Inv
 
 ### GravityUI im Überblick
 
-Alle Screenshots zeigen die [Demo-Daten](#entwicklung): das Homelab, für die Racks und die Ausfallsicherheit das kleine Firmennetz.
+Alle Screenshots zeigen das Firmennetz des [Demo-Backends](#entwicklung) (`--company`): 133 Geräte in acht VLANs, ein Proxmox-Cluster, vier Racks mit Ports und Kabeln und Backup-Verbindungen.
 
 <table>
   <tr>
-    <td width="50%" valign="top"><img src="./docs/screenshots/vue/orbit.png" alt="Orbit-Netzplan mit dem Gateway als Stern, Switches und Hosts auf Umlaufbahnen und ihren Geräten als Monde, ausgefallene Geräte rot markiert"><br><sub><b>Orbit-Netzplan</b>: die Topologie als Sonnensystem</sub></td>
+    <td width="50%" valign="top"><img src="./docs/screenshots/vue/orbit.png" alt="Orbit-Netzplan eines Firmennetzes mit der Firewall als Stern, Core-, Aggregations- und Access-Switches auf Umlaufbahnen und ihren Geräten als Monde, ausgefallene Geräte rot markiert"><br><sub><b>Orbit-Netzplan</b>: die Topologie als Sonnensystem</sub></td>
     <td width="50%" valign="top"><img src="./docs/screenshots/vue/racks.png" alt="Rack-Ansicht mit Switches, Kupfer-Patchfeld, USV und Steckdosenleiste, Kabel hängen zwischen den Buchsen, links die Liste zum Einbauen"><br><sub><b>Racks</b>: Frontblenden, Ports und Kabel</sub></td>
   </tr>
   <tr>
@@ -577,7 +577,7 @@ npm run dev
 
 GravityUI holt API-Client, Typen und Texte aus `frontend/src`; `frontend/` muss daneben liegen bleiben, auch wenn du nur an GravityUI arbeitest.
 
-**Ohne dein Netz anzufassen:** `python scripts/dev_demo.py` (in der Backend-venv) startet die API auf `127.0.0.1:8000` mit einer Wegwerf-Demo-Datenbank, simulierten Agenten mit 24 Stunden Verlauf und einer Demo-Shell für SSH, aber ohne Scans. GravityUI wie oben starten, Passwort `demo`. `--reset` befüllt die Demo-Daten neu, `--fresh` startet wie eine Neuinstallation, `--company` lädt stattdessen ein kleines Firmennetz (8 VLANs, Proxmox-Cluster mit vier Knoten, rund 130 Geräte, vier Racks mit Ports und Kabeln, Backup-Verbindungen, eigene Datenbank). Die Screenshots in dieser README stammen daraus.
+**Ohne dein Netz anzufassen:** `python scripts/dev_demo.py` (in der Backend-venv) startet die API auf `127.0.0.1:8000` mit einer Wegwerf-Demo-Datenbank, simulierten Agenten mit 24 Stunden Verlauf und einer Demo-Shell für SSH, aber ohne Scans. GravityUI wie oben starten, Passwort `demo`. `--reset` befüllt die Demo-Daten neu, `--fresh` startet wie eine Neuinstallation, `--company` lädt stattdessen ein kleines Firmennetz (8 VLANs, Proxmox-Cluster mit vier Knoten, rund 130 Geräte, vier Racks mit Ports und Kabeln, Backup-Verbindungen, eigene Datenbank). Die Screenshots in dieser README stammen aus `--company`.
 
 **Tests und Prüfungen:**
 
