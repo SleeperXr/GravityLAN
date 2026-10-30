@@ -198,10 +198,21 @@ async def run_arp_only_scan():
     return len(hosts_to_sync)
 
 
-async def run_planner_scan(subnets: list[str], progress_callback=None):
+def _target_count(subnet: str) -> int:
+    """Host addresses the scan sweeps in a subnet, 0 for one it skips (invalid or too large, #43)."""
+    try:
+        return len(scan_target_ips(subnet))
+    except ValueError:
+        return 0
+
+
+async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_callback=None):
     """
     Executes a lightweight discovery scan for the Network Planner.
     Uses ARP + Ping + DNS.
+
+    ``hosts_callback(subnet, hosts_scanned, hosts_total)`` is awaited when a subnet starts and
+    when it is done; nmap sweeps a whole subnet at once, so the count moves per subnet.
     """
     subnets = _normalize_subnets(subnets)
     logger.info(f"Planner: Starting discovery on {subnets}")
@@ -213,9 +224,16 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
     all_alive_ips = set()
     from app.scanner.sync import sync_hosts_batch
 
+    targets = {s: _target_count(s) for s in subnets if not s.startswith("169.254.")}
+    hosts_total = sum(targets.values())
+    hosts_scanned = 0
+
     for subnet in subnets:
         if subnet.startswith("169.254."):
             continue
+
+        if hosts_callback:
+            await hosts_callback(subnet, hosts_scanned, hosts_total)
 
         dns_server = await _get_subnet_dns_server(subnet)
 
@@ -248,6 +266,10 @@ async def run_planner_scan(subnets: list[str], progress_callback=None):
 
             if progress_callback:
                 await progress_callback("EVENT:RELOAD_DEVICES")
+
+        hosts_scanned += targets.get(subnet, 0)
+        if hosts_callback:
+            await hosts_callback(subnet, hosts_scanned, hosts_total)
 
     # 4. Offline Cleanup (Exclusive to Planner)
     # Delete hosts in scanned subnets that were not found

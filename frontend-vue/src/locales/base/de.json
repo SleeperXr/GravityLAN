@@ -700,6 +700,7 @@
     "dns_label": "DNS-Server (optional)",
     "skip_scan": "Scan überspringen",
     "scan_progress_label": "Scan-Fortschritt",
+    "scanning_subnet": "Scanne {{subnet}} …",
     "hosts_checked": "Hosts geprüft",
     "devices_label": "Gefundene Geräte",
     "scan_failed": "Scan fehlgeschlagen",

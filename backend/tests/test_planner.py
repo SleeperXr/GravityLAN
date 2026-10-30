@@ -327,6 +327,23 @@ async def test_run_planner_scan_skips_link_local_and_invalid_subnets(monkeypatch
     sync_mock.assert_not_awaited()
 
 
+async def test_run_planner_scan_reports_host_counts_per_subnet(monkeypatch, patch_async_session, db):
+    """The setup wizard showed "0 / 0 hosts checked": the planner never reported a count."""
+    monkeypatch.setattr(planner, "discover_hosts_simple", AsyncMock(return_value=[]))
+    monkeypatch.setattr(planner, "resolve_mac_addresses", AsyncMock(return_value=[]))
+    monkeypatch.setattr("app.scanner.sync.sync_hosts_batch", AsyncMock())
+    monkeypatch.setattr("app.services.webhook_service.trigger_webhooks", AsyncMock())
+    hosts = AsyncMock()
+
+    await planner.run_planner_scan(["169.254.0.0/16", "not-a-subnet", "10.1.0.0/24", "10.2.0.0/25"], hosts_callback=hosts)
+
+    calls = [c.args for c in hosts.await_args_list]
+    # Skipped subnets count nothing; each scanned one is reported when it starts and when it is done
+    assert calls[0][2] == 254 + 126
+    assert calls[-1][1:] == (380, 380)
+    assert ("10.1.0.0/24", 0, 380) in calls and ("10.1.0.0/24", 254, 380) in calls
+
+
 @pytest.mark.asyncio
 async def test_network_subnets_l2_l3_enrichment(client, db, admin_token, monkeypatch):
     from app.models.network import Subnet
