@@ -1,0 +1,90 @@
+name: Release images
+
+# vX.Y.Z        -> sleeperxr/gravitylan:X.Y.Z and :latest
+# vX.Y.Z-rc.N   -> sleeperxr/gravitylan:X.Y.Z-rc.N and :next (never :latest)
+# manual run    -> sleeperxr/gravitylan:dev, from main only
+# See docs/RELEASING.md.
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: sleeperxr/gravitylan
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Work out the image tags
+      id: tags
+      run: |
+        ref="${GITHUB_REF}"
+        if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+          if [ "$ref" != "refs/heads/main" ]; then
+            echo "::error:::dev is only built from main, not from $ref"
+            exit 1
+          fi
+          echo "tags=${IMAGE}:dev" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        tag="${ref#refs/tags/}"
+        version="$(cat VERSION | tr -d '[:space:]')"
+        if [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+          release="${BASH_REMATCH[1]}"
+          tags="${IMAGE}:${release},${IMAGE}:latest"
+          # A release whose commit already went out as a release candidate reuses that image unchanged
+          rc="$(git tag --points-at HEAD --list "v${release}-rc.*" --sort=-version:refname | head -n 1)"
+          echo "promote=${rc#v}" >> "$GITHUB_OUTPUT"
+        elif [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-rc\.[0-9]+$ ]]; then
+          release="${BASH_REMATCH[1]}"
+          tags="${IMAGE}:${tag#v},${IMAGE}:next"
+        else
+          echo "::error::$tag is neither vX.Y.Z nor vX.Y.Z-rc.N"
+          exit 1
+        fi
+        if [ "$release" != "$version" ]; then
+          echo "::error::Tag $tag does not match VERSION $version"
+          exit 1
+        fi
+        echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+    - uses: docker/setup-buildx-action@v3
+
+    - uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Promote the release candidate image
+      if: steps.tags.outputs.promote != ''
+      run: |
+        args=""
+        for t in $(echo "${{ steps.tags.outputs.tags }}" | tr ',' ' '); do args="$args -t $t"; done
+        docker buildx imagetools create $args "${IMAGE}:${{ steps.tags.outputs.promote }}"
+
+    - name: Build and push
+      if: steps.tags.outputs.promote == ''
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: true
+        pull: true
+        tags: ${{ steps.tags.outputs.tags }}
