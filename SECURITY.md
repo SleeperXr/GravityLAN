@@ -40,3 +40,7 @@ The browser SSH terminal is the one place where GravityLAN stores SSH credential
 ## Reporting a Vulnerability
 
 If you discover a security vulnerability that affects the isolation or safety of the host system, please open an issue in the repository or contact the maintainer directly.
+
+GravityLAN is maintained by one person in their spare time. A report may wait longer than usual during a break from
+the project; it is read and answered when work resumes. Fixes ship as described in
+[docs/RELEASING.md](docs/RELEASING.md).
