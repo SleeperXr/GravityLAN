@@ -155,7 +155,15 @@
     "health": {
       "period": "Zeitraum",
       "filter": "Status filtern",
-      "sort": "Sortieren nach"
+      "sort": "Sortieren nach",
+      "resilience_setting": "Ausfallpunkte im Health-Radar",
+      "resilience_setting_hint": "Automatisch zeigt die Karte nur, wenn im Netz Backup-Leitungen eingetragen sind.",
+      "resilience_auto": "Automatisch",
+      "resilience_on": "Immer anzeigen",
+      "resilience_off": "Nie anzeigen",
+      "resilience_hide": "Ausblenden",
+      "resilience_hidden": "Ausfallpunkte ausgeblendet",
+      "resilience_hidden_hint": "Wieder einschalten unter Einstellungen → System."
     },
     "agents": {
       "patch_confirm": "Die Pakete auf {{host}} werden jetzt per SSH aktualisiert. Laufende Dienste können kurz neu starten.",

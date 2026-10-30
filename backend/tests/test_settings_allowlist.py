@@ -82,3 +82,15 @@ async def test_get_settings_hides_credentials(client, admin_token):
     assert res.status_code == 200
     assert "api.master_token" not in res.json()
     assert "api.admin_password" not in res.json()
+
+
+@pytest.mark.asyncio
+async def test_health_resilience_card_mode_is_writable_and_checked(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    for mode in ("auto", "on", "off"):
+        res = await client.post("/api/settings", json={"ui.health_resilience": mode}, headers=headers)
+        assert res.status_code == 200
+    stored = await client.get("/api/settings", headers=headers)
+    assert stored.json()["ui.health_resilience"] == "off"
+    bad = await client.post("/api/settings", json={"ui.health_resilience": "sometimes"}, headers=headers)
+    assert bad.status_code == 400

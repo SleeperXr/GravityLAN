@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Device } from '@/types';
 import type { OrbitLink } from './orbitModel';
-import { analyseResilience, failoverState } from './orbitResilience';
+import { analyseResilience, failoverState, showResilienceCard } from './orbitResilience';
 
 const device = (id: number, extra: Partial<Device> = {}) =>
   ({ id, ip: `10.0.0.${id}`, is_online: true, virtual_type: null, parent_id: null, ...extra }) as Device;
@@ -57,5 +57,14 @@ describe('failoverState', () => {
     expect([...state.cutOffIds]).toEqual([4]);
     // The backup ends at the failed device, so it cannot take over
     expect(state.activeBackupIds.size).toBe(0);
+  });
+});
+
+describe('single points of failure card on Health', () => {
+  it('shows itself automatically only once a backup link exists', () => {
+    expect(showResilienceCard('auto', [{ role: 'primary' }, {}])).toBe(false);
+    expect(showResilienceCard('auto', [{ role: 'primary' }, { role: 'backup' }])).toBe(true);
+    expect(showResilienceCard('on', [])).toBe(true);
+    expect(showResilienceCard('off', [{ role: 'backup' }])).toBe(false);
   });
 });

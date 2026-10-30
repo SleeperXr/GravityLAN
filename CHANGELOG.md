@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- GravityUI Health: the single points of failure card is optional. By default it only shows once the network has a backup link, since a simple homelab without any fallback path learns nothing from it; Settings → System can show it always or never (setting `ui.health_resilience`: `auto`, `on`, `off`), and the card itself has a hide button with undo.
 - README (English and German) rewritten around GravityUI. New screenshots of the current GravityUI from the demo data in `docs/screenshots/vue/`: overview, orbit map, racks, Health Radar, resilience, IP addresses, agents, SSH, device editor, settings, tutorials and two phone views, all from the company demo (`--company`), palette-compressed like before. The features are grouped by GravityUI page and by what runs underneath, the quick start opens `/frontend-vue/` and names Settings → System → Default interface, and the classic React interface gets a short section of its own with how to switch and what [ADR-003](docs/adr/003-react-retirement.md) plans for it. The Unraid template's orbit screenshot is the new one too.
 
 ## [0.6.0] - 2026-10-29

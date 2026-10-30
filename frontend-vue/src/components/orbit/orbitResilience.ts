@@ -140,3 +140,13 @@ export function analyseResilience(devices: Device[], links: OrbitLink[], starIds
   const unconnectedIds = new Set(devices.filter((d) => !isGuest(d) && !stars.has(d.id) && !base.has(d.id)).map((d) => d.id));
   return { singlePoints, dependsOn, unconnectedIds };
 }
+
+export type ResilienceCardMode = 'auto' | 'on' | 'off';
+
+/**
+ * Whether the health view shows its single-points-of-failure card: always with "on", never with "off", and
+ * automatically only once a backup link exists; a network without any fallback path learns nothing from it.
+ */
+export function showResilienceCard(mode: ResilienceCardMode, links: { role?: string }[]): boolean {
+  return mode === 'on' || (mode === 'auto' && links.some((l) => l.role === 'backup'));
+}

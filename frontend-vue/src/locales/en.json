@@ -155,7 +155,15 @@
     "health": {
       "period": "Period",
       "filter": "Filter by status",
-      "sort": "Sort by"
+      "sort": "Sort by",
+      "resilience_setting": "Single points of failure on Health",
+      "resilience_setting_hint": "Automatic shows the card only when the network has backup links.",
+      "resilience_auto": "Automatic",
+      "resilience_on": "Always show",
+      "resilience_off": "Never show",
+      "resilience_hide": "Hide",
+      "resilience_hidden": "Single points of failure hidden",
+      "resilience_hidden_hint": "Turn them back on under Settings → System."
     },
     "agents": {
       "patch_confirm": "Packages on {{host}} will now be upgraded over SSH. Running services may restart briefly.",

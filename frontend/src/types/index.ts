@@ -367,6 +367,8 @@ export interface TopologyLink {
   source_handle: string | null;
   target_handle: string | null;
   link_type: string;
+  /** A backup link only carries traffic while the primary path is down */
+  role?: 'primary' | 'backup';
 }
 
 export interface ApiTokenResponse {

@@ -30,6 +30,7 @@ WRITABLE_KEYS = frozenset({
     "scan_interval", "quick_scan_interval", "scan_timeout", "scanner.offline_threshold",
     "scanner.health_probe_interval", "dns.server", "history_retention_days",
     "server_url_override", "server.url", "system.log_level", "ui.start_page", "ui.default_frontend",
+    "ui.health_resilience",
     # Network view groups, topology flow controls, GravityUI appearance
     "network_groups", "ui.line_colors", "ui.orbit_layout", "ui.orbit_roles", "ui.link_type_colors",
     # Telemetry retention (clamped when read) and agent adoption
@@ -144,6 +145,15 @@ def _validate_start_page(value: str) -> None:
         )
 
 
+def _validate_health_resilience(value: str) -> None:
+    """Reject a single-points-of-failure card mode other than automatic, always or never."""
+    if value not in ("auto", "on", "off"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid health resilience mode: '{value}'. Must be 'auto', 'on' or 'off'."
+        )
+
+
 def _validate_default_frontend(value: str) -> None:
     """Reject a default interface other than the React UI or GravityUI."""
     if value not in ("react", "vue"):
@@ -161,6 +171,7 @@ _VALIDATORS = {
     "scanner.offline_threshold": _validate_offline_threshold,
     "ui.start_page": _validate_start_page,
     "ui.default_frontend": _validate_default_frontend,
+    "ui.health_resilience": _validate_health_resilience,
 }
 
 
