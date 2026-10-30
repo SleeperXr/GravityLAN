@@ -32,7 +32,7 @@ const DEFAULT_FORM = {
   server_url_override: '',
   'system.log_level': 'info',
   'ui.start_page': '/',
-  'ui.default_frontend': 'react',
+  'ui.default_frontend': 'vue',
   'ui.health_resilience': 'auto',
 };
 type SettingsForm = typeof DEFAULT_FORM;

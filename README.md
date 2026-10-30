@@ -114,7 +114,7 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-Open `http://<your-host>:8000/frontend-vue/` and go through the setup wizard: it detects your subnets and saves them as scan subnets, runs the first scan and sets the admin password. Subnets the container can't see directly, such as an IoT VLAN behind the router, can be added in the same step. To make GravityUI what `http://<your-host>:8000` opens for everyone, choose it under **Settings → System → Default interface**.
+Open `http://<your-host>:8000` and go through the setup wizard: it detects your subnets and saves them as scan subnets, runs the first scan and sets the admin password. Subnets the container can't see directly, such as an IoT VLAN behind the router, can be added in the same step.
 
 > [!IMPORTANT]
 > **Finish the setup wizard right after the first start.** Until then only the wizard's own routes answer, but whoever opens the page first chooses the admin password. The same applies after a factory reset.
@@ -135,12 +135,12 @@ The image is multi-stage (Vite builds of both interfaces, then a slim Python run
 
 ## Classic interface (React)
 
-GravityLAN started with a React interface, and the image still ships it. Until GravityUI takes over, the start address `/` opens the classic view unless you choose otherwise:
+GravityLAN started with a React interface. GravityUI is the default now: the start address `/` opens it unless you choose otherwise. The image still ships the classic view for one more release as a fallback; it gets bug fixes only and is removed with the release after this one ([ADR-003](docs/adr/003-react-retirement.md)). To keep using it until then:
 
-- **for everyone**: Settings → System → Default interface → GravityUI;
-- **for this browser**: the switch at the bottom of the sidebar, or `/?ui=vue` and `/?ui=react`. The choice is kept in this browser, whatever the server default is.
+- **for everyone**: Settings → System → Default interface → Classic view (an installation that chose it there keeps it);
+- **for this browser**: the switch at the bottom of the sidebar, or `/?ui=react` and `/?ui=vue`. The choice is kept in this browser, whatever the server default is.
 
-GravityUI itself lives at `/frontend-vue/`. The classic view gets bug fixes only; new features go into GravityUI. Once GravityUI covers everything the classic view does, it becomes the default, the React interface stays for one more version as a fallback and is removed after that ([ADR-003](docs/adr/003-react-retirement.md)).
+GravityUI itself lives at `/frontend-vue/`.
 
 ## The agent
 
@@ -406,7 +406,7 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-`http://<dein-host>:8000/frontend-vue/` öffnen und den Setup-Wizard durchgehen: Er erkennt deine Subnetze und speichert sie als Scan-Subnetze, startet den ersten Scan und legt das Admin-Passwort fest. Subnetze, die der Container nicht direkt sieht, etwa ein IoT-VLAN hinter dem Router, lassen sich im selben Schritt ergänzen. Damit `http://<dein-host>:8000` für alle GravityUI öffnet, unter **Einstellungen → System → Standard-Oberfläche** auswählen.
+`http://<dein-host>:8000` öffnen und den Setup-Wizard durchgehen: Er erkennt deine Subnetze und speichert sie als Scan-Subnetze, startet den ersten Scan und legt das Admin-Passwort fest. Subnetze, die der Container nicht direkt sieht, etwa ein IoT-VLAN hinter dem Router, lassen sich im selben Schritt ergänzen.
 
 > [!IMPORTANT]
 > **Schließ den Setup-Wizard direkt nach dem ersten Start ab.** Bis dahin antworten nur die Routen des Wizards, aber wer die Seite zuerst öffnet, wählt das Admin-Passwort. Das gilt genauso nach einem Werksreset.
@@ -427,12 +427,12 @@ Das Image ist mehrstufig gebaut (Vite-Builds beider Oberflächen, dann eine schl
 
 ### Klassische Oberfläche (React)
 
-GravityLAN hat mit einer React-Oberfläche angefangen, und das Image bringt sie noch mit. Bis GravityUI übernimmt, öffnet die Startadresse `/` die klassische Ansicht, solange du nichts anderes wählst:
+GravityLAN hat mit einer React-Oberfläche angefangen. GravityUI ist jetzt Standard: Die Startadresse `/` öffnet sie, solange du nichts anderes wählst. Das Image bringt die klassische Ansicht noch ein Release lang als Rückfallebene mit; sie bekommt nur noch Fehlerbehebungen und wird mit dem Release danach entfernt ([ADR-003](docs/adr/003-react-retirement.md)). Wer sie bis dahin nutzen will:
 
-- **für alle**: Einstellungen → System → Standard-Oberfläche → GravityUI;
-- **für diesen Browser**: der Umschalter unten in der Seitenleiste oder `/?ui=vue` und `/?ui=react`. Die Wahl bleibt in diesem Browser, egal was der Server vorgibt.
+- **für alle**: Einstellungen → System → Standard-Oberfläche → Klassische Ansicht (wer sie dort gewählt hat, behält sie);
+- **für diesen Browser**: der Umschalter unten in der Seitenleiste oder `/?ui=react` und `/?ui=vue`. Die Wahl bleibt in diesem Browser, egal was der Server vorgibt.
 
-GravityUI selbst liegt unter `/frontend-vue/`. Die klassische Ansicht bekommt nur noch Fehlerbehebungen, neue Funktionen kommen in GravityUI. Sobald GravityUI alles abdeckt, was die klassische Ansicht kann, wird sie Standard; die React-Oberfläche bleibt noch eine Version als Rückfallebene und wird danach entfernt ([ADR-003](docs/adr/003-react-retirement.md)).
+GravityUI selbst liegt unter `/frontend-vue/`.
 
 ### Der Agent
 

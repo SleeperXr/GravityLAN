@@ -29,7 +29,7 @@ const DEFAULT_FORM: SettingsForm = {
   server_url_override: '',
   'system.log_level': 'info',
   'ui.start_page': '/',
-  'ui.default_frontend': 'react',
+  'ui.default_frontend': 'vue',
 };
 
 const FORM_KEYS = Object.keys(DEFAULT_FORM) as (keyof SettingsForm)[];

@@ -85,7 +85,7 @@ def _default(monkeypatch, value):
     monkeypatch.setattr(main, "_default_frontend", fake)
 
 
-async def test_root_serves_react_by_default(both_frontends, monkeypatch, client):
+async def test_root_serves_react_when_it_is_the_default(both_frontends, monkeypatch, client):
     _default(monkeypatch, "react")
     response = await client.get("/")
     assert response.status_code == 200
@@ -129,6 +129,21 @@ async def test_default_frontend_setting_accepts_only_react_or_vue(client, admin_
     bad = await client.post("/api/settings", json={"ui.default_frontend": "angular"}, headers=headers)
     assert bad.status_code == 400
     assert "Invalid default frontend" in bad.json()["detail"]
+
+
+async def test_root_opens_gravityui_without_a_setting(both_frontends, client):
+    response = await client.get("/", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/frontend-vue/"
+
+
+async def test_explicit_react_setting_still_opens_react(both_frontends, client, db):
+    from app.models.setting import Setting
+    db.add(Setting(key="ui.default_frontend", value="react"))
+    await db.commit()
+    response = await client.get("/", follow_redirects=False)
+    assert response.status_code == 200
+    assert "React" in response.text
 
 
 async def test_root_reads_the_default_frontend_setting_from_the_database(both_frontends, client, db):

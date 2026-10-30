@@ -453,15 +453,15 @@ FRONTEND_COOKIE = "gl_ui"
 
 
 async def _default_frontend(db) -> str:
-    """The interface `/` opens when the browser made no choice: setting ``ui.default_frontend``, else React."""
+    """The interface `/` opens when the browser made no choice: setting ``ui.default_frontend``, else GravityUI."""
     try:
         from app.models.setting import Setting
         from sqlalchemy import select
 
         row = (await db.execute(select(Setting).where(Setting.key == DEFAULT_FRONTEND_KEY))).scalar_one_or_none()
-        return row.value if row and row.value in FRONTENDS else "react"
+        return row.value if row and row.value in FRONTENDS else "vue"
     except Exception:
-        return "react"
+        return "vue"
 
 
 @app.get("/")
