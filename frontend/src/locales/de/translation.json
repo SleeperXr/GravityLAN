@@ -647,7 +647,7 @@
     "default_frontend_label": "Standard-Oberfläche",
     "default_frontend_hint": "Was die Startadresse (/) öffnet. Die andere Oberfläche bleibt über den Umschalter in der Seitenleiste erreichbar; wer dort wechselt, behält seine Wahl in diesem Browser.",
     "default_frontend_react": "Klassische Ansicht (React)",
-    "default_frontend_vue": "GravityUI (in Entwicklung)"
+    "default_frontend_vue": "GravityUI"
   },
   "setup": {
     "welcome": "Willkommen bei GravityLAN",
@@ -1060,7 +1060,6 @@
     "agent": "Agent",
     "agent_hint": "Ändert sich nur, wenn sich das Agent-Skript ändert.",
     "interface": "Oberfläche",
-    "interface_dev": "in Entwicklung",
     "classic": "Klassische Ansicht",
     "project": "Projekt",
     "project_text": "GravityLAN ist ein Open-Source-Projekt von SleeperXr auf GitHub. Fehler und Wünsche bitte als Issue melden.",
@@ -1074,7 +1073,7 @@
     "license": "Lizenz",
     "license_text": "MIT-Lizenz, Copyright (c) 2026 SleeperXr. Eingebundene Bausteine Dritter stehen unter ihren eigenen Lizenzen.",
     "third_party": "Hinweise zu Drittanbietern",
-    "try_gravityui": "GravityUI ausprobieren (in Entwicklung)",
+    "try_gravityui": "GravityUI öffnen",
     "tutorials": "Tutorials und erste Schritte",
     "tutorials_hint": "Anleitungen für alle Bereiche, in GravityUI",
     "tutorials_open": "Öffnen"

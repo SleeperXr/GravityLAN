@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { Plus, Router, Trash2 } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Subnet, SubnetInfo } from '@/types';
-import { normalizeCidr } from '@shared/components/Network/subnet/model';
+import { normalizeCidr } from '@/lib/subnetModel';
 import SettingsSection from './SettingsSection.vue';
 import ActionRow from './ActionRow.vue';
 import RouterImportPanel from './RouterImportPanel.vue';

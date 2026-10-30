@@ -54,8 +54,6 @@ def _required_scope_for(path: str, method: str) -> str | None:
         return "settings:read" if method in read_methods else "settings:write"
     if path.startswith("/api/agents"):
         return "agent:read" if method in read_methods else "agent:write"
-    if path.startswith("/api/scan-profiles"):
-        return "scanner:read" if method in read_methods else "scanner:start"
     if path.startswith("/api/notifications") or path.startswith("/api/health"):
         return "devices:read" if method in read_methods else "devices:write"
     return None
