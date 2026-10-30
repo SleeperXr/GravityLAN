@@ -7,7 +7,7 @@ import { t } from '@/i18n';
 import { useNetworkStore } from '@/stores/network';
 import { useSshSessions } from '@/stores/sshSessions';
 
-const props = defineProps<{ version?: string }>();
+const props = defineProps<{ version?: string; build?: string }>();
 
 const route = useRoute();
 const store = useNetworkStore();
@@ -24,6 +24,10 @@ const activeId = computed(() => route.meta.navId as string | undefined);
         {{ t('gv.brand_tag') }}
       </span>
     </div>
+    <!-- A test build says so, with its commit, so it is never mistaken for the release -->
+    <p v-if="props.build" class="mx-5 -mt-2 mb-1 truncate rounded-sm border border-warn/30 bg-warn/10 px-1.5 py-px font-mono text-micro text-warn-text" :title="t('gv.build.title')">
+      {{ t('gv.build.label', { build: props.build }) }}
+    </p>
 
     <!-- The pages as stops on one route: each has its own line sign, the current stop is filled, a hairline joins the stops -->
     <nav :aria-label="t('sidebar.navigation')" class="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">

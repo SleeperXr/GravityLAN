@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- A test build says so: the `:dev` image carries a build label (`dev+<commit>`), which GravityUI shows under the version in the sidebar, in the phone header and on the About page (`build` in `/api/setup/status` and `/api/health`). Releases and release candidates have no label: a release is the tested release candidate image, re-tagged, so the version says it all.
 - GravityUI orbit map: you decide which devices are on it, whatever the dashboard shows. "Hide from orbit" in the edit-mode inspector, or "Show on the orbit map" in the device editor; "Hidden (n)" in edit mode lists the devices that are not on the orbit, including those hidden from the dashboard, and puts them back. Stored in the setting `ui.orbit_visibility` (JSON `{deviceId: true|false}`); without an entry a device follows the dashboard as before. Devices behind a hidden switch hang on the next visible device, and the resilience analysis keeps counting hidden devices.
 - GravityUI orbit map: the motion button shows its level. Two small marks under the icon light up for subtle (one) and lively (two), and a click shows "Motion: lively" next to the controls for a moment, also for screen readers. Before, subtle and lively looked the same and the level was only in the tooltip, which phones never show.
 

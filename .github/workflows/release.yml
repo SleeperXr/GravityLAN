@@ -42,6 +42,7 @@ jobs:
             exit 1
           fi
           echo "tags=${IMAGE}:dev" >> "$GITHUB_OUTPUT"
+          echo "build=dev+${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
@@ -88,3 +89,4 @@ jobs:
         push: true
         pull: true
         tags: ${{ steps.tags.outputs.tags }}
+        build-args: GRAVITYLAN_BUILD=${{ steps.tags.outputs.build }}

@@ -31,3 +31,14 @@ async def test_unauthorized_access(client, db):
     # Settings should be protected by get_current_admin
     response = await client.get("/api/settings")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_setup_status_and_health_carry_the_build_label(client, monkeypatch):
+    """The :dev image says it is a test build; a release has no label."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "build", "dev+abc1234")
+    assert (await client.get("/api/setup/status")).json()["build"] == "dev+abc1234"
+    assert (await client.get("/api/health")).json()["build"] == "dev+abc1234"
+    monkeypatch.setattr(settings, "build", "")
+    assert (await client.get("/api/setup/status")).json()["build"] == ""

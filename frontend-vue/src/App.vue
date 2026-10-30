@@ -22,6 +22,8 @@ const appearance = useAppearance();
 const route = useRoute();
 const state = ref<BootState>('checking');
 const version = ref<string>();
+/** Image build label ("dev+abc1234"), empty for a release */
+const build = ref<string>();
 
 const pageTitle = computed(() => (route.meta.titleKey ? t(route.meta.titleKey) : t('app.title')));
 watch(pageTitle, (title) => (document.title = `${title} · ${t('app.title')}`), { immediate: true });
@@ -31,6 +33,7 @@ async function boot() {
   try {
     const setup = await api.getSetupStatus();
     version.value = setup.version;
+    build.value = setup.build || undefined;
     if (!setup.is_setup_complete) {
       state.value = 'setup';
       return;
@@ -86,7 +89,7 @@ onBeforeUnmount(() => store.disconnectScanStream());
     >
       {{ t('gv.skip_to_content') }}
     </a>
-    <AppSidebar :version="version" />
+    <AppSidebar :version="version" :build="build" />
 
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- Phone app bar -->
@@ -94,6 +97,7 @@ onBeforeUnmount(() => store.disconnectScanStream());
         <span class="text-xs font-semibold text-fg-subtle">{{ t('app.title') }}</span>
         <span class="text-fg-subtle" aria-hidden="true">/</span>
         <span class="truncate text-sm font-semibold text-fg">{{ pageTitle }}</span>
+        <span v-if="build" class="ml-auto shrink-0 rounded-sm border border-warn/30 bg-warn/10 px-1.5 py-px font-mono text-micro text-warn-text" :title="t('gv.build.title')">{{ build }}</span>
       </header>
 
       <!-- Live scan strip: visible on every page while the scanner runs -->

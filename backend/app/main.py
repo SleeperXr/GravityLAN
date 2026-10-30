@@ -405,6 +405,7 @@ async def health_check() -> dict:
     return {
         "status": "ok",
         "version": settings.app_version,
+        "build": settings.build,
         "app": settings.app_name,
     }
 

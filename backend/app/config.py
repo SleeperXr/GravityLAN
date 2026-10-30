@@ -43,6 +43,8 @@ class Settings(BaseSettings):
 
     app_name: str = "GravityLAN"
     app_version: str = VERSION
+    # Image build label from the Dockerfile ("dev+<commit>"); empty for releases and local runs
+    build: str = ""
     debug: bool = False
     secure_cookies: bool = False
     ssh_strict_mode: bool = False

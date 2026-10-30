@@ -104,7 +104,8 @@ export type AgentSshResult = {
 
 export const api = {
   // Setup
-  getSetupStatus: () => request<{ is_setup_complete: boolean; device_count: number; version?: string; agent_version?: string }>('/api/setup/status'),
+  getSetupStatus: () =>
+    request<{ is_setup_complete: boolean; device_count: number; version?: string; build?: string; agent_version?: string }>('/api/setup/status'),
   // Signs the admin in via session cookie when a password is set
   completeSetup: (data?: { dns_server?: string; admin_password?: string; subnets?: string[] }) =>
     request<{ status: string; devices_adopted: number }>('/api/setup/complete', { method: 'POST', body: JSON.stringify(data || {}) })

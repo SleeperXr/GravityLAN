@@ -219,6 +219,10 @@
       "service_up": "Service back",
       "service_down": "Service down"
     },
+    "build": {
+      "label": "Test build {{build}}",
+      "title": "A test build from main (image :dev), not a release"
+    },
     "orbit": {
       "search": "Find device …",
       "search_label": "Find a device on the map",

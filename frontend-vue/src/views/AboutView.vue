@@ -8,12 +8,14 @@ import { t } from '@/i18n';
 
 /** About GravityLAN: versions, licence and where the project lives. No legal notice is invented here. */
 const serverVersion = ref<string>();
+const build = ref<string>();
 const agentVersion = ref<string>();
 
 onMounted(async () => {
   try {
     const status = await api.getSetupStatus();
     serverVersion.value = status.version;
+    build.value = status.build || undefined;
     agentVersion.value = status.agent_version;
   } catch {
     // versions stay "–"
@@ -37,6 +39,7 @@ const links = [
       <div class="bg-surface p-4">
         <p class="gl-eyebrow">{{ t('about.server') }}</p>
         <p class="mt-1 font-mono text-xl font-semibold text-fg tabular">{{ serverVersion ? `v${serverVersion}` : '–' }}</p>
+        <p v-if="build" class="mt-0.5 font-mono text-xs text-warn-text">{{ t('gv.build.label', { build }) }}</p>
       </div>
       <div class="bg-surface p-4">
         <p class="gl-eyebrow">{{ t('about.agent') }}</p>
