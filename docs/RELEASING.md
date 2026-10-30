@@ -30,12 +30,18 @@ it before it expires (`gh secret set DOCKERHUB_TOKEN`). Never paste it anywhere 
 
 ## How long a release is tested
 
+The time follows the risk of the changes, not how visible they are. A change that shows itself on the first start or
+the first click needs days, not a week; what only shows over time (a migration, a new background job, the database
+growing, agents over night, a security stage) gets the week.
+
 | Release | Release candidate | Minimum time on `:next` |
 |---|---|---|
-| Theme release (a new area, a security stage, anything that changes how people work) | yes | 7 days |
-| Small release (a few features or fixes) | yes | 2–3 days |
+| Changes that only show over time: a database migration, a new background job or scheduler change, a security stage, changes to how agents report | yes | 7 days |
+| Changes that show right away: features, fixes, a changed default, refactoring covered by tests | yes | 2–3 days |
 | Patch without a database migration | no, but the checklist below | — |
-| Anything with a database migration | always | as above, at least 2–3 days |
+
+0.7.0 (GravityUI as the default, backups with rack cabling, the first image built by CI) is an example of the second
+row: big for the user, but every part of it shows on the first start.
 
 - A release candidate may stay out as long as needed; there is no deadline. A pause of several weeks simply means
   `:next` stays where it is.
