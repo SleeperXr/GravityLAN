@@ -23,7 +23,10 @@ from a laptop any more.
 | manual run of *Release images* on `main` | `:dev` | Test builds on request. |
 
 The workflow runs the whole CI first and refuses a tag that does not match `VERSION`. It needs the repository secrets
-`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (an access token limited to `sleeperxr/gravitylan`, read and write).
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`: a Docker Hub personal access token used for nothing else, with
+**Read & Write** (no Delete) and an expiry date. A personal token cannot be limited to one repository (only
+organisation tokens can), so it reaches every repository of the account; revoke it on its own if it leaks, and renew
+it before it expires (`gh secret set DOCKERHUB_TOKEN`). Never paste it anywhere but that prompt.
 
 ## How long a release is tested
 

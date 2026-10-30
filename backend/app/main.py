@@ -362,7 +362,6 @@ from app.api.webhooks import router as webhooks_router  # noqa: E402
 from app.api.summary import router as summary_router, issues_router  # noqa: E402
 from app.api.logs import router as logs_router  # noqa: E402
 from app.api.agents import router as agents_router  # noqa: E402
-from app.api.scan_profiles import router as scan_profiles_router  # noqa: E402
 from app.api.notifications import router as notifications_router  # noqa: E402
 from app.api.health import router as health_router  # noqa: E402
 from app.api.ssh import router as ssh_router, ws_router as ssh_ws_router  # noqa: E402
@@ -391,7 +390,6 @@ app.include_router(summary_router, dependencies=[Depends(get_current_admin)])
 app.include_router(issues_router, dependencies=[Depends(get_current_admin)])
 app.include_router(logs_router, dependencies=[Depends(get_current_admin)])
 app.include_router(agents_router, dependencies=[Depends(get_current_admin)])
-app.include_router(scan_profiles_router, dependencies=[Depends(get_current_admin)])
 app.include_router(notifications_router, dependencies=[Depends(get_current_admin)])
 app.include_router(health_router, dependencies=[Depends(get_current_admin)])
 app.include_router(ssh_router, dependencies=[Depends(get_current_admin)])
@@ -455,15 +453,15 @@ FRONTEND_COOKIE = "gl_ui"
 
 
 async def _default_frontend(db) -> str:
-    """The interface `/` opens when the browser made no choice: setting ``ui.default_frontend``, else React."""
+    """The interface `/` opens when the browser made no choice: setting ``ui.default_frontend``, else GravityUI."""
     try:
         from app.models.setting import Setting
         from sqlalchemy import select
 
         row = (await db.execute(select(Setting).where(Setting.key == DEFAULT_FRONTEND_KEY))).scalar_one_or_none()
-        return row.value if row and row.value in FRONTENDS else "react"
+        return row.value if row and row.value in FRONTENDS else "vue"
     except Exception:
-        return "react"
+        return "vue"
 
 
 @app.get("/")

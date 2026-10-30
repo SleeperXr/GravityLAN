@@ -82,13 +82,3 @@ class DiscoveredDevice(BaseModel):
     device_subtype: str = "Unknown"
     services: list[dict] = []
 
-
-class ScanProfileResponse(BaseModel):
-    """Configuration profile for network scanning."""
-
-    id: int
-    name: str
-    description: str
-    nmap_arguments: str
-    is_default: bool
-

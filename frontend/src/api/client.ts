@@ -1,4 +1,4 @@
-/** API client for HomeLan backend. Shared with the Vue UI in frontend-vue/ (alias @shared). */
+/** API client for the GravityLAN backend. GravityUI has its own copy in frontend-vue/src/api/core.ts. */
 
 /** What a 401 and a logout do. The Vue UI under /frontend-vue/ replaces both with its own login screen. */
 export const authHandlers = {

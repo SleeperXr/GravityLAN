@@ -47,7 +47,7 @@ const links = [
         <p class="gl-eyebrow">{{ t('about.interface') }}</p>
         <p class="mt-1 text-base font-semibold text-fg">GravityUI</p>
         <p class="mt-0.5 text-xs text-fg-subtle">
-          {{ t('about.interface_dev') }} · <a :href="REACT_UI_URL" class="text-info-text hover:underline">{{ t('about.classic') }}</a>
+          <a :href="REACT_UI_URL" class="text-info-text hover:underline">{{ t('about.classic') }}</a>
         </p>
       </div>
     </section>

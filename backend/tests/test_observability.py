@@ -9,14 +9,14 @@ from app.main import PollingFilter, gravitylan_exception_handler
 async def test_correlation_id_middleware(client):
     """Verify that requests automatically receive a correlation ID and return it in headers."""
     # 1. Test auto-generation of Correlation ID
-    response = await client.get("/")
+    response = await client.get("/api/health")
     assert response.status_code == 200
     assert "X-Correlation-ID" in response.headers
     assert len(response.headers["X-Correlation-ID"]) > 0
 
     # 2. Test propagation of user-supplied Correlation ID
     custom_cid = "custom-test-correlation-id-123"
-    response = await client.get("/", headers={"X-Correlation-ID": custom_cid})
+    response = await client.get("/api/health", headers={"X-Correlation-ID": custom_cid})
     assert response.status_code == 200
     assert response.headers["X-Correlation-ID"] == custom_cid
 

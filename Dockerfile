@@ -13,8 +13,6 @@ FROM node:20-alpine AS frontend-vue-build
 WORKDIR /build/frontend-vue
 COPY frontend-vue/package*.json ./
 RUN npm ci --no-audit
-# GravityUI shares the API client, types and translations with the React UI
-COPY frontend/src /build/frontend/src
 COPY frontend-vue/ ./
 RUN npm run build
 

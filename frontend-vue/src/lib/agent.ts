@@ -2,7 +2,7 @@
 import { api } from '@/api/client';
 import type { Device, SshProfile } from '@/types';
 
-export { isAgentOutdated } from '@shared/utils/version';
+export { isAgentOutdated } from './version';
 
 /** Pending package updates of a host from its agent's latest report, or null without an agent report. */
 export function patchState(device: Pick<Device, 'agent_info'>): { available: number; security: number; reboot: boolean } | null {

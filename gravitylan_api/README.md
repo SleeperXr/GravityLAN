@@ -30,7 +30,7 @@ Authentication, in order of preference:
 
 `base_url` falls back to `GRAVITYLAN_BASE_URL`, then `http://localhost:8000`.
 
-Endpoint groups: `client.devices`, `client.agents`, `client.network`, `client.topology`, `client.backup`, `client.scan_profiles`, `client.health`, `client.auth`.
+Endpoint groups: `client.devices`, `client.agents`, `client.network`, `client.topology`, `client.backup`, `client.health`, `client.auth`.
 
 Errors raise `GravityLANAuthError`, `GravityLANConnectionError` or `GravityLANHTTPError` (all subclasses of `GravityLANError`).
 

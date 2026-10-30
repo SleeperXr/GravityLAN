@@ -11,7 +11,7 @@ import {
   syncModifiedServices,
   type DeviceFormData,
   type EditorTab,
-} from '@shared/components/Dashboard/editor/deviceForm';
+} from '@/lib/deviceForm';
 import Sheet from '@/components/ui/Sheet.vue';
 import Tabs from '@/components/ui/Tabs.vue';
 import Button from '@/components/ui/Button.vue';

@@ -1,13 +1,13 @@
 /**
- * i18n for GravityUI: the same i18next setup and translation files as the React UI, so both
- * show identical texts and share the language choice (localStorage key `i18nextLng`).
- * Keys that only the Vue UI needs live under `gv.*` in src/locales/*.json.
+ * i18n for GravityUI. src/locales/base/*.json started as the React UI's translation files; keys
+ * added for GravityUI live under `gv.*` in src/locales/*.json. The language choice is shared with
+ * the React UI (localStorage key `i18nextLng`).
  */
 import i18next, { type TOptions } from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { computed, ref } from 'vue';
-import translationDE from '@shared/locales/de/translation.json';
-import translationEN from '@shared/locales/en/translation.json';
+import translationDE from '@/locales/base/de.json';
+import translationEN from '@/locales/base/en.json';
 import gravityDE from '@/locales/de.json';
 import gravityEN from '@/locales/en.json';
 

@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { Activity, Eye, EyeOff, Info, Lock, LockOpen, Plus, RefreshCw, Save, Trash2 } from 'lucide-vue-next';
 import { PopoverArrow, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui';
 import type { Device } from '@/types';
-import type { Tile } from '@shared/components/Network/subnet/model';
+import type { Tile } from '@/lib/subnetModel';
 import Button from '@/components/ui/Button.vue';
 import Input from '@/components/ui/Input.vue';
 import { t } from '@/i18n';
