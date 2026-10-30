@@ -4,8 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Fixed
-- Backups contain the rack equipment, ports and cables (`rack_items`, `rack_ports`, `rack_cables`). Since 0.6.0 a backup kept the racks and the devices in them, but importing it lost every patch panel, UPS, power strip, port and cable. A backup that has these lists replaces them, even when they are empty; an older backup without them keeps what the instance has, except equipment on a rack the backup no longer has, ports of a device that is gone or whose id now names another device, and the cables on those ports.
+## [0.7.0] - 2026-10-30
 
 ### Changed
 - GravityUI is the default interface: the start address `/` opens it unless Settings → System → Default interface says "Classic view" or this browser chose the classic view with the sidebar switch (`/?ui=react`). Both choices are kept. The "in development" strip is gone. Saving the settings no longer pins the classic view on an installation that never chose one: both settings forms used to send `react` as the default value.
@@ -14,6 +13,9 @@ All notable changes to this project will be documented in this file.
 - CI starts the database of the previous release (`backend/tests/fixtures/db/`, frozen by `scripts/freeze_release_db.py`) and fails on a model column without a migration or a lost row; a backup exported from it and imported on a fresh instance has to export the same again. A pull request that changes `agent/` without raising the agent version fails too.
 - GravityUI Health: the single points of failure card is optional. By default it only shows once the network has a backup link, since a simple homelab without any fallback path learns nothing from it; Settings → System can show it always or never (setting `ui.health_resilience`: `auto`, `on`, `off`), and the card itself has a hide button with undo.
 - README (English and German) rewritten around GravityUI. New screenshots of the current GravityUI from the demo data in `docs/screenshots/vue/`: overview, orbit map, racks, Health Radar, resilience, IP addresses, agents, SSH, device editor, settings, tutorials and two phone views, all from the company demo (`--company`), palette-compressed like before. The features are grouped by GravityUI page and by what runs underneath, the quick start opens `/frontend-vue/` and names Settings → System → Default interface, and the classic React interface gets a short section of its own with how to switch and what [ADR-003](docs/adr/003-react-retirement.md) plans for it. The Unraid template's orbit screenshot is the new one too.
+
+### Fixed
+- Backups contain the rack equipment, ports and cables (`rack_items`, `rack_ports`, `rack_cables`). Since 0.6.0 a backup kept the racks and the devices in them, but importing it lost every patch panel, UPS, power strip, port and cable. A backup that has these lists replaces them, even when they are empty; an older backup without them keeps what the instance has, except equipment on a rack the backup no longer has, ports of a device that is gone or whose id now names another device, and the cables on those ports.
 
 ### Removed
 - `GET /api/scan-profiles` and `client.scan_profiles` in `gravitylan_api`. The three fixed profiles it listed never reached a scan (their nmap arguments were not used anywhere) and no interface showed them.
