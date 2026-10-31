@@ -207,7 +207,7 @@ const sortOptions = computed(() => [
           <thead>
             <tr class="border-b border-line text-xs font-semibold text-fg-subtle">
               <th class="px-5 py-3">{{ t('health_page.table_device') }}</th>
-              <th class="w-40 px-4 py-3">{{ t('health_page.table_status') }}</th>
+              <th class="w-52 px-4 py-3">{{ t('health_page.table_status') }}</th>
               <th class="w-48 px-4 py-3">{{ t('health_page.table_uptime') }}</th>
               <th class="w-48 px-4 py-3">{{ t('health_page.table_latency') }}</th>
               <th class="w-36 px-4 py-3">{{ t('health_page.table_services') }}</th>
@@ -223,7 +223,8 @@ const sortOptions = computed(() => [
                 </p>
               </td>
               <td class="px-4 py-3">
-                <div class="flex items-center gap-2">
+                <!-- "Kritisch / Offline" and the score do not fit side by side in every language: the score wraps -->
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <HealthStatusBadge :status="d.health_status" />
                   <Badge :tone="scoreTone(d.health_score, d.health_status)" mono :title="`Health Score ${d.health_score}/100`">{{ d.health_score }}</Badge>
                 </div>
