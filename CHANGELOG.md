@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Backup import: a backup of an older instance failed as a whole with "UNIQUE constraint failed: topology_links.source_id, topology_links.target_id" and changed nothing. Databases from before a unique constraint existed can hold the same link (or IP, rack name, subnet) twice, and only a fresh instance refused it. The import now keeps the newest entry of each duplicate, drops orbit links to devices the backup no longer has, and says how many it skipped (also in the audit log).
+
 ## [0.7.0] - 2026-10-31
 
 ### Added

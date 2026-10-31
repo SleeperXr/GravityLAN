@@ -256,6 +256,54 @@ def _drop_orphaned_rack_rows(cursor) -> None:
     )
 
 
+def _drop_dangling_links(cursor) -> None:
+    """Orbit links whose device the backup no longer has (foreign keys are off during the import)."""
+    cursor.execute(
+        "DELETE FROM topology_links WHERE source_id NOT IN (SELECT id FROM devices)"
+        " OR target_id NOT IN (SELECT id FROM devices)"
+    )
+
+
+def _unique_column_sets(table: str) -> list[tuple[str, ...]]:
+    """The column sets a table keeps unique (besides its id), read from the models."""
+    import app.models  # noqa: F401 - registers the models
+    import app.models.rack_cabling  # noqa: F401
+    from sqlalchemy import UniqueConstraint
+    from app.database import Base
+
+    model = Base.metadata.tables.get(table)
+    if model is None:
+        return []
+    sets = [tuple(c.name for c in con.columns) for con in model.constraints if isinstance(con, UniqueConstraint)]
+    sets += [(c.name,) for c in model.columns if c.unique]
+    sets += [tuple(c.name for c in idx.columns) for idx in model.indexes if idx.unique]
+    return [s for s in dict.fromkeys(sets) if s and s != ("id",)]
+
+
+def _drop_duplicates(table: str, rows: list[dict]) -> tuple[list[dict], int]:
+    """Keep one row per unique key, the newest (highest id).
+
+    Databases from before a unique constraint existed can hold duplicates, e.g. the same link twice;
+    create_all never adds a constraint to an existing table, so only a fresh instance refused them and
+    the whole import failed. Rows with an empty key column are never duplicates (SQL ignores NULL).
+    """
+    key_sets = _unique_column_sets(table)
+    if not key_sets:
+        return rows, 0
+    seen: list[set] = [set() for _ in key_sets]
+    kept = []
+    for row in sorted(rows, key=lambda r: r.get("id") or 0, reverse=True):
+        keys = [tuple(row.get(c) for c in cols) for cols in key_sets]
+        if any(None not in key and key in taken for key, taken in zip(keys, seen)):
+            continue
+        for key, taken in zip(keys, seen):
+            if None not in key:
+                taken.add(key)
+        kept.append(row)
+    kept.sort(key=lambda r: r.get("id") or 0)
+    return kept, len(rows) - len(kept)
+
+
 def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str, int]:
     """Replace the allowed tables with the backup rows in a single transaction.
 
@@ -275,6 +323,7 @@ def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str,
         cursor.execute("SELECT COUNT(*) FROM agent_tokens")
         tokens_before = cursor.fetchone()[0]
         imported: dict[str, int] = {}
+        duplicates: dict[str, int] = {}
 
         for key, rows in data.items():
             if key == "metadata" or (not rows and key not in REPLACE_WHEN_EMPTY):
@@ -287,6 +336,10 @@ def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str,
             valid_rows = _clean_rows(cursor, table, rows) if rows else []
             if not valid_rows and key not in REPLACE_WHEN_EMPTY:
                 continue
+            valid_rows, dropped = _drop_duplicates(table, valid_rows)
+            if dropped:
+                duplicates[table] = dropped
+                logger.warning("Backup: %d duplicate row(s) in %s skipped, the newest of each kept", dropped, table)
 
             if table == "app_settings":
                 placeholders = ", ".join("?" * len(PROTECTED_SETTING_KEYS))
@@ -308,10 +361,12 @@ def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str,
 
         reassigned = _detach_reassigned_devices(cursor, devices_before, frozenset(imported))
         _drop_orphaned_rack_rows(cursor)
+        _drop_dangling_links(cursor)
         if report is not None:
             cursor.execute("SELECT COUNT(*) FROM agent_tokens")
             report["agent_tokens_revoked"] = tokens_before - cursor.fetchone()[0]
             report["reassigned_device_ids"] = reassigned
+            report["duplicates_dropped"] = duplicates
 
         conn.commit()
         return imported
@@ -364,7 +419,13 @@ async def import_backup(request: Request, file: UploadFile = File(...), db: Asyn
 
     for table, count in imported.items():
         logger.info(f"Backup: Imported {count} rows into {table}")
-    await audit(request, "backup.import", detail=f"{imported.get('devices', 0)} devices, {imported.get('app_settings', 0)} settings")
+    duplicates = report.get("duplicates_dropped", {})
+    skipped = sum(duplicates.values())
+    await audit(
+        request, "backup.import",
+        detail=f"{imported.get('devices', 0)} devices, {imported.get('app_settings', 0)} settings"
+        + (f", {skipped} duplicates skipped" if skipped else ""),
+    )
 
     reassigned = report.get("reassigned_device_ids", [])
     revoked = report.get("agent_tokens_revoked", 0)
@@ -383,11 +444,14 @@ async def import_backup(request: Request, file: UploadFile = File(...), db: Asyn
     message = "Backup successfully imported"
     if revoked:
         message += f". {revoked} agent(s) belonged to devices that are different now and must be enrolled again"
+    if skipped:
+        message += f". {skipped} duplicate entr{'y was' if skipped == 1 else 'ies were'} skipped, the newest of each kept"
     return {
         "status": "ok",
         "message": message,
         "agent_tokens_revoked": revoked,
         "reassigned_devices": len(reassigned),
+        "duplicates_dropped": duplicates,
     }
 
 
