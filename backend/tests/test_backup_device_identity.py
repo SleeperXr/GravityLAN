@@ -222,6 +222,6 @@ def test_export_contains_device_interfaces_and_app_version(instance_db, monkeypa
     from app.config import settings
 
     monkeypatch.setattr(settings, "database_url", f"sqlite+aiosqlite:///{instance_db}")
-    data = json.loads(asyncio.run(backup.export_backup()).body)
+    data = json.loads(asyncio.run(backup.export_backup(request=None)).body)
     assert data["metadata"]["version"] == settings.app_version
     assert sorted(r["ip"] for r in data["device_interfaces"]) == ["10.0.0.1", "10.0.0.2"]

@@ -8,6 +8,7 @@ from fastapi.requests import HTTPConnection
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.services.audit import record as audit, remember_actor
 from app.database import get_db
 from app.models.setting import Setting
 from app.config import settings
@@ -50,7 +51,7 @@ def _required_scope_for(path: str, method: str) -> str | None:
         return "settings:read" if method in read_methods else "settings:write"
     if path.startswith("/api/summary") or path.startswith("/api/issues"):
         return "devices:read"  # summary/issues require general read permission
-    if path.startswith("/api/auth/tokens") or path.startswith("/api/logs"):
+    if path.startswith("/api/auth/tokens") or path.startswith("/api/logs") or path.startswith("/api/audit"):
         return "settings:read" if method in read_methods else "settings:write"
     if path.startswith("/api/agents"):
         return "agent:read" if method in read_methods else "agent:write"
@@ -189,8 +190,15 @@ async def get_current_admin(
 ) -> str:
     """
     Dependency to validate authentication via Cookie, Authorization header, or Query param.
-    Works for both HTTP Requests and WebSockets.
+    Works for both HTTP Requests and WebSockets. Tells the audit log who the caller is
+    ("session", "master", "api_token:<name>"; never a token's value).
     """
+    identity = await _resolve_admin(conn, authorization, token, db)
+    remember_actor(conn, identity)
+    return identity
+
+
+async def _resolve_admin(conn: HTTPConnection, authorization: str | None, token: str | None, db: AsyncSession) -> str:
     # 0. Before setup is complete no credentials exist: only the wizard's routes are open
     from app.models.setting import Setting
     setup_res = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
@@ -613,6 +621,7 @@ async def login(
     retry_after = _reserve_login_attempt(client_ip)
     if retry_after is not None:
         logger.warning("Login blocked for %s: too many failed attempts", client_ip)
+        await audit(request, "auth.login", "denied", detail="too many failed attempts", actor="anonymous")
         raise HTTPException(
             status_code=429,
             detail=f"Too many failed login attempts. Try again in {retry_after} seconds.",
@@ -656,12 +665,14 @@ async def login(
             await db.commit()
 
         issue_session_cookie(response, request.headers.get("user-agent"))
+        await audit(request, "auth.login", actor="session")
         return {
             "status": "ok", 
             "message": "Login successful"
         }
     
     logger.warning("Login failed: invalid password provided")
+    await audit(request, "auth.login", "failed", detail="wrong password", actor="anonymous")
     raise HTTPException(status_code=401, detail="Invalid password")
 
 @router.post("/logout")
@@ -684,6 +695,7 @@ class PasswordChange(BaseModel):
 @router.post("/password")
 async def change_password(
     req: PasswordChange,
+    request: Request,
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -694,6 +706,7 @@ async def change_password(
     treat a typo as "logged out".
     """
     if not (token.startswith("session_") and session_store.get_session(token)):
+        await audit(request, "auth.password", "denied", detail="not a browser session")
         raise HTTPException(status_code=403, detail="Only a logged-in browser session can change the password.")
 
     master_setting = (await db.execute(select(Setting).where(Setting.key == "api.master_token"))).scalar_one_or_none()
@@ -708,6 +721,7 @@ async def change_password(
     )
     if not current_ok:
         logger.warning("Password change rejected: current password is wrong")
+        await audit(request, "auth.password", "failed", detail="current password wrong")
         raise HTTPException(status_code=400, detail="The current password is wrong.")
     if req.new_password == req.current_password:
         raise HTTPException(status_code=400, detail="Choose a password that differs from the current one.")
@@ -724,6 +738,7 @@ async def change_password(
 
     ended = session_store.delete_all_except(token)
     logger.info("Admin password changed; %d other session(s) logged out", ended)
+    await audit(request, "auth.password", detail=f"{ended} other session(s) logged out")
     return {"status": "ok", "other_sessions_ended": ended}
 
 
@@ -755,6 +770,7 @@ async def list_api_tokens(
 @router.post("/tokens", response_model=ApiTokenCreated)
 async def create_api_token(
     payload: ApiTokenCreate,
+    request: Request,
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -777,6 +793,7 @@ async def create_api_token(
     db.add(new_token)
     await db.commit()
     await db.refresh(new_token)
+    await audit(request, "auth.token.create", target=new_token.name, detail=scopes_str or "read-only defaults")
 
     return ApiTokenCreated(
         id=new_token.id,
@@ -792,6 +809,7 @@ async def create_api_token(
 @router.delete("/tokens/{token_id}")
 async def delete_api_token(
     token_id: int,
+    request: Request,
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -806,6 +824,7 @@ async def delete_api_token(
     
     await db.delete(db_token)
     await db.commit()
+    await audit(request, "auth.token.delete", target=db_token.name)
     return {"status": "ok", "message": "Token revoked successfully"}
 
 @router.get("/me")

@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Audit log (Logs → Audit). Records who opened and closed SSH terminals, issued agent install codes, installed, removed or updated agents (package updates), imported, generated, renamed or deleted SSH keys, changed saved connections or known host keys, created or revoked API tokens and webhooks, changed the password, exported or imported a backup, reset the database, and every login attempt, including refused ones. Each entry has the time, the caller (browser session, master token or the API token's name, never a token value), the source IP, the target device and the result (succeeded, failed, denied). Passwords, keys, token values and terminal input are never stored; a webhook shows only its host. Filters by area (remote access, credentials, instance, logins) and result, search, 100 entries per page. Entries are kept 90 days, are not part of backups and survive a database reset, which records itself. `GET /api/audit` (`settings:read` for API tokens).
+
 ### Changed
 - Tutorials: new guide "HTTPS with a reverse proxy" (Caddy, Nginx Proxy Manager, Traefik). Without HTTPS the one-line agent installer stops; the guide covers WebSockets for the terminal, logs and scans, a certificate the agent hosts trust (Let's Encrypt via DNS challenge, or the CA of a self-signed one on every host), the Agent server URL with https:// and `GRAVITYLAN_SECURE_COOKIES`. The agent guide points to it.
 - A test build says so: the `:dev` image carries a build label (`dev+<commit>`), which GravityUI shows under the version in the sidebar, in the phone header and on the About page (`build` in `/api/setup/status` and `/api/health`). Releases and release candidates have no label: a release is the tested release candidate image, re-tagged, so the version says it all.

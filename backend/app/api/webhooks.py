@@ -1,7 +1,9 @@
 """Webhooks routing endpoints for GravityLAN."""
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Body
+from urllib.parse import urlparse
+
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -9,6 +11,7 @@ from app.database import get_db
 from app.api.auth import get_bearer_admin, get_current_admin
 from app.models.webhook import WebhookSubscription
 from app.schemas.webhook import WebhookSubscriptionCreate, WebhookSubscriptionResponse
+from app.services.audit import record as audit
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,7 @@ async def list_webhooks(
 @router.post("", response_model=WebhookSubscriptionResponse)
 async def create_webhook(
     payload: WebhookSubscriptionCreate,
+    request: Request,
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -40,11 +44,13 @@ async def create_webhook(
     db.add(new_sub)
     await db.commit()
     await db.refresh(new_sub)
+    await audit(request, "webhook.create", target=urlparse(new_sub.url).hostname or "", detail=events_str)
     return new_sub
 
 @router.delete("/{webhook_id}")
 async def delete_webhook(
     webhook_id: int,
+    request: Request,
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -56,6 +62,7 @@ async def delete_webhook(
         
     await db.delete(db_sub)
     await db.commit()
+    await audit(request, "webhook.delete", target=urlparse(db_sub.url).hostname or "")
     return {"status": "ok", "message": "Webhook subscription deleted successfully"}
 
 @router.post("/test")

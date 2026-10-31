@@ -65,6 +65,12 @@ async def db():
         await conn.run_sync(Base.metadata.drop_all)
 
 @pytest.fixture(autouse=True)
+def _audit_into_test_db(monkeypatch):
+    """Audit entries go to the in-memory test database, not to a file under the data directory."""
+    monkeypatch.setattr("app.services.audit.async_session", TestingSessionLocal)
+
+
+@pytest.fixture(autouse=True)
 def _reset_login_rate_limit():
     """Failed logins of one test must not lock the next one out (all use the same client IP)."""
     from app.api.auth import reset_login_rate_limit

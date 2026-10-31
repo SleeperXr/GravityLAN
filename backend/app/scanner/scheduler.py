@@ -261,6 +261,12 @@ class ScanScheduler:
                     await db.execute(delete(DeviceHistory).where(DeviceHistory.timestamp < cutoff_naive))
                     await db.commit()
                     logger.info(f"Cleaned up device history older than {days} days")
+
+                # The audit log keeps its own fixed retention (90 days)
+                from app.services.audit import prune as prune_audit
+                removed = await prune_audit(db)
+                if removed:
+                    logger.info("Removed %d audit entries older than 90 days", removed)
         except Exception as e:
             logger.error(f"Failed to clean up old history: {e}", exc_info=True)
 

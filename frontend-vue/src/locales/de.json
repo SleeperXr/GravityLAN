@@ -194,6 +194,73 @@
       "copied_other": "{{count}} Zeilen kopiert",
       "copy_failed": "Kopieren nicht möglich"
     },
+    "audit": {
+      "tab_live": "Live-Log",
+      "tab_audit": "Audit",
+      "title": "Audit-Protokoll",
+      "subtitle": "Wer wann was getan hat: Fernzugriff, Zugangsdaten, Backups und Anmeldungen.",
+      "category_label": "Bereich",
+      "category": {
+        "all": "Alle",
+        "remote": "Fernzugriff",
+        "credentials": "Zugangsdaten",
+        "instance": "Instanz",
+        "logins": "Anmeldungen"
+      },
+      "result_label": "Ergebnis",
+      "result_all": "Alle Ergebnisse",
+      "result": {
+        "ok": "Erfolgreich",
+        "failed": "Fehlgeschlagen",
+        "denied": "Abgelehnt"
+      },
+      "search": "Ziel, Benutzer oder IP suchen …",
+      "refresh": "Neu laden",
+      "more": "Ältere laden",
+      "empty": "Keine Einträge",
+      "empty_hint": "Hier erscheint, wer Terminals öffnet, Agents installiert, Zugangsdaten ändert oder Backups zieht.",
+      "retention": "Einträge bleiben {{days}} Tage. Passwörter, Schlüssel, Tokens und Terminal-Eingaben werden nie gespeichert. Das Audit ist nicht im Backup und übersteht einen Datenbank-Reset.",
+      "col": {
+        "time": "Zeit",
+        "action": "Aktion",
+        "target": "Ziel",
+        "who": "Wer",
+        "result": "Ergebnis"
+      },
+      "actor": {
+        "session": "Browser-Sitzung",
+        "master": "Master-Token",
+        "api_token": "API-Token „{{name}}“",
+        "anonymous": "Unbekannt",
+        "setup": "Einrichtung",
+        "system": "System"
+      },
+      "action": {
+        "auth_login": "Anmeldung",
+        "auth_password": "Passwort geändert",
+        "auth_token_create": "API-Token angelegt",
+        "auth_token_delete": "API-Token widerrufen",
+        "webhook_create": "Webhook angelegt",
+        "webhook_delete": "Webhook gelöscht",
+        "ssh_key_import": "SSH-Schlüssel importiert",
+        "ssh_key_generate": "SSH-Schlüssel erzeugt",
+        "ssh_key_rename": "SSH-Schlüssel umbenannt",
+        "ssh_key_delete": "SSH-Schlüssel gelöscht",
+        "ssh_connection_create": "SSH-Verbindung angelegt",
+        "ssh_connection_update": "SSH-Verbindung geändert",
+        "ssh_connection_delete": "SSH-Verbindung gelöscht",
+        "ssh_known_host_delete": "Host-Schlüssel entfernt",
+        "ssh_terminal_open": "Terminal geöffnet",
+        "ssh_terminal_close": "Terminal geschlossen",
+        "agent_install_code": "Installationscode erzeugt",
+        "agent_deploy": "Agent installiert",
+        "agent_uninstall": "Agent entfernt",
+        "agent_patches": "Paket-Updates",
+        "backup_export": "Backup exportiert",
+        "backup_import": "Backup eingespielt",
+        "database_reset": "Datenbank zurückgesetzt"
+      }
+    },
     "racks": {
       "new": "Neues Rack",
       "create": "Rack anlegen",

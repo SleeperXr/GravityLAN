@@ -206,6 +206,7 @@ async def lifespan(app: FastAPI):
     from app.models.webhook import WebhookSubscription
     from app.models.ssh import SshKey, SshProfile, SshKnownHost
     from app.models.router_import import RouterImportSource
+    from app.models.audit import AuditEvent  # noqa: F401
 
     # Initialize database tables
     await init_db()
@@ -359,6 +360,7 @@ from app.api.backup import router as backup_router  # noqa: E402
 from app.api.network import router as network_router  # noqa: E402
 from app.api.topology import router as topology_router  # noqa: E402
 from app.api.webhooks import router as webhooks_router  # noqa: E402
+from app.api.audit import router as audit_router  # noqa: E402
 from app.api.summary import router as summary_router, issues_router  # noqa: E402
 from app.api.logs import router as logs_router  # noqa: E402
 from app.api.agents import router as agents_router  # noqa: E402
@@ -386,6 +388,7 @@ app.include_router(scanner_router, dependencies=[Depends(get_current_admin)])
 app.include_router(settings_router, dependencies=[Depends(get_current_admin)])
 app.include_router(telemetry_router)  # Settings > Measurement data; guards itself with get_current_admin
 app.include_router(webhooks_router, dependencies=[Depends(get_current_admin)])
+app.include_router(audit_router, dependencies=[Depends(get_current_admin)])
 app.include_router(summary_router, dependencies=[Depends(get_current_admin)])
 app.include_router(issues_router, dependencies=[Depends(get_current_admin)])
 app.include_router(logs_router, dependencies=[Depends(get_current_admin)])

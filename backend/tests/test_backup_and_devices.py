@@ -131,7 +131,7 @@ async def test_reset_database_wipes_interfaces_caches_and_sessions(db, monkeypat
     sid = session_store.create_session(user_agent="pytest")
     assert session_store.get_session(sid) is not None
 
-    await reset_database(db=db)
+    await reset_database(request=None, db=db)
 
     remaining_ifaces = (await db.execute(select(DeviceInterface))).scalars().all()
     assert remaining_ifaces == []
