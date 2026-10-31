@@ -123,7 +123,12 @@ onBeforeUnmount(() => store.disconnectScanStream());
         </div>
       </div>
 
-      <main id="main" tabindex="-1" class="min-h-0 flex-1 overflow-y-auto pb-[calc(4rem+env(safe-area-inset-bottom))] focus:outline-none md:pb-0">
+      <!--
+        relative: absolutely positioned content (sr-only legends and inputs) must belong to this scroll box.
+        Positioned against <body>, they made the document 6000 px tall, and a jump to Settings → #danger
+        scrolled the whole page, sidebar included.
+      -->
+      <main id="main" tabindex="-1" class="relative min-h-0 flex-1 overflow-y-auto pb-[calc(4rem+env(safe-area-inset-bottom))] focus:outline-none md:pb-0">
         <!-- The SSH page stays alive after the first visit, so open terminals keep running elsewhere -->
         <RouterView v-slot="{ Component }">
           <KeepAlive include="SshView">

@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - GravityUI Health-Radar: "Kritisch / Offline" and the health score ran into the availability column. The status column is wider and the score wraps under the status when both do not fit.
+- GravityUI: jumping to a settings section near the end (e.g. Danger zone) scrolled the whole page and pushed the sidebar out of view. Hidden helper elements for screen readers were positioned against the page instead of the content area and made the page about 6000 px tall; the content area now contains them, so only it scrolls.
 - Scan progress of a full scan (setup wizard, "Scan now"): the wizard said "0 / 0 hosts checked" and the scan strip had no count, because the scan never reported one. It now reports the hosts of every finished subnet (nmap sweeps a subnet at once, so the count moves per subnet) and the subnet it is on. The wizard says which subnet it scans in the UI language instead of the backend's English log line, and no longer repeats "Scan complete" under its own heading.
 
 ## [0.7.0] - 2026-10-30
