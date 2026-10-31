@@ -349,6 +349,12 @@
         "steps": "Öffne http://<host>:8000 und schließe den Einrichtungsassistenten direkt nach dem ersten Start ab.\nDer Assistent erkennt die Netze des Hosts und speichert sie als Scan-Subnetze. Netze hinter dem Router, etwa ein IoT-VLAN, trägst du im selben Schritt dazu ein.\nEr setzt das Admin-Passwort und startet den ersten Scan.\nSpäter verwaltest du die Liste unter Einstellungen → Scan-Subnetze: hinzufügen, pausieren, entfernen.",
         "hint": "Bis der Assistent abgeschlossen ist, legt der erste Besucher der Seite das Admin-Passwort fest. Schließe ihn deshalb gleich nach dem Start ab."
       },
+      "https": {
+        "title": "HTTPS mit Reverse Proxy",
+        "summary": "Ohne HTTPS installiert der Einzeiler keinen Agent, und Terminal-Eingaben gehen unverschlüsselt durchs Netz.",
+        "steps": "Stell einen Reverse Proxy vor GravityLAN, etwa Caddy, Nginx Proxy Manager oder Traefik, und leite eine Adresse wie gravitylan.example.com auf http://<host>:8000 weiter.\nDer Proxy muss WebSockets durchreichen: SSH-Terminal, Live-Log und Scan-Fortschritt laufen darüber. Caddy und Traefik tun das von selbst, im Nginx Proxy Manager schaltest du „Websockets Support“ ein.\nNimm ein Zertifikat, dem deine Hosts vertrauen, am einfachsten Let's Encrypt über die DNS-Challenge deiner Domain; dafür muss kein Port aus dem Internet offen sein. Ein selbstsigniertes Zertifikat klappt nur, wenn jeder Agent-Host dessen CA kennt, denn curl und der Agent prüfen Zertifikate.\nTrage unter Einstellungen → System die „Agent-Server URL“ mit https:// ein. Ohne Eintrag erkennt GravityLAN nur seine eigene http-Adresse, und neue Agents würden sich unverschlüsselt melden.\nSetze im Container GRAVITYLAN_SECURE_COOKIES=true, damit das Login-Cookie nur über HTTPS gesendet wird.",
+        "hint": "Über http:// bricht der Einzeiler-Installer mit einer Meldung ab. ALLOW_INSECURE=1 bzw. GRAVITYLAN_ALLOW_INSECURE_INSTALL=true erzwingt es trotzdem, dann gehen Agent-Skript und Token aber unverschlüsselt über das Netz. Die Installation über SSH funktioniert auch ohne HTTPS."
+      },
       "dashboard": {
         "title": "Übersicht und Gruppen",
         "summary": "Alle Geräte in eigenen Bereichen, als Kacheln oder Liste, mit Live-Werten vom Agenten.",
@@ -376,7 +382,7 @@
       "agent": {
         "title": "Agent installieren und aktualisieren",
         "summary": "Ein Python-Skript pro Linux-Host liefert CPU, RAM, Platten, Netz und Temperatur.",
-        "steps": "Öffne das Gerät im Geräte-Editor, Tab „Agent“.\nÜber SSH: Wähle eine gespeicherte Schlüssel-Verbindung oder gib Benutzer und Passwort ein. Eingegebene Zugangsdaten werden nur für diese Anfrage genutzt.\nOder kopiere den Einzeiler-Installer und führe ihn auf dem Host aus. Er enthält einen Einmalcode, der 30 Minuten gilt.\nUpdates: Das Agent-Update-Center aktualisiert alle veralteten Agents zusammen, und ein offenes SSH-Terminal bietet einen Button „Agent-Update“.",
+        "steps": "Öffne das Gerät im Geräte-Editor, Tab „Agent“.\nÜber SSH: Wähle eine gespeicherte Schlüssel-Verbindung oder gib Benutzer und Passwort ein. Eingegebene Zugangsdaten werden nur für diese Anfrage genutzt.\nOder kopiere den Einzeiler-Installer und führe ihn auf dem Host aus. Er enthält einen Einmalcode, der 30 Minuten gilt.\nOhne HTTPS bricht der Einzeiler ab (siehe „HTTPS mit Reverse Proxy“); die Installation über SSH funktioniert auch so.\nUpdates: Das Agent-Update-Center aktualisiert alle veralteten Agents zusammen, und ein offenes SSH-Terminal bietet einen Button „Agent-Update“.",
         "hint": "Die Agent-Version ändert sich nur, wenn sich das Agent-Skript ändert. Nicht jedes Server-Update braucht ein Agent-Update."
       },
       "updates": {

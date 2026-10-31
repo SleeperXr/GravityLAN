@@ -7,6 +7,7 @@ import {
   HardDrive,
   KeyRound,
   LayoutDashboard,
+  Lock,
   Network,
   PackageCheck,
   Router,
@@ -34,6 +35,18 @@ export const TUTORIAL_GROUPS = ['start', 'network', 'hosts', 'operate'] as const
 
 export const TUTORIALS: Tutorial[] = [
   { id: 'setup', group: 'start', icon: Grid3x3, to: '/settings#subnets', diagram: 'setup' },
+  {
+    id: 'https',
+    group: 'start',
+    icon: Lock,
+    to: '/settings#system',
+    code: [
+      '# Caddyfile: certificate and WebSockets come by themselves',
+      'gravitylan.example.com {',
+      '  reverse_proxy 192.168.1.10:8000',
+      '}',
+    ].join('\n'),
+  },
   { id: 'dashboard', group: 'start', icon: LayoutDashboard, to: '/' },
   { id: 'ip', group: 'network', icon: Network, to: '/network', diagram: 'routing' },
   { id: 'router', group: 'network', icon: Router, to: '/settings#subnets' },
