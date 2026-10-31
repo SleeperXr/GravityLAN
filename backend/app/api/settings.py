@@ -6,6 +6,7 @@ from pydantic import RootModel
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select, text
+from app.services.stepup import require_step_up
 from app.database import get_db
 from app.models.device import Device, Service, DeviceGroup
 from app.models.setting import Setting
@@ -34,6 +35,8 @@ WRITABLE_KEYS = frozenset({
     "ui.health_resilience",
     # Network view groups, topology flow controls, GravityUI appearance
     "network_groups", "ui.line_colors", "ui.orbit_layout", "ui.orbit_roles", "ui.orbit_visibility", "ui.link_type_colors",
+    # How long a password confirmation (step-up) lasts, 1-60 minutes
+    "security.stepup_minutes",
     # Telemetry retention (clamped when read) and agent adoption
     "telemetry.raw_retention_hours", "telemetry.hourly_retention_days", "telemetry.daily_retention_days",
     "agent.allow_auto_adoption",
@@ -179,6 +182,16 @@ def _validate_orbit_visibility(value: str) -> None:
         )
 
 
+def _validate_stepup_minutes(value: str) -> None:
+    """A whole number of minutes from 1 to 60."""
+    from app.services.stepup import MAX_MINUTES, MIN_MINUTES
+    if not value.isdigit() or not MIN_MINUTES <= int(value) <= MAX_MINUTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid step-up duration: '{value}'. Must be {MIN_MINUTES} to {MAX_MINUTES} minutes.",
+        )
+
+
 _VALIDATORS = {
     "server.url": _validate_server_url,
     "server_url_override": _validate_server_url,
@@ -189,11 +202,12 @@ _VALIDATORS = {
     "ui.default_frontend": _validate_default_frontend,
     "ui.health_resilience": _validate_health_resilience,
     "ui.orbit_visibility": _validate_orbit_visibility,
+    "security.stepup_minutes": _validate_stepup_minutes,
 }
 
 
 @router.post("", dependencies=[Depends(get_current_admin)])
-async def update_settings(settings: SettingsUpdate, db: AsyncSession = Depends(get_db)):
+async def update_settings(settings: SettingsUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     """Update or create system settings."""
     protected = SENSITIVE_KEYS.intersection(settings.root)
     if protected:
@@ -207,6 +221,14 @@ async def update_settings(settings: SettingsUpdate, db: AsyncSession = Depends(g
             status_code=400,
             detail=f"{', '.join(rejected)} cannot be changed through /api/settings.",
         )
+    # Lengthening the step-up grant is itself an instance change (AP-12); the settings form sends every
+    # field on each save, so only an actual change asks for the password
+    from app.services import stepup
+    if stepup.SETTING_KEY in settings.root:
+        current = (await db.execute(select(Setting).where(Setting.key == stepup.SETTING_KEY))).scalar_one_or_none()
+        stored = current.value if current and current.value else str(stepup.DEFAULT_MINUTES)
+        if settings.root[stepup.SETTING_KEY] != stored:
+            stepup.check(request, "instance")
     # Mirror server_url_override and server.url so UI and backend are always in sync
     if "server_url_override" in settings.root and "server.url" not in settings.root:
         settings.root["server.url"] = settings.root["server_url_override"]
@@ -253,6 +275,8 @@ def _drop_runtime_credentials() -> None:
     from app.api.backup import invalidate_all_runtime_caches
 
     logged_out = session_store.delete_all_except(None)
+    from app.services.stepup import store as stepup_grants
+    stepup_grants.clear()
     enrollment_store.clear()
     _temp_patch_tokens.clear()
     _tickets.clear()
@@ -261,7 +285,7 @@ def _drop_runtime_credentials() -> None:
     logger.warning("Database reset: %d browser session(s) logged out, %d terminal session(s) closed", logged_out, closed)
 
 
-@router.post("/reset-db", status_code=200, dependencies=[Depends(get_current_admin)])
+@router.post("/reset-db", status_code=200, dependencies=[Depends(get_current_admin), Depends(require_step_up("instance"))])
 async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
     """Wipe all devices, services, and reset setup status for a fresh start."""
     try:

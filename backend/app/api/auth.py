@@ -3,12 +3,15 @@ import math
 import secrets
 import time
 from datetime import datetime, timezone
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Body, Response, Request, Header, WebSocket, Query
 from fastapi.requests import HTTPConnection
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.services.audit import record as audit, remember_actor
+from app.services import stepup
+from app.services.stepup import require_step_up
 from app.database import get_db
 from app.models.setting import Setting
 from app.config import settings
@@ -742,6 +745,65 @@ async def change_password(
     return {"status": "ok", "other_sessions_ended": ended}
 
 
+class StepUpRequest(BaseModel):
+    password: str = Field(..., max_length=256)
+    scope: Literal["remote", "credentials", "instance"]
+
+
+async def _admin_password_matches(db: AsyncSession, password: str) -> bool:
+    master_setting = (await db.execute(select(Setting).where(Setting.key == "api.master_token"))).scalar_one_or_none()
+    admin_setting = (await db.execute(select(Setting).where(Setting.key == "api.admin_password"))).scalar_one_or_none()
+    required = admin_setting.value if admin_setting else (master_setting.value if master_setting else "")
+    if not required:
+        return False
+    return verify_password(password, required) if looks_hashed(required) else secure_compare(password, required)
+
+
+@router.post("/step-up")
+async def step_up(
+    req: StepUpRequest,
+    request: Request,
+    token: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Confirm the admin password again; allows one class of actions to this session for a while (AP-12).
+
+    Wrong passwords count against the same per-address limit as logins. Errors are 400, not 401,
+    so the UI does not treat a typo as "logged out".
+    """
+    session_id = stepup.session_of(request)
+    if session_id is None:
+        raise HTTPException(status_code=403, detail="Only a logged-in browser session can confirm actions.")
+    client_ip = _client_ip(request)
+    retry_after = _reserve_login_attempt(client_ip)
+    if retry_after is not None:
+        await audit(request, "auth.stepup", "denied", detail=f"{req.scope}: too many failed attempts")
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed attempts. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    if not await _admin_password_matches(db, req.password):
+        await audit(request, "auth.stepup", "failed", detail=f"{req.scope}: wrong password")
+        raise HTTPException(status_code=400, detail="The password is wrong.")
+
+    _login_attempts.pop(client_ip, None)
+    minutes = await stepup.grant_minutes(db)
+    stepup.store.grant(session_id, req.scope, minutes * 60)
+    await audit(request, "auth.stepup", detail=f"{req.scope}, {minutes} min")
+    return {"scope": req.scope, "expires_in": minutes * 60}
+
+
+@router.get("/step-up")
+async def step_up_status(request: Request, token: str = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    """Seconds left per confirmed class for this browser session, and the grant length in minutes."""
+    session_id = stepup.session_of(request)
+    return {
+        "grants": stepup.store.remaining(session_id) if session_id else {},
+        "minutes": await stepup.grant_minutes(db),
+    }
+
+
 @router.post("/check")
 async def check_auth(token: str = Depends(get_current_admin)):
     """Check if currently authenticated (via dependency)."""
@@ -767,7 +829,7 @@ async def list_api_tokens(
     res = await db.execute(select(ApiToken).order_by(ApiToken.created_at.desc()))
     return res.scalars().all()
 
-@router.post("/tokens", response_model=ApiTokenCreated)
+@router.post("/tokens", response_model=ApiTokenCreated, dependencies=[Depends(require_step_up("credentials"))])
 async def create_api_token(
     payload: ApiTokenCreate,
     request: Request,
@@ -806,7 +868,7 @@ async def create_api_token(
         scopes=payload.scopes
     )
 
-@router.delete("/tokens/{token_id}")
+@router.delete("/tokens/{token_id}", dependencies=[Depends(require_step_up("credentials"))])
 async def delete_api_token(
     token_id: int,
     request: Request,

@@ -9,6 +9,7 @@ import AppSidebar from '@/components/layout/AppSidebar.vue';
 import MobileNav from '@/components/layout/MobileNav.vue';
 import ToastHost from '@/components/ui/ToastHost.vue';
 import ConfirmHost from '@/components/ui/ConfirmHost.vue';
+import StepUpHost from '@/components/ui/StepUpHost.vue';
 import Button from '@/components/ui/Button.vue';
 import LoginView from '@/views/LoginView.vue';
 import SetupView from '@/views/SetupView.vue';
@@ -143,4 +144,5 @@ onBeforeUnmount(() => store.disconnectScanStream());
 
   <ToastHost />
   <ConfirmHost />
+  <StepUpHost />
 </template>

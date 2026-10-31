@@ -34,6 +34,7 @@ const DEFAULT_FORM = {
   'ui.start_page': '/',
   'ui.default_frontend': 'vue',
   'ui.health_resilience': 'auto',
+  'security.stepup_minutes': '10',
 };
 type SettingsForm = typeof DEFAULT_FORM;
 const KEYS = Object.keys(DEFAULT_FORM) as (keyof SettingsForm)[];
@@ -142,6 +143,7 @@ const languages: { value: Locale; key: string }[] = [
         <SettingsSection id="system" :title="t('settings.section_system')" :description="t('settings.section_system_desc')">
           <div class="grid gap-4 md:grid-cols-3">
             <UnitField v-model="form.history_retention_days" :label="t('settings.retention_label')" :hint="t('settings.retention_hint')" :unit="t('settings.unit_days')" />
+            <UnitField v-model="form['security.stepup_minutes']" :label="t('gv.stepup.setting_label')" :hint="t('gv.stepup.setting_hint')" :unit="t('settings.unit_minutes')" :min="1" :max="60" />
             <Field v-slot="{ id, describedBy }" :label="t('settings.log_level')" :hint="t('settings.log_level_desc')">
               <Select
                 :id="id"

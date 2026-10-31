@@ -12,6 +12,7 @@ from app.api.auth import get_bearer_admin, get_current_admin
 from app.models.webhook import WebhookSubscription
 from app.schemas.webhook import WebhookSubscriptionCreate, WebhookSubscriptionResponse
 from app.services.audit import record as audit
+from app.services.stepup import require_step_up
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ async def list_webhooks(
     result = await db.execute(select(WebhookSubscription).order_by(WebhookSubscription.created_at.desc()))
     return result.scalars().all()
 
-@router.post("", response_model=WebhookSubscriptionResponse)
+@router.post("", response_model=WebhookSubscriptionResponse, dependencies=[Depends(require_step_up("credentials"))])
 async def create_webhook(
     payload: WebhookSubscriptionCreate,
     request: Request,
@@ -47,7 +48,7 @@ async def create_webhook(
     await audit(request, "webhook.create", target=urlparse(new_sub.url).hostname or "", detail=events_str)
     return new_sub
 
-@router.delete("/{webhook_id}")
+@router.delete("/{webhook_id}", dependencies=[Depends(require_step_up("credentials"))])
 async def delete_webhook(
     webhook_id: int,
     request: Request,

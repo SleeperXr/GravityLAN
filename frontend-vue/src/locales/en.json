@@ -171,7 +171,12 @@
       "query_failed": "Could not query updates",
       "adopted": "New agent key adopted",
       "adopt_failed": "Could not adopt the key",
-      "load_failed": "Could not load agents"
+      "load_failed": "Could not load agents",
+      "deploy_confirm_title": "Install agent",
+      "deploy_confirm": "The agent is installed over SSH on:\n\n{{target}}",
+      "deploy_start": "Install",
+      "update_all_confirm_title": "Update all agents",
+      "update_all_confirm": "The agent is updated over SSH on {{count}} devices:\n\n{{targets}}"
     },
     "ssh": {
       "back_to_sessions": "Back to sessions ({{count}})"
@@ -260,6 +265,19 @@
         "backup_import": "Backup imported",
         "database_reset": "Database reset"
       }
+    },
+    "stepup": {
+      "title": "Confirm your password",
+      "scope_remote": "Remote access: terminal, installing or removing agents, package updates",
+      "scope_credentials": "Credentials: SSH keys and connections, host keys, API tokens, webhooks",
+      "scope_instance": "Instance: backup, restore, database reset, this confirmation time",
+      "hint": "The confirmation then lasts {{minutes}} minutes for this area in this browser.",
+      "password": "Admin password",
+      "confirm": "Confirm",
+      "wrong": "The password is wrong.",
+      "setting_label": "Password confirmation lasts",
+      "setting_hint": "For this long, terminals, agent actions, credentials and backups do not ask again (1 to 60).",
+      "cancelled": "Cancelled: this action needs your password confirmed."
     },
     "racks": {
       "new": "New rack",

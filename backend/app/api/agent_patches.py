@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_admin
 from app.services.audit import actor_from_identity, record as audit
+from app.services.stepup import require_step_up
 from app.config import settings
 from app.database import async_session, get_db
 from app.models.agent import DeviceMetrics
@@ -130,7 +131,7 @@ async def _resolve_patch_credentials(
     return host_ip, ssh_port, ssh_user, ssh_password, ssh_key, ssh_passphrase, pinned
 
 
-@patch_router.post("/patches/{device_id}/query", response_model=DevicePatchesResponse)
+@patch_router.post("/patches/{device_id}/query", response_model=DevicePatchesResponse, dependencies=[Depends(require_step_up("remote"))])
 async def query_device_patches(
     device_id: int,
     request: AgentDeployRequest,
@@ -189,7 +190,7 @@ async def query_device_patches(
     )
 
 
-@patch_router.post("/patches/{device_id}/prepare")
+@patch_router.post("/patches/{device_id}/prepare", dependencies=[Depends(require_step_up("remote"))])
 async def prepare_patch_action(
     device_id: int,
     request: PatchActionRequest,
