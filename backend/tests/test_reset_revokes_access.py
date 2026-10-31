@@ -59,6 +59,34 @@ async def test_reset_revokes_tokens_sessions_keys_and_webhooks(client, db, admin
     assert res.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_reset_leaves_no_rack_equipment_ports_or_cables_behind(client, db, admin_token):
+    """Since 0.6.0 they survived the reset as orphans of racks and devices that were gone."""
+    from app.models.device import Device
+    from app.models.rack_cabling import RackCable, RackItem, RackPort
+    from app.models.topology import Rack
+
+    rack = Rack(name="A", units=12)
+    device = Device(ip="10.0.0.5", display_name="Switch")
+    db.add_all([rack, device])
+    await db.flush()
+    item = RackItem(rack_id=rack.id, name="Patchpanel", kind="patch_panel", rack_unit=1)
+    db.add(item)
+    await db.flush()
+    a, b = RackPort(rack_item_id=item.id, number=1), RackPort(device_id=device.id, number=1)
+    db.add_all([a, b])
+    await db.flush()
+    db.add(RackCable(a_port_id=a.id, b_port_id=b.id))
+    await db.commit()
+
+    res = await client.post("/api/settings/reset-db", headers=HEADERS)
+    assert res.status_code == 200, res.text
+
+    db.expire_all()
+    for model in (RackCable, RackPort, RackItem, Rack, Device):
+        assert await _count(db, model) == 0, model.__tablename__
+
+
 class _FakeSocket:
     def __init__(self):
         self.closed_with = None
