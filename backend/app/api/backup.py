@@ -4,7 +4,7 @@ import sqlite3
 import os
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -12,6 +12,7 @@ from app.config import settings
 
 from app.api.auth import get_current_admin
 from app.schemas.device import is_safe_url_template
+from app.services.audit import record as audit
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/backup", tags=["backup"])
@@ -87,7 +88,7 @@ def invalidate_all_runtime_caches() -> None:
 
 
 @router.get("/export", dependencies=[Depends(get_current_admin)])
-async def export_backup():
+async def export_backup(request: Request):
     """Export the current database state as a JSON file."""
     db_path = settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
     if not os.path.exists(db_path):
@@ -121,6 +122,7 @@ async def export_backup():
 
     try:
         data = await asyncio.to_thread(_read_db)
+        await audit(request, "backup.export", detail=f"{len(data.get('devices', []))} devices")
         filename = f"gravitylan_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
         return JSONResponse(
             content=data,
@@ -334,7 +336,7 @@ def _validate_backup_shape(data) -> None:
 
 
 @router.post("/import", dependencies=[Depends(get_current_admin)])
-async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+async def import_backup(request: Request, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     """Import a JSON backup file into the database."""
     if not file.filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Only JSON files are supported")
@@ -356,10 +358,12 @@ async def import_backup(file: UploadFile = File(...), db: AsyncSession = Depends
         imported = await asyncio.to_thread(_write_db, db_path, data, report)
     except Exception as e:
         logger.error(f"Backup: Import failed, all changes rolled back: {e}")
+        await audit(request, "backup.import", "failed", detail="rolled back")
         raise HTTPException(status_code=500, detail=f"Backup import failed, no changes were made: {e}")
 
     for table, count in imported.items():
         logger.info(f"Backup: Imported {count} rows into {table}")
+    await audit(request, "backup.import", detail=f"{imported.get('devices', 0)} devices, {imported.get('app_settings', 0)} settings")
 
     reassigned = report.get("reassigned_device_ids", [])
     revoked = report.get("agent_tokens_revoked", 0)

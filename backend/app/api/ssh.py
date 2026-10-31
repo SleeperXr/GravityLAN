@@ -24,6 +24,8 @@ from typing import NamedTuple, Optional
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
+
+from app.services.audit import record as audit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -259,7 +261,7 @@ async def list_keys(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/keys", response_model=SshKeyOut)
-async def create_key(req: SshKeyCreate, db: AsyncSession = Depends(get_db)):
+async def create_key(req: SshKeyCreate, request: Request, db: AsyncSession = Depends(get_db)):
     """Store an uploaded private key (validated, then encrypted)."""
     name = req.name.strip()
     private_key = req.private_key.strip()
@@ -292,11 +294,12 @@ async def create_key(req: SshKeyCreate, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(key)
     logger.info("SSH key stored: '%s' (%s %s)", key.name, key.key_type, key.fingerprint)
+    await audit(request, "ssh.key.import", target=key.name, detail=f"{key.key_type} {key.fingerprint}")
     return _key_out(key)
 
 
 @router.post("/keys/generate", response_model=SshKeyOut)
-async def generate_key(req: SshKeyGenerate, db: AsyncSession = Depends(get_db)):
+async def generate_key(req: SshKeyGenerate, request: Request, db: AsyncSession = Depends(get_db)):
     """Generate a new Ed25519 key pair; only the public half is ever returned."""
     name = req.name.strip()
     if not name:
@@ -314,11 +317,12 @@ async def generate_key(req: SshKeyGenerate, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(key)
     logger.info("SSH key generated: '%s' (%s)", key.name, key.fingerprint)
+    await audit(request, "ssh.key.generate", target=key.name, detail=f"{key.key_type} {key.fingerprint}")
     return _key_out(key)
 
 
 @router.patch("/keys/{key_id}", response_model=SshKeyOut)
-async def rename_key(key_id: int, req: SshKeyUpdate, db: AsyncSession = Depends(get_db)):
+async def rename_key(key_id: int, req: SshKeyUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     key = await db.get(SshKey, key_id)
     if key is None:
         raise HTTPException(status_code=404, detail="Key not found.")
@@ -326,17 +330,19 @@ async def rename_key(key_id: int, req: SshKeyUpdate, db: AsyncSession = Depends(
         raise HTTPException(status_code=400, detail="Name is required.")
     key.name = req.name.strip()
     await db.commit()
+    await audit(request, "ssh.key.rename", target=key.name)
     return _key_out(key)
 
 
 @router.delete("/keys/{key_id}")
-async def delete_key(key_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_key(key_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     key = await db.get(SshKey, key_id)
     if key is None:
         raise HTTPException(status_code=404, detail="Key not found.")
     await db.delete(key)
     await db.commit()
     logger.info("SSH key deleted: '%s' (%s)", key.name, key.fingerprint)
+    await audit(request, "ssh.key.delete", target=key.name, detail=key.fingerprint)
     return {"status": "ok"}
 
 
@@ -351,7 +357,7 @@ async def list_profiles(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/profiles", response_model=SshProfileOut)
-async def create_profile(req: SshProfileCreate, db: AsyncSession = Depends(get_db)):
+async def create_profile(req: SshProfileCreate, request: Request, db: AsyncSession = Depends(get_db)):
     profile = SshProfile(
         name=req.name.strip(), device_id=req.device_id, host=(req.host or "").strip() or None,
         port=req.port, username=req.username.strip(), auth_method=req.auth_method,
@@ -362,11 +368,12 @@ async def create_profile(req: SshProfileCreate, db: AsyncSession = Depends(get_d
     db.add(profile)
     await db.commit()
     await db.refresh(profile)
+    await audit(request, "ssh.connection.create", device_id=profile.device_id, target=profile.name, detail=profile.auth_method)
     return await _profile_out(db, profile)
 
 
 @router.patch("/profiles/{profile_id}", response_model=SshProfileOut)
-async def update_profile(profile_id: int, req: SshProfileUpdate, db: AsyncSession = Depends(get_db)):
+async def update_profile(profile_id: int, req: SshProfileUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     profile = await db.get(SshProfile, profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found.")
@@ -395,16 +402,18 @@ async def update_profile(profile_id: int, req: SshProfileUpdate, db: AsyncSessio
 
     await _validate_profile(db, profile)
     await db.commit()
+    await audit(request, "ssh.connection.update", device_id=profile.device_id, target=profile.name, detail=profile.auth_method)
     return await _profile_out(db, profile)
 
 
 @router.delete("/profiles/{profile_id}")
-async def delete_profile(profile_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_profile(profile_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     profile = await db.get(SshProfile, profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found.")
     await db.delete(profile)
     await db.commit()
+    await audit(request, "ssh.connection.delete", device_id=profile.device_id, target=profile.name)
     return {"status": "ok"}
 
 
@@ -417,13 +426,14 @@ async def list_known_hosts(db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/known-hosts/{entry_id}")
-async def delete_known_host(entry_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_known_host(entry_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     entry = await db.get(SshKnownHost, entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Entry not found.")
     await db.delete(entry)
     await db.commit()
     logger.info("SSH known host removed: %s:%s (%s)", entry.host, entry.port, entry.fingerprint)
+    await audit(request, "ssh.known_host.delete", target=f"{entry.host}:{entry.port}", detail=entry.fingerprint)
     return {"status": "ok"}
 
 
@@ -550,4 +560,10 @@ async def ssh_terminal_websocket(websocket: WebSocket):
         rows = int(websocket.query_params.get("rows", 24))
     except ValueError:
         cols, rows = 80, 24
-    await run_terminal(websocket, target, cols, rows)
+    # Only who, where and when: what is typed into the shell is never recorded
+    who = f"{target.username}@{target.host}:{target.port}"
+    await audit(websocket, "ssh.terminal.open", device_id=target.device_id, target=who, actor="session")
+    try:
+        await run_terminal(websocket, target, cols, rows)
+    finally:
+        await audit(websocket, "ssh.terminal.close", device_id=target.device_id, target=who, actor="session")

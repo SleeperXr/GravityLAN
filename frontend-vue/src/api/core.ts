@@ -314,6 +314,12 @@ export const api = {
 
   // API Tokens
   getApiTokens: () => request<import('../types').ApiTokenResponse[]>('/api/auth/tokens'),
+  getAuditEvents: (params: { action?: string; result?: string; q?: string; before_id?: number; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') query.set(key, String(value));
+    const qs = query.toString();
+    return request<import('../components/logstream/auditModel').AuditPage>(`/api/audit${qs ? `?${qs}` : ''}`);
+  },
   createApiToken: (name: string) => request<import('../types').ApiTokenCreated>('/api/auth/tokens', { method: 'POST', body: JSON.stringify({ name }) }),
   deleteApiToken: (id: number) => request<{ status: string; message: string }>(`/api/auth/tokens/${id}`, { method: 'DELETE' }),
 

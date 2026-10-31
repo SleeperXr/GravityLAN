@@ -3,7 +3,7 @@ import json
 import re
 from urllib.parse import urlparse
 from pydantic import RootModel
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select, text
 from app.database import get_db
@@ -262,7 +262,7 @@ def _drop_runtime_credentials() -> None:
 
 
 @router.post("/reset-db", status_code=200, dependencies=[Depends(get_current_admin)])
-async def reset_database(db: AsyncSession = Depends(get_db)):
+async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
     """Wipe all devices, services, and reset setup status for a fresh start."""
     try:
         import asyncio
@@ -332,6 +332,9 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
             logger.error(f"Failed to restart scheduler: {se}")
 
         logger.warning("Database reset triggered: All devices and setup status cleared.")
+        # The audit log is not wiped: it keeps who reset the instance
+        from app.services.audit import record as audit
+        await audit(request, "database.reset")
         return {"status": "success", "message": "Database and setup status cleared successfully"}
     except Exception as e:
         await db.rollback()

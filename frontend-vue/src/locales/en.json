@@ -194,6 +194,73 @@
       "copied_other": "{{count}} lines copied",
       "copy_failed": "Could not copy"
     },
+    "audit": {
+      "tab_live": "Live log",
+      "tab_audit": "Audit",
+      "title": "Audit log",
+      "subtitle": "Who did what and when: remote access, credentials, backups and logins.",
+      "category_label": "Area",
+      "category": {
+        "all": "All",
+        "remote": "Remote access",
+        "credentials": "Credentials",
+        "instance": "Instance",
+        "logins": "Logins"
+      },
+      "result_label": "Result",
+      "result_all": "All results",
+      "result": {
+        "ok": "Succeeded",
+        "failed": "Failed",
+        "denied": "Denied"
+      },
+      "search": "Search target, user or IP …",
+      "refresh": "Reload",
+      "more": "Load older",
+      "empty": "No entries",
+      "empty_hint": "Shows who opens terminals, installs agents, changes credentials or exports backups.",
+      "retention": "Entries are kept for {{days}} days. Passwords, keys, tokens and terminal input are never stored. The audit log is not part of backups and survives a database reset.",
+      "col": {
+        "time": "Time",
+        "action": "Action",
+        "target": "Target",
+        "who": "Who",
+        "result": "Result"
+      },
+      "actor": {
+        "session": "Browser session",
+        "master": "Master token",
+        "api_token": "API token \"{{name}}\"",
+        "anonymous": "Unknown",
+        "setup": "Setup",
+        "system": "System"
+      },
+      "action": {
+        "auth_login": "Login",
+        "auth_password": "Password changed",
+        "auth_token_create": "API token created",
+        "auth_token_delete": "API token revoked",
+        "webhook_create": "Webhook created",
+        "webhook_delete": "Webhook deleted",
+        "ssh_key_import": "SSH key imported",
+        "ssh_key_generate": "SSH key generated",
+        "ssh_key_rename": "SSH key renamed",
+        "ssh_key_delete": "SSH key deleted",
+        "ssh_connection_create": "SSH connection created",
+        "ssh_connection_update": "SSH connection changed",
+        "ssh_connection_delete": "SSH connection deleted",
+        "ssh_known_host_delete": "Host key removed",
+        "ssh_terminal_open": "Terminal opened",
+        "ssh_terminal_close": "Terminal closed",
+        "agent_install_code": "Install code issued",
+        "agent_deploy": "Agent installed",
+        "agent_uninstall": "Agent removed",
+        "agent_patches": "Package updates",
+        "backup_export": "Backup exported",
+        "backup_import": "Backup imported",
+        "database_reset": "Database reset"
+      }
+    },
     "racks": {
       "new": "New rack",
       "create": "Create rack",

@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ArrowDown, Copy, Pause, Play, Search, Trash2 } from 'lucide-vue-next';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { ArrowDown, Copy, Pause, Play, ScrollText, Search, Terminal, Trash2 } from 'lucide-vue-next';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import Button from '@/components/ui/Button.vue';
+import Tabs from '@/components/ui/Tabs.vue';
+import AuditLog from '@/components/logstream/AuditLog.vue';
 import { MAX_LINES, countLevels, filterLogs, parseLogLine, type LogLevel, type LogLine } from '@/components/logstream/logModel';
 import { copyText } from '@/lib/clipboard';
 import { useToast } from '@/composables/useToast';
 import { t } from '@/i18n';
 
 /**
- * Live backend log over /api/logs/ws (last 500 lines). Follows the newest line while scrolled to
- * the bottom; scrolling up holds the view until "jump to newest".
+ * Two tabs: the live backend log over /api/logs/ws (last 500 lines, for debugging) and the audit log
+ * (who did what). The live log follows the newest line while scrolled to the bottom; scrolling up
+ * holds the view until "jump to newest". Its stream only runs while its tab is open.
  */
 const { showToast } = useToast();
 const lines = ref<LogLine[]>([]);
@@ -24,6 +28,18 @@ let ws: WebSocket | null = null;
 let nextId = 1;
 let retry: number | undefined;
 
+// The tab is in the URL (?view=audit), so it survives a reload and can be linked
+const route = useRoute();
+const router = useRouter();
+const tab = computed<string>({
+  get: () => (route.query.view === 'audit' ? 'audit' : 'live'),
+  set: (next) => void router.replace({ query: next === 'audit' ? { view: 'audit' } : {} }),
+});
+const tabs = computed(() => [
+  { value: 'live', label: t('gv.audit.tab_live'), icon: Terminal },
+  { value: 'audit', label: t('gv.audit.tab_audit'), icon: ScrollText },
+]);
+
 function open() {
   close();
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -36,7 +52,7 @@ function open() {
     if (ws !== socket) return;
     connected.value = false;
     // The backend restarted or the network blinked: try again while the stream is wanted
-    if (!paused.value) retry = window.setTimeout(open, 5000);
+    if (streaming.value) retry = window.setTimeout(open, 5000);
   };
   socket.onmessage = (event) => {
     const next = [...lines.value, parseLogLine(String(event.data), nextId++)];
@@ -53,8 +69,8 @@ function close() {
   connected.value = false;
 }
 
-watch(paused, (isPaused) => (isPaused ? close() : open()));
-onMounted(open);
+const streaming = computed(() => tab.value === 'live' && !paused.value);
+watch(streaming, (on) => (on ? open() : close()), { immediate: true });
 onBeforeUnmount(close);
 
 const visible = computed(() => filterLogs(lines.value, level.value, search.value));
@@ -89,13 +105,16 @@ const shortTime = (time: string) => time.slice(11, 19);
 
 <template>
   <div class="mx-auto flex h-full min-h-[30rem] max-w-[1800px] flex-col gap-4 px-4 py-5 md:px-8 md:py-7">
-    <PageHeader :title="t('sidebar.logs')" :description="t('gv.logs.subtitle')">
-      <span class="flex items-center gap-2 text-xs font-medium" :class="connected ? 'text-accent-text' : paused ? 'text-fg-subtle' : 'text-danger-text'" role="status">
+    <PageHeader :title="t('sidebar.logs')" :description="tab === 'audit' ? t('gv.audit.subtitle') : t('gv.logs.subtitle')">
+      <span v-if="tab === 'live'" class="flex items-center gap-2 text-xs font-medium" :class="connected ? 'text-accent-text' : paused ? 'text-fg-subtle' : 'text-danger-text'" role="status">
         <span class="size-2 rounded-full" :class="connected ? 'bg-accent shadow-[0_0_8px_var(--gl-accent)]' : paused ? 'bg-fg-subtle' : 'bg-danger'" aria-hidden="true" />
         {{ connected ? t('gv.logs.live') : paused ? t('gv.logs.paused') : t('gv.logs.reconnecting') }}
       </span>
     </PageHeader>
 
+    <Tabs v-model="tab" :tabs="tabs" :label="t('sidebar.logs')" list-class="px-0">
+      <template #live>
+    <div class="flex min-h-0 flex-1 flex-col gap-4 pt-4">
     <div class="flex flex-wrap items-center gap-2">
       <div class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('gv.logs.level')">
         <button
@@ -148,5 +167,11 @@ const shortTime = (time: string) => time.slice(11, 19);
         <ArrowDown aria-hidden="true" />{{ t('gv.logs.jump') }}
       </Button>
     </section>
+    </div>
+      </template>
+      <template #audit>
+        <AuditLog />
+      </template>
+    </Tabs>
   </div>
 </template>

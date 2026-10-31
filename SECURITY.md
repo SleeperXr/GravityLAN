@@ -37,6 +37,14 @@ The browser SSH terminal is the one place where GravityLAN stores SSH credential
 - Host keys are checked on first use and a changed key blocks the connection.
 - Use the terminal over HTTPS: over plain HTTP, keystrokes (including passwords typed into the shell) cross the network unencrypted.
 
+## Audit Log
+
+Logs → Audit records who opened terminals, installed, updated or removed agents, changed SSH keys, saved connections,
+API tokens, webhooks or the password, exported or imported backups, reset the database, and every login attempt:
+time, caller (browser session, master token or the API token's name), source IP, target and result. Passwords,
+keys, token values and terminal input are never recorded. Entries are kept 90 days, are not part of backups, and
+survive a database reset. Behind a reverse proxy the source IP is the proxy's.
+
 ## Reporting a Vulnerability
 
 If you discover a security vulnerability that affects the isolation or safety of the host system, please open an issue in the repository or contact the maintainer directly.

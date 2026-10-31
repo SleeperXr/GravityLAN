@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_admin
+from app.services.audit import actor_from_identity, record as audit
 from app.config import settings
 from app.database import async_session, get_db
 from app.models.agent import DeviceMetrics
@@ -333,6 +334,7 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
 
     mode = session_data["mode"]
     host_ip = session_data["host_ip"]
+    actor = actor_from_identity(auth_info.get("identity"))
     ssh_user = session_data["ssh_user"]
     ssh_password = session_data["ssh_password"]
     ssh_key = session_data["ssh_key"]
@@ -367,6 +369,7 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
         probe = await list_updates_fn(**probe_kwargs)
     except Exception as e:
         logger.exception("SSH probe failed for device %s", device_id)
+        await audit(websocket, "agent.patches", "failed", device_id=device_id, target=host_ip, detail=f"{mode}: SSH probe failed", actor=actor)
         await websocket.send_text(f"[Error] SSH probe failed: {e}\r\n")
         await websocket.close()
         return
@@ -441,6 +444,7 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
         stream_kwargs["tofu_policy"] = tofu_policy
 
     success, msg = await stream_fn(**stream_kwargs)
+    await audit(websocket, "agent.patches", "ok" if success else "failed", device_id=device_id, target=host_ip, detail=mode, actor=actor)
     if success and tofu_policy and tofu_policy.captured:
         async with async_session() as db:
             await _persist_captured_host_key(db, host_ip, ssh_port, tofu_policy.captured)

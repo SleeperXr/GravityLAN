@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 
+from app.services.audit import device_label, record as audit
 from app.scanner.utils import ensure_utc
 from app.version import normalize_version
 
@@ -449,6 +450,7 @@ async def download_agent_file():
 @router.post("/enroll/{device_id}", response_model=AgentEnrollmentResponse)
 async def create_enrollment_code(
     device_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_admin: str = Depends(get_current_admin),
 ) -> AgentEnrollmentResponse:
@@ -459,6 +461,7 @@ async def create_enrollment_code(
 
     code = enrollment_store.issue(device_id)
     server_url = await _detect_server_url(db)
+    await audit(request, "agent.install_code", device_id=device_id, target=device_label(device))
     return AgentEnrollmentResponse(
         code=code,
         expires_in=int(enrollment_store.ttl_seconds),
@@ -623,7 +626,12 @@ async def deploy_agent_endpoint(
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    login = await _ssh_login(db, device, request, http_request)
+    try:
+        login = await _ssh_login(db, device, request, http_request)
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            await audit(http_request, "agent.deploy", "denied", device_id=device_id, target=device_label(device), detail=str(exc.detail))
+        raise
 
     # 1. Determine Server URL
     # Strategy: Check settings first, then fall back to detecting local IP
@@ -635,6 +643,10 @@ async def deploy_agent_endpoint(
 
     success, message, token = await deploy_agent(**login, server_url=server_url, device_id=device_id)
     await _remember_first_host_key(db, login)
+    await audit(
+        http_request, "agent.deploy", "ok" if success else "failed", device_id=device_id,
+        target=device_label(device), detail=_ssh_error_code(success, message) or "",
+    )
 
     if success:
         # Save or update the token in the database
@@ -675,9 +687,18 @@ async def uninstall_agent_endpoint(
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    login = await _ssh_login(db, device, request, http_request)
+    try:
+        login = await _ssh_login(db, device, request, http_request)
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            await audit(http_request, "agent.uninstall", "denied", device_id=device_id, target=device_label(device), detail=str(exc.detail))
+        raise
     success, message = await remove_agent(**login)
     await _remember_first_host_key(db, login)
+    await audit(
+        http_request, "agent.uninstall", "ok" if success else "failed", device_id=device_id,
+        target=device_label(device), detail=_ssh_error_code(success, message) or "",
+    )
 
     if success:
         # Deactivate token in DB
