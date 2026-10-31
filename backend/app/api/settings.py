@@ -297,6 +297,8 @@ async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
                 # Measurement data in the attached telemetry.db
                 "telemetry.device_metrics", "telemetry.device_health_samples",
                 "telemetry.device_health_rollups", "telemetry.device_metrics_rollups",
+                # Rack cabling before its ports, ports before devices and rack items, items before racks
+                "rack_cables", "rack_ports", "rack_items",
                 "device_history", "services", "devices", "racks", "discovered_hosts",
                 "subnets", "router_import_sources", "app_settings"
             ]
