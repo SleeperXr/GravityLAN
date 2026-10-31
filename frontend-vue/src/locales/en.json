@@ -349,6 +349,12 @@
         "steps": "Open http://<host>:8000 and finish the setup wizard right after the first start.\nThe wizard detects the host's networks and saves them as scan subnets. Networks behind the router, such as an IoT VLAN, can be added in the same step.\nIt sets the admin password and runs the first scan.\nLater you manage the list under Settings → Scan subnets: add, pause, remove.",
         "hint": "Until the wizard is finished, whoever opens the page first chooses the admin password. So finish it right after the start."
       },
+      "https": {
+        "title": "HTTPS with a reverse proxy",
+        "summary": "Without HTTPS the one-line installer installs no agent, and terminal keystrokes cross the network unencrypted.",
+        "steps": "Put a reverse proxy in front of GravityLAN, e.g. Caddy, Nginx Proxy Manager or Traefik, and forward an address like gravitylan.example.com to http://<host>:8000.\nThe proxy has to pass WebSockets through: the SSH terminal, the live log and the scan progress use them. Caddy and Traefik do it by themselves; in Nginx Proxy Manager turn on \"Websockets Support\".\nUse a certificate your hosts trust, most easily Let's Encrypt through your domain's DNS challenge, which needs no port open to the internet. A self-signed certificate only works if every agent host knows its CA, because curl and the agent check certificates.\nUnder Settings → System, enter the \"Agent server URL\" with https://. Without it GravityLAN only knows its own http address, and new agents would report unencrypted.\nSet GRAVITYLAN_SECURE_COOKIES=true on the container so the login cookie is only sent over HTTPS.",
+        "hint": "Over http:// the one-line installer stops with a message. ALLOW_INSECURE=1 or GRAVITYLAN_ALLOW_INSECURE_INSTALL=true forces it anyway, but then the agent script and its token cross the network unencrypted. Installing over SSH works without HTTPS too."
+      },
       "dashboard": {
         "title": "Overview and groups",
         "summary": "All devices in your own sections, as tiles or a list, with live values from the agent.",
@@ -376,7 +382,7 @@
       "agent": {
         "title": "Install and update the agent",
         "summary": "One Python script per Linux host reports CPU, RAM, disks, network and temperature.",
-        "steps": "Open the device in the device editor, tab \"Agent\".\nOver SSH: pick a saved key connection or type in user and password. Typed-in credentials are used for that request only.\nOr copy the one-line installer and run it on the host. It carries a one-time code valid for 30 minutes.\nUpdates: the Agent Update Center updates all outdated agents together, and an open SSH terminal offers an \"Agent update\" button.",
+        "steps": "Open the device in the device editor, tab \"Agent\".\nOver SSH: pick a saved key connection or type in user and password. Typed-in credentials are used for that request only.\nOr copy the one-line installer and run it on the host. It carries a one-time code valid for 30 minutes.\nWithout HTTPS the one-liner stops (see \"HTTPS with a reverse proxy\"); installing over SSH works anyway.\nUpdates: the Agent Update Center updates all outdated agents together, and an open SSH terminal offers an \"Agent update\" button.",
         "hint": "The agent version only changes when the agent script changes. Not every server update needs an agent update."
       },
       "updates": {
