@@ -124,7 +124,7 @@ export const api = {
   getSetupStatus: () =>
     request<{ is_setup_complete: boolean; device_count: number; version?: string; build?: string; agent_version?: string }>('/api/setup/status'),
   // Signs the admin in via session cookie when a password is set
-  completeSetup: (data?: { dns_server?: string; admin_password?: string; subnets?: string[] }) =>
+  completeSetup: (data?: { dns_server?: string; admin_password?: string; subnets?: string[]; restored?: boolean }) =>
     request<{ status: string; devices_adopted: number }>('/api/setup/complete', { method: 'POST', body: JSON.stringify(data || {}) })
       .then((res) => {
         // Same as a password login: the session cookie replaces any token left by older versions
@@ -228,6 +228,16 @@ export const api = {
       if (!res.ok) throw new ApiError(typeof body.detail === 'string' ? body.detail : res.statusText, res.status);
       return body;
     }),
+  /** First start only: a backup instead of a scan (POST /api/setup/restore, no login yet). */
+  restoreSetupBackup: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetch('/api/setup/restore', { method: 'POST', body: formData, credentials: 'include' }).then(async (res) => {
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new ApiError(typeof body.detail === 'string' ? body.detail : res.statusText, res.status);
+      return body as BackupImportResult & { devices: number };
+    });
+  },
   importBackup: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);

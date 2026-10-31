@@ -286,3 +286,66 @@ def test_replaced_racks_drop_items_on_racks_that_are_gone(backup_db):
     assert rows["items"] == []
     assert rows["ports"] == [(2, 1, None)]
     assert rows["cables"] == []
+
+
+# --- restore in the setup wizard -------------------------------------------------
+
+def _backup_payload() -> bytes:
+    return json.dumps({
+        "metadata": {"version": "0.6.0"},
+        "devices": [{"id": 7, "ip": "10.0.0.7", "display_name": "nas-from-backup"}],
+        "subnets": [{"id": 3, "cidr": "10.0.0.0/24", "name": "LAN", "is_enabled": 1}],
+        "settings": [
+            {"key": "api.admin_password", "value": "$argon2id$from-another-instance"},
+            {"key": "setup.complete", "value": "true"},
+            {"key": "scan_interval", "value": "15"},
+        ],
+    }).encode()
+
+
+@pytest.fixture
+def fresh_instance_db(backup_db, monkeypatch):
+    """A file database before setup: no credentials and no setup state yet."""
+    _query(backup_db, "SELECT 1")
+    conn = sqlite3.connect(backup_db)
+    conn.execute("DELETE FROM app_settings")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(app_config, "database_url", f"sqlite+aiosqlite:///{backup_db}")
+    return backup_db
+
+
+@pytest.mark.asyncio
+async def test_setup_wizard_restores_a_backup_without_its_credentials(client, fresh_instance_db):
+    res = await client.post("/api/setup/restore", files={"file": ("backup.json", _backup_payload(), "application/json")})
+
+    assert res.status_code == 200, res.text
+    assert res.json()["devices"] == 1
+    assert _query(fresh_instance_db, "SELECT display_name FROM devices") == [("nas-from-backup",)]
+    stored = _settings(fresh_instance_db)
+    # The wizard sets its own password next; the setup stays open until it does
+    assert "api.admin_password" not in stored and "setup.complete" not in stored
+    assert stored["scan_interval"] == "15"
+
+
+@pytest.mark.asyncio
+async def test_setup_restore_is_closed_once_the_setup_is_done(client, admin_token, fresh_instance_db):
+    res = await client.post("/api/setup/restore", files={"file": ("backup.json", _backup_payload(), "application/json")})
+    assert res.status_code == 403
+    assert _query(fresh_instance_db, "SELECT ip FROM devices") == [("10.0.0.1",)]
+
+
+@pytest.mark.asyncio
+async def test_completing_a_restored_setup_keeps_its_subnets(client, db, monkeypatch):
+    from app.models.network import Subnet
+    from sqlalchemy import select as sa_select
+    db.add(Subnet(cidr="10.0.0.0/24", name="LAN from backup"))
+    await db.commit()
+    detected = []
+    monkeypatch.setattr("app.scanner.utils.get_local_subnets", lambda: detected.append(1) or [])
+
+    res = await client.post("/api/setup/complete", json={"admin_password": "new-password-123", "restored": True})
+
+    assert res.status_code == 200 and res.json()["devices_adopted"] == 0
+    assert detected == []  # no local networks were added on top
+    assert [s.cidr for s in (await db.execute(sa_select(Subnet))).scalars()] == ["10.0.0.0/24"]

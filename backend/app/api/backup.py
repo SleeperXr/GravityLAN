@@ -339,6 +339,11 @@ def _validate_backup_shape(data) -> None:
 @router.post("/import", dependencies=[Depends(get_current_admin), Depends(require_step_up("instance"))])
 async def import_backup(request: Request, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     """Import a JSON backup file into the database."""
+    return await restore_upload(request, file, db)
+
+
+async def restore_upload(request: Request, file: UploadFile, db: AsyncSession, actor: str | None = None) -> dict:
+    """Check, write and clean up after an uploaded backup; used by the import and the setup wizard."""
     if not file.filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Only JSON files are supported")
 
@@ -359,12 +364,12 @@ async def import_backup(request: Request, file: UploadFile = File(...), db: Asyn
         imported = await asyncio.to_thread(_write_db, db_path, data, report)
     except Exception as e:
         logger.error(f"Backup: Import failed, all changes rolled back: {e}")
-        await audit(request, "backup.import", "failed", detail="rolled back")
+        await audit(request, "backup.import", "failed", detail="rolled back", actor=actor)
         raise HTTPException(status_code=500, detail=f"Backup import failed, no changes were made: {e}")
 
     for table, count in imported.items():
         logger.info(f"Backup: Imported {count} rows into {table}")
-    await audit(request, "backup.import", detail=f"{imported.get('devices', 0)} devices, {imported.get('app_settings', 0)} settings")
+    await audit(request, "backup.import", detail=f"{imported.get('devices', 0)} devices, {imported.get('app_settings', 0)} settings", actor=actor)
 
     reassigned = report.get("reassigned_device_ids", [])
     revoked = report.get("agent_tokens_revoked", 0)
@@ -388,6 +393,7 @@ async def import_backup(request: Request, file: UploadFile = File(...), db: Asyn
         "message": message,
         "agent_tokens_revoked": revoked,
         "reassigned_devices": len(reassigned),
+        "devices": imported.get("devices", 0),
     }
 
 

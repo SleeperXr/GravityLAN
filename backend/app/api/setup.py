@@ -1,6 +1,6 @@
 """Setup wizard API — checks setup state and provides initial configuration."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,6 +63,8 @@ class SetupCompleteRequest(BaseModel):
     # Subnets the wizard scanned. Their hosts are adopted even when the subnet is routed
     # (another VLAN) and therefore not bound to a local interface.
     subnets: list[str] | None = Field(default=None, max_length=MAX_SETUP_SUBNETS)
+    # The wizard restored a backup instead of scanning: its subnets and devices stay as they are
+    restored: bool = False
 
     @field_validator("dns_server")
     @classmethod
@@ -218,6 +220,27 @@ async def _adopt_discovered_hosts(db, dns_server: str | None, subnets: list[str]
     return len(results)
 
 
+async def _setup_done(db: AsyncSession) -> bool:
+    from app.models.setting import Setting
+    row = (await db.execute(select(Setting).where(Setting.key == "setup.complete"))).scalar_one_or_none()
+    return row is not None and row.value == "true"
+
+
+@router.post("/restore")
+async def restore_during_setup(http_request: Request, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)) -> dict:
+    """First start: bring back a backup instead of scanning (GravityUI setup wizard).
+
+    Open without a login, like the rest of the wizard, and only until the setup is completed;
+    afterwards backups go through /api/backup/import with a password confirmation. The backup
+    never carries the admin password, the master token or the setup state: the wizard sets the
+    password next, and completing it with ``restored`` keeps the restored subnets and devices.
+    """
+    if await _setup_done(db):
+        raise HTTPException(status_code=403, detail="Setup already completed. Restore backups under Settings.")
+    from app.api.backup import restore_upload
+    return await restore_upload(http_request, file, db, actor="setup")
+
+
 @router.post("/complete")
 async def mark_setup_complete(
     request: SetupCompleteRequest,
@@ -284,6 +307,10 @@ async def mark_setup_complete(
     # discovered online hosts to the dashboard. Both are best-effort: settings are already
     # committed, so a failure here must not turn into a 500 (the session cookie would be lost
     # and a retry ends in "Setup already completed").
+    if request.restored:
+        # The backup brought its own subnets and devices; nothing was scanned to adopt
+        return {"status": "ok", "devices_adopted": 0}
+
     try:
         from app.scanner.utils import get_local_subnets
         await _register_scan_subnets(db, request.subnets, get_local_subnets())

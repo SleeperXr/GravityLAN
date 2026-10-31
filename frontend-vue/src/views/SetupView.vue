@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Info, Loader2, Network, Plus, Search, Zap } from 'lucide-vue-next';
+import { AlertTriangle, Archive, Check, ChevronLeft, ChevronRight, Info, Loader2, Network, Plus, Search, Zap } from 'lucide-vue-next';
 import { api, createScanSocket } from '@/api/client';
 import type { ScanProgress, SubnetInfo } from '@/types';
 import Button from '@/components/ui/Button.vue';
@@ -12,6 +12,8 @@ import { fillShift } from '@/lib/meter';
 /**
  * First-run wizard: welcome, networks to scan, first scan with live progress, admin password.
  * Finishing saves the setup, signs in with the new password and starts a first refresh.
+ * Instead of the networks and the scan, the welcome step can restore a backup; the wizard then
+ * goes straight to the password (a backup never carries one).
  */
 const emit = defineEmits<{ complete: [] }>();
 const step = ref(0);
@@ -115,6 +117,31 @@ async function abortScan() {
   if (progress.value?.status === 'running') progress.value = { ...progress.value, status: 'cancelled' };
 }
 
+// ── Restore a backup instead of scanning ─────────────────────────────────────
+const backupInput = ref<HTMLInputElement | null>(null);
+const restoring = ref(false);
+const restoreError = ref<string | null>(null);
+const restoredDevices = ref<number | null>(null);
+const restored = computed(() => restoredDevices.value !== null);
+
+async function restoreBackup(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  restoring.value = true;
+  restoreError.value = null;
+  try {
+    const result = await api.restoreSetupBackup(file);
+    restoredDevices.value = result.devices;
+    step.value = SECURITY_STEP;
+  } catch (err) {
+    restoreError.value = (err as Error).message;
+  } finally {
+    restoring.value = false;
+  }
+}
+
 // ── Admin password and finish ────────────────────────────────────────────────
 const password = ref('');
 const confirm = ref('');
@@ -140,7 +167,8 @@ async function finish() {
     await api.completeSetup({
       dns_server: dnsServer.value || undefined,
       admin_password: password.value,
-      subnets: scannedSubnets.value.length > 0 ? scannedSubnets.value : undefined,
+      subnets: !restored.value && scannedSubnets.value.length > 0 ? scannedSubnets.value : undefined,
+      restored: restored.value || undefined,
     });
   } catch (err) {
     // Stay in the wizard: without the saved password the dashboard can't be used
@@ -169,7 +197,7 @@ async function finish() {
   emit('complete');
 }
 
-const skipped = computed(() => (progress.value?.status === 'completed' ? undefined : SCAN_STEP));
+const skipped = computed(() => (restored.value ? [NETWORKS_STEP, SCAN_STEP] : progress.value?.status === 'completed' ? undefined : SCAN_STEP));
 const stations = computed(() => STEP_KEYS.map((key, index) => ({ key, index, state: stepState(index, step.value, skipped.value) })));
 const features = [
   { icon: Search, title: 'setup.auto_detection', desc: 'setup.auto_detection_desc' },
@@ -259,8 +287,16 @@ const features = [
                 </div>
               </li>
             </ul>
-            <div class="flex justify-end">
-              <Button variant="primary" @click="step = NETWORKS_STEP">{{ t('common.next') }}<ChevronRight aria-hidden="true" /></Button>
+            <p v-if="restoreError" class="flex gap-2 rounded-md border border-danger/30 bg-danger/10 p-3 text-xs text-danger-text" role="alert">
+              <AlertTriangle class="size-4 shrink-0" aria-hidden="true" />{{ t('gv.setup.restore_failed', { error: restoreError }) }}
+            </p>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <!-- Moving to a new host: bring the old instance back instead of scanning -->
+              <Button :loading="restoring" :title="t('gv.setup.restore_hint')" @click="backupInput?.click()">
+                <Archive aria-hidden="true" />{{ t('gv.setup.restore') }}
+              </Button>
+              <input ref="backupInput" type="file" accept=".json,application/json" class="sr-only" tabindex="-1" aria-hidden="true" @change="restoreBackup" />
+              <Button variant="primary" :disabled="restoring" @click="step = NETWORKS_STEP">{{ t('common.next') }}<ChevronRight aria-hidden="true" /></Button>
             </div>
           </div>
 
@@ -386,6 +422,9 @@ const features = [
               />
               <p v-if="mismatch" id="setup-password-error" class="text-xs text-danger-text" role="alert">{{ t('setup.passwords_dont_match') }}</p>
             </div>
+            <p v-if="restored" class="flex gap-2 rounded-md border border-accent/30 bg-accent/10 p-3 text-xs text-fg" role="status">
+              <Archive class="size-4 shrink-0 text-accent-text" aria-hidden="true" />{{ t('gv.setup.restored', { count: restoredDevices ?? 0 }) }}
+            </p>
             <p class="flex gap-2 rounded-md border border-info/30 bg-info/10 p-3 text-xs text-fg">
               <Info class="size-4 shrink-0 text-info-text" aria-hidden="true" />{{ t('setup.password_hint') }}
             </p>
@@ -393,7 +432,7 @@ const features = [
               <AlertTriangle class="size-4 shrink-0" aria-hidden="true" />{{ t('setup.finish_failed', { error: finishError }) }}
             </p>
             <div class="flex justify-between gap-2">
-              <Button @click="step = progress ? SCAN_STEP : NETWORKS_STEP"><ChevronLeft aria-hidden="true" />{{ t('common.back') }}</Button>
+              <Button @click="step = restored ? 0 : progress ? SCAN_STEP : NETWORKS_STEP"><ChevronLeft aria-hidden="true" />{{ t('common.back') }}</Button>
               <Button type="submit" variant="primary" :disabled="!canFinish"><Check aria-hidden="true" />{{ t('common.finish') }}</Button>
             </div>
           </form>

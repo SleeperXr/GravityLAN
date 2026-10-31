@@ -10,8 +10,9 @@ export const SECURITY_STEP = 3;
 export type StepState = 'skipped' | 'done' | 'current' | 'todo';
 
 /** `skipped`: a passed step that did not complete (scan skipped or failed), shown without a check. */
-export function stepState(index: number, current: number, skipped?: number): StepState {
-  if (index === skipped && index < current) return 'skipped';
+export function stepState(index: number, current: number, skipped?: number | readonly number[]): StepState {
+  const isSkipped = Array.isArray(skipped) ? skipped.includes(index) : index === skipped;
+  if (isSkipped && index < current) return 'skipped';
   if (index < current) return 'done';
   return index === current ? 'current' : 'todo';
 }
