@@ -4,6 +4,8 @@
  */
 import { ref } from 'vue';
 import { authHandlers } from './core';
+import { requestStepUp } from '@/composables/useStepUp';
+import { t } from '@/i18n';
 
 export {
   api,
@@ -24,3 +26,6 @@ authHandlers.onUnauthorized = () => {
 authHandlers.onLoggedOut = () => {
   sessionExpired.value = true;
 };
+// A sensitive action answered with X-Step-Up opens the password dialog; the request is repeated after it
+authHandlers.onStepUp = requestStepUp;
+authHandlers.stepUpCancelled = () => t('gv.stepup.cancelled');

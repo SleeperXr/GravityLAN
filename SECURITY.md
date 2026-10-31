@@ -21,6 +21,7 @@ The GravityLAN Docker container requires specific capabilities to function corre
 - The admin password is stored as an Argon2 hash; signing in sets an `httpOnly` session cookie (7 days).
 - Change it under **Settings → Access**. The current password must be entered, only a logged-in browser session can do this (not API or master tokens), and every other session is logged out.
 - The generic settings endpoint (`POST /api/settings`) rejects the password and the master token, so they cannot be overwritten without the current password.
+- A logged-in session alone does not open remote access or change credentials: before terminals, agent installs, removals and package updates, before changes to SSH keys, saved connections, known host keys, API tokens and webhooks, and before backup export, import and the database reset, GravityLAN asks for the admin password again. A confirmation lasts 10 minutes by default (Settings → System, 1 to 60; changing it needs a confirmation itself), covers one of the three areas (remote access, credentials, instance) in that browser only, and wrong passwords count against the login limit. Terminals already open stay open. API and master tokens are not asked; what they may do is a separate step.
 
 ## Agent Deployment
 

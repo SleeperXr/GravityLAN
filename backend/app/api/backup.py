@@ -13,6 +13,7 @@ from app.config import settings
 from app.api.auth import get_current_admin
 from app.schemas.device import is_safe_url_template
 from app.services.audit import record as audit
+from app.services.stepup import require_step_up
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/backup", tags=["backup"])
@@ -87,7 +88,7 @@ def invalidate_all_runtime_caches() -> None:
         logger.warning("Could not clear _setting_cache: %s", e)
 
 
-@router.get("/export", dependencies=[Depends(get_current_admin)])
+@router.get("/export", dependencies=[Depends(get_current_admin), Depends(require_step_up("instance"))])
 async def export_backup(request: Request):
     """Export the current database state as a JSON file."""
     db_path = settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
@@ -335,7 +336,7 @@ def _validate_backup_shape(data) -> None:
             raise HTTPException(status_code=400, detail=f"Invalid backup file: '{key}' must be a list of rows")
 
 
-@router.post("/import", dependencies=[Depends(get_current_admin)])
+@router.post("/import", dependencies=[Depends(get_current_admin), Depends(require_step_up("instance"))])
 async def import_backup(request: Request, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     """Import a JSON backup file into the database."""
     if not file.filename.endswith(".json"):

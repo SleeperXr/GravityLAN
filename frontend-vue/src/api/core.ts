@@ -11,6 +11,10 @@ export const authHandlers = {
   onLoggedOut: () => {
     window.location.href = '/login';
   },
+  /** A sensitive action needs the password again (AP-12): true once the user confirmed it. */
+  onStepUp: (() => Promise.resolve(false)) as (scope: string) => Promise<boolean>,
+  /** Error text when the user cancels that confirmation; empty keeps the server's message. */
+  stepUpCancelled: () => '',
 };
 
 /** An API error that keeps the HTTP status, so callers can tell 401/404/409 apart. */
@@ -24,7 +28,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export async function request<T>(path: string, options?: RequestInit, retried = false): Promise<T> {
   let token = localStorage.getItem('gravitylan_token');
   if (token === 'undefined') token = null;
   const headers: Record<string, string> = {
@@ -44,13 +48,26 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
 
   if (response.status === 401) authHandlers.onUnauthorized();
 
+  // Sensitive action without a recent password confirmation (AP-12): ask once, then try again
+  const stepUp = response.status === 403 ? response.headers.get('X-Step-Up') : null;
+  if (stepUp && !retried && (await authHandlers.onStepUp(stepUp))) return request<T>(path, options, true);
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new ApiError(formatErrorDetail(error.detail) || `API Error: ${response.status}`, response.status);
+    const message = (stepUp && authHandlers.stepUpCancelled()) || formatErrorDetail(error.detail);
+    throw new ApiError(message || `API Error: ${response.status}`, response.status);
   }
 
   if (response.status === 204) return undefined as T;
   return response.json();
+}
+
+/** fetch() for the calls that cannot go through request() (downloads, uploads), with its step-up retry. */
+async function fetchWithStepUp(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(path, { credentials: 'include', ...init });
+  const stepUp = res.status === 403 ? res.headers.get('X-Step-Up') : null;
+  if (stepUp && (await authHandlers.onStepUp(stepUp))) return fetch(path, { credentials: 'include', ...init });
+  return res;
 }
 
 /** FastAPI sends `detail` as a string, or as a list of `{ msg }` objects for validation errors (422). */
@@ -204,11 +221,17 @@ export const api = {
     }),
   
   // Backup
-  exportBackup: () => fetch('/api/backup/export').then(res => res.json()),
+  exportBackup: () =>
+    fetchWithStepUp('/api/backup/export').then(async (res) => {
+      const body = await res.json().catch(() => ({}));
+      // A refused export must not be saved as a backup file
+      if (!res.ok) throw new ApiError(typeof body.detail === 'string' ? body.detail : res.statusText, res.status);
+      return body;
+    }),
   importBackup: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return fetch('/api/backup/import', { method: 'POST', body: formData }).then(async (res) => {
+    return fetchWithStepUp('/api/backup/import', { method: 'POST', body: formData }).then(async (res) => {
       const body = await res.json().catch(() => ({}));
       // A refused or rolled-back import must not read as success
       if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : res.statusText);
@@ -314,6 +337,9 @@ export const api = {
 
   // API Tokens
   getApiTokens: () => request<import('../types').ApiTokenResponse[]>('/api/auth/tokens'),
+  stepUp: (password: string, scope: string) =>
+    request<{ scope: string; expires_in: number }>('/api/auth/step-up', { method: 'POST', body: JSON.stringify({ password, scope }) }),
+  getStepUpStatus: () => request<{ grants: Record<string, number>; minutes: number }>('/api/auth/step-up'),
   getAuditEvents: (params: { action?: string; result?: string; q?: string; before_id?: number; limit?: number } = {}) => {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') query.set(key, String(value));

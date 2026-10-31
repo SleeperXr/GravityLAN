@@ -10,6 +10,7 @@ import Input from '@/components/ui/Input.vue';
 import ManualInstallCommand from '@/components/agents/ManualInstallCommand.vue';
 import { agentKeyProfiles, isAgentOutdated } from '@/lib/agent';
 import { deviceLabel } from '@/lib/networks';
+import { confirmAction } from '@/composables/useConfirm';
 import { t } from '@/i18n';
 
 /**
@@ -65,6 +66,13 @@ async function update(device: Device) {
 }
 
 async function updateAll() {
+  const targets = pending.value.filter((d) => statuses[d.id]?.status !== 'success');
+  const ok = await confirmAction({
+    title: t('gv.agents.update_all_confirm_title'),
+    message: t('gv.agents.update_all_confirm', { count: targets.length, targets: targets.map((d) => `${deviceLabel(d)} (${d.ip})`).join('\n') }),
+    confirmLabel: t('gv.agents.deploy_start'),
+  });
+  if (!ok) return;
   running.value = true;
   for (const device of pending.value) {
     if (statuses[device.id]?.status !== 'success') await update(device);

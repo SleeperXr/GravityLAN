@@ -97,10 +97,12 @@ export function useAgentPanel(device: Ref<Device>, active: Ref<boolean>) {
   const log = (line: string) => deployLog.value.push(`[${formatDateTime(new Date(), { timeStyle: 'medium' })}] ${line}`);
 
   async function run(kind: 'deploy' | 'uninstall') {
-    if (kind === 'uninstall') {
-      const ok = await confirm({ title: t('agent.uninstall'), message: t('agent.uninstall_confirm_long'), danger: true, confirmLabel: t('agent.uninstall') });
-      if (!ok) return;
-    }
+    const target = `${device.value.display_name || device.value.hostname || device.value.ip} (${device.value.ip})`;
+    const ok =
+      kind === 'uninstall'
+        ? await confirm({ title: t('agent.uninstall'), message: `${t('agent.uninstall_confirm_long')}\n\n${target}`, danger: true, confirmLabel: t('agent.uninstall') })
+        : await confirm({ title: t('gv.agents.deploy_confirm_title'), message: t('gv.agents.deploy_confirm', { target }), confirmLabel: t('gv.agents.deploy_start') });
+    if (!ok) return;
     const keys =
       kind === 'deploy'
         ? { start: 'agent.deploying', detail: 'agent.connecting', ok: 'agent.deployed_title', failed: 'agent.deploy_failed_title' }

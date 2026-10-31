@@ -65,6 +65,14 @@ async def db():
         await conn.run_sync(Base.metadata.drop_all)
 
 @pytest.fixture(autouse=True)
+def _step_up_granted(request, monkeypatch):
+    """Tests written before AP-12 act as an already confirmed session; test_stepup checks the real rule."""
+    if request.module.__name__.endswith("test_stepup"):
+        return
+    monkeypatch.setattr("app.services.stepup.store.is_granted", lambda session_id, cls: True)
+
+
+@pytest.fixture(autouse=True)
 def _audit_into_test_db(monkeypatch):
     """Audit entries go to the in-memory test database, not to a file under the data directory."""
     monkeypatch.setattr("app.services.audit.async_session", TestingSessionLocal)

@@ -26,6 +26,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 
 from app.services.audit import record as audit
+from app.services.stepup import require_step_up
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -260,7 +261,7 @@ async def list_keys(db: AsyncSession = Depends(get_db)):
     return [_key_out(k) for k in res.scalars().all()]
 
 
-@router.post("/keys", response_model=SshKeyOut)
+@router.post("/keys", response_model=SshKeyOut, dependencies=[Depends(require_step_up("credentials"))])
 async def create_key(req: SshKeyCreate, request: Request, db: AsyncSession = Depends(get_db)):
     """Store an uploaded private key (validated, then encrypted)."""
     name = req.name.strip()
@@ -298,7 +299,7 @@ async def create_key(req: SshKeyCreate, request: Request, db: AsyncSession = Dep
     return _key_out(key)
 
 
-@router.post("/keys/generate", response_model=SshKeyOut)
+@router.post("/keys/generate", response_model=SshKeyOut, dependencies=[Depends(require_step_up("credentials"))])
 async def generate_key(req: SshKeyGenerate, request: Request, db: AsyncSession = Depends(get_db)):
     """Generate a new Ed25519 key pair; only the public half is ever returned."""
     name = req.name.strip()
@@ -321,7 +322,7 @@ async def generate_key(req: SshKeyGenerate, request: Request, db: AsyncSession =
     return _key_out(key)
 
 
-@router.patch("/keys/{key_id}", response_model=SshKeyOut)
+@router.patch("/keys/{key_id}", response_model=SshKeyOut, dependencies=[Depends(require_step_up("credentials"))])
 async def rename_key(key_id: int, req: SshKeyUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     key = await db.get(SshKey, key_id)
     if key is None:
@@ -334,7 +335,7 @@ async def rename_key(key_id: int, req: SshKeyUpdate, request: Request, db: Async
     return _key_out(key)
 
 
-@router.delete("/keys/{key_id}")
+@router.delete("/keys/{key_id}", dependencies=[Depends(require_step_up("credentials"))])
 async def delete_key(key_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     key = await db.get(SshKey, key_id)
     if key is None:
@@ -356,7 +357,7 @@ async def list_profiles(db: AsyncSession = Depends(get_db)):
     return [await _profile_out(db, p, refs) for p in profiles]
 
 
-@router.post("/profiles", response_model=SshProfileOut)
+@router.post("/profiles", response_model=SshProfileOut, dependencies=[Depends(require_step_up("credentials"))])
 async def create_profile(req: SshProfileCreate, request: Request, db: AsyncSession = Depends(get_db)):
     profile = SshProfile(
         name=req.name.strip(), device_id=req.device_id, host=(req.host or "").strip() or None,
@@ -372,7 +373,7 @@ async def create_profile(req: SshProfileCreate, request: Request, db: AsyncSessi
     return await _profile_out(db, profile)
 
 
-@router.patch("/profiles/{profile_id}", response_model=SshProfileOut)
+@router.patch("/profiles/{profile_id}", response_model=SshProfileOut, dependencies=[Depends(require_step_up("credentials"))])
 async def update_profile(profile_id: int, req: SshProfileUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     profile = await db.get(SshProfile, profile_id)
     if profile is None:
@@ -406,7 +407,7 @@ async def update_profile(profile_id: int, req: SshProfileUpdate, request: Reques
     return await _profile_out(db, profile)
 
 
-@router.delete("/profiles/{profile_id}")
+@router.delete("/profiles/{profile_id}", dependencies=[Depends(require_step_up("credentials"))])
 async def delete_profile(profile_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     profile = await db.get(SshProfile, profile_id)
     if profile is None:
@@ -425,7 +426,7 @@ async def list_known_hosts(db: AsyncSession = Depends(get_db)):
     return res.scalars().all()
 
 
-@router.delete("/known-hosts/{entry_id}")
+@router.delete("/known-hosts/{entry_id}", dependencies=[Depends(require_step_up("credentials"))])
 async def delete_known_host(entry_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     entry = await db.get(SshKnownHost, entry_id)
     if entry is None:
@@ -499,7 +500,7 @@ async def delete_history(entry_id: int, db: AsyncSession = Depends(get_db)):
 
 # --- sessions ----------------------------------------------------------------
 
-@router.post("/sessions/prepare", response_model=SshSessionTicket)
+@router.post("/sessions/prepare", response_model=SshSessionTicket, dependencies=[Depends(require_step_up("remote"))])
 async def prepare_session(req: SshSessionPrepare, request: Request, db: AsyncSession = Depends(get_db)):
     """Resolve credentials into a one-shot ticket for the terminal WebSocket."""
     if req.profile_id is not None:

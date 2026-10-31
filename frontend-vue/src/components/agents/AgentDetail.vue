@@ -236,7 +236,7 @@ function openPatchSocket(patchToken: string) {
 async function startPatching(mode: 'upgrade' | 'security-only') {
   const ok = await confirmAction({
     title: mode === 'security-only' ? t('agent_detail.security_only') : t('agent_detail.upgrade_all'),
-    message: t('gv.agents.patch_confirm', { host: props.agent.hostname }),
+    message: t('gv.agents.patch_confirm', { host: `${props.agent.hostname} (${props.agent.ip})` }),
     confirmLabel: t('gv.agents.patch_start'),
     danger: true,
   });

@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 
 from app.services.audit import device_label, record as audit
+from app.services.stepup import require_step_up
 from app.scanner.utils import ensure_utc
 from app.version import normalize_version
 
@@ -607,7 +608,7 @@ def _ssh_error_code(success: bool, message: str) -> str | None:
     return HOST_KEY_CHANGED if not success and is_host_key_refusal(message) else None
 
 
-@router.post("/deploy/{device_id}", response_model=AgentDeployResponse)
+@router.post("/deploy/{device_id}", response_model=AgentDeployResponse, dependencies=[Depends(require_step_up("remote"))])
 async def deploy_agent_endpoint(
     device_id: int,
     request: AgentInstallRequest,
@@ -672,7 +673,7 @@ async def deploy_agent_endpoint(
         return AgentDeployResponse(status="failed", message=message, error_code=_ssh_error_code(success, message))
 
 
-@router.post("/uninstall/{device_id}")
+@router.post("/uninstall/{device_id}", dependencies=[Depends(require_step_up("remote"))])
 async def uninstall_agent_endpoint(
     device_id: int,
     request: AgentInstallRequest,

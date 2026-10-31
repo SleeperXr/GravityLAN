@@ -171,7 +171,12 @@
       "query_failed": "Updates konnten nicht abgefragt werden",
       "adopted": "Neuer Agent-Schlüssel übernommen",
       "adopt_failed": "Schlüssel konnte nicht übernommen werden",
-      "load_failed": "Agents konnten nicht geladen werden"
+      "load_failed": "Agents konnten nicht geladen werden",
+      "deploy_confirm_title": "Agent installieren",
+      "deploy_confirm": "Der Agent wird per SSH installiert auf:\n\n{{target}}",
+      "deploy_start": "Installieren",
+      "update_all_confirm_title": "Alle Agents aktualisieren",
+      "update_all_confirm": "Der Agent wird per SSH aktualisiert auf {{count}} Geräten:\n\n{{targets}}"
     },
     "ssh": {
       "back_to_sessions": "Zurück zu den Sitzungen ({{count}})"
@@ -260,6 +265,19 @@
         "backup_import": "Backup eingespielt",
         "database_reset": "Datenbank zurückgesetzt"
       }
+    },
+    "stepup": {
+      "title": "Passwort bestätigen",
+      "scope_remote": "Fernzugriff: Terminal, Agent installieren oder entfernen, Paket-Updates",
+      "scope_credentials": "Zugangsdaten: SSH-Schlüssel und -Verbindungen, Host-Schlüssel, API-Tokens, Webhooks",
+      "scope_instance": "Instanz: Backup, Wiederherstellung, Datenbank-Reset, diese Bestätigungsdauer",
+      "hint": "Danach gilt die Bestätigung {{minutes}} Minuten für diesen Bereich in diesem Browser.",
+      "password": "Admin-Passwort",
+      "confirm": "Bestätigen",
+      "wrong": "Das Passwort stimmt nicht.",
+      "setting_label": "Passwort-Bestätigung gilt",
+      "setting_hint": "So lange fragen Terminal, Agent-Aktionen, Zugangsdaten und Backups nach einer Bestätigung nicht erneut (1 bis 60).",
+      "cancelled": "Abgebrochen: Diese Aktion braucht eine Bestätigung mit dem Passwort."
     },
     "racks": {
       "new": "Neues Rack",
