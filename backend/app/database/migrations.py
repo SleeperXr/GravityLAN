@@ -54,6 +54,7 @@ MIGRATIONS = [
     ("services", "ssl_checked_at", "DATETIME"),
     ("services", "ignore_ssl", "BOOLEAN DEFAULT FALSE"),
     ("devices", "alert_offline", "BOOLEAN DEFAULT TRUE"),
+    ("device_history", "read", "BOOLEAN DEFAULT FALSE"),
 ]
 
 
@@ -367,6 +368,7 @@ async def run_migrations(db: AsyncSession):
     except Exception as e:
         await db.rollback()
         logger.error(f"Migration error while adding unique indexes: {e}")
+
     logger.info("Schema migration complete.")
 
 

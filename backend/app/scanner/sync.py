@@ -99,6 +99,30 @@ def _should_apply_custom_name(disc, dev) -> bool:
     return not dev.display_name or dev.display_name == "Unknown"
 
 
+async def is_initial_inventory(db) -> bool:
+    """True when GravityLAN is performing its initial inventory pass.
+
+    During initial inventory (e.g. before setup is complete, or during the first
+    scan pass before scanner.initial_scan_done is recorded), no new_device alerts are fired.
+    """
+    from app.models.setting import Setting
+    res_done = await db.execute(select(Setting.value).where(Setting.key == "scanner.initial_scan_done"))
+    val = res_done.scalar_one_or_none()
+    if val == "true":
+        return False
+    res_setup = await db.execute(select(Setting.value).where(Setting.key == "setup.complete"))
+    if res_setup.scalar_one_or_none() != "true":
+        return True
+    from app.models.device import Device, DiscoveredHost
+    if (await db.execute(select(Device.id).limit(1))).scalar_one_or_none() is not None:
+        return False
+    if (await db.execute(select(DiscoveredHost.id).limit(1))).scalar_one_or_none() is not None:
+        return False
+    if res_setup.scalar_one_or_none() != "true":
+        return True
+    return False
+
+
 async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None, vendor: str | None = None, ports: list[int] | None = None, is_planner_scan: bool = True, should_invalidate_cache: bool = True):
     """
     Wrapper for sync_hosts_batch for single host updates.
@@ -466,9 +490,22 @@ async def _update_dashboard_device(db, dev, disc, ip: str, mac: str | None, is_v
     if is_verified_change:
         db.add(DeviceHistory(
             device_id=dev.id,
-            status="info",
+            status="ip_changed",
+            read=False,
             message=f"IP changed from {dev.old_ip} to {ip}"
         ))
+        from app.services.webhook_service import trigger_webhooks
+        await trigger_webhooks(
+            event_type="device.ip_changed",
+            data={
+                "device_id": dev.id,
+                "old_ip": dev.old_ip,
+                "new_ip": ip,
+                "mac": dev.mac,
+                "display_name": dev.display_name,
+                "hostname": dev.hostname,
+            }
+        )
     else:
         logger.info(f"Sync: Updated IP of device {dev.id} to {ip} without DeviceHistory notification (unverified match).")
 
@@ -568,9 +605,22 @@ async def _sync_host_internal(db, host: dict, ctx: SyncContext | None = None):
 
     # 2. Discovery Table Deduplication & Search
     disc = await _match_discovered_host(db, ip, mac, hostname, is_valid_mac, ctx)
+    is_new_discovery = disc is None and dev is None
 
     # 3. Apply Updates to DiscoveredHost
     disc = await _upsert_discovered_host(db, disc, dev, ip, mac, hostname, vendor, ports, is_valid_mac)
+    if is_new_discovery and not await is_initial_inventory(db):
+        from app.services.webhook_service import trigger_webhooks
+        await trigger_webhooks(
+            event_type="new_device",
+            data={
+                "ip": ip,
+                "mac": mac,
+                "hostname": hostname,
+                "vendor": vendor,
+                "first_seen": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
     # 4. Cross-Sync to Dashboard
     await _update_dashboard_device(db, dev, disc, ip, mac, is_valid_mac, dev_match_type, hostname)

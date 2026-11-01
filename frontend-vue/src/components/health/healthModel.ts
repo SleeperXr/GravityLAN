@@ -45,6 +45,8 @@ export function statusWord(status: string): string {
   if (key === 'online' || key === 'up') return t('network.online');
   if (key === 'offline' || key === 'down') return t('network.offline');
   if (key === 'flapping' || key === 'service_up' || key === 'service_down') return t(`gv.status.${key}`);
+  if (key === 'ip_changed') return t('gv.status.ip_changed');
+  if (key === 'new_device') return t('gv.status.new_device');
   return status;
 }
 
@@ -81,6 +83,8 @@ export function sharedIncidentTime(incidents: Pick<HealthIncident, 'timestamp'>[
 
 /** Timeline dot of a status history record: up is a hollow green dot, anything else a red one. */
 export function historyEntry(item: DeviceHistoryResponse): TimelineEntry<DeviceHistoryResponse> {
-  const up = isRecovery(item.status);
-  return { key: item.id, tone: up ? 'accent' : 'danger', hollow: up, data: item };
+  const key = item.status.toLowerCase();
+  const up = isRecovery(key);
+  const info = key === 'ip_changed' || key === 'new_device' || key === 'info';
+  return { key: item.id, tone: up ? 'accent' : info ? 'info' : 'danger', hollow: up || info, data: item };
 }

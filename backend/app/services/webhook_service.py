@@ -35,11 +35,20 @@ async def _dispatch_webhooks(event_type: str, data: dict):
         logger.error(f"Webhook: Failed to query subscriptions from database: {e}")
         return
 
-    # Filter subscriptions that match the event_type
+    # Filter subscriptions that match the event_type (supporting common aliases)
+    event_aliases = {
+        "new_device": {"new_device", "device.new"},
+        "device.new": {"new_device", "device.new"},
+        "ip_changed": {"ip_changed", "device.ip_changed"},
+        "device.ip_changed": {"ip_changed", "device.ip_changed"},
+        "device.offline": {"device.offline", "offline"},
+        "device.online": {"device.online", "online"},
+    }
+    match_events = event_aliases.get(event_type, {event_type})
     target_subs = []
     for sub in subscriptions:
         sub_events = [e.strip() for e in sub.events.split(",") if e.strip()]
-        if event_type in sub_events:
+        if any(e in match_events for e in sub_events):
             target_subs.append(sub)
 
     if not target_subs:

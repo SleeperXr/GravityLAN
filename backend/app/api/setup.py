@@ -286,6 +286,9 @@ async def mark_setup_complete(
         setting_complete.value = "true"
     else:
         db.add(Setting(key="setup.complete", value="true", category="system"))
+    res_initial = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
+    if not res_initial.scalar_one_or_none():
+        db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
 
     # 1b. Initialize Master API Token if missing (ATOMIC WITH SETUP COMPLETE)
     import secrets

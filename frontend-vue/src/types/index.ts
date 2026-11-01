@@ -245,6 +245,7 @@ export interface DeviceHistoryResponse {
   service_id: number | null;
   status: string;
   message: string | null;
+  read?: boolean;
   timestamp: string;
 }
 

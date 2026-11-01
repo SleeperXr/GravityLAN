@@ -166,6 +166,7 @@ export const api = {
   refreshServices: (id: number) => request<import('../types').Device>(`/api/devices/${id}/refresh-services`, { method: 'POST' }),
   refreshAllDevices: () => request<{status: string, updated_count: number}>('/api/devices/refresh-all', { method: 'POST' }),
   getDeviceHistory: (id: number) => request<import('../types').DeviceHistoryResponse[]>(`/api/devices/${id}/history`),
+  markDeviceHistoryRead: (id: number) => request<{ status: string; marked_read: number }>(`/api/devices/${id}/history/read-all`, { method: 'POST' }),
 
   // Interfaces (further addresses of one device) and subnet gateways
   getDeviceInterfaces: (deviceId: number) =>

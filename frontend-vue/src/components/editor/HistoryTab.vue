@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { History } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { DeviceHealthItem, DeviceHistoryResponse } from '@/types';
@@ -46,6 +46,17 @@ watch(
 watch(period, () => void loadUptime());
 
 const isUp = (item: DeviceHistoryResponse) => item.status === 'online' || item.status === 'up';
+const isInfo = (item: DeviceHistoryResponse) => ['ip_changed', 'new_device', 'info'].includes(item.status.toLowerCase());
+const hasUnread = computed(() => history.value.some((h) => h.read === false));
+
+async function markAllRead() {
+  try {
+    await api.markDeviceHistoryRead(props.deviceId);
+    history.value = history.value.map((h) => ({ ...h, read: true }));
+  } catch {
+    // best-effort
+  }
+}
 </script>
 
 <template>
@@ -75,10 +86,14 @@ const isUp = (item: DeviceHistoryResponse) => item.status === 'online' || item.s
     </section>
 
     <EmptyState v-if="history.length === 0" compact :icon="History" :title="t('notifications.no_events')" />
+    <div v-if="hasUnread" class="flex justify-end">
+      <button type="button" class="text-xs text-accent-text hover:underline" @click="markAllRead">{{ t('notifications.clear_all') }}</button>
+    </div>
     <Timeline v-else :items="history.map(historyEntry)" :label="t('gv.timeline.history')" no-cards>
       <template #default="{ item }">
         <div class="flex flex-wrap items-center gap-2">
-          <span class="text-xs font-semibold" :class="isUp(item) ? 'text-accent-text' : 'text-danger-text'">{{ statusWord(item.status) }}</span>
+          <span class="text-xs font-semibold" :class="isUp(item) ? 'text-accent-text' : isInfo(item) ? 'text-info-text' : 'text-danger-text'">{{ statusWord(item.status) }}</span>
+          <span v-if="item.read === false" class="size-1.5 rounded-full bg-accent" />
           <span v-if="item.service_id" class="rounded-sm bg-raised px-1.5 text-micro font-medium text-fg-muted">SERVICE</span>
           <span class="ml-auto text-xs text-fg-subtle"><RelativeTime :date="item.timestamp" /></span>
         </div>

@@ -303,7 +303,9 @@
     "status": {
       "flapping": "Flapping",
       "service_up": "Service back",
-      "service_down": "Service down"
+      "service_down": "Service down",
+      "ip_changed": "IP changed",
+      "new_device": "New device"
     },
     "build": {
       "label": "Test build {{build}}",
