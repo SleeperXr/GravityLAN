@@ -360,6 +360,16 @@ export const api = {
   createApiToken: (name: string) => request<import('../types').ApiTokenCreated>('/api/auth/tokens', { method: 'POST', body: JSON.stringify({ name }) }),
   deleteApiToken: (id: number) => request<{ status: string; message: string }>(`/api/auth/tokens/${id}`, { method: 'DELETE' }),
 
+  // Webhooks & Notification Outbox
+  getWebhooks: () => request<import('../types').WebhookSubscriptionResponse[]>('/api/webhooks'),
+  createWebhook: (data: import('../types').WebhookSubscriptionCreate) =>
+    request<import('../types').WebhookSubscriptionResponse>('/api/webhooks', { method: 'POST', body: JSON.stringify(data) }),
+  deleteWebhook: (id: number) => request<{ status: string; message: string }>(`/api/webhooks/${id}`, { method: 'DELETE' }),
+  testWebhook: (event = 'test.event', data: Record<string, unknown> = { status: 'testing' }) =>
+    request<{ status: string; message: string }>('/api/webhooks/test', { method: 'POST', body: JSON.stringify({ event, data }) }),
+  getOutbox: (limit = 50) => request<import('../types').NotificationOutboxResponse[]>(`/api/webhooks/outbox?limit=${limit}`),
+  retryOutbox: (id: number) => request<{ status: string; message: string }>(`/api/webhooks/outbox/${id}/retry`, { method: 'POST' }),
+
   // SSH terminal
   getSshStatus: () => request<import('../types').SshStatus>('/api/ssh/status'),
   getSshKeys: () => request<import('../types').SshKey[]>('/api/ssh/keys'),

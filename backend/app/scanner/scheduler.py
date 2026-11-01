@@ -53,6 +53,7 @@ class ScanScheduler:
         self._docker_task = None
         self._retention_task = None
         self._health_probe_task = None
+        self._outbox_task = None
         self._running = False
         self._last_cleanup_time = None
 
@@ -66,11 +67,12 @@ class ScanScheduler:
         self._docker_task = asyncio.create_task(self._docker_loop())
         self._retention_task = asyncio.create_task(self._retention_loop())
         self._health_probe_task = asyncio.create_task(self._health_probe_loop())
+        self._outbox_task = asyncio.create_task(self._outbox_loop())
         logger.info("Scan scheduler started (Full + Quick + ARP Turbo + Docker Sync + Retention + Health Probe)")
 
     async def stop(self):
         self._running = False
-        tasks = [self._task, self._quick_task, self._arp_task, self._docker_task, self._retention_task, self._health_probe_task]
+        tasks = [self._task, self._quick_task, self._arp_task, self._docker_task, self._retention_task, self._health_probe_task, self._outbox_task]
         for task in tasks:
             if task:
                 task.cancel()
@@ -234,6 +236,21 @@ class ScanScheduler:
                 break
             except Exception:
                 await asyncio.sleep(60)
+
+    async def _outbox_loop(self):
+        """Periodically process retries for pending notification outbox items."""
+        while self._running:
+            try:
+                from app.services.webhook_service import process_outbox
+                await process_outbox()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Scheduler: Error in notification outbox loop: {e}", exc_info=True)
+            try:
+                await asyncio.sleep(15)
+            except asyncio.CancelledError:
+                break
 
     async def _clean_old_history(self, force: bool = False):
         """Delete device history events older than history_retention_days.

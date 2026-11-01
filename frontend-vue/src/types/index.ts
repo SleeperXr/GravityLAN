@@ -478,3 +478,38 @@ export interface SshSessionRequest {
 }
 
 export * from './health';
+
+
+export interface WebhookSubscriptionResponse {
+  id: number;
+  name?: string | null;
+  url: string;
+  service_type: 'webhook' | 'ntfy' | 'gotify';
+  has_token: boolean;
+  events: string[];
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface WebhookSubscriptionCreate {
+  name?: string;
+  url: string;
+  service_type: 'webhook' | 'ntfy' | 'gotify';
+  token?: string;
+  events: string[];
+}
+
+export interface NotificationOutboxResponse {
+  id: number;
+  subscription_id?: number | null;
+  event_type: string;
+  target_url: string;
+  service_type: string;
+  attempts: number;
+  max_attempts: number;
+  status: 'pending' | 'delivered' | 'failed';
+  last_error?: string | null;
+  next_attempt_at: string;
+  created_at: string;
+  delivered_at?: string | null;
+}

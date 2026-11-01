@@ -7,7 +7,7 @@ from app.models.telemetry import DeviceHealthRollup, DeviceMetricsRollup
 from app.models.network import Subnet
 from app.models.topology import Rack, TopologyLink
 from app.models.api_token import ApiToken
-from app.models.webhook import WebhookSubscription
+from app.models.webhook import WebhookSubscription, NotificationOutbox
 from app.models.router_import import RouterImportSource
 from app.models.audit import AuditEvent
 
@@ -15,5 +15,5 @@ __all__ = [
     "Device", "DeviceGroup", "DeviceInterface", "Service", "DiscoveredHost", "DeviceHistory", "DeviceHealthSample",
     "Setting", "AgentToken", "DeviceMetrics", "AgentConfig", "Subnet",
     "DeviceHealthRollup", "DeviceMetricsRollup",
-    "Rack", "TopologyLink", "ApiToken", "WebhookSubscription", "RouterImportSource", "AuditEvent"
+    "Rack", "TopologyLink", "ApiToken", "WebhookSubscription", "NotificationOutbox", "RouterImportSource", "AuditEvent"
 ]
