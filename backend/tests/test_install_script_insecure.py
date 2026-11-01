@@ -8,6 +8,7 @@ import pytest
 
 from app.models.device import Device
 from app.models.setting import Setting
+from app.services.session_service import session_store
 from app.services.agent_scripts import build_install_script
 
 HEADERS = {"Authorization": "Bearer test-admin-token-12345"}
@@ -59,7 +60,8 @@ async def test_enrollment_reports_insecure_server_url(client, db, admin_token, s
     db.add_all([device, Setting(key="server.url", value=server_url)])
     await db.commit()
 
-    res = await client.post(f"/api/agent/enroll/{device.id}", headers=HEADERS)
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    res = await client.post(f"/api/agent/enroll/{device.id}")
     assert res.status_code == 200
     assert res.json()["insecure"] is insecure
     # The UI fetches the install script from the same address the script downloads from
@@ -76,7 +78,8 @@ async def test_enrollment_reports_server_wide_opt_in(client, db, admin_token, mo
     db.add(device)
     await db.commit()
 
-    res = await client.post(f"/api/agent/enroll/{device.id}", headers=HEADERS)
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    res = await client.post(f"/api/agent/enroll/{device.id}")
     assert res.json()["insecure_allowed"] is True
 
 

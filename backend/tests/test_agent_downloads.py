@@ -19,6 +19,7 @@ from sqlalchemy import select
 
 from app.models.device import Device
 from app.models.agent import AgentToken
+from app.services.session_service import session_store
 from app.services.agent_tokens import hash_agent_token
 from app.models.setting import Setting
 
@@ -61,7 +62,8 @@ async def _seed_server_url(db, monkeypatch):
 
 
 async def _enroll(client, device_id) -> str:
-    response = await client.post(f"/api/agent/enroll/{device_id}", headers=_admin_headers())
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    response = await client.post(f"/api/agent/enroll/{device_id}")
     assert response.status_code == 200
     body = response.json()
     assert body["expires_in"] > 0
@@ -146,7 +148,8 @@ async def test_enroll_requires_admin(client, db, admin_token):
 
 @pytest.mark.asyncio
 async def test_enroll_unknown_device_404(client, db, admin_token):
-    response = await client.post("/api/agent/enroll/9999", headers=_admin_headers())
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    response = await client.post("/api/agent/enroll/9999")
     assert response.status_code == 404
 
 
@@ -385,11 +388,12 @@ async def test_deploy_agent_endpoint_success(client, db, admin_token, monkeypatc
         return True, "Agent started successfully", "deployed-token-abc"
 
     monkeypatch.setattr("app.api.agent.deploy_agent", fake_deploy)
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
 
     response = await client.post(
         f"/api/agent/deploy/{device.id}",
         json={"ssh_user": "root", "ssh_password": "pw"},
-        headers=_admin_headers(),
+
     )
     assert response.status_code == 200
     assert response.json()["status"] == "success"
@@ -411,11 +415,12 @@ async def test_deploy_agent_endpoint_failure(client, db, admin_token, monkeypatc
         return False, "SSH connection failed", ""
 
     monkeypatch.setattr("app.api.agent.deploy_agent", fake_deploy)
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
 
     response = await client.post(
         f"/api/agent/deploy/{device.id}",
         json={"ssh_user": "root", "ssh_password": "pw"},
-        headers=_admin_headers(),
+
     )
     assert response.status_code == 200
     assert response.json()["status"] == "failed"
@@ -431,11 +436,12 @@ async def test_uninstall_agent_endpoint_success(client, db, admin_token, monkeyp
         return True, "Agent removed"
 
     monkeypatch.setattr("app.api.agent.remove_agent", fake_remove)
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
 
     response = await client.post(
         f"/api/agent/uninstall/{device.id}",
         json={"ssh_user": "root", "ssh_password": "pw"},
-        headers=_admin_headers(),
+
     )
     assert response.status_code == 200
     assert response.json()["status"] == "success"
@@ -453,11 +459,12 @@ async def test_uninstall_agent_endpoint_failure(client, db, admin_token, monkeyp
         return False, "SSH connection failed"
 
     monkeypatch.setattr("app.api.agent.remove_agent", fake_remove)
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
 
     response = await client.post(
         f"/api/agent/uninstall/{device.id}",
         json={"ssh_user": "root", "ssh_password": "pw"},
-        headers=_admin_headers(),
+
     )
     assert response.status_code == 200
     assert response.json()["status"] == "failed"

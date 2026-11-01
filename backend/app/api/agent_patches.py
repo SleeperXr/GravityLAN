@@ -131,7 +131,7 @@ async def _resolve_patch_credentials(
     return host_ip, ssh_port, ssh_user, ssh_password, ssh_key, ssh_passphrase, pinned
 
 
-@patch_router.post("/patches/{device_id}/query", response_model=DevicePatchesResponse, dependencies=[Depends(require_step_up("remote"))])
+@patch_router.post("/patches/{device_id}/query", response_model=DevicePatchesResponse, dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
 async def query_device_patches(
     device_id: int,
     request: AgentDeployRequest,
@@ -190,7 +190,7 @@ async def query_device_patches(
     )
 
 
-@patch_router.post("/patches/{device_id}/prepare", dependencies=[Depends(require_step_up("remote"))])
+@patch_router.post("/patches/{device_id}/prepare", dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
 async def prepare_patch_action(
     device_id: int,
     request: PatchActionRequest,
@@ -319,7 +319,7 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
         websocket,
         endpoint_type="agent",
         device_id=device_id,
-        allowed_levels=("session", "master", "master_legacy"),
+        allowed_levels=("session",),
     )
     if not auth_info:
         return

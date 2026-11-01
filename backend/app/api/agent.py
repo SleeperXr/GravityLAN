@@ -448,7 +448,7 @@ async def download_agent_file():
     )
 
 
-@router.post("/enroll/{device_id}", response_model=AgentEnrollmentResponse)
+@router.post("/enroll/{device_id}", response_model=AgentEnrollmentResponse, dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
 async def create_enrollment_code(
     device_id: int,
     request: Request,
@@ -608,7 +608,7 @@ def _ssh_error_code(success: bool, message: str) -> str | None:
     return HOST_KEY_CHANGED if not success and is_host_key_refusal(message) else None
 
 
-@router.post("/deploy/{device_id}", response_model=AgentDeployResponse, dependencies=[Depends(require_step_up("remote"))])
+@router.post("/deploy/{device_id}", response_model=AgentDeployResponse, dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
 async def deploy_agent_endpoint(
     device_id: int,
     request: AgentInstallRequest,
@@ -673,7 +673,7 @@ async def deploy_agent_endpoint(
         return AgentDeployResponse(status="failed", message=message, error_code=_ssh_error_code(success, message))
 
 
-@router.post("/uninstall/{device_id}", dependencies=[Depends(require_step_up("remote"))])
+@router.post("/uninstall/{device_id}", dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
 async def uninstall_agent_endpoint(
     device_id: int,
     request: AgentInstallRequest,

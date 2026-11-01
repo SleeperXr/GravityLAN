@@ -1,4 +1,4 @@
-"""Step-up (AP-12): a browser session confirms the password again before sensitive actions."""
+"""Step-up (AP-12) and no remote access by token (AP-13)."""
 
 import pytest
 from sqlalchemy import select
@@ -81,11 +81,53 @@ async def test_confirming_allows_that_class_only(browser, device, no_ssh, db):
 
 
 @pytest.mark.asyncio
-async def test_tokens_are_not_asked(client, device, no_ssh, admin_token):
-    """API and master tokens have no session; AP-13 decides what they may do."""
-    assert (await _deploy(client, device, MASTER)).json()["status"] == "failed"
+async def test_tokens_are_refused_for_remote_access_and_logged(client, device, no_ssh, admin_token, db):
+    """AP-13: terminal, agent install/removal, install codes and package updates require a browser session."""
+    created = await client.post("/api/auth/tokens", json={"name": "ops", "scopes": ["agent:write"]}, headers=MASTER)
+    assert created.status_code == 200  # credentials class still works with the master token
+    api_headers = {"Authorization": f"Bearer {created.json()['token']}"}
+
+    remote_calls = [
+        ("/api/ssh/sessions/prepare", {"host": "10.0.0.1", "username": "root", "password": "x"}, "ssh.terminal.open"),
+        (f"/api/agent/enroll/{device.id}", None, "agent.install_code"),
+        (f"/api/agent/deploy/{device.id}", {"ssh_user": "root", "ssh_password": "x"}, "agent.deploy"),
+        (f"/api/agent/uninstall/{device.id}", {"ssh_user": "root", "ssh_password": "x"}, "agent.uninstall"),
+        (f"/api/agent/patches/{device.id}/query", {"ssh_user": "root", "ssh_password": "x"}, "agent.patches"),
+        (f"/api/agent/patches/{device.id}/prepare", {"ssh_user": "root", "ssh_password": "x", "mode": "all"}, "agent.patches"),
+    ]
+    for headers in (MASTER, api_headers):
+        for path, body, _ in remote_calls:
+            res = await client.post(path, **({"json": body} if body is not None else {}), headers=headers)
+            assert res.status_code == 403, path
+            assert "X-Step-Up" not in res.headers
+            assert "browser session" in res.json()["detail"]
+
+    denied = (await db.execute(
+        select(AuditEvent).where(AuditEvent.result == "denied").order_by(AuditEvent.id)
+    )).scalars().all()
+    assert [(e.actor, e.action) for e in denied] == [
+        (actor, action)
+        for actor in ("master", "api_token:ops")
+        for _, _, action in remote_calls
+    ]
+
     res = await client.post("/api/auth/step-up", json={"password": PASSWORD, "scope": "remote"}, headers=MASTER)
     assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_patch_websocket_accepts_browser_sessions_only(monkeypatch):
+    from app.api.agent_patches import run_patches_websocket
+
+    seen = {}
+
+    async def fake_auth(websocket, endpoint_type, device_id=None, allowed_levels=()):
+        seen["allowed_levels"] = allowed_levels
+        return None
+
+    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", fake_auth)
+    await run_patches_websocket(None, 1)
+    assert seen["allowed_levels"] == ("session",)
 
 
 @pytest.mark.asyncio
@@ -123,8 +165,12 @@ async def test_changing_the_grant_length_needs_a_confirmation(browser):
 @pytest.mark.asyncio
 async def test_every_class_guards_its_endpoints(browser, device):
     calls = {
-        "remote": [("post", f"/api/agent/uninstall/{device.id}", {"ssh_user": "root"}), ("post", "/api/ssh/sessions/prepare", {"host": "10.0.0.1", "username": "root"}),
-                   ("post", f"/api/agent/patches/{device.id}/prepare", {"mode": "all"})],
+        "remote": [
+            ("post", f"/api/agent/enroll/{device.id}", None),
+            ("post", f"/api/agent/uninstall/{device.id}", {"ssh_user": "root"}),
+            ("post", "/api/ssh/sessions/prepare", {"host": "10.0.0.1", "username": "root"}),
+            ("post", f"/api/agent/patches/{device.id}/prepare", {"mode": "all"}),
+        ],
         "credentials": [("post", "/api/ssh/keys/generate", {"name": "k"}), ("delete", "/api/ssh/known-hosts/1", None),
                         ("post", "/api/webhooks", {"url": "https://hook.example/x", "events": ["device.offline"]})],
         "instance": [("get", "/api/backup/export", None), ("post", "/api/settings/reset-db", None)],

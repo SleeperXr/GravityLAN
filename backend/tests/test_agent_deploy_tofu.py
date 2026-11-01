@@ -9,6 +9,7 @@ from app.config import settings
 from app.models.device import Device
 from app.models.ssh import SshKnownHost
 from app.services import agent_deployer
+from app.services.session_service import session_store
 from app.services.ssh_utils import HostKeyNotTrusted, PinnedHostKey, PinnedHostKeyPolicy, TofuHostKeyPolicy
 
 HEADERS = {"Authorization": "Bearer test-admin-token-12345"}
@@ -27,11 +28,13 @@ class _FakeKey:
 
 
 @pytest.fixture
-async def device(db, admin_token):
+async def device(client, db, admin_token):
     dev = Device(ip="192.168.1.70", display_name="Pi", is_online=True)
     db.add(dev)
     await db.commit()
     await db.refresh(dev)
+    await db.refresh(dev)
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
     return dev
 
 
@@ -73,7 +76,7 @@ async def _known_hosts(db):
 async def test_first_deploy_stores_key_then_pins_it(client, db, device, ssh_calls):
     calls, _ = ssh_calls
 
-    res = await client.post(f"/api/agent/deploy/{device.id}", json=LOGIN, headers=HEADERS)
+    res = await client.post(f"/api/agent/deploy/{device.id}", json=LOGIN)
     assert res.json()["status"] == "success"
     assert isinstance(calls[0]["tofu_policy"], TofuHostKeyPolicy)
     assert calls[0]["pinned_host_key"] is None
@@ -81,7 +84,7 @@ async def test_first_deploy_stores_key_then_pins_it(client, db, device, ssh_call
     stored = await _known_hosts(db)
     assert [(k.host, k.port, k.fingerprint) for k in stored] == [("192.168.1.70", 22, "SHA256:first")]
 
-    res = await client.post(f"/api/agent/uninstall/{device.id}", json=LOGIN, headers=HEADERS)
+    res = await client.post(f"/api/agent/uninstall/{device.id}", json=LOGIN)
     assert res.json()["status"] == "success"
     assert calls[1]["pinned_host_key"] == PinnedHostKey("ssh-ed25519", "SHA256:first")
     assert calls[1]["tofu_policy"] is None
@@ -95,7 +98,7 @@ async def test_changed_key_is_refused_with_error_code(client, db, device, ssh_ca
     await db.commit()
     presented["key"] = _FakeKey("SHA256:attacker")
 
-    res = await client.post(f"/api/agent/{action}/{device.id}", json=LOGIN, headers=HEADERS)
+    res = await client.post(f"/api/agent/{action}/{device.id}", json=LOGIN)
     body = res.json()
     assert body["status"] == "failed"
     assert body["error_code"] == "host_key_changed"
@@ -109,7 +112,7 @@ async def test_changed_key_is_refused_with_error_code(client, db, device, ssh_ca
 async def test_strict_mode_uses_no_tofu(client, device, ssh_calls, monkeypatch):
     calls, _ = ssh_calls
     monkeypatch.setattr(settings, "ssh_strict_mode", True)
-    res = await client.post(f"/api/agent/deploy/{device.id}", json=LOGIN, headers=HEADERS)
+    res = await client.post(f"/api/agent/deploy/{device.id}", json=LOGIN)
     assert res.json()["status"] == "failed"
     assert calls[0]["tofu_policy"] is None
 

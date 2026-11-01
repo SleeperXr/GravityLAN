@@ -135,8 +135,8 @@ async def test_saved_connection_needs_a_browser_session(client, db, admin_token,
     device, profile, _ = await _seed(db, test_vault)
 
     res = await client.post(
-        f"/api/agent/deploy/{device.id}", json={"profile_id": profile.id},
-        headers={"Authorization": "Bearer test-admin-token-12345"},
+        f"/api/agent/deploy/{device.id}", json={"profile_id": profile.id}, headers={"Authorization": "Bearer test-admin-token-12345"},
+
     )
 
     assert res.status_code == 403
@@ -169,14 +169,14 @@ async def test_unknown_saved_connection(client, db, test_vault, browser_session,
 
 
 @pytest.mark.asyncio
-async def test_deploy_needs_a_user_or_a_saved_connection(client, db, admin_token, ssh_calls):
+async def test_deploy_needs_a_user_or_a_saved_connection(client, db, browser_session, ssh_calls):
     device = Device(ip="192.168.1.70", display_name="X", is_online=True)
     db.add(device)
     await db.commit()
 
     res = await client.post(
         f"/api/agent/deploy/{device.id}", json={"ssh_password": "pw"},
-        headers={"Authorization": "Bearer test-admin-token-12345"},
+
     )
 
     assert res.status_code == 400

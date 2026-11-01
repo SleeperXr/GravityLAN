@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.models.audit import AuditEvent
 from app.models.device import Device
 from app.services import audit as audit_service
+from app.services.session_service import session_store
 
 MASTER = "test-admin-token-12345"
 HEADERS = {"Authorization": f"Bearer {MASTER}"}
@@ -75,11 +76,12 @@ async def test_failed_deploy_is_recorded_without_credentials(client, db, device,
         return False, "SSH authentication failed", ""
     monkeypatch.setattr("app.api.agent.deploy_agent", fake_deploy)
 
-    res = await client.post(f"/api/agent/deploy/{device.id}", json=LOGIN, headers=HEADERS)
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    res = await client.post(f"/api/agent/deploy/{device.id}", json=LOGIN)
     assert res.json()["status"] == "failed"
 
     (row,) = await _events(db, "agent.deploy")
-    assert (row.result, row.device_id, row.target, row.actor) == ("failed", device.id, "Pi (192.168.1.70)", "master")
+    assert (row.result, row.device_id, row.target, row.actor) == ("failed", device.id, "Pi (192.168.1.70)", "session")
     assert "secret" not in _text([row])
 
 
