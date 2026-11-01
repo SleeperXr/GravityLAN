@@ -147,7 +147,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
                 <span class="block truncate text-sm font-semibold text-fg">{{ agent.hostname }}</span>
                 <span class="block font-mono text-xs text-fg-subtle">{{ agent.ip }} · v{{ agent.agent_version || '0.0.0' }}</span>
                 <span class="mt-1 flex flex-wrap gap-1">
-                  <Badge v-if="osLabelOf(agent)" class="max-w-48 truncate" :title="osLabelOf(agent) ?? undefined">{{ osLabelOf(agent) }}</Badge>
+                  <Badge v-if="osLabelOf(agent)" class="max-w-60" :title="osLabelOf(agent) ?? undefined"><span class="truncate">{{ osLabelOf(agent) }}</span></Badge>
                   <Badge v-if="agent.patch_available > 0" :tone="agent.patch_security > 0 ? 'danger' : 'warn'" mono :title="t('agent_detail.updates_badge', { count: agent.patch_available, security: agent.patch_security })">
                     <component :is="agent.patch_security > 0 ? ShieldAlert : Package" aria-hidden="true" />{{ agent.patch_available }}
                   </Badge>

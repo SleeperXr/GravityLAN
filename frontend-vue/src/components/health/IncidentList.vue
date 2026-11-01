@@ -45,7 +45,7 @@ function iconOf(incident: HealthIncident) {
 
 <template>
   <EmptyState v-if="incidents.length === 0" compact :icon="CheckCircle2" :title="t('health_page.no_incidents')" />
-  <p v-else-if="shared" class="-mb-1 text-xs text-fg-subtle">
+  <p v-else-if="shared" class="mb-2.5 text-xs text-fg-subtle">
     {{ shared.all ? t('gv.timeline.all_at', { when: shared.text }) : t('gv.timeline.mostly_at', { when: shared.text }) }}
   </p>
   <Timeline
