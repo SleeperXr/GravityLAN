@@ -60,6 +60,12 @@ def test_prepare_request_for_gotify():
     assert body["title"] == "GravityLAN: Device Online"
     assert body["priority"] == 5
 
+    # Query string is preserved after /message
+    eff_url_q, _, _ = prepare_request_for_service(
+        "gotify", "https://gotify.example.com/?token=abc", None, "device.online", {}
+    )
+    assert eff_url_q == "https://gotify.example.com/message?token=abc"
+
 
 def test_prepare_request_for_webhook():
     url = "https://homeassistant.local/api/webhook/grav"
@@ -272,3 +278,44 @@ async def test_api_list_outbox_and_retry(client, db, admin_token):
     await db.refresh(outbox)
     assert outbox.status == "delivered"
     assert outbox.attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_test_webhook_targets_subscription_by_id(client, db, admin_token):
+    class _SessionCtx:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    sub1 = WebhookSubscription(
+        name="Sub 1",
+        url="https://ntfy.example.com/sub1",
+        service_type="ntfy",
+        events="device.offline",
+        is_active=True,
+    )
+    sub2 = WebhookSubscription(
+        name="Sub 2",
+        url="https://ntfy.example.com/sub2",
+        service_type="ntfy",
+        events="device.offline",
+        is_active=True,
+    )
+    db.add_all([sub1, sub2])
+    await db.commit()
+    await db.refresh(sub1)
+    await db.refresh(sub2)
+
+    from app.services.webhook_service import _enqueue_and_dispatch
+
+    mock_resp = httpx.Response(200, request=httpx.Request("POST", sub2.url), text="OK")
+    with patch("app.services.webhook_service.async_session", return_value=_SessionCtx()), \
+         patch("app.services.webhook_service._send_webhook_post", AsyncMock(return_value=mock_resp)) as mock_send:
+        await _enqueue_and_dispatch(
+            "test.event",
+            {"status": "testing", "destination": "Sub 2", "subscription_id": sub2.id},
+        )
+        assert mock_send.await_count == 1
+        assert mock_send.await_args.args[1] == "https://ntfy.example.com/sub2"

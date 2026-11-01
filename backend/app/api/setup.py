@@ -286,9 +286,10 @@ async def mark_setup_complete(
         setting_complete.value = "true"
     else:
         db.add(Setting(key="setup.complete", value="true", category="system"))
-    res_initial = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
-    if not res_initial.scalar_one_or_none():
-        db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
+    if request.restored:
+        res_initial = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
+        if not res_initial.scalar_one_or_none():
+            db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
 
     # 1b. Initialize Master API Token if missing (ATOMIC WITH SETUP COMPLETE)
     import secrets
@@ -324,6 +325,10 @@ async def mark_setup_complete(
 
     try:
         adopted = await _adopt_discovered_hosts(db, request.dns_server, request.subnets)
+        if adopted > 0:
+            res_initial = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
+            if not res_initial.scalar_one_or_none():
+                db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
         await db.commit()
     except Exception:
         logger.exception("Setup: adopting discovered hosts failed; settings are saved, devices can be added later")

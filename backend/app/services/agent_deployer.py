@@ -514,15 +514,7 @@ def _deploy_agent_blocking(
 
         runner = RemoteRunner(client, has_sudo, ssh_user, ssh_password)
 
-        # Pre-install cleanup
-        has_systemd, has_syno_rc = _probe_platform(client, host_ip)
-        cleanup_cmds = _build_cleanup_script(has_systemd, has_syno_rc)
-        runner.run_sudo_batch(cleanup_cmds)
-
-        # Ensure base directory
-        runner.run(f"mkdir -p {base_dir}")
-
-        # Deploy agent script
+        # Stage and verify agent script before stopping or removing any existing agent
         with open(AGENT_SCRIPT_PATH, "r", encoding="utf-8") as f:
             agent_content = f.read()
 
@@ -531,6 +523,15 @@ def _deploy_agent_blocking(
         if not _verify_remote_sha256(client, tmp_agent, _staged_content_sha256(agent_content)):
             runner.run(f"rm -f {tmp_agent} || true")
             return False, "Agent deployment aborted: SHA-256 checksum mismatch on remote host.", ""
+
+        # Pre-install cleanup
+        has_systemd, has_syno_rc = _probe_platform(client, host_ip)
+        cleanup_cmds = _build_cleanup_script(has_systemd, has_syno_rc)
+        runner.run_sudo_batch(cleanup_cmds)
+
+        # Ensure base directory
+        runner.run(f"mkdir -p {base_dir}")
+
         runner.run(f"mv {tmp_agent} {REMOTE_AGENT_PATH} && chmod 755 {REMOTE_AGENT_PATH}")
         logger.info("Agent script deployed to %s", REMOTE_AGENT_PATH)
 

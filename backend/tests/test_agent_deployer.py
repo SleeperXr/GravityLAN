@@ -253,7 +253,6 @@ async def test_deploy_makes_agent_config_owner_only(fake_remote, monkeypatch):
     assert f"chmod 600 {agent_deployer.REMOTE_CONFIG_PATH}" in config_cmd
     assert "chmod 644" not in config_cmd
     # The script itself is not secret and keeps its usual mode
-    # The script itself is not secret and keeps its usual mode
     assert any(f"chmod 755 {agent_deployer.REMOTE_AGENT_PATH}" in cmd for cmd in commands)
 
 
@@ -269,7 +268,7 @@ async def test_deploy_aborts_when_remote_sha256_mismatches(fake_remote, monkeypa
     assert ok is False
     assert "SHA-256 checksum mismatch" in message
     assert token == ""
-    commands = [call.args[0] for call in fake_remote.run.call_args_list]
+    assert not fake_remote.run_sudo_batch.called
     commands = [call.args[0] for call in fake_remote.run.call_args_list]
     assert not any(agent_deployer.REMOTE_AGENT_PATH in cmd for cmd in commands)
 

@@ -86,19 +86,21 @@ async function markAllRead() {
     </section>
 
     <EmptyState v-if="history.length === 0" compact :icon="History" :title="t('notifications.no_events')" />
-    <div v-if="hasUnread" class="flex justify-end">
-      <button type="button" class="text-xs text-accent-text hover:underline" @click="markAllRead">{{ t('notifications.clear_all') }}</button>
-    </div>
-    <Timeline v-else :items="history.map(historyEntry)" :label="t('gv.timeline.history')" no-cards>
-      <template #default="{ item }">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="text-xs font-semibold" :class="isUp(item) ? 'text-accent-text' : isInfo(item) ? 'text-info-text' : 'text-danger-text'">{{ statusWord(item.status) }}</span>
-          <span v-if="item.read === false" class="size-1.5 rounded-full bg-accent" />
-          <span v-if="item.service_id" class="rounded-sm bg-raised px-1.5 text-micro font-medium text-fg-muted">SERVICE</span>
-          <span class="ml-auto text-xs text-fg-subtle"><RelativeTime :date="item.timestamp" /></span>
-        </div>
-        <p class="mt-0.5 text-sm text-fg">{{ item.message }}</p>
-      </template>
-    </Timeline>
+    <template v-else>
+      <div v-if="hasUnread" class="flex justify-end">
+        <button type="button" class="text-xs text-accent-text hover:underline" @click="markAllRead">{{ t('notifications.clear_all') }}</button>
+      </div>
+      <Timeline :items="history.map(historyEntry)" :label="t('gv.timeline.history')" no-cards>
+        <template #default="{ item }">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-semibold" :class="isUp(item) ? 'text-accent-text' : isInfo(item) ? 'text-info-text' : 'text-danger-text'">{{ statusWord(item.status) }}</span>
+            <span v-if="item.read === false" class="size-1.5 rounded-full bg-accent" />
+            <span v-if="item.service_id" class="rounded-sm bg-raised px-1.5 text-micro font-medium text-fg-muted">SERVICE</span>
+            <span class="ml-auto text-xs text-fg-subtle"><RelativeTime :date="item.timestamp" /></span>
+          </div>
+          <p class="mt-0.5 text-sm text-fg">{{ item.message }}</p>
+        </template>
+      </Timeline>
+    </template>
   </div>
 </template>

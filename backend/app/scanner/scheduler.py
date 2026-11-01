@@ -5,6 +5,7 @@ from sqlalchemy import select, delete
 from app.database import async_session
 from app.models.setting import Setting
 from app.models.device import DeviceHistory
+from app.models.webhook import NotificationOutbox
 from app.scanner.planner import run_planner_scan, run_arp_only_scan
 from app.scanner.dashboard import run_dashboard_scan
 from app.scanner.subnets import get_enabled_subnets
@@ -276,8 +277,14 @@ class ScanScheduler:
                     cutoff_naive = cutoff.replace(tzinfo=None)
 
                     await db.execute(delete(DeviceHistory).where(DeviceHistory.timestamp < cutoff_naive))
+                    await db.execute(
+                        delete(NotificationOutbox).where(
+                            NotificationOutbox.created_at < cutoff_naive,
+                            NotificationOutbox.status.in_(("delivered", "failed")),
+                        )
+                    )
                     await db.commit()
-                    logger.info(f"Cleaned up device history older than {days} days")
+                    logger.info(f"Cleaned up device history and notification outbox older than {days} days")
 
                 # The audit log keeps its own fixed retention (90 days)
                 from app.services.audit import prune as prune_audit
