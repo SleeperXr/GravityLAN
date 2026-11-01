@@ -114,7 +114,8 @@ const shortTime = (time: string) => time.slice(11, 19);
 
     <Tabs v-model="tab" :tabs="tabs" :label="t('sidebar.logs')" list-class="px-0">
       <template #live>
-    <div class="flex min-h-0 flex-1 flex-col gap-4 pt-4">
+    <!-- h-full: the tab panel is no flex container, so without it the log grows with every line and the page scrolls instead -->
+    <div class="flex h-full min-h-0 flex-col gap-4 pt-4">
     <div class="flex flex-wrap items-center gap-2">
       <div class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('gv.logs.level')">
         <button

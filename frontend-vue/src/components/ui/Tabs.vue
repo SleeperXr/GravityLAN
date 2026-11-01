@@ -16,7 +16,7 @@ const props = defineProps<{
   <TabsRoot v-model="model" class="flex min-h-0 flex-1 flex-col">
     <TabsList
       :aria-label="props.label"
-      :class="cn('flex shrink-0 gap-1 overflow-x-auto border-b border-line px-3 [scrollbar-width:none]', props.listClass)"
+      :class="cn('flex shrink-0 gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-3 [scrollbar-width:none]', props.listClass)"
     >
       <TabsTrigger
         v-for="tab in props.tabs"

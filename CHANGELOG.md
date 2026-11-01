@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - GravityUI Settings → System: saving after changing a number field (scan interval, quick scan, timeout, offline threshold, history retention, password confirmation minutes) failed with a validation error, because the field handed the value over as a number and the settings only take text. The fields hand over text again.
+- GravityUI Logs → Live-Log: the log grew with every line and the whole page scrolled, so the button back to the newest lines never appeared. The log now scrolls in its own box; scrolling up holds it, and "Live" jumps back to the newest line and follows again. Tab bars no longer show a small vertical scrollbar.
 
 ## [0.7.0] - 2026-11-01
 
