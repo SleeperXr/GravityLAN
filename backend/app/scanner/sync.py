@@ -29,6 +29,7 @@ class SyncContext:
     networks: list = field(default_factory=list)  # [(ip_network, Subnet)], most specific first
     gateways: dict = field(default_factory=dict)  # Subnet.id -> effective gateway ip
     gateway_sources: dict = field(default_factory=dict)  # Subnet.id -> configured/detected/suggested
+    is_initial: bool = True
 
     def subnet_for(self, ip: str | None):
         try:
@@ -76,6 +77,7 @@ async def load_sync_context(db) -> SyncContext:
             ctx.gateways[sub.id] = gw.ip
             ctx.gateway_sources[sub.id] = gw.source
     ctx.networks.sort(key=lambda pair: pair[0].prefixlen, reverse=True)
+    ctx.is_initial = await is_initial_inventory(db)
     return ctx
 
 _INVALID_MACS = ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff")
@@ -102,25 +104,12 @@ def _should_apply_custom_name(disc, dev) -> bool:
 async def is_initial_inventory(db) -> bool:
     """True when GravityLAN is performing its initial inventory pass.
 
-    During initial inventory (e.g. before setup is complete, or during the first
-    scan pass before scanner.initial_scan_done is recorded), no new_device alerts are fired.
+    During initial inventory (before scanner.initial_scan_done is recorded),
+    no new_device alerts are fired.
     """
     from app.models.setting import Setting
     res_done = await db.execute(select(Setting.value).where(Setting.key == "scanner.initial_scan_done"))
-    val = res_done.scalar_one_or_none()
-    if val == "true":
-        return False
-    res_setup = await db.execute(select(Setting.value).where(Setting.key == "setup.complete"))
-    if res_setup.scalar_one_or_none() != "true":
-        return True
-    from app.models.device import Device, DiscoveredHost
-    if (await db.execute(select(Device.id).limit(1))).scalar_one_or_none() is not None:
-        return False
-    if (await db.execute(select(DiscoveredHost.id).limit(1))).scalar_one_or_none() is not None:
-        return False
-    if res_setup.scalar_one_or_none() != "true":
-        return True
-    return False
+    return res_done.scalar_one_or_none() != "true"
 
 
 async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None, vendor: str | None = None, ports: list[int] | None = None, is_planner_scan: bool = True, should_invalidate_cache: bool = True):
@@ -609,7 +598,7 @@ async def _sync_host_internal(db, host: dict, ctx: SyncContext | None = None):
 
     # 3. Apply Updates to DiscoveredHost
     disc = await _upsert_discovered_host(db, disc, dev, ip, mac, hostname, vendor, ports, is_valid_mac)
-    if is_new_discovery and not await is_initial_inventory(db):
+    if is_new_discovery and not ctx.is_initial:
         from app.services.webhook_service import trigger_webhooks
         await trigger_webhooks(
             event_type="new_device",

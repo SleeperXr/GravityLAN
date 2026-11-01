@@ -6,7 +6,7 @@ import json
 import logging
 import socket
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from sqlalchemy import select
@@ -109,6 +109,15 @@ def format_event_notification(event_type: str, data: dict) -> tuple[str, str, in
             ["mag"],
         )
 
+    if alias_key == "test.event":
+        dest = data.get("destination") or "endpoint"
+        return (
+            "GravityLAN: Test Notification",
+            f"Test notification for {dest} delivered successfully.",
+            5,
+            ["white_check_mark", "bell"],
+        )
+
     return (
         f"GravityLAN: {event_type}",
         json.dumps(data, ensure_ascii=False),
@@ -138,8 +147,9 @@ def prepare_request_for_service(
     if service_type == "gotify":
         parsed = urlparse(url)
         eff_url = url
-        if not parsed.path.endswith("/message"):
-            eff_url = url.rstrip("/") + "/message"
+        if not parsed.path.rstrip("/").endswith("/message"):
+            new_path = parsed.path.rstrip("/") + "/message"
+            eff_url = urlunparse(parsed._replace(path=new_path))
         headers = {"Content-Type": "application/json"}
         if token:
             headers["X-Gotify-Key"] = token
@@ -274,11 +284,17 @@ async def _enqueue_and_dispatch(event_type: str, data: dict):
             subscriptions = result.scalars().all()
 
             match_events = EVENT_ALIASES.get(event_type, {event_type})
+            target_sub_id = data.get("subscription_id") if isinstance(data, dict) else None
             target_subs = []
-            for sub in subscriptions:
-                sub_events = [e.strip() for e in sub.events.split(",") if e.strip()]
-                if any(e in match_events for e in sub_events):
-                    target_subs.append(sub)
+            if event_type == "test.event" and target_sub_id is not None:
+                target_subs = [sub for sub in subscriptions if sub.id == target_sub_id]
+            else:
+                for sub in subscriptions:
+                    sub_events = [e.strip() for e in sub.events.split(",") if e.strip()]
+                    if any(e in match_events for e in sub_events):
+                        target_subs.append(sub)
+                if not target_subs and event_type == "test.event":
+                    target_subs = list(subscriptions)
 
             if not target_subs:
                 return

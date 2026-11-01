@@ -131,7 +131,11 @@ async function removeSubscription(sub: WebhookSubscriptionResponse) {
 async function sendTest(sub: WebhookSubscriptionResponse) {
   testingId.value = sub.id;
   try {
-    await api.testWebhook('test.event', { status: 'testing', destination: sub.name || sub.url });
+    await api.testWebhook('test.event', {
+      status: 'testing',
+      destination: sub.name || sub.url,
+      subscription_id: sub.id,
+    });
     showToast('info', t('gv.webhooks.test_sent_title'), t('gv.webhooks.test_sent_desc'));
     setTimeout(load, 1500);
   } catch (err) {
