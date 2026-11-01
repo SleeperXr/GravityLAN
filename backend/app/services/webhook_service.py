@@ -22,6 +22,23 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 _background_webhook_tasks: set[asyncio.Task] = set()
+_shared_client: httpx.AsyncClient | None = None
+
+
+async def _get_client() -> httpx.AsyncClient:
+    """Returns a shared httpx.AsyncClient instance, avoiding high per-request startup/teardown costs."""
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(timeout=5.0)
+    return _shared_client
+
+
+async def close_webhook_client():
+    """Close the shared client on application shutdown."""
+    global _shared_client
+    if _shared_client is not None and not _shared_client.is_closed:
+        await _shared_client.aclose()
+        _shared_client = None
 
 EVENT_ALIASES = {
     "new_device": {"new_device", "device.new"},
@@ -164,15 +181,91 @@ async def _blocked_target_reason(url: str) -> str | None:
     return None
 
 
+async def _deliver_single_entry(client: httpx.AsyncClient, entry: NotificationOutbox) -> bool:
+    """Deliver a single outbox entry, updating its status, attempts, error, and next attempt time.
+
+    Returns True if successfully delivered, False otherwise.
+    """
+    raw_token = None
+    if entry.encrypted_token:
+        try:
+            raw_token = vault.decrypt_optional(entry.encrypted_token)
+        except Exception as exc:
+            logger.error("Notification Outbox: Failed to decrypt secret token: %s", exc)
+
+    payload_data = {}
+    if entry.payload:
+        try:
+            payload_data = json.loads(entry.payload)
+        except Exception:
+            payload_data = {"raw": entry.payload}
+
+    eff_url, headers, body = prepare_request_for_service(
+        entry.service_type, entry.target_url, raw_token, entry.event_type, payload_data
+    )
+
+    try:
+        resp = await _send_webhook_post(client, eff_url, body, headers=headers)
+
+        if resp is None:
+            # Target blocked by SSRF protection
+            entry.attempts += 1
+            entry.status = "failed"
+            entry.last_error = f"Blocked target: {eff_url}"
+            logger.warning("Notification Outbox: Refused to post to blocked target '%s'", eff_url)
+            return False
+
+        status_code = getattr(resp, "status_code", 200)
+        if not isinstance(status_code, int):
+            status_code = 200
+
+        if status_code < 400:
+            entry.status = "delivered"
+            entry.delivered_at = _utc_now()
+            entry.attempts += 1
+            entry.last_error = None
+            logger.debug("Notification Outbox: Successfully delivered event %s to %s", entry.event_type, eff_url)
+            return True
+
+        entry.attempts += 1
+        text = getattr(resp, "text", "")[:200]
+        err_msg = f"HTTP {status_code}: {text}"
+        entry.last_error = err_msg
+        logger.warning(
+            "Notification Outbox: %s returned %d (attempt %d/%d)",
+            eff_url, status_code, entry.attempts, entry.max_attempts,
+        )
+        if entry.attempts >= entry.max_attempts:
+            entry.status = "failed"
+        else:
+            backoff = 10 * (2 ** (entry.attempts - 1))
+            entry.next_attempt_at = _utc_now() + timedelta(seconds=backoff)
+        return False
+    except Exception as e:
+        entry.attempts += 1
+        entry.last_error = str(e)[:300]
+        logger.error(
+            "Notification Outbox: Delivery error to %s: %s (attempt %d/%d)",
+            eff_url, e, entry.attempts, entry.max_attempts,
+        )
+        if entry.attempts >= entry.max_attempts:
+            entry.status = "failed"
+        else:
+            backoff = 10 * (2 ** (entry.attempts - 1))
+            entry.next_attempt_at = _utc_now() + timedelta(seconds=backoff)
+        return False
+
+
 async def trigger_webhooks(event_type: str, data: dict):
     """Enqueue registered webhooks and notification presets into the persistent outbox and trigger dispatch."""
     task = asyncio.create_task(_enqueue_and_dispatch(event_type, data))
     _background_webhook_tasks.add(task)
     task.add_done_callback(_background_webhook_tasks.discard)
+    return task
 
 
 async def _enqueue_and_dispatch(event_type: str, data: dict):
-    """Enqueues events into NotificationOutbox and immediately delivers pending entries."""
+    """Enqueues events into NotificationOutbox and immediately delivers entries."""
     try:
         async with async_session() as db:
             result = await db.execute(
@@ -191,6 +284,7 @@ async def _enqueue_and_dispatch(event_type: str, data: dict):
                 return
 
             now = _utc_now()
+            entries = []
             for sub in target_subs:
                 entry = NotificationOutbox(
                     subscription_id=sub.id,
@@ -206,9 +300,13 @@ async def _enqueue_and_dispatch(event_type: str, data: dict):
                     created_at=now,
                 )
                 db.add(entry)
-            await db.commit()
+                entries.append(entry)
 
-            await deliver_pending_outbox(db)
+            client = await _get_client()
+            for entry in entries:
+                await _deliver_single_entry(client, entry)
+
+            await db.commit()
     except Exception as e:
         logger.error(f"Webhook: Failed to enqueue outbox notifications for {event_type}: {e}", exc_info=True)
 
@@ -217,24 +315,41 @@ async def _enqueue_and_dispatch(event_type: str, data: dict):
 _dispatch_webhooks = _enqueue_and_dispatch
 
 
-async def _send_webhook_post(client: httpx.AsyncClient, url: str, payload: dict):
-    """Sends a single POST request to the target webhook URL (compat helper)."""
+async def _send_webhook_post(
+    client: httpx.AsyncClient,
+    url: str,
+    payload: dict | bytes,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response | None:
+    """Sends a single POST request to the target webhook URL."""
     reason = await _blocked_target_reason(url)
     if reason:
         logger.warning("Webhook: refusing to post to '%s': %s", url, reason)
-        return
+        return None
     try:
-        response = await client.post(url, json=payload)
+        if isinstance(payload, bytes):
+            if headers:
+                response = await client.post(url, content=payload, headers=headers)
+            else:
+                response = await client.post(url, content=payload)
+        else:
+            if headers:
+                response = await client.post(url, json=payload, headers=headers)
+            else:
+                response = await client.post(url, json=payload)
         if response.status_code >= 400:
             logger.warning(
                 f"Webhook: Target URL '{url}' returned status code {response.status_code}"
             )
         else:
             logger.debug(f"Webhook: Successfully dispatched event to '{url}'")
+        return response
     except httpx.HTTPError as e:
         logger.error(f"Webhook: Failed to post to '{url}': {e}")
+        raise
     except Exception as e:
         logger.error(f"Webhook: Unexpected error posting to '{url}': {e}")
+        raise
 
 
 async def deliver_pending_outbox(db=None) -> int:
@@ -263,70 +378,12 @@ async def deliver_pending_outbox(db=None) -> int:
         return 0
 
     delivered_count = 0
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        for entry in entries:
-            # Check target safety
-            reason = await _blocked_target_reason(entry.target_url)
-            if reason:
-                logger.warning("Notification Outbox: Refusing to post to '%s': %s", entry.target_url, reason)
-                entry.attempts += 1
-                entry.last_error = f"Blocked target: {reason}"
-                entry.status = "failed"
-                continue
+    client = await _get_client()
+    for entry in entries:
+        if await _deliver_single_entry(client, entry):
+            delivered_count += 1
 
-            # Decrypt token if present
-            raw_token = None
-            if entry.encrypted_token:
-                try:
-                    raw_token = vault.decrypt_optional(entry.encrypted_token)
-                except Exception as exc:
-                    logger.error("Notification Outbox: Failed to decrypt secret token: %s", exc)
-
-            payload_data = {}
-            if entry.payload:
-                try:
-                    payload_data = json.loads(entry.payload)
-                except Exception:
-                    payload_data = {"raw": entry.payload}
-
-            eff_url, headers, body = prepare_request_for_service(
-                entry.service_type, entry.target_url, raw_token, entry.event_type, payload_data
-            )
-
-            try:
-                if isinstance(body, bytes):
-                    resp = await client.post(eff_url, content=body, headers=headers)
-                else:
-                    resp = await client.post(eff_url, json=body, headers=headers)
-
-                if resp.status_code < 400:
-                    entry.status = "delivered"
-                    entry.delivered_at = datetime.now(timezone.utc)
-                    entry.attempts += 1
-                    entry.last_error = None
-                    delivered_count += 1
-                    logger.debug("Notification Outbox: Successfully delivered event %s to %s", entry.event_type, eff_url)
-                else:
-                    entry.attempts += 1
-                    err_msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
-                    entry.last_error = err_msg
-                    logger.warning("Notification Outbox: %s returned %d (attempt %d/%d)", eff_url, resp.status_code, entry.attempts, entry.max_attempts)
-                    if entry.attempts >= entry.max_attempts:
-                        entry.status = "failed"
-                    else:
-                        backoff = 10 * (2 ** (entry.attempts - 1))
-                        entry.next_attempt_at = _utc_now() + timedelta(seconds=backoff)
-            except Exception as e:
-                entry.attempts += 1
-                entry.last_error = str(e)[:300]
-                logger.error("Notification Outbox: Delivery error to %s: %s (attempt %d/%d)", eff_url, e, entry.attempts, entry.max_attempts)
-                if entry.attempts >= entry.max_attempts:
-                    entry.status = "failed"
-                else:
-                    backoff = 10 * (2 ** (entry.attempts - 1))
-                    entry.next_attempt_at = _utc_now() + timedelta(seconds=backoff)
-
-        await db.commit()
+    await db.commit()
 
     return delivered_count
 
