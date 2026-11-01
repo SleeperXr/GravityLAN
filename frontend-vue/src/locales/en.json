@@ -194,7 +194,7 @@
       "waiting": "Waiting for log lines …",
       "paused_hint": "Paused – resume to receive new lines.",
       "no_match": "No line matches the filter or search.",
-      "jump": "Jump to newest",
+      "jump": "Live",
       "copied_one": "{{count}} line copied",
       "copied_other": "{{count}} lines copied",
       "copy_failed": "Could not copy"

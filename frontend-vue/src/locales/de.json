@@ -194,7 +194,7 @@
       "waiting": "Warte auf Log-Zeilen …",
       "paused_hint": "Pausiert – fortsetzen, um neue Zeilen zu empfangen.",
       "no_match": "Keine Zeile passt zu Filter oder Suche.",
-      "jump": "Zu den neuesten",
+      "jump": "Live",
       "copied_one": "{{count}} Zeile kopiert",
       "copied_other": "{{count}} Zeilen kopiert",
       "copy_failed": "Kopieren nicht möglich"
