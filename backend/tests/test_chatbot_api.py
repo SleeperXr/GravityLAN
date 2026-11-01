@@ -116,8 +116,12 @@ async def test_chatbot_api_endpoints(client, db, admin_token):
             assert response.status_code == 200
             assert response.json()["status"] == "ok"
             
-            # Wait briefly to allow background task to execute
-            await asyncio.sleep(0.1)
+            # Wait for background dispatch task to execute
+            from app.services.webhook_service import _background_webhook_tasks
+            if _background_webhook_tasks:
+                await asyncio.gather(*list(_background_webhook_tasks), return_exceptions=True)
+            else:
+                await asyncio.sleep(0.1)
             mock_send.assert_called_once()
             args, kwargs = mock_send.call_args
             assert args[1] == "http://127.0.0.1:9500/mock"
@@ -170,6 +174,8 @@ async def test_chatbot_api_endpoints(client, db, admin_token):
             )
             assert response.status_code == 200
             assert "scheduled for dispatch via GET" in response.json()["message"]
+            if _background_webhook_tasks:
+                await asyncio.gather(*list(_background_webhook_tasks), return_exceptions=True)
 
     # Delete the webhooks to verify the 404 error
     await db.delete(db_webhook)

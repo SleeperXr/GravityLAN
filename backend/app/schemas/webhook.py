@@ -1,11 +1,11 @@
-"""Pydantic schemas for Webhook Subscriptions."""
+"""Pydantic schemas for Webhook Subscriptions and Notification Outbox."""
 
 import ipaddress
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # AWS's IPv6 metadata endpoint; the IPv4 one (169.254.169.254) is link-local anyway
 _METADATA_IPS = {ipaddress.ip_address("fd00:ec2::254")}
@@ -55,7 +55,10 @@ def check_webhook_url(url: str) -> str:
 
 
 class WebhookSubscriptionCreate(BaseModel):
-    url: str = Field(..., description="Target URL for webhook POST requests")
+    name: str | None = Field(None, max_length=100, description="Optional friendly label for this subscription")
+    url: str = Field(..., description="Target URL for webhook or notification service")
+    service_type: Literal["webhook", "ntfy", "gotify"] = Field("webhook", description="Target service preset")
+    token: str | None = Field(None, description="Optional auth or application token (stored encrypted)")
     events: list[str] = Field(..., description="List of events to subscribe to (e.g. ['device.offline', 'scan.complete'])")
 
     @field_validator("url")
@@ -63,9 +66,13 @@ class WebhookSubscriptionCreate(BaseModel):
     def validate_url(cls, v: str) -> str:
         return check_webhook_url(v)
 
+
 class WebhookSubscriptionResponse(BaseModel):
     id: int
+    name: str | None = None
     url: str
+    service_type: str = "webhook"
+    has_token: bool = False
     events: list[str]
     is_active: bool
     created_at: datetime
@@ -77,5 +84,21 @@ class WebhookSubscriptionResponse(BaseModel):
             return [e.strip() for e in v.split(",") if e.strip()]
         return v
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NotificationOutboxResponse(BaseModel):
+    id: int
+    subscription_id: int | None = None
+    event_type: str
+    target_url: str
+    service_type: str = "webhook"
+    attempts: int
+    max_attempts: int
+    status: str
+    last_error: str | None = None
+    next_attempt_at: datetime
+    created_at: datetime
+    delivered_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)

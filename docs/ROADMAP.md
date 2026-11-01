@@ -14,7 +14,7 @@ it into an enterprise platform (SIEM export, signed audit trails, network access
 | 0 · Release foundation | Calm, reproducible releases | ✅ done |
 | 1 · One interface | GravityUI only | ✅ done; React removal follows (AP-14) |
 | 2 · Safer administration | A logged-in session alone is no longer root on every host | 🟡 in progress |
-| 3 · Events | Reliable notifications about new devices and changes | 🟡 in progress |
+| 3 · Events | Reliable notifications about new devices and changes | ✅ done |
 
 **Release state:** `:latest` is 0.6.0. 0.7.0-rc.3 is on `:next` (rc.1 was never released). 0.7.0 carries security stages, so it stays on `:next` for 7 days before the final tag.
 
@@ -49,12 +49,12 @@ it into an enterprise platform (SIEM export, signed audit trails, network access
 - ✅ **AP-10 Agent installer checksum:** shows the agent version and SHA-256, verifies the download and
   aborts on a mismatch. An integrity check, not a proof of origin.
 
-## Phase 3 · Events 🟡
+## Phase 3 · Events ✅
 
 - ✅ Device history gets the event types "new device" and "IP changed", with a read state (PR A).
 - ✅ An event only on a real change, none during the first inventory (PR A).
 - ✅ Acceptance: a new device seen by three scans sends exactly one notification (PR A).
-- ⏳ Delivery through an outbox with up to three attempts; ntfy and Gotify presets next to webhooks (PR B).
+- ✅ Delivery through an outbox with up to three attempts; ntfy and Gotify presets next to webhooks (PR B).
 
 ## Decisions
 

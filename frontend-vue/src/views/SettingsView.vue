@@ -15,6 +15,7 @@ import TelemetrySection from '@/components/settings/TelemetrySection.vue';
 import GroupsSection from '@/components/settings/GroupsSection.vue';
 import PasswordForm from '@/components/settings/PasswordForm.vue';
 import TokensSection from '@/components/settings/TokensSection.vue';
+import WebhooksSection from '@/components/settings/WebhooksSection.vue';
 import DataSections from '@/components/settings/DataSections.vue';
 import LineColorsSection from '@/components/settings/LineColorsSection.vue';
 import LinkTypeColorsSection from '@/components/settings/LinkTypeColorsSection.vue';
@@ -90,6 +91,7 @@ const sections = computed(() => [
   { id: 'appearance', label: t('gv.settings.appearance') },
   { id: 'access', label: t('settings.password.section') },
   { id: 'tokens', label: t('settings.api_tokens') },
+  { id: 'notifications', label: t('gv.webhooks.section') },
   { id: 'backup', label: t('settings.backup_restore') },
   { id: 'danger', label: t('settings.danger_zone') },
 ]);
@@ -234,6 +236,7 @@ const languages: { value: Locale; key: string }[] = [
         </SettingsSection>
 
         <TokensSection />
+        <WebhooksSection />
         <DataSections />
       </div>
     </div>

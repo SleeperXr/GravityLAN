@@ -55,6 +55,9 @@ MIGRATIONS = [
     ("services", "ignore_ssl", "BOOLEAN DEFAULT FALSE"),
     ("devices", "alert_offline", "BOOLEAN DEFAULT TRUE"),
     ("device_history", "read", "BOOLEAN DEFAULT FALSE"),
+    ("webhook_subscriptions", "name", "VARCHAR(100)"),
+    ("webhook_subscriptions", "service_type", "VARCHAR(20) DEFAULT 'webhook'"),
+    ("webhook_subscriptions", "encrypted_token", "TEXT"),
 ]
 
 

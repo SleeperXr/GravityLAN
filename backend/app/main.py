@@ -203,7 +203,7 @@ async def lifespan(app: FastAPI):
     from app.models.setting import Setting
     from app.models.agent import AgentToken, DeviceMetrics, AgentConfig
     from app.models.api_token import ApiToken
-    from app.models.webhook import WebhookSubscription
+    from app.models.webhook import WebhookSubscription, NotificationOutbox
     from app.models.ssh import SshKey, SshProfile, SshKnownHost
     from app.models.router_import import RouterImportSource
     from app.models.audit import AuditEvent  # noqa: F401
