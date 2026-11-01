@@ -42,7 +42,7 @@ async def get_summary(
     active_device_ids = []
     for agent in agents:
         last_seen = ensure_utc(agent.last_seen)
-        is_active = bool(last_seen and (now - last_seen).total_seconds() < 300)
+        is_active = bool(last_seen and (now - last_seen).total_seconds() < 120)
         if is_active:
             active_device_ids.append(agent.device_id)
             
@@ -99,7 +99,7 @@ async def get_summary(
         is_agent_active = False
         if agent_token and agent_token.is_active and agent_token.last_seen:
             last_seen = ensure_utc(agent_token.last_seen)
-            if (now - last_seen).total_seconds() < 300:
+            if (now - last_seen).total_seconds() < 120:
                 is_agent_active = True
                 
         if not is_agent_active:

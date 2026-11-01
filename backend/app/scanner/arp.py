@@ -84,9 +84,12 @@ def get_local_arp_table() -> Dict[str, str]:
         return {}
 
 def _extract_neighbor(line: str):
-    """Parse a single 'ip neighbor' line into (ip, mac) or None."""
+    """Parse a single 'ip neighbor' line into (ip, mac) or None, ignoring stale/failed entries."""
     parts = line.split()
     if len(parts) < 4:
+        return None
+    state = parts[-1].upper()
+    if state in ("STALE", "FAILED", "INCOMPLETE"):
         return None
     ip = parts[0]
     try:
@@ -102,6 +105,24 @@ def _extract_neighbor(line: str):
     if len(mac) != 17:
         return None
     return ip, mac
+
+
+def get_linux_stale_ips() -> set[str]:
+    """Return IPs marked STALE, FAILED, or INCOMPLETE in the Linux neighbor table."""
+    if sys.platform == 'win32':
+        return set()
+    try:
+        output = subprocess.check_output(
+            ["ip", "neighbor", "show"], stderr=subprocess.STDOUT, timeout=10.0
+        ).decode(errors='ignore')
+        stale: set[str] = set()
+        for line in output.splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[-1].upper() in ("STALE", "FAILED", "INCOMPLETE"):
+                stale.add(parts[0])
+        return stale
+    except Exception:
+        return set()
 
 
 def get_linux_neighbors() -> Dict[str, str]:
@@ -146,6 +167,9 @@ async def _collect_arp_maps() -> Dict[str, str]:
         ps_map = await loop.run_in_executor(None, get_powershell_neighbors)
         arp_map.update(ps_map)
     else:
+        stale_ips = await loop.run_in_executor(None, get_linux_stale_ips)
+        for stale_ip in stale_ips:
+            arp_map.pop(stale_ip, None)
         linux_map = await loop.run_in_executor(None, get_linux_neighbors)
         arp_map.update(linux_map)
     return arp_map

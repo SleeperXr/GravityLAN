@@ -74,14 +74,22 @@ const emojiIcon = computed(() => {
 
 /** "22 SSH" for a named service, plain "8080" when the name only repeats the port. */
 function serviceText(s: { name?: string | null; port: number }): string {
-  const name = s.name?.replace('Service ', '').trim();
+  const name = s.name?.replace(/^(Service|Port)\s+/i, '').trim();
   return name && name !== String(s.port) ? `${s.port} ${name}` : String(s.port);
 }
 
-const ports = computed(() => [
-  ...(device.value?.services ?? []).filter((s) => s.is_up).map((s) => ({ key: `s${s.id}`, text: serviceText(s), tone: 'info' })),
-  ...(host.value?.ports ?? []).map((p) => ({ key: `p${p}`, text: String(p), tone: 'accent' })),
-]);
+const ports = computed(() => {
+  const raw = [
+    ...(device.value?.services ?? []).filter((s) => s.is_up).map((s) => ({ key: `s${s.id}`, text: serviceText(s), tone: 'info' })),
+    ...(host.value?.ports ?? []).map((p) => ({ key: `p${p}`, text: String(p), tone: 'accent' })),
+  ];
+  const seen = new Set<string>();
+  return raw.filter((item) => {
+    if (seen.has(item.text)) return false;
+    seen.add(item.text);
+    return true;
+  });
+});
 </script>
 
 <template>
@@ -134,11 +142,11 @@ const ports = computed(() => [
           </template>
         </div>
 
-        <dl class="mt-3 grid grid-cols-[4.5rem_1fr] gap-y-1 text-xs">
+        <dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
           <dt class="text-fg-subtle">MAC</dt><dd class="truncate font-mono text-fg">{{ device?.mac || host?.mac || 'N/A' }}</dd>
           <dt class="text-fg-subtle">Status</dt><dd :class="online ? 'text-accent-text' : 'text-danger-text'">{{ online ? t('network.online') : t('network.offline') }}</dd>
           <template v-if="device"><dt class="text-fg-subtle">{{ t('sidebar.dashboard') }}</dt><dd class="text-fg">{{ t('network.yes') }}</dd></template>
-          <template v-if="tile.group"><dt class="text-fg-subtle">{{ t('network.area_name') }}</dt><dd class="flex items-center gap-1.5 text-fg"><span class="size-2 rounded-[3px]" :style="{ backgroundColor: tile.group.color }" />{{ tile.group.name }}</dd></template>
+          <template v-if="tile.group"><dt class="text-fg-subtle">{{ t('network.area_name') }}</dt><dd class="flex min-w-0 items-center gap-1.5 text-fg"><span class="size-2 shrink-0 rounded-[3px]" :style="{ backgroundColor: tile.group.color }" /><span class="truncate">{{ tile.group.name }}</span></dd></template>
         </dl>
 
         <div v-if="device" class="mt-4 grid grid-cols-2 gap-2">

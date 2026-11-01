@@ -402,3 +402,78 @@ async def test_non_24_7_device_with_offline_services_stays_standby_and_does_not_
     assert tv_data["health_score"] == 100
 
 
+@pytest.mark.asyncio
+async def test_health_probe_marks_unreachable_services_down_and_offline_when_agent_stale(monkeypatch, db):
+    """When ICMP/TCP probes fail and the device's agent is also stale, services and device flip offline immediately."""
+    from contextlib import asynccontextmanager
+    from app.models.agent import AgentToken
+    from app.scanner import health_probe as hp_mod
+
+    @asynccontextmanager
+    async def fake_session():
+        yield db
+
+    monkeypatch.setattr(hp_mod, "async_session", fake_session)
+
+    dev = Device(
+        ip="192.168.100.4",
+        display_name="Rustdesk",
+        device_type="server",
+        is_online=True,
+        has_agent=True,
+        alert_offline=True,
+    )
+    db.add(dev)
+    await db.commit()
+
+    svc = Service(device_id=dev.id, name="SSH", protocol="ssh", port=22, is_up=True)
+    token = AgentToken(
+        device_id=dev.id,
+        token="tok-rustdesk",
+        is_active=True,
+        last_seen=datetime.now(UTC) - timedelta(minutes=3),
+    )
+    db.add_all([svc, token])
+    await db.commit()
+
+    async def fake_ping(ip, timeout):
+        return None
+
+    async def fake_tcp(ip, port, timeout):
+        return None
+
+    monkeypatch.setattr(hp_mod, "measure_ping_latency_ms", fake_ping)
+    monkeypatch.setattr(hp_mod, "measure_tcp_latency_ms", fake_tcp)
+
+    await run_health_probe_pass()
+    await db.refresh(dev)
+    await db.refresh(svc)
+
+    assert svc.is_up is False
+    assert dev.is_online is False
+
+
+def test_backup_clean_rows_preserves_true_default_for_alert_offline():
+    """Restoring a pre-v0.7.0 backup without alert_offline must default devices.alert_offline to 1 (True)."""
+    import sqlite3
+    from app.api.backup import _clean_rows
+
+    conn = sqlite3.connect(":memory:")
+    cur = conn.cursor()
+    cur.execute(
+        "CREATE TABLE devices ("
+        "id INTEGER PRIMARY KEY, ip VARCHAR NOT NULL, display_name VARCHAR, "
+        "alert_offline BOOLEAN NOT NULL, is_online BOOLEAN NOT NULL DEFAULT 1, is_hidden BOOLEAN NOT NULL DEFAULT 0)"
+    )
+    cleaned = _clean_rows(
+        cur,
+        "devices",
+        [{"id": 1, "ip": "192.168.100.4", "display_name": "Rustdesk"}],
+    )
+    conn.close()
+    assert cleaned[0]["alert_offline"] == 1
+    assert cleaned[0]["is_online"] == 1
+    assert cleaned[0]["is_hidden"] == 0
+
+
+

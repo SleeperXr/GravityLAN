@@ -137,7 +137,7 @@ async def ingest_agent_arp_table(
             if not dev.vendor:
                 dev.vendor = get_vendor(raw_mac)
                 changed = True
-            if not dev.is_online:
+            if not dev.is_online and not dev.has_agent:
                 dev.is_online = True
                 dev.last_seen = now
                 changed = True

@@ -9,7 +9,7 @@ from app.models.device import DiscoveredHost, Device
 from app.models.network import Subnet
 from app.scanner.discovery import discover_hosts_simple
 from app.scanner.subnets import scan_target_ips
-from app.scanner.arp import resolve_mac_addresses, get_local_arp_table
+from app.scanner.arp import resolve_mac_addresses, get_local_arp_table, get_linux_stale_ips
 from app.scanner.hostname import is_ip_like, resolve_hostnames
 from app.scanner.presence import (
     DEFAULT_OFFLINE_THRESHOLD,
@@ -178,6 +178,8 @@ async def run_arp_only_scan():
         allowed_nets = await _load_allowed_networks(db)
 
     arp_hosts = get_local_arp_table()
+    for stale_ip in get_linux_stale_ips():
+        arp_hosts.pop(stale_ip, None)
     hosts_to_sync = []
 
     for ip, mac in arp_hosts.items():
@@ -246,8 +248,12 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
         if progress_callback:
             await progress_callback(f"Scanner: Found {len(alive_hosts)} active hosts. Resolving MACs...")
 
-        # 2. MAC Resolution & Batch Sync
-        resolved_hosts = await resolve_mac_addresses(alive_hosts)
+        # 2. MAC Resolution & Batch Sync (scoped to this subnet's target IPs)
+        try:
+            subnet_target_ips = scan_target_ips(subnet)
+        except ValueError:
+            subnet_target_ips = None
+        resolved_hosts = await resolve_mac_addresses(alive_hosts, all_target_ips=subnet_target_ips)
 
         # 2b. Names nmap's reverse DNS missed: the same lookups as Info-Refresh (NetBIOS, mDNS,
         # OS resolver, ping -a). Without them a TV or phone known only by mDNS stayed "Unknown"

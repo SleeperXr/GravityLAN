@@ -381,7 +381,61 @@ async def run_migrations(db: AsyncSession):
         await db.rollback()
         logger.error(f"Migration error while adding unique indexes: {e}")
 
+    try:
+        await _deduplicate_generic_port_services(db)
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Migration error while deduplicating generic port services: {e}")
+
+    try:
+        await _repair_infra_alert_offline(db)
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Migration error while repairing infrastructure alert_offline flags: {e}")
+
     logger.info("Schema migration complete.")
+
+
+async def _deduplicate_generic_port_services(db: AsyncSession):
+    """Remove duplicate Service rows on the same (device_id, port, name) created by classifier generic_web_ports."""
+    res = await db.execute(text(
+        'DELETE FROM "services" WHERE id NOT IN '
+        '(SELECT MIN(id) FROM "services" GROUP BY "device_id", "port", "name")'
+    ))
+    if res.rowcount:
+        logger.info(f"Migration: Removed {res.rowcount} duplicate (device_id, port, name) service row(s)")
+    await db.commit()
+
+
+async def _repair_infra_alert_offline(db: AsyncSession):
+    """One-time repair: ensure infrastructure/agent devices have alert_offline=True after backup restore."""
+    from app.models.device import Device
+    from app.models.setting import Setting
+    from app.scanner.classifier import is_client_hostname
+
+    marker_key = "migration.rc4_infra_alert_offline_repaired"
+    existing = (await db.execute(select(Setting).where(Setting.key == marker_key))).scalar_one_or_none()
+    if existing is not None:
+        return
+
+    res_devs = await db.execute(select(Device).where(Device.alert_offline == False))
+    repaired = 0
+    for dev in res_devs.scalars().all():
+        name_check = dev.hostname or dev.display_name or ""
+        is_explicit_client = (
+            (dev.device_type or "").lower() in ("client", "desktop", "tv", "phone", "printer")
+            or is_client_hostname(name_check)
+            or "tv" in name_check.lower()
+            or "pc" in name_check.lower()
+        )
+        if dev.has_agent or not is_explicit_client:
+            dev.alert_offline = True
+            repaired += 1
+
+    db.add(Setting(key=marker_key, value="true", category="system"))
+    await db.commit()
+    if repaired:
+        logger.info(f"Migration: Re-enabled 24/7 alert_offline monitoring on {repaired} infrastructure/agent device(s)")
 
 
 async def _retire_phone_system_items(db: AsyncSession):

@@ -142,6 +142,48 @@ def _read_protected_settings(cursor) -> dict[str, str]:
     return dict(cursor.fetchall())
 
 
+def _default_for_missing_col(table: str, col: str, info: dict, now_str: str):
+    """Fallback value for a NOT NULL column missing from an older backup."""
+    sql_default = info.get("default")
+    if sql_default is not None:
+        cleaned = str(sql_default).strip().strip("'\"")
+        if cleaned.upper() in ("CURRENT_TIMESTAMP", "NOW()"):
+            return now_str
+        if any(t in info["type"].upper() for t in ("INT", "BOOLEAN")):
+            if cleaned.upper() == "TRUE":
+                return 1
+            if cleaned.upper() == "FALSE":
+                return 0
+            try:
+                return int(cleaned)
+            except ValueError:
+                pass
+        return cleaned
+
+    if (table, col) in {
+        ("devices", "alert_offline"),
+        ("devices", "is_online"),
+        ("services", "is_up"),
+        ("services", "is_auto_detected"),
+        ("discovered_hosts", "is_online"),
+        ("device_interfaces", "is_online"),
+        ("agent_configs", "enable_temp"),
+        ("agent_configs", "enable_patch_check"),
+        ("agent_tokens", "is_active"),
+    }:
+        return 1
+    if (table, col) == ("agent_configs", "interval"):
+        return 30
+    if (table, col) == ("agent_configs", "version"):
+        return 1
+
+    if any(t in info["type"].upper() for t in ("DATETIME", "TIMESTAMP")):
+        return now_str
+    if any(t in info["type"].upper() for t in ("INT", "BOOLEAN")):
+        return 0
+    return ""
+
+
 def _clean_rows(cursor, table: str, rows: list[dict]) -> list[dict]:
     """Keep only known columns and fill NOT NULL columns the backup left empty."""
     cursor.execute(f"PRAGMA table_info({table})")
@@ -169,12 +211,7 @@ def _clean_rows(cursor, table: str, rows: list[dict]) -> list[dict]:
         }
         for col, info in table_info.items():
             if info["notnull"] and (col not in clean_row or clean_row[col] is None):
-                if any(t in info["type"].upper() for t in ("DATETIME", "TIMESTAMP")):
-                    clean_row[col] = now_str
-                elif any(t in info["type"].upper() for t in ("INT", "BOOLEAN")):
-                    clean_row[col] = 0
-                else:
-                    clean_row[col] = ""
+                clean_row[col] = _default_for_missing_col(table, col, info, now_str)
         if table == "services" and not is_safe_url_template(clean_row.get("url_template") or ""):
             # A tampered backup must not smuggle javascript: links into the dashboard (#42)
             logger.warning(f"Backup: Dropping unsafe url_template of service {clean_row.get('name')!r}")

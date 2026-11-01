@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { ArrowDown, ArrowUp, ChevronRight, Layers, Lock, RefreshCw, Search, ShieldAlert } from 'lucide-vue-next';
+import { ArrowDown, ArrowUp, Bell, BellOff, ChevronRight, Layers, Lock, RefreshCw, Search, ShieldAlert } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device, DeviceHealthItem, HealthOverviewResponse } from '@/types';
 import { useNetworkStore } from '@/stores/network';
@@ -23,7 +23,7 @@ import ResilienceCard from '@/components/health/ResilienceCard.vue';
 
 /** Health & availability (port of React HealthView): network score, per-device SLA table, incidents. */
 type Period = '24h' | '7d' | '30d';
-type Filter = 'all' | 'healthy' | 'degraded' | 'flapping' | 'critical';
+type Filter = 'all' | 'healthy' | 'degraded' | 'flapping' | 'critical' | 'standby';
 type SortKey = 'score' | 'latency' | 'name' | 'uptime';
 
 const store = useNetworkStore();
@@ -74,6 +74,7 @@ const rows = computed(() => {
   if (!data.value) return [];
   let list = [...data.value.devices];
   if (filter.value === 'critical') list = list.filter((d) => d.health_status === 'critical' || d.health_status === 'offline');
+  else if (filter.value === 'standby') list = list.filter((d) => !d.alert_offline || d.health_status === 'standby');
   else if (filter.value !== 'all') list = list.filter((d) => d.health_status === filter.value);
   const q = search.value.trim().toLowerCase();
   if (q) list = list.filter((d) => [d.display_name, d.ip, d.hostname, d.group_name].filter(Boolean).join(' ').toLowerCase().includes(q));
@@ -104,8 +105,22 @@ async function openEditor(id: number) {
   if (editorDevice.value) editorOpen.value = true;
 }
 
+const togglingAlertId = ref<number | null>(null);
+
+async function toggleDeviceAlert(d: DeviceHealthItem) {
+  if (togglingAlertId.value === d.id) return;
+  togglingAlertId.value = d.id;
+  try {
+    await api.updateDevice(d.id, { alert_offline: !d.alert_offline });
+    await load(false);
+    void store.loadData(true);
+  } finally {
+    togglingAlertId.value = null;
+  }
+}
+
 const periods: Period[] = ['24h', '7d', '30d'];
-const filters: Filter[] = ['all', 'healthy', 'degraded', 'flapping', 'critical'];
+const filters: Filter[] = ['all', 'healthy', 'degraded', 'flapping', 'critical', 'standby'];
 const sortOptions = computed(() => [
   { value: 'score' as SortKey, label: t('health_page.sort_score') },
   { value: 'latency' as SortKey, label: t('health_page.sort_latency') },
@@ -217,7 +232,20 @@ const sortOptions = computed(() => [
           <tbody class="divide-y divide-line">
             <tr v-for="d in rows" :key="d.id" class="group cursor-pointer transition-colors hover:bg-raised" :class="selected?.id === d.id && sheetOpen && 'bg-raised'" @click="select(d)">
               <td class="px-5 py-3">
-                <button type="button" class="block max-w-full truncate text-left text-sm font-bold text-fg group-hover:text-accent-text" @click.stop="select(d)">{{ d.display_name }}</button>
+                <div class="flex items-center gap-2">
+                  <button type="button" class="min-w-0 truncate text-left text-sm font-bold text-fg group-hover:text-accent-text" @click.stop="select(d)">{{ d.display_name }}</button>
+                  <button
+                    type="button"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 font-sans text-micro font-semibold transition-colors"
+                    :class="d.alert_offline ? 'border-accent/35 bg-accent/10 text-accent-text hover:bg-accent/20' : 'border-line-strong bg-raised text-fg-subtle hover:text-fg'"
+                    :disabled="togglingAlertId === d.id"
+                    :title="t('health_page.alert_offline_hint')"
+                    @click.stop="toggleDeviceAlert(d)"
+                  >
+                    <component :is="d.alert_offline ? Bell : BellOff" class="size-3" aria-hidden="true" />
+                    {{ d.alert_offline ? '24/7' : t('health_page.filter_standby') }}
+                  </button>
+                </div>
                 <p class="mt-0.5 flex items-center gap-2 truncate font-mono text-xs text-fg-subtle">
                   {{ d.ip }}<span v-if="d.group_name" class="rounded-sm bg-raised px-1.5 font-sans text-xs text-fg-muted">{{ d.group_name }}</span>
                 </p>
@@ -264,7 +292,21 @@ const sortOptions = computed(() => [
           <button type="button" class="gl-card h-full w-full space-y-3 p-4 text-left" @click="select(d)">
             <div class="flex items-start gap-3">
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-bold text-fg">{{ d.display_name }}</p>
+                <div class="flex items-center gap-2">
+                  <p class="truncate text-sm font-bold text-fg">{{ d.display_name }}</p>
+                  <span
+                    role="button"
+                    tabindex="0"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 font-sans text-micro font-semibold transition-colors"
+                    :class="d.alert_offline ? 'border-accent/35 bg-accent/10 text-accent-text' : 'border-line-strong bg-raised text-fg-subtle'"
+                    :title="t('health_page.alert_offline_hint')"
+                    @click.stop="toggleDeviceAlert(d)"
+                    @keydown.enter.stop.prevent="toggleDeviceAlert(d)"
+                  >
+                    <component :is="d.alert_offline ? Bell : BellOff" class="size-3" aria-hidden="true" />
+                    {{ d.alert_offline ? '24/7' : t('health_page.filter_standby') }}
+                  </span>
+                </div>
                 <p class="font-mono text-xs text-fg-subtle">{{ d.ip }}</p>
               </div>
               <Badge :tone="scoreTone(d.health_score, d.health_status)" mono>{{ d.health_score }}</Badge>
