@@ -276,6 +276,10 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
     async with async_session() as db:
         offline_threshold = await get_offline_threshold(db)
         await _cleanup_planner_offline(db, subnets, all_alive_ips, offline_threshold)
+        from app.models.setting import Setting
+        res_done = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
+        if res_done.scalar_one_or_none() is None:
+            db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
         await db.commit()
         # Consolidated cache invalidation
         discovery_cache.invalidate()

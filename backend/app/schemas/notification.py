@@ -10,6 +10,6 @@ class NotificationResponse(BaseModel):
     message: str
     read: bool = False
     timestamp: datetime
-    type: str = "unknown"  # "device_offline", "device_online", "service_down", "service_up", "ip_changed", "unknown"
+    type: str = "unknown"  # "device_offline", "device_online", "service_down", "service_up", "ip_changed", "new_device", "unknown"
     severity: str = "info"  # "success", "warning", "error", "info"
     device_id: int | None = None

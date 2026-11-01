@@ -234,6 +234,13 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
     if new_found_hosts:
         await sync_hosts_batch(new_found_hosts, is_planner_scan=False)
 
+    async with async_session() as db:
+        from app.models.setting import Setting
+        res_done = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
+        if res_done.scalar_one_or_none() is None:
+            db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
+            await db.commit()
+
     logger.info(f"Dashboard scan finished. Discovered {len(new_found_hosts)} new interesting devices.")
 
     # Trigger scan.complete webhook

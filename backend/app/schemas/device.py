@@ -101,6 +101,7 @@ class DeviceHistoryResponse(BaseModel):
     status: str
     message: str | None = None
     timestamp: datetime
+    read: bool = False
 
     model_config = {"from_attributes": True}
 

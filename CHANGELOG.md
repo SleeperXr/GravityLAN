@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Device history and notifications support event types "new device" (`new_device`) and "IP changed" (`ip_changed`), with read state tracking (`read: bool`). Read status can be updated per notification (`POST /api/notifications/{id}/read`), across notifications (`POST /api/notifications/read-all`), or per device (`POST /api/devices/{id}/history/read-all`). Newly discovered devices trigger a single `new_device` event (suppressed during the initial inventory scan pass), and verified IP address changes record history and notify subscribers. GravityUI device history highlights unread entries and provides a one-click button to mark them as read.
 - Agent installer checksum (AP-10): the manual install command in GravityUI and the `curl | bash` installer show the agent version and expected SHA-256 checksum (`agent_version` and `agent_sha256` in `POST /api/agent/enroll/{id}`). Both the manual installer and SSH deployment verify the SHA-256 of the downloaded or staged agent script and abort before replacing an existing agent if it does not match.
 
 ### Changed

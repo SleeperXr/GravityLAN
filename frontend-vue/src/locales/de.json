@@ -303,7 +303,9 @@
     "status": {
       "flapping": "Instabil",
       "service_up": "Dienst wieder da",
-      "service_down": "Dienst ausgefallen"
+      "service_down": "Dienst ausgefallen",
+      "ip_changed": "IP geändert",
+      "new_device": "Neues Gerät"
     },
     "build": {
       "label": "Testbuild {{build}}",

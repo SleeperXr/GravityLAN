@@ -212,6 +212,14 @@ async def add_device_from_ip(ip: str, db: AsyncSession = Depends(get_db)) -> Dev
         last_seen=datetime.now(timezone.utc)
     )
     db.add(device)
+    await db.flush()
+    from app.models.device import DeviceHistory
+    db.add(DeviceHistory(
+        device_id=device.id,
+        status="new_device",
+        message=f"Device {device.display_name or device.ip} added to dashboard",
+        read=False,
+    ))
     await db.commit()
     await db.refresh(device)
     dashboard_cache.invalidate_all()
@@ -522,6 +530,17 @@ async def get_device_history(device_id: int, db: AsyncSession = Depends(get_db))
         .limit(50)
     )
     return result.scalars().all()
+
+
+@router.post("/{device_id}/history/read-all")
+async def mark_device_history_read(device_id: int, db: AsyncSession = Depends(get_db)):
+    """Mark all status history entries for a specific device as read."""
+    from app.models.device import DeviceHistory
+    from sqlalchemy import update
+    stmt = update(DeviceHistory).where(DeviceHistory.device_id == device_id, DeviceHistory.read == False).values(read=True)
+    res = await db.execute(stmt)
+    await db.commit()
+    return {"status": "success", "device_id": device_id, "marked_read": res.rowcount or 0}
 
 
 # --- Services ---

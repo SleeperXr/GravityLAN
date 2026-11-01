@@ -54,6 +54,7 @@ MIGRATIONS = [
     ("services", "ssl_checked_at", "DATETIME"),
     ("services", "ignore_ssl", "BOOLEAN DEFAULT FALSE"),
     ("devices", "alert_offline", "BOOLEAN DEFAULT TRUE"),
+    ("device_history", "read", "BOOLEAN DEFAULT FALSE"),
 ]
 
 
@@ -249,9 +250,18 @@ def unique_column_sets(table: str) -> list[tuple[str, ...]]:
     model = Base.metadata.tables.get(table)
     if model is None:
         return []
-    sets = [tuple(c.name for c in con.columns) for con in model.constraints if isinstance(con, UniqueConstraint)]
-    sets += [(c.name,) for c in model.columns if c.unique]
-    sets += [tuple(c.name for c in idx.columns) for idx in model.indexes if idx.unique]
+    # Table.constraints and Table.indexes are unordered sets; sort deterministically
+    constraints = sorted(
+        [con for con in model.constraints if isinstance(con, UniqueConstraint)],
+        key=lambda con: (con.name or "", tuple(c.name for c in con.columns))
+    )
+    sets = [tuple(c.name for c in con.columns) for con in constraints]
+    sets += [(c.name,) for c in sorted(model.columns, key=lambda c: c.name) if c.unique]
+    indexes = sorted(
+        [idx for idx in model.indexes if idx.unique],
+        key=lambda idx: (idx.name or "", tuple(c.name for c in idx.columns))
+    )
+    sets += [tuple(c.name for c in idx.columns) for idx in indexes]
     return [s for s in dict.fromkeys(sets) if s and s != ("id",)]
 
 
@@ -367,6 +377,7 @@ async def run_migrations(db: AsyncSession):
     except Exception as e:
         await db.rollback()
         logger.error(f"Migration error while adding unique indexes: {e}")
+
     logger.info("Schema migration complete.")
 
 
