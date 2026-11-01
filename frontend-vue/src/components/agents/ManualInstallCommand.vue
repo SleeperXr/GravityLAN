@@ -87,5 +87,11 @@ async function copy() {
         {{ t('agent.install_code_retry') }}
       </button>
     </div>
+    <p
+      v-if="mode === 'install' && installCode?.agentSha256"
+      class="font-mono text-[11px] leading-relaxed text-fg-subtle break-all"
+    >
+      {{ t('gv.agents.installer_checksum', { version: installCode.agentVersion || '—', sha256: installCode.agentSha256 }) }}
+    </p>
   </div>
 </template>

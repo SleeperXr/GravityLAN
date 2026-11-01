@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Agent installer checksum (AP-10): the manual install command in GravityUI and the `curl | bash` installer show the agent version and expected SHA-256 checksum (`agent_version` and `agent_sha256` in `POST /api/agent/enroll/{id}`). Both the manual installer and SSH deployment verify the SHA-256 of the downloaded or staged agent script and abort before replacing an existing agent if it does not match.
+
 ### Changed
 - Remote access requires a logged-in browser session with password confirmation: opening an SSH terminal, installing or removing an agent, issuing a manual agent install code and checking or installing package updates (`POST /api/ssh/sessions/prepare`, `POST /api/agent/enroll/{id}`, `POST /api/agent/deploy/{id}`, `POST /api/agent/uninstall/{id}`, `POST /api/agent/patches/{id}/query`, `POST /api/agent/patches/{id}/prepare`, `WS /api/agent/patches/{id}/run-ws`) no longer accept the master token or an API token. Token requests receive `403` and are recorded in the audit log as `denied`. `gravitylan_api` is unaffected.
 

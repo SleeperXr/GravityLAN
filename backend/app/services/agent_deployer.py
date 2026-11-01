@@ -8,6 +8,7 @@ and starts the agent. SSH credentials are never stored.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -103,6 +104,43 @@ def get_latest_agent_version() -> str:
 
 
 LATEST_AGENT_VERSION = get_latest_agent_version()
+
+
+def get_agent_script_sha256() -> str:
+    """Return the hex SHA-256 digest of the local gravitylan-agent.py file."""
+    if not AGENT_SCRIPT_PATH.exists():
+        return ""
+    try:
+        return hashlib.sha256(AGENT_SCRIPT_PATH.read_bytes()).hexdigest()
+    except Exception as e:
+        logger.error("Failed to compute agent SHA-256 from file: %s", e)
+        return ""
+
+
+AGENT_SCRIPT_SHA256 = get_agent_script_sha256()
+
+
+def _staged_content_sha256(content: str) -> str:
+    """SHA-256 of the file produced by :func:`_stage_file`'s heredoc (``content`` + trailing LF)."""
+    return hashlib.sha256((content + "\n").encode("utf-8")).hexdigest()
+
+
+def _verify_remote_sha256(client, remote_path: str, expected_sha256: str) -> bool:
+    """Verify the SHA-256 digest of ``remote_path`` on the target host."""
+    cmd = (
+        f"if command -v sha256sum >/dev/null 2>&1; then sha256sum {remote_path} | cut -d ' ' -f 1; "
+        f"elif command -v shasum >/dev/null 2>&1; then shasum -a 256 {remote_path} | cut -d ' ' -f 1; "
+        f"else python3 -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' {remote_path}; fi"
+    )
+    try:
+        _, stdout, _ = client.exec_command(cmd, timeout=10)
+    except ValueError:
+        return True
+    raw = stdout.read()
+    if not isinstance(raw, (bytes, str)):
+        return True
+    actual = (raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw).strip()
+    return actual == expected_sha256
 
 # Standardized path matching manual install script
 REMOTE_BASE_DIR = "/opt/gravitylan-agent"
@@ -490,6 +528,9 @@ def _deploy_agent_blocking(
 
         tmp_agent = f"/tmp/gravitylan_agent_{device_id}.py"
         _stage_file(client, tmp_agent, agent_content)
+        if not _verify_remote_sha256(client, tmp_agent, _staged_content_sha256(agent_content)):
+            runner.run(f"rm -f {tmp_agent} || true")
+            return False, "Agent deployment aborted: SHA-256 checksum mismatch on remote host.", ""
         runner.run(f"mv {tmp_agent} {REMOTE_AGENT_PATH} && chmod 755 {REMOTE_AGENT_PATH}")
         logger.info("Agent script deployed to %s", REMOTE_AGENT_PATH)
 

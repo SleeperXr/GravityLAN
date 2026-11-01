@@ -48,6 +48,10 @@ export interface InstallCode {
   insecure: boolean;
   /** The server allows that for every install (GRAVITYLAN_ALLOW_INSECURE_INSTALL): no opt-in needed */
   insecureAllowed: boolean;
+  /** Version of the agent script the installer will download */
+  agentVersion?: string;
+  /** Expected SHA-256 hex digest of the agent script */
+  agentSha256?: string;
 }
 
 /** Over plain HTTP the installer stops unless the user opts in (or the server allows it). */
@@ -57,7 +61,7 @@ export function needsInsecureOptIn(installCode: InstallCode): boolean {
 
 /** A fresh single-use enrollment code for the install command of one device. */
 export async function requestInstallCode(deviceId: number): Promise<InstallCode> {
-  const { code, expires_in, server_url, insecure, insecure_allowed } = await api.createAgentEnrollment(deviceId);
+  const { code, expires_in, server_url, insecure, insecure_allowed, agent_version, agent_sha256 } = await api.createAgentEnrollment(deviceId);
   // Code and server URL end up in a root shell command: accept only what they can legitimately contain.
   if (!/^[A-Za-z0-9_-]+$/.test(code)) throw new Error('Unexpected install code format');
   const serverUrl = server_url || serverOrigin();
@@ -68,6 +72,8 @@ export async function requestInstallCode(deviceId: number): Promise<InstallCode>
     serverUrl,
     insecure: !!insecure,
     insecureAllowed: !!insecure_allowed,
+    agentVersion: agent_version || undefined,
+    agentSha256: agent_sha256 || undefined,
   };
 }
 

@@ -41,4 +41,11 @@ describe('requestInstallCode', () => {
     enroll({ server_url: 'http://evil.example/";reboot;"' });
     await expect(requestInstallCode(3)).rejects.toThrow('Unexpected server URL format');
   });
+
+  it('includes the agent version and SHA-256 checksum (AP-10)', async () => {
+    enroll({ server_url: 'https://gravity.example', agent_version: '0.2.5', agent_sha256: 'a'.repeat(64) });
+    const res = await requestInstallCode(3);
+    expect(res.agentVersion).toBe('0.2.5');
+    expect(res.agentSha256).toBe('a'.repeat(64));
+  });
 });

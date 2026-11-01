@@ -192,6 +192,8 @@ class AgentEnrollmentResponse(BaseModel):
     insecure: bool = False
     # GRAVITYLAN_ALLOW_INSECURE_INSTALL: the server already allows HTTP installs, no opt-in needed
     insecure_allowed: bool = False
+    agent_version: str = ""
+    agent_sha256: str = ""
 
 
 class PackageUpdateInfo(BaseModel):

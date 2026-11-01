@@ -57,7 +57,7 @@ from app.schemas.agent import (
     GlobalMetricsResponse,
 )
 from app.services.agent_deployer import (
-    HOST_KEY_CHANGED, deploy_agent, is_host_key_refusal, remove_agent, LATEST_AGENT_VERSION,
+    HOST_KEY_CHANGED, deploy_agent, get_agent_script_sha256, is_host_key_refusal, remove_agent, LATEST_AGENT_VERSION,
 )
 from app.services.agent_tokens import hash_agent_token, new_agent_token, pending_storage_form
 from app.services.enrollment_service import enrollment_store
@@ -469,6 +469,8 @@ async def create_enrollment_code(
         server_url=server_url,
         insecure=not server_url.lower().startswith("https://"),
         insecure_allowed=settings.allow_insecure_install,
+        agent_version=LATEST_AGENT_VERSION,
+        agent_sha256=get_agent_script_sha256(),
     )
 
 
