@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.config import settings
+from app.database.migrations import unique_column_sets
 
 from app.api.auth import get_current_admin
 from app.schemas.device import is_safe_url_template
@@ -264,22 +265,6 @@ def _drop_dangling_links(cursor) -> None:
     )
 
 
-def _unique_column_sets(table: str) -> list[tuple[str, ...]]:
-    """The column sets a table keeps unique (besides its id), read from the models."""
-    import app.models  # noqa: F401 - registers the models
-    import app.models.rack_cabling  # noqa: F401
-    from sqlalchemy import UniqueConstraint
-    from app.database import Base
-
-    model = Base.metadata.tables.get(table)
-    if model is None:
-        return []
-    sets = [tuple(c.name for c in con.columns) for con in model.constraints if isinstance(con, UniqueConstraint)]
-    sets += [(c.name,) for c in model.columns if c.unique]
-    sets += [tuple(c.name for c in idx.columns) for idx in model.indexes if idx.unique]
-    return [s for s in dict.fromkeys(sets) if s and s != ("id",)]
-
-
 def _drop_duplicates(table: str, rows: list[dict]) -> tuple[list[dict], int]:
     """Keep one row per unique key, the newest (highest id).
 
@@ -287,7 +272,7 @@ def _drop_duplicates(table: str, rows: list[dict]) -> tuple[list[dict], int]:
     create_all never adds a constraint to an existing table, so only a fresh instance refused them and
     the whole import failed. Rows with an empty key column are never duplicates (SQL ignores NULL).
     """
-    key_sets = _unique_column_sets(table)
+    key_sets = unique_column_sets(table)
     if not key_sets:
         return rows, 0
     seen: list[set] = [set() for _ in key_sets]

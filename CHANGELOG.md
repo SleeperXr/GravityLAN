@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - GravityUI Settings → System: saving after changing a number field (scan interval, quick scan, timeout, offline threshold, history retention, password confirmation minutes) failed with a validation error, because the field handed the value over as a number and the settings only take text. The fields hand over text again.
 - GravityUI Logs → Live-Log: the log grew with every line and the whole page scrolled, so the button back to the newest lines never appeared. The log now scrolls in its own box; scrolling up holds it, and "Live" jumps back to the newest line and follows again. Tab bars no longer show a small vertical scrollbar.
+- Older databases get the unique keys newer versions have. A table created before its unique constraint existed kept it missing, because a start only adds new columns, so it could hold the same orbit link, rack name, subnet or port number twice and accept more. On start, duplicates are removed (the newest row stays; what belonged to a removed row goes with it, like on a delete) and the missing unique index is added. A clean database is left as it is. Up-to-date installations see nothing; affected ones log `Unique index on <table>(...) added, N duplicate row(s) removed`.
 
 ## [0.7.0] - 2026-11-01
 
