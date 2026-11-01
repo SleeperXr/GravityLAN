@@ -64,6 +64,7 @@ it into an enterprise platform (SIEM export, signed audit trails, network access
 - The audit log complements the live log instead of replacing it.
 - Which devices appear in the orbit is a per-device choice.
 - Backups from older databases may hold duplicate rows; the import keeps the newest one instead of failing.
+- Older live databases get the same treatment on start: duplicates go (newest kept) and the missing unique indexes are added.
 
 **Rejected**
 - Checking scan targets against an allow-list: the size limits stay the only bound.
@@ -79,4 +80,4 @@ it into an enterprise platform (SIEM export, signed audit trails, network access
 
 ## Open questions
 
-- A migration that removes duplicate rows from old databases and adds the unique indexes they are missing.
+- None at the moment.

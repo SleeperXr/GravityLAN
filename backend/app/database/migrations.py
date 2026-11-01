@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from sqlalchemy import inspect, select, or_, update
+from sqlalchemy import inspect, select, or_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -239,6 +239,91 @@ async def _apply_table_migrations(raw_conn, table: str, cols: list):
             logger.info(f"Migration: Column '{column}' added successfully to '{table}'.")
 
 
+def unique_column_sets(table: str) -> list[tuple[str, ...]]:
+    """The column sets a table keeps unique (besides its id), read from the models."""
+    import app.models  # noqa: F401 - registers the models
+    import app.models.rack_cabling  # noqa: F401
+    from sqlalchemy import UniqueConstraint
+    from app.database import Base
+
+    model = Base.metadata.tables.get(table)
+    if model is None:
+        return []
+    sets = [tuple(c.name for c in con.columns) for con in model.constraints if isinstance(con, UniqueConstraint)]
+    sets += [(c.name,) for c in model.columns if c.unique]
+    sets += [tuple(c.name for c in idx.columns) for idx in model.indexes if idx.unique]
+    return [s for s in dict.fromkeys(sets) if s and s != ("id",)]
+
+
+def _inventory_tables() -> list[str]:
+    import app.models  # noqa: F401 - registers the models
+    import app.models.rack_cabling  # noqa: F401
+    from app.database import Base
+
+    return [t.name for t in Base.metadata.sorted_tables if t.schema is None]
+
+
+def _live_unique_sets(sync_conn, table: str) -> tuple[set[str], list[frozenset[str]]] | None:
+    """Columns of a table and the column sets the live database already keeps unique, or None if it is missing."""
+    inspector = inspect(sync_conn)
+    if not inspector.has_table(table):
+        return None
+    columns = {col["name"] for col in inspector.get_columns(table)}
+    unique = [frozenset(c["column_names"]) for c in inspector.get_unique_constraints(table)]
+    unique += [frozenset(i["column_names"]) for i in inspector.get_indexes(table) if i.get("unique")]
+    return columns, unique
+
+
+def _missing_unique_sets(columns: set[str], live: list[frozenset[str]], table: str) -> list[tuple[str, ...]]:
+    """Model unique sets the live table lacks; sets naming a column the table does not have are skipped."""
+    if "id" not in columns:
+        return []
+    return [
+        cols for cols in unique_column_sets(table)
+        if frozenset(cols) not in live and set(cols) <= columns
+    ]
+
+
+async def _deduplicate_and_index(db: AsyncSession, table: str, cols: tuple[str, ...]) -> int:
+    """Keep the newest row (highest id) per key, then add the unique index. Returns the rows removed.
+
+    Rows with an empty key column are never duplicates: SQL treats NULL as distinct, as the index does.
+    Foreign keys are on, so ON DELETE CASCADE / SET NULL clean up what pointed at a removed row.
+    """
+    quoted = ", ".join(f'"{c}"' for c in cols)
+    not_null = " AND ".join(f'"{c}" IS NOT NULL' for c in cols)
+    result = await db.execute(text(
+        f'DELETE FROM "{table}" WHERE {not_null} AND id NOT IN '
+        f'(SELECT MAX(id) FROM "{table}" WHERE {not_null} GROUP BY {quoted})'
+    ))
+    index_name = f"uix_{table}_{'_'.join(cols)}"
+    await db.execute(text(f'CREATE UNIQUE INDEX IF NOT EXISTS "{index_name}" ON "{table}" ({quoted})'))
+    return result.rowcount or 0
+
+
+async def _add_missing_unique_indexes(db: AsyncSession) -> None:
+    """Give old databases the unique keys of the models.
+
+    create_all never adds a constraint to an existing table, so a database from before a constraint
+    existed can hold duplicates (e.g. the same orbit link twice) and keeps accepting new ones.
+    Each table runs in its own transaction; a failure leaves that table as it was.
+    """
+    for table in _inventory_tables():
+        conn = await db.connection()
+        live = await conn.run_sync(_live_unique_sets, table)
+        if live is None:
+            continue
+        for cols in _missing_unique_sets(*live, table):
+            try:
+                removed = await _deduplicate_and_index(db, table, cols)
+                await db.commit()
+            except Exception as e:
+                await db.rollback()
+                logger.error(f"Migration error while adding unique index on {table}({', '.join(cols)}): {e}")
+                continue
+            logger.info(f"Migration: Unique index on {table}({', '.join(cols)}) added, {removed} duplicate row(s) removed")
+
+
 async def run_migrations(db: AsyncSession):
     """Run schema migrations for SQLite or any alternative database.
 
@@ -276,6 +361,12 @@ async def run_migrations(db: AsyncSession):
     except Exception as e:
         await db.rollback()
         logger.error(f"Migration error while retiring phone system rack items: {e}")
+
+    try:
+        await _add_missing_unique_indexes(db)
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Migration error while adding unique indexes: {e}")
     logger.info("Schema migration complete.")
 
 
