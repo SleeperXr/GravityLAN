@@ -671,6 +671,12 @@
       "rack_height_hint": "Height in the rack in U. Change here in the device editor or by dragging in the rack view",
       "rack_unit": "Place in the rack (top U)",
       "rack_unit_hint": "The rack view sets this when you drag. Change here in the device editor or in the rack view"
+    },
+    "setup": {
+      "restore": "Restore a backup",
+      "restore_hint": "Moving to a new host: bring back devices, groups, racks and settings from a GravityLAN backup instead of scanning again.",
+      "restore_failed": "The backup could not be restored: {{error}}",
+      "restored": "Backup restored: {{count}} devices with groups, racks and settings. Now set the admin password; a backup carries none. Saved SSH keys and agent tokens are not part of backups: enrol the agents again under Agents."
     }
   }
 }

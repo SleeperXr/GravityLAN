@@ -671,6 +671,12 @@
       "rack_height_hint": "Höhe im Rack in HE. Ändern: hier im Geräte-Editor oder in der Rack-Ansicht durch Ziehen",
       "rack_unit": "Platz im Rack (oberste HE)",
       "rack_unit_hint": "Setzt die Rack-Ansicht beim Ziehen. Ändern: hier im Geräte-Editor oder in der Rack-Ansicht"
+    },
+    "setup": {
+      "restore": "Backup einspielen",
+      "restore_hint": "Umzug auf einen neuen Host: Geräte, Gruppen, Racks und Einstellungen aus einem GravityLAN-Backup übernehmen, statt neu zu scannen.",
+      "restore_failed": "Das Backup konnte nicht eingespielt werden: {{error}}",
+      "restored": "Backup eingespielt: {{count}} Geräte mit Gruppen, Racks und Einstellungen. Lege jetzt das Admin-Passwort fest; ein Backup enthält keins. Gespeicherte SSH-Schlüssel und Agent-Tokens sind nicht im Backup: Agents meldest du unter Agents neu an."
     }
   }
 }

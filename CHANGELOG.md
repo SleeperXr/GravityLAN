@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Setup wizard: restore a backup on the first start. "Backup einspielen" on the welcome page takes a GravityLAN backup instead of choosing networks and scanning, then asks for the new admin password; a backup never carries one, and its subnets and devices stay as they are (no local networks are added on top). The step is open only until the setup is completed (`POST /api/setup/restore`, no login yet, the same checks and limits as the backup import) and lands in the audit log with the caller "Setup". Saved SSH keys and agent tokens are not part of backups, so agents are enrolled again.
+
 ### Fixed
 - Backup import: a backup of an older instance failed as a whole with "UNIQUE constraint failed: topology_links.source_id, topology_links.target_id" and changed nothing. Databases from before a unique constraint existed can hold the same link (or IP, rack name, subnet) twice, and only a fresh instance refused it. The import now keeps the newest entry of each duplicate, drops orbit links to devices the backup no longer has, and says how many it skipped (also in the audit log).
 
