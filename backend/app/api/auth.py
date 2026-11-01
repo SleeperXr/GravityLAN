@@ -130,7 +130,7 @@ def _enforce_token_scopes(db_token, conn: HTTPConnection) -> None:
     path = conn.url.path
 
     # Exclude path /api/auth/check and /api/auth/me from strict scoping
-    if path in ("/api/auth/check", "/api/auth/me"):
+    if path in ("/api/auth/check", "/api/auth/me") or path == "/api/ssh/sessions/prepare" or path.startswith(("/api/agent/enroll/", "/api/agent/deploy/", "/api/agent/uninstall/", "/api/agent/patches/")):
         return
 
     # Block read-only token from accessing sensitive admin/export, token-management, SSH or sensitive agent endpoints

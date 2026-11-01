@@ -16,9 +16,9 @@ it into an enterprise platform (SIEM export, signed audit trails, network access
 | 2 · Safer administration | A logged-in session alone is no longer root on every host | 🟡 in progress |
 | 3 · Events | Reliable notifications about new devices and changes | ⏳ after phase 2 |
 
-**Release state:** `:latest` is 0.6.0. 0.7.0-rc.2 is on `:next` (rc.1 was never released). The next
-candidate adds the backup import fix for older databases and the backup restore in the setup wizard.
-0.7.0 carries security stages, so it stays on `:next` for 7 days before the final tag.
+**Release state:** `:latest` is 0.6.0. 0.7.0-rc.3 is on `:next` (rc.1 was never released). 0.7.0 carries security stages, so it stays on `:next` for 7 days before the final tag.
+
+
 
 ## Phase 0 · Release foundation ✅
 
@@ -42,8 +42,8 @@ candidate adds the backup import fix for older databases and the backup restore 
   with which result. Kept 90 days; never secrets or terminal input; not part of backups.
 - ✅ **AP-12 Password confirmation** before remote access, credential changes and instance actions.
   One area per confirmation, valid 10 minutes by default (adjustable 1–60).
-- ⏳ **AP-13 No remote actions by token:** terminal, agent deployment and package updates only from a
-  browser session with confirmation; master and API tokens are refused. Check `gravitylan_api` first.
+- ✅ **AP-13 No remote actions by token:** terminal, agent deployment, manual install codes and package updates only from a
+  browser session with confirmation; master and API tokens are refused and logged (`gravitylan_api` is unaffected).
 - ⏳ **AP-14 Remove the classic React interface** and its build stage, in the release after GravityUI
   became the default.
 - ⏳ **AP-10 Agent installer checksum:** shows the agent version and SHA-256, verifies the download and

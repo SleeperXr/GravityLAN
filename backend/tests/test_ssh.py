@@ -16,6 +16,7 @@ import app.api.ssh as ssh_api
 import app.services.ssh_terminal as ssh_terminal
 from app.models.device import Device
 from app.models.ssh import SshKey, SshProfile
+from app.services.session_service import session_store
 from app.services.secret_vault import SecretVault, VaultError
 from app.services.ssh_terminal import ConnectionTarget, HostKeyInfo, TerminalError
 from app.services.ssh_utils import SSHKeyPassphraseRequired, load_private_key
@@ -235,7 +236,8 @@ async def test_prepare_session_from_profile_issues_one_shot_ticket(client, db, a
         headers=_auth(admin_token),
     )).json()
 
-    res = await client.post("/api/ssh/sessions/prepare", json={"profile_id": profile["id"]}, headers=_auth(admin_token))
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    res = await client.post("/api/ssh/sessions/prepare", json={"profile_id": profile["id"]})
     assert res.status_code == 200, res.text
     assert "PRIVATE" not in res.text
     ticket = res.json()["ticket"]
@@ -254,9 +256,10 @@ async def test_prepare_session_ask_profile_requires_password(client, db, admin_t
         json={"name": "nas", "device_id": device.id, "username": "root", "auth_method": "ask"},
         headers=_auth(admin_token),
     )).json()
-    res = await client.post("/api/ssh/sessions/prepare", json={"profile_id": profile["id"]}, headers=_auth(admin_token))
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    res = await client.post("/api/ssh/sessions/prepare", json={"profile_id": profile["id"]})
     assert res.status_code == 400
-    res = await client.post("/api/ssh/sessions/prepare", json={"profile_id": profile["id"], "password": "pw"}, headers=_auth(admin_token))
+    res = await client.post("/api/ssh/sessions/prepare", json={"profile_id": profile["id"], "password": "pw"})
     assert res.status_code == 200
     assert ssh_api.consume_ticket(res.json()["ticket"]).password == "pw"
 
@@ -264,10 +267,10 @@ async def test_prepare_session_ask_profile_requires_password(client, db, admin_t
 @pytest.mark.asyncio
 async def test_prepare_session_ad_hoc(client, db, admin_token, test_vault):
     device = await _make_device(db)
-    res = await client.post("/api/ssh/sessions/prepare", json={"device_id": device.id, "username": "root"}, headers=_auth(admin_token))
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    res = await client.post("/api/ssh/sessions/prepare", json={"device_id": device.id, "username": "root"})
     assert res.status_code == 400  # no credentials
-    res = await client.post("/api/ssh/sessions/prepare", json={"device_id": device.id, "username": "root", "password": "pw"},
-                            headers=_auth(admin_token))
+    res = await client.post("/api/ssh/sessions/prepare", json={"device_id": device.id, "username": "root", "password": "pw"})
     assert res.status_code == 200
     assert res.json()["label"] == "root@nas"
 
@@ -282,7 +285,8 @@ async def test_ad_hoc_connections_are_remembered_without_password(client, db, ad
         {"device_id": device.id, "username": "root", "password": "geheim"},  # same target: one entry
         {"host": "hilfe.example.com", "username": "admin", "port": 2222, "key_id": key["id"]},
     ):
-        res = await client.post("/api/ssh/sessions/prepare", json=body, headers=_auth(admin_token))
+        client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+        res = await client.post("/api/ssh/sessions/prepare", json=body)
         assert res.status_code == 200, res.text
 
     res = await client.get("/api/ssh/history", headers=_auth(admin_token))
@@ -308,9 +312,10 @@ async def test_profile_connections_and_failures_are_not_remembered(client, db, a
         json={"name": "nas", "device_id": device.id, "username": "root", "auth_method": "ask"},
         headers=_auth(admin_token),
     )).json()
-    await client.post("/api/ssh/sessions/prepare", json={"profile_id": profile["id"], "password": "pw"}, headers=_auth(admin_token))
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    await client.post("/api/ssh/sessions/prepare", json={"profile_id": profile["id"], "password": "pw"})
     # Rejected request (no credentials) must not create an entry either
-    await client.post("/api/ssh/sessions/prepare", json={"device_id": device.id, "username": "root"}, headers=_auth(admin_token))
+    await client.post("/api/ssh/sessions/prepare", json={"device_id": device.id, "username": "root"})
 
     assert (await client.get("/api/ssh/history", headers=_auth(admin_token))).json() == []
 
@@ -319,8 +324,8 @@ async def test_profile_connections_and_failures_are_not_remembered(client, db, a
 async def test_history_keeps_the_newest_entries(client, db, admin_token, test_vault, monkeypatch):
     monkeypatch.setattr(ssh_api, "HISTORY_LIMIT", 3)
     for i in range(5):
-        res = await client.post("/api/ssh/sessions/prepare", json={"host": f"h{i}.lan", "username": "u", "password": "p"},
-                                headers=_auth(admin_token))
+        client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+        res = await client.post("/api/ssh/sessions/prepare", json={"host": f"h{i}.lan", "username": "u", "password": "p"})
         assert res.status_code == 200
 
     labels = [e["label"] for e in (await client.get("/api/ssh/history", headers=_auth(admin_token))).json()]
@@ -343,8 +348,7 @@ async def test_prepare_session_marks_browser_session_tickets(client, db, admin_t
     body = {"device_id": device.id, "username": "root", "password": "pw"}
 
     res = await client.post("/api/ssh/sessions/prepare", json=body, headers=_auth(admin_token))
-    assert res.status_code == 200
-    assert ssh_api._tickets[res.json()["ticket"]].from_session is False  # master token
+    assert res.status_code == 403
 
     client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
     try:

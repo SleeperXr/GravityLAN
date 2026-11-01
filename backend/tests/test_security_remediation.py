@@ -14,6 +14,7 @@ from app.models.api_token import ApiToken
 from app.models.device import Device
 from app.models.setting import Setting
 from app.models.ssh import SshKnownHost
+from app.services.session_service import session_store
 from app.services.patch_service import _query_dnf_updates
 from app.services.ssh_utils import CapturedHostKey
 
@@ -40,7 +41,6 @@ async def test_readonly_api_token_cannot_download_agent_config(client, db):
         "/api/agent/download/config/42",
         headers={"Authorization": f"Bearer {raw_token}"},
     )
-
     assert res.status_code == 403
     assert "not authorized" in res.text.lower()
 
@@ -159,11 +159,11 @@ async def test_tofu_does_not_persist_host_key_on_failed_ssh_probe(client, db, ad
         return {"patch_manager": None, "packages": [], "error": "Authentication failed."}
 
     monkeypatch.setattr("app.api.agent.list_device_updates", fake_failed_list_updates)
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
 
     res = await client.post(
         "/api/agent/patches/91/query",
         json={"ssh_user": "root", "ssh_password": "wrong", "ssh_port": 22},
-        headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert res.status_code == 500
 

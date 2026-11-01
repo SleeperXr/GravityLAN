@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import status
 from app.models.device import Device
 from app.models.agent import AgentToken
+from app.services.session_service import session_store
 from app.services.patch_service import list_device_updates, run_ssh_command_stream
 
 # Test data for mocked SSH outputs
@@ -128,6 +129,7 @@ async def test_query_device_patches_endpoint_unauthorized(client, db):
     await db.commit()
 
     # Verify protected endpoint returns 401
+
     response = await client.post("/api/agent/patches/1/query", json={
         "ssh_user": "root",
         "ssh_password": "password"
@@ -142,7 +144,9 @@ async def test_prepare_patch_action_endpoint_authorized(client, db, admin_token)
     db.add(device)
     await db.commit()
     await db.refresh(device)
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
     
+
     response = await client.post(
         f"/api/agent/patches/{device.id}/prepare",
         json={
@@ -150,7 +154,7 @@ async def test_prepare_patch_action_endpoint_authorized(client, db, admin_token)
             "ssh_password": "password",
             "mode": "upgrade"
         },
-        headers={"Authorization": f"Bearer {admin_token}"}
+
     )
     assert response.status_code == 200
     data = response.json()
@@ -183,6 +187,8 @@ async def test_prepare_patch_action_with_stored_key(client, db, admin_token):
     # Browser session cookie (ADR-002 requires browser session to decrypt stored keys)
     client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
 
+
+
     response = await client.post(
         f"/api/agent/patches/{device.id}/prepare",
         json={
@@ -190,7 +196,7 @@ async def test_prepare_patch_action_with_stored_key(client, db, admin_token):
             "key_id": key.id,
             "mode": "upgrade"
         },
-        headers={"Authorization": f"Bearer {admin_token}"}
+
     )
     assert response.status_code == 200
     token = response.json()["patch_token"]

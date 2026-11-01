@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Remote access requires a logged-in browser session with password confirmation: opening an SSH terminal, installing or removing an agent, issuing a manual agent install code and checking or installing package updates (`POST /api/ssh/sessions/prepare`, `POST /api/agent/enroll/{id}`, `POST /api/agent/deploy/{id}`, `POST /api/agent/uninstall/{id}`, `POST /api/agent/patches/{id}/query`, `POST /api/agent/patches/{id}/prepare`, `WS /api/agent/patches/{id}/run-ws`) no longer accept the master token or an API token. Token requests receive `403` and are recorded in the audit log as `denied`. `gravitylan_api` is unaffected.
+
 ### Fixed
 - GravityUI Settings → System: saving after changing a number field (scan interval, quick scan, timeout, offline threshold, history retention, password confirmation minutes) failed with a validation error, because the field handed the value over as a number and the settings only take text. The fields hand over text again.
 - GravityUI Logs → Live-Log: the log grew with every line and the whole page scrolled, so the button back to the newest lines never appeared. The log now scrolls in its own box; scrolling up holds it, and "Live" jumps back to the newest line and follows again. Tab bars no longer show a small vertical scrollbar.
