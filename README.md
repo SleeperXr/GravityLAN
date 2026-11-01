@@ -305,7 +305,7 @@ backend/tests/    Backend tests (pytest)
 frontend-vue/     GravityUI (Vue 3, Vite, Tailwind, Pinia); design system in DESIGN.md
 frontend/         Classic React interface (fallback until the next release)
 gravitylan_api/   Python client
-docs/             Security and design docs, ADRs, screenshots (vue/, react/)
+docs/             Security and design docs, ADRs, screenshots (vue/)
 scripts/          Demo backend and maintenance scripts
 templates/        Unraid template
 ```
@@ -597,7 +597,7 @@ backend/tests/    Backend-Tests (pytest)
 frontend-vue/     GravityUI (Vue 3, Vite, Tailwind, Pinia); Designsystem in DESIGN.md
 frontend/         Klassische React-Oberfläche (Rückfallebene bis zum nächsten Release)
 gravitylan_api/   Python-Client
-docs/             Sicherheits- und Design-Doku, ADRs, Screenshots (vue/, react/)
+docs/             Sicherheits- und Design-Doku, ADRs, Screenshots (vue/)
 scripts/          Demo-Backend und Wartungsskripte
 templates/        Unraid-Vorlage
 ```

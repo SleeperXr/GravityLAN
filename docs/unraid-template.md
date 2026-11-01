@@ -40,10 +40,10 @@ Images bis 0.5.2 laufen als UID 1000 und können nicht in einen Appdata-Ordner s
 
 ## Screenshots, icon and texts
 
-- `<Screenshot>` entries are absolute raw URLs on `main`: five of the classic view from `docs/screenshots/react/` and the GravityUI orbit map from `docs/screenshots/vue/`, all palette-compressed PNGs (85 to 475 KB). They only resolve once the branch that adds them is merged.
+- `<Screenshot>` entries are absolute raw URLs on `main`: six GravityUI views from `docs/screenshots/vue/` (overview, orbit map, racks, health, agents, SSH terminal), all palette-compressed PNGs (115 to 533 KB). They only resolve once the branch that adds them is merged.
 - `<Icon>` is `assets/logo.png`, square (512×512) and transparent.
 - `<Overview>` (shown on the app page) has an English and a German part: features, the Unraid defaults (PUID 99, PGID 100, no privileged mode), the network types and how scanning works. `<Changes>` lists the last releases, `<ReadMe>` points to the README.
-- The older screenshots in the root of `docs/screenshots/` (`GravityLanDashboard.png` …) are no longer used by the README or the template. They stay until CA has picked up the new template, because CA caches screenshot URLs; after that they can be deleted.
+- The legacy filenames in `docs/screenshots/` (`GravityLanDashboard.png` …) and `docs/screenshots/react/` have also been updated to the current GravityUI screenshots so cached URLs in Community Applications immediately show the new interface.
 
 After a change to the template, check it before it lands on `main`:
 

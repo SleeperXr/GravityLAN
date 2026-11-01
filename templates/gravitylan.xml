@@ -101,12 +101,12 @@ Full changelog: https://github.com/SleeperXr/GravityLAN/blob/main/CHANGELOG.md
   <TemplateURL/>
   <Icon>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/assets/logo.png</Icon>
   <ExtraParams>--cap-add=NET_RAW --cap-add=NET_ADMIN</ExtraParams>
-  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/react/dashboard.png</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/react/health.png</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/react/topology.png</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/react/agents.png</Screenshot>
-  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/react/ssh.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/vue/overview.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/vue/orbit.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/vue/racks.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/vue/health.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/vue/agents.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/SleeperXr/GravityLAN/main/docs/screenshots/vue/ssh.png</Screenshot>
 
   <!-- WebUI Port / Reference -->
   <Config Name="WebUI Port" Target="8000" Default="8000" Mode="tcp" Description="The HTTP port on which the GravityLAN WebUI and REST API are served." Type="Port" Display="always" Required="true" Mask="false">8000</Config>
