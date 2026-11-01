@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- GravityUI Settings → System: saving after changing a number field (scan interval, quick scan, timeout, offline threshold, history retention, password confirmation minutes) failed with a validation error, because the field handed the value over as a number and the settings only take text. The fields hand over text again.
+
 ## [0.7.0] - 2026-11-01
 
 ### Added
