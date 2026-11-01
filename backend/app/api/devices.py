@@ -282,6 +282,13 @@ async def update_device(
     for field, value in update_data.items():
         setattr(device, field, value)
 
+    if "alert_offline" in update_data:
+        from app.models.setting import Setting
+        marker_key = "migration.rc4_infra_alert_offline_repaired"
+        existing_marker = (await db.execute(select(Setting).where(Setting.key == marker_key))).scalar_one_or_none()
+        if existing_marker is None:
+            db.add(Setting(key=marker_key, value="true", category="system"))
+
     await db.commit()
     dashboard_cache.invalidate_all()
     topology_cache.invalidate()

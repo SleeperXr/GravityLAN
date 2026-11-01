@@ -432,9 +432,9 @@ async def _repair_infra_alert_offline(db: AsyncSession):
             dev.alert_offline = True
             repaired += 1
 
-    db.add(Setting(key=marker_key, value="true", category="system"))
-    await db.commit()
     if repaired:
+        db.add(Setting(key=marker_key, value="true", category="system"))
+        await db.commit()
         logger.info(f"Migration: Re-enabled 24/7 alert_offline monitoring on {repaired} infrastructure/agent device(s)")
 
 
