@@ -42,6 +42,15 @@ watch(() => [props.device?.id, props.period, open.value] as const, ([id, , isOpe
 
 const dev = computed(() => (detail.value && detail.value.device.id === props.device?.id ? detail.value.device : props.device));
 const alertOn = computed(() => dev.value?.alert_offline ?? true);
+const uniqueServices = computed(() => {
+  const seen = new Set<string>();
+  return (dev.value?.services ?? []).filter((s) => {
+    const key = `${s.port}:${(s.name || '').toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+});
 
 async function toggleAlert() {
   if (!dev.value) return;
@@ -121,10 +130,10 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
       <LatencyChart :samples="detail?.device.id === dev.id ? detail.time_series : []" :loading="loading" />
 
       <section class="space-y-2">
-        <h3 class="flex items-center gap-1.5 text-sm font-bold text-fg"><Layers class="size-4 text-fg-subtle" aria-hidden="true" />{{ t('health_page.drawer_services') }} ({{ dev.services.length }})</h3>
-        <p v-if="dev.services.length === 0" class="rounded-md border border-line bg-raised p-3 text-center text-xs text-fg-subtle">{{ t('health_page.no_services_discovered') }}</p>
+        <h3 class="flex items-center gap-1.5 text-sm font-bold text-fg"><Layers class="size-4 text-fg-subtle" aria-hidden="true" />{{ t('health_page.drawer_services') }} ({{ uniqueServices.length }})</h3>
+        <p v-if="uniqueServices.length === 0" class="rounded-md border border-line bg-raised p-3 text-center text-xs text-fg-subtle">{{ t('health_page.no_services_discovered') }}</p>
         <ul v-else class="divide-y divide-line rounded-md border border-line">
-          <li v-for="srv in dev.services" :key="srv.id" class="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+          <li v-for="srv in uniqueServices" :key="srv.id" class="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
             <StatusDot size="sm" :state="srv.is_up ? 'online' : 'offline'" :label="srv.is_up ? t('network.online') : t('network.offline')" />
             <span class="font-semibold text-fg">{{ srv.name }}</span>
             <span class="font-mono text-fg-subtle">:{{ srv.port }}</span>

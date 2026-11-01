@@ -124,14 +124,12 @@ async def _resolve_token_mismatch(
 
 
 def _persist_device_metadata(db_token: AgentToken, device: Device, payload: Any) -> None:
-    """Update token/device metadata from the agent payload (throttled online flag)."""
+    """Update token/device metadata from the agent payload."""
     now = datetime.now(timezone.utc)
-    last_seen = ensure_utc(db_token.last_seen)
-    if not last_seen or (now - last_seen).total_seconds() > 60:
-        db_token.last_seen = now
-        device.is_online = True
-        device.missed_scans = 0
-        device.last_seen = now
+    db_token.last_seen = now
+    device.is_online = True
+    device.missed_scans = 0
+    device.last_seen = now
 
     if db_token.agent_version != payload.agent_version:
         db_token.agent_version = payload.agent_version
@@ -150,7 +148,9 @@ def _persist_device_metadata(db_token: AgentToken, device: Device, payload: Any)
         db_token.os_arch = str(system["arch"])[:50]
     if system.get("kernel"):
         db_token.os_kernel = str(system["kernel"])[:100]
-    device.has_agent = True
+    if not device.has_agent:
+        device.has_agent = True
+        device.alert_offline = True
 
     # Clear stale pending token flags since we have a successful report with active token
     if db_token.pending_token is not None:
@@ -193,12 +193,13 @@ def _build_config_payload(agent_config: AgentConfig) -> dict:
 
 async def _persist_agent_report(db: AsyncSession, agent_token: AgentToken, payload: Any, client_ip: str | None) -> dict:
     """Persist the agent report with up to 5 retries on stale/operational DB errors."""
+    token_id = agent_token.id
     effective_device_id = agent_token.device_id
 
     for attempt in range(5):
         try:
             # Refresh objects in this transaction
-            db_token = await db.get(AgentToken, agent_token.id)
+            db_token = await db.get(AgentToken, token_id)
             device = await db.get(Device, effective_device_id)
 
             if not device:
@@ -339,9 +340,9 @@ def downsample_metrics(metrics: list, range_str: str) -> list[dict]:
 
 
 def _is_agent_active(token: AgentToken, now: datetime) -> bool:
-    """Active = last heartbeat within 5 minutes."""
+    """Active = last heartbeat within 2 minutes (agents report every 30s)."""
     last_seen = ensure_utc(token.last_seen)
-    return bool(last_seen and (now - last_seen).total_seconds() < 300)
+    return bool(last_seen and (now - last_seen).total_seconds() < 120)
 
 
 def _compute_uptime_pct(token: AgentToken, now: datetime, cutoff_24h: datetime, device_metrics_24h: list) -> float:

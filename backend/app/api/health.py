@@ -64,7 +64,7 @@ async def get_health_summary(
     active_device_ids = set()
     for agent in agents:
         last_seen = ensure_utc(agent.last_seen)
-        is_active = bool(agent.is_active and last_seen and (now - last_seen).total_seconds() < 300)
+        is_active = bool(agent.is_active and last_seen and (now - last_seen).total_seconds() < 120)
         if not is_active:
             offline_agents += 1
         else:
@@ -352,21 +352,26 @@ def _calculate_health_score(
                 score -= 5
 
     # Agent host warnings
-    if agent and agent.is_active:
-        if agent.patch_security > 0:
-            score -= 10
-        if agent.reboot_required:
-            score -= 5
-        if agent.cpu_percent is not None and agent.cpu_percent > 90:
-            score -= 10
-        if agent.temperature is not None and agent.temperature > 75:
-            score -= 10
+    if agent and agent.has_agent:
+        if not agent.is_active:
+            if latency.current_ms is None and (not services or all(not s.is_up for s in services)):
+                return 0, "offline"
+            score -= 35
+        else:
+            if agent.patch_security > 0:
+                score -= 10
+            if agent.reboot_required:
+                score -= 5
+            if agent.cpu_percent is not None and agent.cpu_percent > 90:
+                score -= 10
+            if agent.temperature is not None and agent.temperature > 75:
+                score -= 10
 
     score = max(0, min(100, score))
 
     if dev.missed_scans > 0:
         status = "flapping"
-    elif score < 60 or any(not s.is_up for s in services):
+    elif score < 60 or any(not s.is_up for s in services) or (agent and agent.has_agent and not agent.is_active):
         status = "critical"
     elif score < 85 or (latency.avg_ms and latency.avg_ms > 60):
         status = "degraded"
@@ -498,7 +503,7 @@ async def get_health_overview(
         agent_alerts = None
         if dev.has_agent or agent_token:
             m = metrics_by_dev.get(dev.id)
-            is_active = bool(agent_token and agent_token.last_seen and (now - ensure_utc(agent_token.last_seen)).total_seconds() < 300)
+            is_active = bool(agent_token and agent_token.last_seen and (now - ensure_utc(agent_token.last_seen)).total_seconds() < 120)
             agent_alerts = AgentHealthAlerts(
                 has_agent=True,
                 agent_version=agent_token.agent_version if agent_token else None,
@@ -552,8 +557,8 @@ async def get_health_overview(
     avg_score = round(sum(total_scores) / len(total_scores)) if total_scores else 100
     avg_lat = round(sum(valid_avg_latencies) / len(valid_avg_latencies), 1) if valid_avg_latencies else None
     avg_jit = round(sum(valid_avg_jitters) / len(valid_avg_jitters), 1) if valid_avg_jitters else None
-    online_count = sum(1 for d in device_items if d.is_online)
-    offline_count = sum(1 for d in device_items if not d.is_online and getattr(d, 'alert_offline', True))
+    online_count = sum(1 for d in device_items if d.is_online and d.health_status != "offline")
+    offline_count = sum(1 for d in device_items if (not d.is_online or d.health_status == "offline") and getattr(d, 'alert_offline', True))
 
     kpis = HealthOverviewKPIs(
         network_health_score=avg_score,
@@ -662,7 +667,7 @@ async def get_device_health_detail(
 
     agent_alerts = None
     if dev.has_agent or agent_token:
-        is_active = bool(agent_token and agent_token.last_seen and (now - ensure_utc(agent_token.last_seen)).total_seconds() < 300)
+        is_active = bool(agent_token and agent_token.last_seen and (now - ensure_utc(agent_token.last_seen)).total_seconds() < 120)
         agent_alerts = AgentHealthAlerts(
             has_agent=True,
             agent_version=agent_token.agent_version if agent_token else None,

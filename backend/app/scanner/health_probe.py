@@ -12,17 +12,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.database import async_session
+from app.models.agent import AgentToken
 from app.models.device import Device, DeviceHealthSample
 from app.scanner.presence import (
     FALLBACK_PROBE_PORTS,
+    get_offline_threshold,
+    register_miss,
     register_seen,
 )
 from app.scanner.sync import _commit_with_retry
 from app.scanner.utils import (
     check_ssl_expiry_days,
+    ensure_utc,
     measure_ping_latency_ms,
     measure_tcp_latency_ms,
 )
+from app.services.cache_service import dashboard_cache, topology_cache
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +147,11 @@ async def run_health_probe_pass() -> int:
             return 0
 
         semaphore = asyncio.Semaphore(MAX_PROBE_CONCURRENCY)
+        offline_threshold = await get_offline_threshold(db)
+
+        device_ids = [d.id for d in devices]
+        res_tokens = await db.execute(select(AgentToken).where(AgentToken.device_id.in_(device_ids)))
+        tokens_by_dev = {t.device_id: t for t in res_tokens.scalars().all()}
 
         # Run probes concurrently in batches
         tasks = [_probe_single_device(dev, now, semaphore) for dev in devices]
@@ -156,27 +166,39 @@ async def run_health_probe_pass() -> int:
             sample, svc_results = result
             samples_to_add.append(sample)
 
-            # If device responded, refresh last_seen and register seen.
-            # Offline hysteresis is intentionally managed by ARP / planner / dashboard scans
-            # to avoid false disconnects on devices that block ICMP and have closed probe ports.
-            if sample.is_online:
-                dev.last_seen = now
-                register_seen(dev)
-
-            # Update services telemetry
+            # Update services telemetry first so service state reflects the latest probe
             for svc in dev.services:
                 if svc.id in svc_results:
                     rtt, ssl_days, ssl_checked = svc_results[svc.id]
                     svc.latency_ms = rtt
                     svc.last_checked = now
-                    if rtt is not None:
-                        svc.is_up = True
+                    svc.is_up = rtt is not None
                     if ssl_checked:
                         svc.ssl_expiry_days = ssl_days
                         svc.ssl_checked_at = now
 
+            if sample.is_online:
+                dev.last_seen = now
+                register_seen(dev)
+            else:
+                token = tokens_by_dev.get(dev.id)
+                has_agent = bool(dev.has_agent or token)
+                agent_last_seen = ensure_utc(token.last_seen) if token and token.last_seen else None
+                agent_stale = not agent_last_seen or (now - agent_last_seen).total_seconds() > 75
+
+                if has_agent and agent_stale:
+                    # Both independent channels (ICMP/TCP probe + 30s agent heartbeat) confirm offline
+                    dev.missed_scans = max(dev.missed_scans or 0, offline_threshold - 1)
+                    await register_miss(dev, db, offline_threshold)
+                elif dev.services and (not has_agent or agent_stale):
+                    # Devices with services are skipped by planner.py (_cleanup_devices);
+                    # since ICMP and all configured service TCP ports failed here, count the miss.
+                    await register_miss(dev, db, offline_threshold)
+
         db.add_all(samples_to_add)
         await _commit_with_retry(db)
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()
 
         logger.debug(f"Health probe pass completed: {len(samples_to_add)} devices sampled")
         return len(samples_to_add)

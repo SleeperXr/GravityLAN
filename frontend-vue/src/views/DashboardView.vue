@@ -365,6 +365,7 @@ function clearFilters() {
         :is-last="group ? store.sortedGroups.findIndex((g) => g.id === group.id) === store.sortedGroups.length - 1 : true"
         :collapsed="collapsed.includes(keyOf(group ? group.id : null))"
         :edit-mode="editMode"
+        :filtering="filtering"
         :view-mode="viewMode"
         :selected-ids="selectedIds"
         @toggle="toggleGroup(group ? group.id : null)"

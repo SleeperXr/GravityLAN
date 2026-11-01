@@ -921,7 +921,9 @@ class ArpNeighborCollector(MetricProvider):
                         mac = parts[idx + 1].lower()
                         dev = parts[parts.index("dev") + 1] if "dev" in parts else ""
                         state = parts[-1].upper()
-                        if state not in ("FAILED", "INCOMPLETE") and mac != "00:00:00:00:00:00":
+                        if state in ("STALE", "FAILED", "INCOMPLETE"):
+                            neighbors.pop(ip, None)
+                        elif mac != "00:00:00:00:00:00":
                             neighbors[ip] = {"ip": ip, "mac": mac, "interface": dev}
         except Exception:
             pass

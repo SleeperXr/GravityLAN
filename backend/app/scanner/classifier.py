@@ -329,6 +329,7 @@ def _build_services(
                 "url_template": f"{protocol}://{{ip}}:{port}",
                 "is_auto_detected": True,
             })
+            handled_ports.add(port)
 
     # Final catch-all for any other port not yet handled
     for port in port_set:

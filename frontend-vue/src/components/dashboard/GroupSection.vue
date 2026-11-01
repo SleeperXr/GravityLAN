@@ -19,6 +19,7 @@ const props = defineProps<{
   isLast: boolean;
   collapsed: boolean;
   editMode: boolean;
+  filtering?: boolean;
   viewMode: 'grid' | 'list';
   selectedIds: Set<number>;
 }>();
@@ -48,17 +49,21 @@ const groupDefaultH = computed(() => {
 });
 
 function tileAttrs(device: Device) {
-  const x = device.x !== null ? device.x : undefined;
+  const useSavedPos = !props.filtering && device.x !== null && device.y !== null;
+  const x = useSavedPos ? (device.x ?? undefined) : undefined;
+  const y = useSavedPos ? (device.y ?? undefined) : undefined;
   return {
     x,
-    y: device.y !== null ? device.y : undefined,
+    y,
     w: device.w !== null && device.w !== undefined ? device.w : 4,
     h: device.h !== null && device.h !== undefined ? device.h : groupDefaultH.value,
-    autoPosition: x === undefined,
+    autoPosition: !useSavedPos,
   };
 }
 
-const layoutKey = computed(() => props.devices.map((d) => `${d.id}:${d.w ?? 4}:${d.h ?? groupDefaultH.value}:${d.x}:${d.y}`).join(','));
+const layoutKey = computed(
+  () => `${props.filtering ? 'f' : 'n'}|${props.devices.map((d) => `${d.id}:${d.w ?? 4}:${d.h ?? groupDefaultH.value}:${d.x}:${d.y}`).join(',')}`,
+);
 
 function destroy() {
   try {
@@ -76,12 +81,39 @@ async function init() {
   if (props.collapsed || props.viewMode !== 'grid' || props.devices.length === 0) return;
   await nextTick();
   if (!gridEl.value) return;
+
+  // GridStack mutates gs-* attributes and inline positioning styles directly on reused DOM nodes.
+  // Synchronize each item element from Vue state before initializing GridStack so filtered subsets
+  // never inherit stale row/column coordinates from the unfiltered grid.
+  const byId = new Map(props.devices.map((d) => [d.id, d]));
+  for (const itemEl of gridEl.value.querySelectorAll<HTMLElement>('.grid-stack-item')) {
+    const dev = byId.get(tileId(itemEl));
+    if (!dev) continue;
+    const attrs = tileAttrs(dev);
+    itemEl.style.removeProperty('top');
+    itemEl.style.removeProperty('left');
+    itemEl.style.removeProperty('right');
+    itemEl.style.removeProperty('width');
+    itemEl.style.removeProperty('height');
+    itemEl.style.removeProperty('display');
+    if (attrs.x !== undefined) itemEl.setAttribute('gs-x', String(attrs.x));
+    else itemEl.removeAttribute('gs-x');
+    if (attrs.y !== undefined) itemEl.setAttribute('gs-y', String(attrs.y));
+    else itemEl.removeAttribute('gs-y');
+    itemEl.setAttribute('gs-w', String(attrs.w));
+    itemEl.setAttribute('gs-h', String(attrs.h));
+    itemEl.setAttribute('gs-min-w', '2');
+    itemEl.setAttribute('gs-min-h', '2');
+    if (attrs.autoPosition) itemEl.setAttribute('gs-auto-position', 'true');
+    else itemEl.removeAttribute('gs-auto-position');
+  }
+
   grid = GridStack.init(
     {
       column: 12,
       cellHeight: 50,
       margin: 6,
-      float: true,
+      float: !props.filtering,
       staticGrid: !props.editMode,
       alwaysShowResizeHandle: props.editMode,
       resizable: { handles: 'se' },
@@ -113,11 +145,11 @@ async function init() {
     };
     grid.on('dragstop', save);
     grid.on('resizestop', save);
-  } else if (props.devices.some((d) => d.x === null)) {
-    // Tiles without a saved position get one compact pass
-    grid.batchUpdate();
+  } else if (props.filtering || props.devices.some((d) => d.x === null)) {
+    // Filtered views and tiles without a saved position get a top-gravity compact pass
+    grid.float(false);
     grid.compact();
-    grid.batchUpdate(false);
+    if (!props.filtering) grid.float(true);
   }
 }
 
