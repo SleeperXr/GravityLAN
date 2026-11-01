@@ -253,4 +253,34 @@ async def test_deploy_makes_agent_config_owner_only(fake_remote, monkeypatch):
     assert f"chmod 600 {agent_deployer.REMOTE_CONFIG_PATH}" in config_cmd
     assert "chmod 644" not in config_cmd
     # The script itself is not secret and keeps its usual mode
+    # The script itself is not secret and keeps its usual mode
     assert any(f"chmod 755 {agent_deployer.REMOTE_AGENT_PATH}" in cmd for cmd in commands)
+
+
+@pytest.mark.asyncio
+async def test_deploy_aborts_when_remote_sha256_mismatches(fake_remote, monkeypatch):
+    monkeypatch.setattr(agent_deployer, "_verify_remote_sha256", lambda *a, **k: False)
+
+    ok, message, token = await agent_deployer.deploy_agent(
+        host_ip="192.168.1.50", ssh_user="root", ssh_password="pw",
+        server_url="http://gravity:8000", device_id=7,
+    )
+
+    assert ok is False
+    assert "SHA-256 checksum mismatch" in message
+    assert token == ""
+    commands = [call.args[0] for call in fake_remote.run.call_args_list]
+    commands = [call.args[0] for call in fake_remote.run.call_args_list]
+    assert not any(agent_deployer.REMOTE_AGENT_PATH in cmd for cmd in commands)
+
+
+def test_verify_remote_sha256_checks_remote_digest():
+    client = MagicMock()
+    expected = agent_deployer._staged_content_sha256("print('hi')")
+    stdout = MagicMock()
+    stdout.read.return_value = f"{expected}\n".encode("utf-8")
+    client.exec_command.return_value = (MagicMock(), stdout, MagicMock())
+    assert agent_deployer._verify_remote_sha256(client, "/tmp/agent.py", expected) is True
+
+    stdout.read.return_value = b"0" * 64 + b"\n"
+    assert agent_deployer._verify_remote_sha256(client, "/tmp/agent.py", expected) is False

@@ -106,4 +106,86 @@ def test_server_wide_opt_in_follows_the_setting(monkeypatch):
     monkeypatch.setattr(settings, "allow_insecure_install", True)
     assert 'ALLOW_INSECURE="${ALLOW_INSECURE:-1}"' in build_install_script("http://h:8000", 1, "c")
     monkeypatch.setattr(settings, "allow_insecure_install", False)
+    monkeypatch.setattr(settings, "allow_insecure_install", False)
     assert "ALLOW_INSECURE:-1" not in build_install_script("http://h:8000", 1, "c")
+
+
+@pytest.mark.asyncio
+async def test_enrollment_reports_agent_version_and_sha256(client, db, admin_token):
+    import hashlib
+    from app.services.agent_deployer import LATEST_AGENT_VERSION
+
+    device = Device(ip="192.168.1.92", display_name="Pi", is_online=True)
+    db.add(device)
+    await db.commit()
+
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    res = await client.post(f"/api/agent/enroll/{device.id}")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["agent_version"] == LATEST_AGENT_VERSION
+    dl = await client.get("/api/agent/download/agent")
+    assert dl.status_code == 200
+    assert body["agent_sha256"] == hashlib.sha256(dl.content).hexdigest()
+
+
+def test_install_script_embeds_and_checks_sha256_before_config_download():
+    from app.services.agent_deployer import LATEST_AGENT_VERSION, get_agent_script_sha256
+
+    script = build_install_script("https://gravity.example", 3, "abc")
+    expected_sha = get_agent_script_sha256()
+    assert f"AGENT_VERSION={LATEST_AGENT_VERSION}\n" in script
+    assert f"AGENT_SHA256={expected_sha}\n" in script
+    assert 'echo "Agent SHA-256: $AGENT_SHA256"' in script
+    assert script.index("SHA-256 checksum mismatch") < script.index("/api/agent/download/config/")
+
+
+def _run_as_root_with_agent_download(script: str, tmp_path, agent_bytes: bytes) -> subprocess.CompletedProcess:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    id_stub = bin_dir / "id"
+    id_stub.write_text("#!/bin/sh\necho 0\n", newline="\n")
+    id_stub.chmod(0o755)
+    payload = tmp_path / "payload.py"
+    payload.write_bytes(agent_bytes)
+    curl = bin_dir / "curl"
+    curl.write_text(
+        '#!/bin/sh\n'
+        f'echo "$@" >> "{(tmp_path / "curl.log").as_posix()}"\n'
+        'out=""\n'
+        'url=""\n'
+        'while [ $# -gt 0 ]; do\n'
+        '  if [ "$1" = "-o" ]; then out="$2"; shift 2; else url="$1"; shift; fi\n'
+        'done\n'
+        'case "$url" in\n'
+        f'  */download/agent) cp "{payload.as_posix()}" "$out"; exit 0 ;;\n'
+        '  *) exit 1 ;;\n'
+        'esac\n',
+        newline="\n",
+    )
+    curl.chmod(0o755)
+    run_env = {**os.environ, "PATH": f"{bin_dir.as_posix()}{os.pathsep}{os.environ.get('PATH', '')}"}
+    return subprocess.run([BASH, "-s"], input=script, env=run_env, capture_output=True, text=True, timeout=30)
+
+
+@needs_bash
+def test_install_script_aborts_on_checksum_mismatch_before_redeeming_code(tmp_path):
+    script = build_install_script("https://gravity.example", 3, "abc", agent_version="0.2.5", agent_sha256="0" * 64)
+    result = _run_as_root_with_agent_download(script, tmp_path, b"print('tampered')\n")
+    assert result.returncode == 1
+    assert "SHA-256 checksum mismatch" in result.stderr
+    assert "/download/config/" not in (tmp_path / "curl.log").read_text()
+
+
+@needs_bash
+def test_install_script_verifies_checksum_when_bytes_match(tmp_path):
+    import hashlib
+
+    agent_bytes = b"print('authentic')\n"
+    expected_sha = hashlib.sha256(agent_bytes).hexdigest()
+    script = build_install_script("https://gravity.example", 3, "abc", agent_version="0.2.5", agent_sha256=expected_sha)
+    result = _run_as_root_with_agent_download(script, tmp_path, agent_bytes)
+    assert "GravityLAN Agent Installer (v0.2.5)" in result.stdout
+    assert f"SHA-256 verified ({expected_sha})" in result.stdout
+    assert "SHA-256 checksum mismatch" not in result.stderr
+    assert "/download/config/" in (tmp_path / "curl.log").read_text()

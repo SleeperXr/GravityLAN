@@ -176,7 +176,8 @@
       "deploy_confirm": "Der Agent wird per SSH installiert auf:\n\n{{target}}",
       "deploy_start": "Installieren",
       "update_all_confirm_title": "Alle Agents aktualisieren",
-      "update_all_confirm": "Der Agent wird per SSH aktualisiert auf {{count}} Geräten:\n\n{{targets}}"
+      "update_all_confirm": "Der Agent wird per SSH aktualisiert auf {{count}} Geräten:\n\n{{targets}}",
+      "installer_checksum": "Agent v{{version}} · SHA-256: {{sha256}}"
     },
     "ssh": {
       "back_to_sessions": "Zurück zu den Sitzungen ({{count}})"

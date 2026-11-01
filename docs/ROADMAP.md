@@ -46,7 +46,7 @@ it into an enterprise platform (SIEM export, signed audit trails, network access
   browser session with confirmation; master and API tokens are refused and logged (`gravitylan_api` is unaffected).
 - ⏳ **AP-14 Remove the classic React interface** and its build stage, in the release after GravityUI
   became the default.
-- ⏳ **AP-10 Agent installer checksum:** shows the agent version and SHA-256, verifies the download and
+- ✅ **AP-10 Agent installer checksum:** shows the agent version and SHA-256, verifies the download and
   aborts on a mismatch. An integrity check, not a proof of origin.
 
 ## Phase 3 · Events ⏳

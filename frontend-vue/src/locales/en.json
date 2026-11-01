@@ -176,7 +176,8 @@
       "deploy_confirm": "The agent is installed over SSH on:\n\n{{target}}",
       "deploy_start": "Install",
       "update_all_confirm_title": "Update all agents",
-      "update_all_confirm": "The agent is updated over SSH on {{count}} devices:\n\n{{targets}}"
+      "update_all_confirm": "The agent is updated over SSH on {{count}} devices:\n\n{{targets}}",
+      "installer_checksum": "Agent v{{version}} · SHA-256: {{sha256}}"
     },
     "ssh": {
       "back_to_sessions": "Back to sessions ({{count}})"

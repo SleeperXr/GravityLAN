@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.services.agent_deployer import LATEST_AGENT_VERSION, get_agent_script_sha256
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,7 @@ def build_agent_config_json(server_url: str, raw_token: str, device_id: int, int
 
 def build_install_script(
     server_url: str, device_id: int, enroll_code: str | None, allow_insecure: bool | None = None,
+    *, agent_version: str | None = None, agent_sha256: str | None = None,
 ) -> str:
     """Generate the 'curl | bash' installer shell script for an agent.
 
@@ -116,12 +118,17 @@ def build_install_script(
     quoted_server_url = shlex.quote(server_url)
     quoted_device_id = shlex.quote(str(device_id))
     quoted_enroll_code = shlex.quote(enroll_code or "")
+    quoted_agent_version = shlex.quote(LATEST_AGENT_VERSION if agent_version is None else agent_version)
+    quoted_agent_sha256 = shlex.quote(get_agent_script_sha256() if agent_sha256 is None else agent_sha256)
     # From an HTTPS server, curl must not follow a redirect down to plain HTTP (#44)
     https_only = "--proto '=https' " if server_url.lower().startswith("https://") else ""
 
     return f"""#!/bin/bash
 set -e
-echo "--- GravityLAN Agent Installer ---"
+AGENT_VERSION={quoted_agent_version}
+AGENT_SHA256={quoted_agent_sha256}
+echo "--- GravityLAN Agent Installer (v$AGENT_VERSION) ---"
+echo "Agent SHA-256: $AGENT_SHA256"
 
 INSTALL_DIR="/opt/gravitylan-agent"
 SERVER_URL={quoted_server_url}
@@ -175,6 +182,20 @@ curl {https_only}-fsSL "$SERVER_URL/api/agent/download/agent" -o "$TMP_DIR/gravi
   echo "Error: could not download the agent from $SERVER_URL - is the GravityLAN server reachable from this host?" >&2
   exit 1
 }}
+if [ -n "$AGENT_SHA256" ]; then
+  if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL_SHA256="$(sha256sum "$TMP_DIR/gravitylan-agent.py" | cut -d ' ' -f 1)"
+  elif command -v shasum >/dev/null 2>&1; then
+    ACTUAL_SHA256="$(shasum -a 256 "$TMP_DIR/gravitylan-agent.py" | cut -d ' ' -f 1)"
+  else
+    ACTUAL_SHA256="$("$PYTHON_BIN" -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$TMP_DIR/gravitylan-agent.py")"
+  fi
+  if [ "$ACTUAL_SHA256" != "$AGENT_SHA256" ]; then
+    echo "Error: SHA-256 checksum mismatch for gravitylan-agent.py (expected $AGENT_SHA256, got $ACTUAL_SHA256)." >&2
+    exit 1
+  fi
+  echo "   SHA-256 verified ($ACTUAL_SHA256)."
+fi
 curl {https_only}-fsSL "$SERVER_URL/api/agent/download/config/$DEVICE_ID?code=$ENROLL_CODE" -o "$TMP_DIR/agent.conf" || {{
   echo "Error: the install code is invalid, expired or was already used." >&2
   echo "Copy a fresh install command from the device's Agent tab in the GravityLAN UI." >&2

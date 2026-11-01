@@ -255,7 +255,7 @@ export const api = {
   uninstallAgent: (deviceId: number, data: import('../types').AgentSshLogin) =>
     request<AgentSshResult>(`/api/agent/uninstall/${deviceId}`, { method: 'POST', body: JSON.stringify(data) }),
   createAgentEnrollment: (deviceId: number) =>
-    request<{ code: string; expires_in: number; server_url?: string; insecure?: boolean; insecure_allowed?: boolean }>(
+    request<{ code: string; expires_in: number; server_url?: string; insecure?: boolean; insecure_allowed?: boolean; agent_version?: string; agent_sha256?: string }>(
       `/api/agent/enroll/${deviceId}`, { method: 'POST' },
     ),
   getAgentStatus: (deviceId: number) =>
