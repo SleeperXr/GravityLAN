@@ -114,7 +114,7 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-Open `http://<your-host>:8000` and go through the setup wizard: it detects your subnets and saves them as scan subnets, runs the first scan and sets the admin password. Subnets the container can't see directly, such as an IoT VLAN behind the router, can be added in the same step.
+Open `http://<your-host>:8000` and go through the setup wizard: it detects your subnets and saves them as scan subnets, runs the first scan and sets the admin password. Subnets the container can't see directly, such as an IoT VLAN behind the router, can be added in the same step. Moving to a new host? **Restore a backup** on the first page of the wizard instead of scanning; it then only asks for the new admin password.
 
 > [!IMPORTANT]
 > **Finish the setup wizard right after the first start.** Until then only the wizard's own routes answer, but whoever opens the page first chooses the admin password. The same applies after a factory reset.
@@ -406,7 +406,7 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-`http://<dein-host>:8000` öffnen und den Setup-Wizard durchgehen: Er erkennt deine Subnetze und speichert sie als Scan-Subnetze, startet den ersten Scan und legt das Admin-Passwort fest. Subnetze, die der Container nicht direkt sieht, etwa ein IoT-VLAN hinter dem Router, lassen sich im selben Schritt ergänzen.
+`http://<dein-host>:8000` öffnen und den Setup-Wizard durchgehen: Er erkennt deine Subnetze und speichert sie als Scan-Subnetze, startet den ersten Scan und legt das Admin-Passwort fest. Subnetze, die der Container nicht direkt sieht, etwa ein IoT-VLAN hinter dem Router, lassen sich im selben Schritt ergänzen. Umzug auf einen neuen Host? Auf der ersten Seite des Wizards **ein Backup einspielen** statt zu scannen; danach fragt er nur noch nach dem neuen Admin-Passwort.
 
 > [!IMPORTANT]
 > **Schließ den Setup-Wizard direkt nach dem ersten Start ab.** Bis dahin antworten nur die Routen des Wizards, aber wer die Seite zuerst öffnet, wählt das Admin-Passwort. Das gilt genauso nach einem Werksreset.
