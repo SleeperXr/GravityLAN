@@ -55,7 +55,7 @@ def test_backup_of_another_instance_revokes_agents_of_reassigned_ids(instance_db
         {"id": 2, "ip": "10.0.0.2", "mac": "", "display_name": "nas"},
     ]}, report)
 
-    assert report == {"agent_tokens_revoked": 1, "reassigned_device_ids": [1]}
+    assert report == {"agent_tokens_revoked": 1, "reassigned_device_ids": [1], "duplicates_dropped": {}}
     assert _rows(instance_db, "SELECT device_id, token FROM agent_tokens") == [(2, "sha256:nas")]
     assert _rows(instance_db, "SELECT device_id FROM device_interfaces") == [(2,)]
     assert _rows(instance_db, "SELECT device_id FROM device_history") == [(2,)]
@@ -70,7 +70,7 @@ def test_restore_of_same_instance_keeps_everything(instance_db):
         {"id": 2, "ip": "10.0.0.2", "mac": "", "display_name": "nas"},
     ]}, report)
 
-    assert report == {"agent_tokens_revoked": 0, "reassigned_device_ids": []}
+    assert report == {"agent_tokens_revoked": 0, "reassigned_device_ids": [], "duplicates_dropped": {}}
     assert len(_rows(instance_db, "SELECT * FROM agent_tokens")) == 2
     assert len(_rows(instance_db, "SELECT * FROM device_interfaces")) == 2
 
@@ -88,7 +88,7 @@ def test_devices_missing_from_backup_lose_their_rows(instance_db):
 def test_import_without_devices_changes_nothing(instance_db):
     report: dict = {}
     backup._write_db(instance_db, {"settings": [{"key": "scan_interval", "value": "5", "category": "scan"}]}, report)
-    assert report == {"agent_tokens_revoked": 0, "reassigned_device_ids": []}
+    assert report == {"agent_tokens_revoked": 0, "reassigned_device_ids": [], "duplicates_dropped": {}}
 
 
 @pytest.mark.asyncio

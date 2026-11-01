@@ -104,11 +104,9 @@ def test_failed_import_rolls_back_everything(backup_db):
         # Processed first: deleted and re-inserted before the error below
         "device_groups": [{"id": 10, "name": "Replaced"}],
         "settings": [{"key": "scan_interval", "value": "99", "category": "scan"}],
-        # Duplicate unique ip -> IntegrityError halfway through the import
-        "devices": [
-            {"id": 2, "ip": "10.0.0.2", "display_name": "a"},
-            {"id": 3, "ip": "10.0.0.2", "display_name": "b"},
-        ],
+        "devices": [{"id": 2, "ip": "10.0.0.2", "display_name": "a"}],
+        # A cable from a port to itself breaks a CHECK constraint -> IntegrityError halfway through
+        "rack_cables": [{"id": 1, "a_port_id": 5, "b_port_id": 5}],
     }
 
     with pytest.raises(sqlite3.IntegrityError):
@@ -120,6 +118,30 @@ def test_failed_import_rolls_back_everything(backup_db):
     # The database is not left locked by an open transaction
     backup._write_db(backup_db, {"settings": [{"key": "scan_interval", "value": "7", "category": "scan"}]})
     assert _settings(backup_db)["scan_interval"] == "7"
+
+
+def test_duplicates_from_an_older_database_are_merged_not_fatal(backup_db):
+    """An old instance could hold the same link twice; a fresh one refused it and the whole import failed."""
+    report = {}
+    imported = backup._write_db(backup_db, {
+        "devices": [
+            {"id": 1, "ip": "10.0.0.1", "display_name": "router"},
+            {"id": 2, "ip": "10.0.0.2", "display_name": "old nas"},
+            {"id": 3, "ip": "10.0.0.2", "display_name": "nas"},
+        ],
+        "topology_links": [
+            {"id": 1, "source_id": 1, "target_id": 3, "link_type": "1GbE"},
+            {"id": 2, "source_id": 1, "target_id": 3, "link_type": "10GbE"},
+            # Points at the device the duplicate check dropped
+            {"id": 3, "source_id": 1, "target_id": 2, "link_type": "1GbE"},
+        ],
+    }, report)
+
+    assert report["duplicates_dropped"] == {"devices": 1, "topology_links": 1}
+    assert imported["devices"] == 2
+    assert _query(backup_db, "SELECT id, display_name FROM devices ORDER BY id") == [(1, "router"), (3, "nas")]
+    # The newest of each pair is kept; the link to the dropped device goes too
+    assert _query(backup_db, "SELECT id, link_type FROM topology_links") == [(2, "10GbE")]
 
 
 # --- endpoint -----------------------------------------------------------------
@@ -165,7 +187,7 @@ async def test_import_endpoint_rejects_malformed_backup(client, admin_token, imp
 async def test_import_endpoint_failure_leaves_database_unchanged(client, admin_token, import_endpoint_db):
     payload = json.dumps({
         "device_groups": [{"id": 10, "name": "Replaced"}],
-        "devices": [{"id": 2, "ip": "10.0.0.2"}, {"id": 3, "ip": "10.0.0.2"}],
+        "rack_cables": [{"id": 1, "a_port_id": 5, "b_port_id": 5}],
     }).encode()
 
     response = await _post_backup(client, admin_token, payload)

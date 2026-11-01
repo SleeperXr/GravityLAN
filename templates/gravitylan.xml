@@ -68,7 +68,7 @@ Features:
 Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
   <Changes>
 ### 0.7.0
-- GravityUI is the default interface; the classic React view stays one more release as a fallback (Settings, System, Default interface) and is removed after that. Backups now contain rack equipment, ports and cables. Images are built and published by CI, release candidates first appear as the next tag. The unused scan profiles endpoint is gone.
+- GravityUI is the default interface; the classic React view stays one more release as a fallback and is removed after that. Audit log under Logs, and a password confirmation before terminals, agent actions, credential changes and backups. Choose which devices are on the orbit map. Backups contain rack equipment, ports and cables. Images are built and published by CI. New tutorial for HTTPS with a reverse proxy.
 
 ### 0.6.0
 - Racks rebuilt: faceplates that look like the hardware, drag and drop with snapping and undo, rack equipment (patch panels, UPS, power strips, blanks, cable management), ports and cables with a front and a rear view. Backup links and a resilience view on the orbit map, single points of failure on Health. Company demo network. Design critique fixes with a readable type floor, smooth dashboard scrolling, dnspython 2.9.0.
