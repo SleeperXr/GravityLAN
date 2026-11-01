@@ -1,6 +1,6 @@
 # Releasing GravityLAN
 
-How a change becomes an image on Docker Hub. The goal is calm releases: what ships was tested as it ships, and a pause
+How a change becomes an image on Docker Hub. What is planned and decided is in [ROADMAP.md](ROADMAP.md). The goal is calm releases: what ships was tested as it ships, and a pause
 of a few weeks never leaves a half-finished release behind.
 
 ## Branches and tags
