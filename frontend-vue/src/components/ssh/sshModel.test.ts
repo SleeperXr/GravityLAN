@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Device, SshHistoryEntry, SshKey, SshProfile } from '@/types';
-import { agentUpdateFor, filterDevices, historyReconnect, hostKeyFile, isLive, profileInitialFrom } from './sshModel';
+import { agentUpdateFor, filterDevices, handleTerminalShortcut, historyReconnect, hostKeyFile, isLive, profileInitialFrom } from './sshModel';
 
 const device = (over: Partial<Device>): Device => ({ id: 1, ip: '192.168.1.10', hostname: null, display_name: 'nas', is_online: true, is_hidden: false, services: [], ...over }) as Device;
 
@@ -58,5 +58,43 @@ describe('sshModel', () => {
     expect(hostKeyFile('ssh-ed25519')).toBe('/etc/ssh/ssh_host_ed25519_key.pub');
     expect(hostKeyFile('ecdsa-sha2-nistp256')).toBe('/etc/ssh/ssh_host_ecdsa_key.pub');
     expect(hostKeyFile('rsa-sha2-512')).toBe('/etc/ssh/ssh_host_rsa_key.pub');
+  });
+
+  it('copies on Ctrl+C when text is selected, sends SIGINT when not, and pastes on Ctrl+V', () => {
+    let selected = false;
+    const copy = vi.fn();
+    const paste = vi.fn();
+    const actions = { hasSelection: () => selected, copy, paste };
+    const key = (k: string, shiftKey = false) => ({
+      type: 'keydown',
+      key: k,
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey,
+      altKey: false,
+      preventDefault: vi.fn(),
+    });
+
+    // Without a selection, plain Ctrl+C passes through to xterm (SIGINT / ^C)
+    expect(handleTerminalShortcut(key('c', false), actions)).toBe(true);
+    expect(copy).not.toHaveBeenCalled();
+
+    // With a selection, plain Ctrl+C copies and clears the selection
+    selected = true;
+    expect(handleTerminalShortcut(key('c', false), actions)).toBe(false);
+    expect(copy).toHaveBeenCalledWith(true);
+
+    // Ctrl+Shift+C always copies without clearing
+    copy.mockClear();
+    selected = false;
+    expect(handleTerminalShortcut(key('C', true), actions)).toBe(false);
+    expect(copy).toHaveBeenCalledWith(false);
+
+    // Ctrl+V and Ctrl+Shift+V intercept xterm's ^V
+    Object.defineProperty(navigator, 'clipboard', { value: { readText: vi.fn(async () => 'ls') }, configurable: true });
+    expect(handleTerminalShortcut(key('v', false), actions)).toBe(false);
+    expect(paste).toHaveBeenCalledTimes(1);
+    expect(handleTerminalShortcut(key('V', true), actions)).toBe(false);
+    expect(paste).toHaveBeenCalledTimes(2);
   });
 });

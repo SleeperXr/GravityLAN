@@ -9,7 +9,7 @@ import type { SshSessionRequest } from '@/types';
 import Button from '@/components/ui/Button.vue';
 import TerminalSettings from './TerminalSettings.vue';
 import { FONT_OPTIONS, fontCss, loadTerminalFont, resolveTheme, setTerminalPrefs, terminalPrefs } from './terminalPrefs';
-import { hostKeyFile, lastCommandText, type AgentUpdate, type HostKeyPrompt, type TerminalStatus } from './sshModel';
+import { handleTerminalShortcut, hostKeyFile, lastCommandText, type AgentUpdate, type HostKeyPrompt, type TerminalStatus } from './sshModel';
 import { buildInstallCommand, needsInsecureOptIn, requestInstallCode } from '@/lib/agent';
 import { copyText } from '@/lib/clipboard';
 import { useToast } from '@/composables/useToast';
@@ -18,7 +18,8 @@ import { t } from '@/i18n';
 
 /**
  * One xterm.js terminal bound to one SSH session over the /api/ssh/terminal WebSocket.
- * Ctrl+Shift+C / Ctrl+Shift+V copy and paste; plain Ctrl+C stays "interrupt".
+ * Ctrl+C copies when text is selected (and clears the selection so a second Ctrl+C sends SIGINT);
+ * Ctrl+V and Ctrl+Shift+C / Ctrl+Shift+V copy and paste.
  */
 const props = withDefaults(defineProps<{ request: SshSessionRequest; active: boolean; agentUpdate?: AgentUpdate | null }>(), { agentUpdate: null });
 const emit = defineEmits<{ status: [status: TerminalStatus] }>();
@@ -172,10 +173,12 @@ function flash(target: typeof copyState, next: 'copied' | 'empty') {
   window.setTimeout(() => (target.value = 'idle'), 1500);
 }
 
-async function copySelection() {
+async function copySelection(clearAfter: boolean | Event = false) {
   const text = term?.getSelection() ?? '';
   if (!text) return flash(copyState, 'empty');
-  flash(copyState, (await copyText(text)) ? 'copied' : 'empty');
+  const ok = await copyText(text);
+  if (ok && clearAfter === true) term?.clearSelection();
+  flash(copyState, ok ? 'copied' : 'empty');
   term?.focus();
 }
 
@@ -255,19 +258,13 @@ onMounted(() => {
   term.loadAddon(fit);
   term.open(el);
 
-  term.attachCustomKeyEventHandler((e) => {
-    if (e.type !== 'keydown' || !e.ctrlKey || !e.shiftKey) return true;
-    const key = e.key.toLowerCase();
-    if (key === 'c') {
-      void copySelection();
-      return false;
-    }
-    if (key === 'v') {
-      void paste();
-      return false;
-    }
-    return true;
-  });
+  term.attachCustomKeyEventHandler((e) =>
+    handleTerminalShortcut(e, {
+      hasSelection: () => Boolean(term?.getSelection()),
+      copy: (clearAfter) => void copySelection(clearAfter),
+      paste: () => void paste(),
+    }),
+  );
 
   const encoder = new TextEncoder();
   const send = (data: Uint8Array) => {
