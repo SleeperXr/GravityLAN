@@ -49,10 +49,12 @@ export function useTerminalClipboard({ termRef, lastCommandRef }: XtermHandles) 
   const [pasteFallback, setPasteFallback] = useState(false);
   const [pasteText, setPasteText] = useState('');
 
-  const copySelection = async () => {
+  const copySelection = async (clearAfter: boolean | unknown = false) => {
     const text = termRef.current?.getSelection() ?? '';
     if (!text) { flashCopy('empty'); return; }
-    flashCopy((await copyText(text)) ? 'copied' : 'empty');
+    const ok = await copyText(text);
+    if (ok && clearAfter === true) termRef.current?.clearSelection?.();
+    flashCopy(ok ? 'copied' : 'empty');
     termRef.current?.focus();
   };
 

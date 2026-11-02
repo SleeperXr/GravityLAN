@@ -16,14 +16,15 @@ export interface XtermHandles {
 }
 
 interface ShortcutHandlers {
-  copy: () => void;
+  copy: (clearAfter?: boolean) => void;
   paste: () => void;
 }
 
 /**
  * One xterm.js instance for the lifetime of the pane: fits itself to its box,
  * forwards input to the socket, applies the appearance prefs live and maps
- * Ctrl+Shift+C / Ctrl+Shift+V to copy and paste (plain Ctrl+C stays "interrupt").
+ * Ctrl+C (when text is selected), Ctrl+V and Ctrl+Shift+C / Ctrl+Shift+V to
+ * copy and paste (plain Ctrl+C without a selection stays "interrupt").
  */
 export function useXterm(prefs: TerminalPrefs, shortcuts: ShortcutHandlers): XtermHandles {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -70,10 +71,20 @@ export function useXterm(prefs: TerminalPrefs, shortcuts: ShortcutHandlers): Xte
     fitRef.current = fit;
 
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== 'keydown' || !e.ctrlKey || !e.shiftKey) return true;
+      if (e.type !== 'keydown' || e.altKey || (!e.ctrlKey && !e.metaKey)) return true;
       const key = e.key.toLowerCase();
-      if (key === 'c') { shortcutsRef.current.copy(); return false; }
-      if (key === 'v') { shortcutsRef.current.paste(); return false; }
+      if (key === 'c') {
+        if (e.shiftKey) { e.preventDefault?.(); shortcutsRef.current.copy(false); return false; }
+        if (term.getSelection()) { e.preventDefault?.(); shortcutsRef.current.copy(true); return false; }
+        return !e.metaKey || e.ctrlKey;
+      }
+      if (key === 'v') {
+        if (e.shiftKey || (typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.readText))) {
+          e.preventDefault?.();
+          shortcutsRef.current.paste();
+        }
+        return false;
+      }
       return true;
     });
 

@@ -22,7 +22,7 @@ interface TerminalPaneProps {
 export function TerminalPane({ request, active, onStatusChange, agentUpdate = null }: TerminalPaneProps) {
   const prefs = useTerminalPrefs();
   // The shortcuts run on key presses, after `clipboard` below is set for this render
-  const xterm = useXterm(prefs, { copy: () => clipboard.copySelection(), paste: () => clipboard.paste() });
+  const xterm = useXterm(prefs, { copy: (clearAfter) => clipboard.copySelection(clearAfter), paste: () => clipboard.paste() });
   const clipboard = useTerminalClipboard(xterm);
   const session = useSshSession(request, xterm, onStatusChange);
   const updateCommand = useAgentUpdateCommand(xterm, agentUpdate);

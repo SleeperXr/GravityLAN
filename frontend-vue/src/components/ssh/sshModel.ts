@@ -144,3 +144,47 @@ export function lastCommandText(buffer: IBuffer, markerLine: number): string {
   }
   return text.replace(/\s+$/, '');
 }
+
+export interface TerminalShortcutActions {
+  hasSelection: () => boolean;
+  copy: (clearAfter?: boolean) => void;
+  paste: () => void;
+}
+
+/**
+ * xterm.js custom key handler for copy and paste:
+ * - Ctrl+C / Cmd+C with an active selection copies and clears the selection (so a second Ctrl+C
+ *   sends SIGINT); without a selection, Ctrl+C is passed through to the shell as SIGINT (^C).
+ * - Ctrl+Shift+C always copies without sending SIGINT.
+ * - Ctrl+Shift+V (or Ctrl+V / Cmd+V when the Clipboard API is available) pastes via `actions.paste`;
+ *   on plain HTTP without Clipboard API, plain Ctrl+V / Cmd+V returns false without preventDefault
+ *   so the browser fires its native paste event on xterm's textarea.
+ */
+export function handleTerminalShortcut(
+  e: Pick<KeyboardEvent, 'type' | 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'> & { preventDefault?: () => void },
+  actions: TerminalShortcutActions,
+): boolean {
+  if (e.type !== 'keydown' || e.altKey || (!e.ctrlKey && !e.metaKey)) return true;
+  const key = e.key.toLowerCase();
+  if (key === 'c') {
+    if (e.shiftKey) {
+      e.preventDefault?.();
+      actions.copy(false);
+      return false;
+    }
+    if (actions.hasSelection()) {
+      e.preventDefault?.();
+      actions.copy(true);
+      return false;
+    }
+    return !e.metaKey || e.ctrlKey;
+  }
+  if (key === 'v') {
+    if (e.shiftKey || (typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.readText))) {
+      e.preventDefault?.();
+      actions.paste();
+    }
+    return false;
+  }
+  return true;
+}

@@ -24,6 +24,7 @@ class FakeTerminal {
   focus = vi.fn();
   paste = vi.fn();
   dispose = vi.fn();
+  clearSelection = vi.fn();
   getSelection = vi.fn(() => '');
   constructor(options: Record<string, unknown>) {
     this.options = { ...options };
@@ -276,17 +277,26 @@ describe('TerminalPane input and clipboard', () => {
     expect(copyText).toHaveBeenCalledWith('root@nas:~$ echo a very long command\na very long command');
   });
 
-  it('copies and pastes with Ctrl+Shift+C/V but leaves Ctrl+C to the shell', async () => {
+  it('copies with Ctrl+C when text is selected, leaves plain Ctrl+C without selection to the shell, and pastes with Ctrl+V / Ctrl+Shift+V', async () => {
     const { term } = await renderPane();
-    term.getSelection.mockReturnValue('df -h');
     Object.defineProperty(navigator, 'clipboard', { value: { readText: vi.fn(async () => 'pwd') }, configurable: true });
 
     const key = (k: string, shiftKey: boolean) => ({ type: 'keydown', ctrlKey: true, shiftKey, key: k }) as KeyboardEvent;
+    // Without a selection, plain Ctrl+C goes to the shell (SIGINT)
+    term.getSelection.mockReturnValue('');
     expect(term.keyHandler(key('c', false))).toBe(true);
+
+    // With a selection, plain Ctrl+C copies and clears the selection
+    term.getSelection.mockReturnValue('df -h');
+    expect(term.keyHandler(key('c', false))).toBe(false);
+    await waitFor(() => expect(copyText).toHaveBeenCalledWith('df -h'));
+    await waitFor(() => expect(term.clearSelection).toHaveBeenCalled());
+
+    // Ctrl+Shift+C and Ctrl+V / Ctrl+Shift+V also copy and paste
     expect(term.keyHandler(key('C', true))).toBe(false);
+    expect(term.keyHandler(key('v', false))).toBe(false);
     expect(term.keyHandler(key('V', true))).toBe(false);
 
-    await waitFor(() => expect(copyText).toHaveBeenCalledWith('df -h'));
     await waitFor(() => expect(term.paste).toHaveBeenCalledWith('pwd'));
   });
 
