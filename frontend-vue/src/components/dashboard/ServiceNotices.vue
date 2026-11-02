@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { ArrowRight, CheckCircle2, ChevronDown } from 'lucide-vue-next';
+import { ArrowRight, Check, CheckCircle2, ChevronDown } from 'lucide-vue-next';
+import { api } from '@/api/client';
 import type { Device } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
@@ -81,6 +82,15 @@ function open(n: Notice) {
   else if (n.action === 'patches' && n.device) emit('openPatches', n.device);
   else if (n.device) emit('openDevice', n.device);
 }
+
+async function ackNotice(e: Event, n: Notice) {
+  e.stopPropagation();
+  if (!n.device) return;
+  const dev = n.device;
+  await api.updateDevice(dev.id, { old_ip: null, ip_changed_at: null }).catch(() => {});
+  dev.old_ip = null;
+  dev.ip_changed_at = null;
+}
 </script>
 
 <template>
@@ -113,7 +123,17 @@ function open(n: Notice) {
             <span class="mt-0.5 block truncate font-mono text-xs text-fg-subtle">{{ n.detail }}</span>
             <span v-if="n.since" class="mt-0.5 block text-xs text-fg-subtle"><RelativeTime :date="n.since" /></span>
           </span>
-          <ArrowRight class="mt-1 size-4 shrink-0 text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+          <button
+            v-if="n.key.startsWith('ip-') && n.device"
+            type="button"
+            class="ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle opacity-70 transition-opacity hover:bg-control-hover hover:text-fg hover:opacity-100 [@media(hover:none)]:opacity-100"
+            :title="t('dashboard.ip_changed_ack')"
+            :aria-label="t('dashboard.ip_changed_ack')"
+            @click="ackNotice($event, n)"
+          >
+            <Check class="size-4" aria-hidden="true" />
+          </button>
+          <ArrowRight v-else class="mt-1 size-4 shrink-0 text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
         </button>
       </li>
     </ul>

@@ -94,6 +94,10 @@ export function DeviceEditor({ device, devices = [], onClose, onSave, initialTab
     setIsSaving(true);
     const placement = computeGroupPlacement(formData, currentDevice, devices);
     const updateData = placement ? { ...formData, ...placement } : { ...formData };
+    if (currentDevice.old_ip) {
+      (updateData as Record<string, unknown>).old_ip = null;
+      (updateData as Record<string, unknown>).ip_changed_at = null;
+    }
 
     try {
       // Find and save any modified services to prevent race conditions from onBlur / typing

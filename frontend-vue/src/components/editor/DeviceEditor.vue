@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { History, Network, Save, Server, Settings2, Trash2, Waypoints } from 'lucide-vue-next';
+import { ArrowRight, History, Network, Save, Server, Settings2, Trash2, Waypoints } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device, DeviceGroup, DeviceInterface, Rack } from '@/types';
 import {
@@ -13,7 +13,6 @@ import {
   type EditorTab,
 } from '@/lib/deviceForm';
 import Sheet from '@/components/ui/Sheet.vue';
-import Tabs from '@/components/ui/Tabs.vue';
 import Button from '@/components/ui/Button.vue';
 import StatusDot from '@/components/common/StatusDot.vue';
 import SettingsTab from './SettingsTab.vue';
@@ -87,8 +86,22 @@ const tabs = computed(() => {
   ];
 });
 
+function onTabKeydown(e: KeyboardEvent) {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  e.preventDefault();
+  const idx = tabs.value.findIndex((t) => t.value === tab.value);
+  const next = e.key === 'ArrowRight' ? (idx + 1) % tabs.value.length : (idx - 1 + tabs.value.length) % tabs.value.length;
+  tab.value = tabs.value[next].value as EditorTab;
+}
+
 function onInterfaces(list: DeviceInterface[]) {
   current.value = { ...current.value, interfaces: list };
+}
+
+async function ackIpChange() {
+  await api.updateDevice(current.value.id, { old_ip: null, ip_changed_at: null }).catch(() => {});
+  current.value = { ...current.value, old_ip: null, ip_changed_at: null };
+  emit('saved');
 }
 
 async function refreshInfo() {
@@ -130,6 +143,10 @@ async function save() {
   saving.value = true;
   const placement = computeGroupPlacement(form.value, current.value, store.devices);
   const data = placement ? { ...form.value, ...placement } : { ...form.value };
+  if (current.value.old_ip) {
+    (data as Record<string, unknown>).old_ip = null;
+    (data as Record<string, unknown>).ip_changed_at = null;
+  }
   try {
     // Services edited but not yet blurred are saved first
     await Promise.all(syncModifiedServices(original.value, current.value).filter(Boolean));
@@ -172,26 +189,41 @@ async function remove() {
       </nav>
     </template>
 
-    <div class="-mx-5 -mt-4 flex min-h-full flex-col">
-      <Tabs v-model="tab" :tabs="tabs" :label="t('editor.title_edit')" list-class="px-4 sticky top-0 z-10 bg-surface">
-        <template #settings>
-          <div class="px-5 py-5">
-            <SettingsTab v-model:form="form" :device="current" :devices="store.devices" :groups="groups" :racks="racks" :refreshing="refreshing" @refresh-info="refreshInfo" @submit="save" />
-          </div>
-        </template>
-        <template #services>
-          <div class="px-5 py-5"><ServicesTab v-model:device="current" :scanning="scanningServices" @changed="emit('saved')" @scan="scanServices" /></div>
-        </template>
-        <template #interfaces>
-          <div class="px-5 py-5"><InterfacesTab :device="current" @changed="emit('saved')" @merged-away="open = false" @interfaces="onInterfaces" /></div>
-        </template>
-        <template #history>
-          <div class="px-5 py-5"><HistoryTab :device-id="current.id" :active="tab === 'history'" /></div>
-        </template>
-        <template #agent>
-          <div class="px-5 py-5"><AgentTab :device-id="current.id" :panel="agentPanel" /></div>
-        </template>
-      </Tabs>
+    <template #tabs>
+      <nav
+        class="flex shrink-0 gap-1 overflow-x-auto overflow-y-hidden border-b border-line bg-surface px-4 [scrollbar-width:none]"
+        :aria-label="t('editor.title_edit')"
+        @keydown="onTabKeydown"
+      >
+        <button
+          v-for="item in tabs"
+          :key="item.value"
+          type="button"
+          class="relative inline-flex h-10 shrink-0 items-center gap-1.5 px-2.5 text-sm font-medium transition-colors disabled:opacity-40 [&_svg]:size-4"
+          :class="tab === item.value ? 'text-fg after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent' : 'text-fg-muted hover:text-fg'"
+          @click="tab = item.value as EditorTab"
+        >
+          <component :is="item.icon" v-if="item.icon" aria-hidden="true" />
+          {{ item.label }}
+          <span v-if="item.badge !== undefined" class="rounded-sm bg-raised px-1 font-mono text-micro text-fg-subtle">{{ item.badge }}</span>
+        </button>
+      </nav>
+    </template>
+
+    <div v-if="current.old_ip" class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-info/40 bg-info/10 px-3.5 py-2.5 text-xs text-fg">
+      <div class="flex items-center gap-2">
+        <ArrowRight class="size-4 shrink-0 text-info-text" aria-hidden="true" />
+        <span>{{ t('gv.notices.ip_changed', { name }) }}: <strong class="font-mono">{{ current.old_ip }}</strong> → <strong class="font-mono">{{ current.ip }}</strong></span>
+      </div>
+      <Button size="sm" variant="ghost" @click="ackIpChange">{{ t('dashboard.ip_changed_ack') }}</Button>
+    </div>
+
+    <div class="py-1">
+      <SettingsTab v-if="tab === 'settings'" v-model:form="form" :device="current" :devices="store.devices" :groups="groups" :racks="racks" :refreshing="refreshing" @refresh-info="refreshInfo" @submit="save" />
+      <ServicesTab v-else-if="tab === 'services'" v-model:device="current" :scanning="scanningServices" @changed="emit('saved')" @scan="scanServices" />
+      <InterfacesTab v-else-if="tab === 'interfaces'" :device="current" @changed="emit('saved')" @merged-away="open = false" @interfaces="onInterfaces" />
+      <HistoryTab v-else-if="tab === 'history'" :device-id="current.id" :active="tab === 'history'" />
+      <AgentTab v-else-if="tab === 'agent'" :device-id="current.id" :panel="agentPanel" />
     </div>
 
     <template #footer>
