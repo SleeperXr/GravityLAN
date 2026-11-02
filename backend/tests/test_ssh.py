@@ -628,3 +628,63 @@ async def test_terminal_without_cookie_rejects_other_tickets(monkeypatch, from_s
     assert ws.closed_with == 4001
     assert captured == {}
     assert ticket not in ssh_api._tickets  # still one-shot
+
+
+# --- RemoteRunner sudo wrapping ------------------------------------------------
+
+def test_remote_runner_root_user_does_not_use_sudo(monkeypatch):
+    from unittest.mock import MagicMock
+    from app.services.ssh_utils import RemoteRunner
+    import app.services.ssh_utils as ssh_utils
+
+    captured = []
+    monkeypatch.setattr(ssh_utils, "_exec_impl", lambda client, cmd, timeout, sudo_pass: captured.append((cmd, sudo_pass)) or "ok")
+
+    runner = RemoteRunner(MagicMock(), has_sudo=True, ssh_user="root", ssh_password="pwd")
+    runner.run("echo hi")
+    assert captured == [("echo hi", None)]
+
+    captured.clear()
+    runner.run_sudo_batch(["cmd1", "cmd2"])
+    assert captured == [("set -e\ncmd1 && cmd2", None)]
+
+
+def test_remote_runner_sudo_with_password_uses_sh_c_no_heredoc(monkeypatch):
+    from unittest.mock import MagicMock
+    from app.services.ssh_utils import RemoteRunner
+    import app.services.ssh_utils as ssh_utils
+
+    captured = []
+    monkeypatch.setattr(ssh_utils, "_exec_impl", lambda client, cmd, timeout, sudo_pass: captured.append((cmd, sudo_pass)) or "ok")
+
+    runner = RemoteRunner(MagicMock(), has_sudo=True, ssh_user="sleeper", ssh_password="secret_password")
+    runner.run("systemctl restart agent")
+    cmd, sudo_pass = captured[0]
+    assert sudo_pass == "secret_password"
+    assert "sudo -S -p '' -- sh -c" in cmd
+    assert "GRAVITYLAN_SUDO_EOF" not in cmd  # No heredoc hijacking stdin
+    assert "systemctl restart agent" in cmd
+
+    captured.clear()
+    runner.run_sudo_batch(["cmd1", "cmd2"])
+    cmd, sudo_pass = captured[0]
+    assert sudo_pass == "secret_password"
+    assert "sudo -S -p '' -- sh -c" in cmd
+    assert "GRAVITYLAN_SUDO_EOF" not in cmd
+    assert "cmd1 && cmd2" in cmd
+
+
+def test_remote_runner_sudo_without_password_uses_sudo_n(monkeypatch):
+    from unittest.mock import MagicMock
+    from app.services.ssh_utils import RemoteRunner
+    import app.services.ssh_utils as ssh_utils
+
+    captured = []
+    monkeypatch.setattr(ssh_utils, "_exec_impl", lambda client, cmd, timeout, sudo_pass: captured.append((cmd, sudo_pass)) or "ok")
+
+    runner = RemoteRunner(MagicMock(), has_sudo=True, ssh_user="sleeper", ssh_password=None)
+    runner.run("whoami")
+    cmd, sudo_pass = captured[0]
+    assert sudo_pass is None
+    assert "sudo -n -- sh -c" in cmd
+    assert "GRAVITYLAN_SUDO_EOF" not in cmd
