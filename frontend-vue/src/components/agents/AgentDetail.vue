@@ -116,7 +116,7 @@ onMounted(async () => {
     storedKeys.value = keys;
     if (!cached) {
       const matchedProfile = profiles.find((p) => p.device_id === deviceId.value || p.host === props.agent.ip);
-      if (matchedProfile && matchedProfile.auth_type === 'key' && matchedProfile.key_id) {
+      if (matchedProfile && matchedProfile.auth_method === 'key' && matchedProfile.key_id) {
         sshUser.value = matchedProfile.username || 'root';
         sshPort.value = matchedProfile.port || 22;
         authType.value = 'stored_key';

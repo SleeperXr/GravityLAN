@@ -14,7 +14,7 @@ A device row is ``(name, ip, type, group, flags, services, agent profile)``:
 from dataclasses import dataclass, field
 
 # Agent version the company demo reports; older ones show up in the update center
-CURRENT_AGENT = "0.3.10"
+CURRENT_AGENT = "0.3.11"
 
 
 @dataclass
