@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import shlex
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -248,24 +249,29 @@ class RemoteRunner:
     def _sudo_password(self) -> Optional[str]:
         return self._ssh_password if self._needs_sudo_wrap else None
 
+    def _wrap_sudo(self, command: str) -> str:
+        if not self._needs_sudo_wrap:
+            return command
+        # Use -S with empty prompt when a password is available, or -n (non-interactive) without one.
+        # Run via sh -c with shlex.quote to avoid any heredoc stdin conflict with sudo's password reading.
+        if self._sudo_password:
+            return f"sudo -S -p '' -- sh -c {shlex.quote(command)}"
+        return f"sudo -n -- sh -c {shlex.quote(command)}"
+
     def run(self, command: str, timeout: int = 15) -> str:
         """Execute a single command, raising on non-zero exit (except benign 1 for 'not found')."""
-        if self._needs_sudo_wrap and "sudo -S" not in command:
-            command = f"sudo -S bash << 'GRAVITYLAN_SUDO_EOF'\n{command}\nGRAVITYLAN_SUDO_EOF"
-        return _exec_impl(self._client, command, timeout, self._sudo_password)
+        wrapped = self._wrap_sudo(command)
+        return _exec_impl(self._client, wrapped, timeout, self._sudo_password)
 
     def run_batch(self, commands: list[str], timeout: int = 15) -> list[str]:
         """Execute multiple commands sequentially."""
         return [self.run(cmd, timeout) for cmd in commands]
 
     def run_sudo_batch(self, commands: list[str], timeout: int = 15) -> str:
-        """Execute multiple commands in a single sudo heredoc."""
-        if not self._needs_sudo_wrap:
-            return "\n".join(self.run(cmd, timeout) for cmd in commands)
-
-        full_cmd = " && ".join(commands)
-        heredoc = f"sudo -S bash << 'GRAVITYLAN_SUDO_EOF'\nset -e\n{full_cmd}\nGRAVITYLAN_SUDO_EOF"
-        return _exec_impl(self._client, heredoc, timeout, self._ssh_password)
+        """Execute multiple commands in a single sudo execution."""
+        full_cmd = "set -e\n" + " && ".join(commands)
+        wrapped = self._wrap_sudo(full_cmd)
+        return _exec_impl(self._client, wrapped, timeout, self._sudo_password)
 
 
 def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass: Optional[str]) -> str:
@@ -275,6 +281,10 @@ def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass
     if sudo_pass and "sudo -S" in command:
         stdin.write(f"{sudo_pass}\n")
         stdin.flush()
+        try:
+            stdin.channel.shutdown_write()
+        except Exception:
+            pass
 
     start_time = time.time()
     while not stdout.channel.exit_status_ready():
@@ -290,6 +300,15 @@ def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass
     if exit_code != 0:
         if exit_code == 1 and ("not found" in err or "no such" in err.lower()):
             return out
+        err_lower = (err or out).lower()
+        if "a password is required" in err_lower or "passwort erforderlich" in err_lower or "es wurde kein passwort angegeben" in err_lower:
+            raise RuntimeError(
+                "Sudo requires a password for non-root user. Please provide a sudo password in the agent settings."
+            )
+        if any(term in err_lower for term in ["incorrect password", "falsches passwort", "nicht funktioniert", "fehlversuch"]):
+            raise RuntimeError(
+                "Sudo password rejected by remote host. Please check your SSH / sudo password."
+            )
         logger.warning("Command '%s' failed (exit %d): %s", command, exit_code, err)
         raise RuntimeError(f"Command failed with exit code {exit_code}: {err or out}")
 
