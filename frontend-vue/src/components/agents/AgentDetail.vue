@@ -112,10 +112,19 @@ onMounted(async () => {
     hasStored.value = true;
   }
   try {
-    storedKeys.value = await api.getSshKeys();
-    if (!cached && storedKeys.value.length > 0) {
-      authType.value = 'stored_key';
-      keyId.value = storedKeys.value[0].id;
+    const [keys, profiles] = await Promise.all([api.getSshKeys(), api.getSshProfiles().catch(() => [])]);
+    storedKeys.value = keys;
+    if (!cached) {
+      const matchedProfile = profiles.find((p) => p.device_id === deviceId.value || p.host === props.agent.ip);
+      if (matchedProfile && matchedProfile.auth_type === 'key' && matchedProfile.key_id) {
+        sshUser.value = matchedProfile.username || 'root';
+        sshPort.value = matchedProfile.port || 22;
+        authType.value = 'stored_key';
+        keyId.value = matchedProfile.key_id;
+      } else if (storedKeys.value.length > 0) {
+        authType.value = 'stored_key';
+        keyId.value = storedKeys.value[0].id;
+      }
     }
   } catch {
     storedKeys.value = [];
@@ -344,26 +353,26 @@ const tabs = computed(() => [
               </div>
               <div class="grid gap-3 md:grid-cols-[1fr_1fr_2fr]">
                 <Field v-slot="{ id }" :label="t('agent_detail.username')">
-                  <Input :id="id" v-model="sshUser" autocomplete="username" />
+                  <Input :id="id" v-model="sshUser" autocomplete="off" />
                 </Field>
                 <Field v-slot="{ id }" :label="t('agent_detail.auth_method')">
                   <Select :id="id" v-model="authType" :options="authOptions" />
                 </Field>
                 <Field v-if="authType === 'password'" v-slot="{ id }" :label="t('agent_detail.auth_password')">
-                  <Input :id="id" v-model="sshPassword" type="password" :placeholder="t('agent_detail.password_placeholder')" autocomplete="current-password" />
+                  <Input :id="id" v-model="sshPassword" type="password" :placeholder="t('agent_detail.password_placeholder')" autocomplete="new-password" />
                 </Field>
                 <div v-else-if="authType === 'stored_key'" class="space-y-2">
                   <Field v-slot="{ id }" :label="t('agent_detail.select_key')">
                     <Select :id="id" v-model="keyId" :options="keyOptions" />
                   </Field>
-                  <Input v-if="selectedKeyNeedsPassphrase" v-model="keyPassphrase" type="password" :placeholder="t('ssh.keys.passphrase')" :aria-label="t('ssh.keys.passphrase')" autocomplete="off" />
+                  <Input v-if="selectedKeyNeedsPassphrase" v-model="keyPassphrase" type="password" :placeholder="t('ssh.keys.passphrase')" :aria-label="t('ssh.keys.passphrase')" autocomplete="new-password" />
                 </div>
                 <Field v-else v-slot="{ id }" :label="t('agent_detail.auth_key')">
                   <Textarea :id="id" v-model="sshKey" mono rows="3" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
                 </Field>
               </div>
               <Field v-if="authType !== 'password'" v-slot="{ id, describedBy }" :label="t('agent.sudo_password')" :hint="t('agent.sudo_password_hint')">
-                <Input :id="id" v-model="sudoPassword" type="password" autocomplete="off" :aria-describedby="describedBy" />
+                <Input :id="id" v-model="sudoPassword" type="password" autocomplete="new-password" :aria-describedby="describedBy" />
               </Field>
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <label class="flex items-center gap-2 text-xs text-fg-muted">

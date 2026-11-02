@@ -376,15 +376,17 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
         return
 
     pkg_manager = probe.get("patch_manager")
+    probe_error = probe.get("error")
+    if probe_error:
+        await audit(websocket, "agent.patches", "failed", device_id=device_id, target=host_ip, detail=f"{mode}: {probe_error}", actor=actor)
+        await websocket.send_text(f"[Error] {probe_error}\r\n")
+        await websocket.close()
+        return
     if not pkg_manager:
-        probe_error = probe.get("error")
-        if probe_error:
-            await websocket.send_text(f"[Error] {probe_error}\r\n")
-        else:
-            detected_os = probe.get("detected_os")
-            detail = detected_os or "no recognizable package manager found"
-            await websocket.send_text("[Error] Unsupported package manager or system type.\r\n")
-            await websocket.send_text(f"[Info] Target system reports: {detail}\r\n")
+        detected_os = probe.get("detected_os")
+        detail = detected_os or "no recognizable package manager found"
+        await websocket.send_text("[Error] Unsupported package manager or system type.\r\n")
+        await websocket.send_text(f"[Info] Target system reports: {detail}\r\n")
         await websocket.close()
         return
 

@@ -12,7 +12,10 @@ import ErrorState from '@/components/ui/ErrorState.vue';
 import StatusDot from '@/components/common/StatusDot.vue';
 import AgentDetail from '@/components/agents/AgentDetail.vue';
 import GlobalMetricsDialog from '@/components/agents/GlobalMetricsDialog.vue';
+import AgentUpdateCenter from '@/components/dashboard/AgentUpdateCenter.vue';
 import { loadTone, matchesAgent, osLabelOf, type AgentRow } from '@/components/agents/agentRow';
+import { isAgentOutdated } from '@/lib/agent';
+import { useNetworkStore } from '@/stores/network';
 import { confirmAction } from '@/composables/useConfirm';
 import { useToast } from '@/composables/useToast';
 import { formatDateTime, formatNumber, t } from '@/i18n';
@@ -28,6 +31,7 @@ interface Overview {
 }
 
 const { showToast } = useToast();
+const store = useNetworkStore();
 const data = ref<Overview | null>(null);
 const loading = ref(true);
 const refreshing = ref(false);
@@ -35,6 +39,7 @@ const error = ref<string | null>(null);
 const search = ref('');
 const expandedId = ref<number | null>(null);
 const showGlobal = ref(false);
+const updateCenterOpen = ref(false);
 let timer: number | undefined;
 
 async function load(silent = true) {
@@ -51,12 +56,16 @@ async function load(silent = true) {
 }
 
 onMounted(() => {
+  if (!store.loaded) void store.loadData();
   void load();
   timer = window.setInterval(() => void load(), 30000);
 });
 onBeforeUnmount(() => window.clearInterval(timer));
 
 const agents = computed(() => (data.value?.agents ?? []).filter((a) => matchesAgent(a, search.value)));
+const outdatedCount = computed(() =>
+  (data.value?.agents ?? []).filter((a) => isAgentOutdated(a.agent_version, a.latest_version)).length,
+);
 
 async function adopt(agent: AgentRow) {
   const ok = await confirmAction({ title: t('dashboard.adopt'), message: t('agent.adopt_confirm'), confirmLabel: t('dashboard.adopt') });
@@ -79,6 +88,9 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
 <template>
   <div class="mx-auto max-w-[1800px] space-y-5 px-4 py-5 md:px-8 md:py-7">
     <PageHeader :title="t('agents_page.title')" :description="t('agents_page.subtitle', { count: data?.total_agents ?? 0 })">
+      <Button v-if="outdatedCount > 0" class="border-warn/40 text-warn-text" @click="updateCenterOpen = true">
+        <RefreshCw aria-hidden="true" />{{ outdatedCount }}<span class="hidden sm:inline">{{ t('dashboard.agent_updates') }}</span>
+      </Button>
       <Button :disabled="refreshing" @click="load(false)">
         <RefreshCw :class="refreshing && 'animate-spin'" aria-hidden="true" />{{ t('agents_page.sync') }}
       </Button>
@@ -145,9 +157,15 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
               </span>
               <span class="min-w-0">
                 <span class="block truncate text-sm font-semibold text-fg">{{ agent.hostname }}</span>
-                <span class="block font-mono text-xs text-fg-subtle">{{ agent.ip }} · v{{ agent.agent_version || '0.0.0' }}</span>
+                <span class="block font-mono text-xs text-fg-subtle">
+                  {{ agent.ip }} · v{{ agent.agent_version || '0.0.0' }}
+                  <span v-if="isAgentOutdated(agent.agent_version, agent.latest_version)" class="text-warn-text">→ v{{ agent.latest_version }}</span>
+                </span>
                 <span class="mt-1 flex flex-wrap gap-1">
                   <Badge v-if="osLabelOf(agent)" class="max-w-60" :title="osLabelOf(agent) ?? undefined"><span class="truncate">{{ osLabelOf(agent) }}</span></Badge>
+                  <Badge v-if="isAgentOutdated(agent.agent_version, agent.latest_version)" tone="warn" mono @click.stop="updateCenterOpen = true">
+                    <ArrowUpCircle aria-hidden="true" />v{{ agent.latest_version }}
+                  </Badge>
                   <Badge v-if="agent.patch_available > 0" :tone="agent.patch_security > 0 ? 'danger' : 'warn'" mono :title="t('agent_detail.updates_badge', { count: agent.patch_available, security: agent.patch_security })">
                     <component :is="agent.patch_security > 0 ? ShieldAlert : Package" aria-hidden="true" />{{ agent.patch_available }}
                   </Badge>
@@ -202,5 +220,6 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
     </section>
 
     <GlobalMetricsDialog v-model:open="showGlobal" />
+    <AgentUpdateCenter v-model:open="updateCenterOpen" :devices="store.devices" @complete="void store.loadData(true); void load(false)" />
   </div>
 </template>
