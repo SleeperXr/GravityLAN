@@ -59,7 +59,14 @@
       "no_match": "Kein Gerät passt zum Filter.",
       "security_updates_one": "{{count}} Sicherheitsupdate",
       "security_updates_other": "{{count}} Sicherheitsupdates",
-      "security_updates_title": "{{count}} Sicherheitsupdates von {{total}} anstehenden Updates; installieren auf der Agents-Seite"
+      "security_updates_title": "{{count}} Sicherheitsupdates von {{total}} anstehenden Updates; installieren auf der Agents-Seite",
+      "collapse_orbit": "Orbit & Meldungen einklappen",
+      "expand_orbit": "Orbit & Meldungen einblenden",
+      "hide_orbit": "Orbit-Netzplan ausblenden",
+      "show_orbit": "Orbit-Netzplan einblenden",
+      "orbit_section": "Orbit-Netzplan & Meldungen",
+      "collapse": "Einklappen",
+      "expand": "Einblenden"
     },
     "network": {
       "free": "frei",

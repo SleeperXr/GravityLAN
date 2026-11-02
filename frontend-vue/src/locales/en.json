@@ -59,7 +59,14 @@
       "no_match": "No device matches the filter.",
       "security_updates_one": "{{count}} security update",
       "security_updates_other": "{{count}} security updates",
-      "security_updates_title": "{{count}} security updates of {{total}} pending updates; install them on the Agents page"
+      "security_updates_title": "{{count}} security updates of {{total}} pending updates; install them on the Agents page",
+      "collapse_orbit": "Collapse orbit & notices",
+      "expand_orbit": "Expand orbit & notices",
+      "hide_orbit": "Hide orbit map",
+      "show_orbit": "Show orbit map",
+      "orbit_section": "Orbit map & notices",
+      "collapse": "Collapse",
+      "expand": "Expand"
     },
     "network": {
       "free": "free",

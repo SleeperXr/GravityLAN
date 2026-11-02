@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useEventListener, useMediaQuery, useStorage } from '@vueuse/core';
 import { useRouter } from 'vue-router';
-import { Check, LayoutGrid, Pencil, Radar, RefreshCw, RotateCcw, Search, Server, Trash2, X } from 'lucide-vue-next';
+import { Check, ChevronDown, ChevronRight, ChevronUp, LayoutGrid, Orbit, Pencil, Radar, RefreshCw, RotateCcw, Search, Server, Trash2, X } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
 import { useNetworkStore } from '@/stores/network';
@@ -12,6 +12,7 @@ import { useConfirm } from '@/composables/useConfirm';
 import { swapGroupOrder } from '@/lib/dashboardLayout';
 import { isAgentOutdated } from '@/lib/agent';
 import { deviceLabel } from '@/lib/networks';
+import { attentionDevices } from '@/components/dashboard/pulse';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import Button from '@/components/ui/Button.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
@@ -44,6 +45,7 @@ const STACKED_NOTICES = 4;
 const storedView = useStorage<'grid' | 'list'>('gravityui.dashboard.view', 'grid');
 const viewMode = computed(() => (isMobile.value ? 'list' : storedView.value));
 const collapsed = useStorage<(number | 'none')[]>('gravityui.dashboard.collapsed', []);
+const orbitCollapsed = useStorage<boolean>('gravityui.dashboard.orbit_collapsed', false);
 
 const editMode = ref(false);
 const selectedIds = ref(new Set<number>());
@@ -99,6 +101,14 @@ if (!store.loaded) void store.loadData();
 
 const outdatedAgents = computed(
   () => store.devices.filter((d) => d.has_agent && isAgentOutdated(d.agent_info?.agent_version, d.agent_info?.latest_version)).length,
+);
+const attention = computed(() => attentionDevices(store.devices));
+const noticeCount = computed(
+  () =>
+    attention.value.offline.length +
+    attention.value.degraded.length +
+    store.devices.filter((d) => d.old_ip || d.has_pending_token).length +
+    outdatedAgents.value,
 );
 const filtering = computed(() => !editMode.value && (query.value.trim() !== '' || statusFilter.value !== 'all' || lineFilter.value !== null));
 
@@ -271,11 +281,13 @@ function clearFilters() {
         <OverviewMoreMenu
           :updates="isMobile ? outdatedAgents : 0"
           :view="isMobile ? undefined : storedView"
+          :orbit-collapsed="orbitCollapsed"
           :refreshing="refreshingAll"
           :scanning="store.isScanning"
           @updates="updateCenterOpen = true"
           @edit="toggleEdit"
           @refresh="refreshAll"
+          @toggle-orbit="orbitCollapsed = !orbitCollapsed"
           @view="(mode) => (storedView = mode)"
         />
         <Button variant="primary" :disabled="store.isScanning" @click="scan.openDialog()">
@@ -300,8 +312,37 @@ function clearFilters() {
         <NetworkPulse :devices="store.devices" :updated="store.lastUpdated" :failed="!!store.error" @open="(d) => openEditor(d)" />
         <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
       </div>
+      <!-- Collapsed banner: slim bar when the orbit map and notices are folded away -->
+      <div
+        v-if="orbitCollapsed"
+        class="flex items-center justify-between rounded-lg border border-line bg-surface/60 px-4 py-2 transition-colors hover:border-line-strong hover:bg-surface"
+      >
+        <button
+          type="button"
+          class="group/toggle flex min-w-0 flex-1 items-center gap-2.5 text-left text-xs font-semibold text-fg"
+          @click="orbitCollapsed = false"
+        >
+          <ChevronRight class="size-4 shrink-0 text-fg-subtle transition-transform group-hover/toggle:text-fg" aria-hidden="true" />
+          <Orbit class="size-4 shrink-0 text-accent-text" aria-hidden="true" />
+          <span class="truncate">{{ t('gv.dashboard.orbit_section') }}</span>
+          <span class="rounded bg-raised px-1.5 py-0.5 font-mono text-micro tabular text-fg-subtle">
+            {{ t('gv.plan.live', { online: store.onlineCount, total: store.totalCount }) }}
+          </span>
+          <span
+            v-if="noticeCount > 0"
+            class="rounded bg-warn/20 px-1.5 py-0.5 font-mono text-micro font-medium text-warn-text tabular"
+          >
+            {{ noticeCount }} {{ t('gv.notices.title') }}
+          </span>
+        </button>
+        <Button variant="ghost" size="sm" class="h-7 gap-1 text-xs" @click="orbitCollapsed = false">
+          <ChevronDown class="size-3.5" aria-hidden="true" />
+          {{ t('gv.dashboard.expand') }}
+        </Button>
+      </div>
+
       <!-- Notices left of the map from xl, so reading, tab and screen order are the same -->
-      <div class="grid gap-4 xl:grid-cols-[22rem_minmax(0,1fr)]">
+      <div v-show="!orbitCollapsed" class="grid gap-4 xl:grid-cols-[22rem_minmax(0,1fr)]">
         <ServiceNotices
           :class="isWide && 'max-h-[32rem]'"
           :limit="isWide ? undefined : STACKED_NOTICES"
@@ -317,9 +358,20 @@ function clearFilters() {
               <p class="text-sm font-bold text-fg">{{ t('gv.plan.title') }}</p>
               <p class="text-xs text-fg-subtle">{{ t('gv.plan.live', { online: store.onlineCount, total: store.totalCount }) }}</p>
             </div>
-            <RouterLink to="/topology" class="inline-flex h-8 shrink-0 items-center max-md:h-11 gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg hover:border-line-strong">
-              <Pencil class="size-3.5" aria-hidden="true" />{{ t('gv.plan.edit') }}
-            </RouterLink>
+            <div class="flex items-center gap-2">
+              <RouterLink to="/topology" class="inline-flex h-8 shrink-0 items-center max-md:h-11 gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-semibold text-fg hover:border-line-strong">
+                <Pencil class="size-3.5" aria-hidden="true" />{{ t('gv.plan.edit') }}
+              </RouterLink>
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-8 gap-1.5 text-xs text-fg-subtle hover:text-fg"
+                :title="t('gv.dashboard.collapse_orbit')"
+                @click="orbitCollapsed = true"
+              >
+                <ChevronUp class="size-3.5" aria-hidden="true" />{{ t('gv.dashboard.collapse') }}
+              </Button>
+            </div>
           </div>
           <div class="min-h-0 flex-1">
             <OrbitMap flow-id="dashboard-plan" @open-device="(d) => openEditor(d)" />
