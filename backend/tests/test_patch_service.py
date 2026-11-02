@@ -402,3 +402,31 @@ async def test_run_ssh_command_stream_keeps_event_loop_running(mock_ssh_client):
     assert (ok, message) == (True, "Success")
     assert output == ["first\n", "second\n"]
     assert stall < _SLOW_SSH_SECONDS / 2, f"event loop stalled for {stall:.2f} s"
+
+
+@pytest.mark.asyncio
+@patch("paramiko.SSHClient")
+async def test_run_ssh_command_stream_aborts_immediately_on_rejected_sudo_password(mock_ssh_client):
+    """When sudo rejects the password and prints a second SUDOPROMPT:, abort immediately instead of hanging."""
+    client_instance = MagicMock()
+    mock_ssh_client.return_value = client_instance
+    chan = _real_channel_mock(1)
+    chunks = [
+        b"SUDOPROMPT:",
+        b"\nDas hat nicht funktioniert, bitte nochmal probieren.\nSUDOPROMPT:",
+    ]
+    chan.recv_ready.side_effect = lambda: bool(chunks)
+    chan.recv.side_effect = lambda _n: chunks.pop(0)
+    chan.exit_status_ready.return_value = False
+    client_instance.get_transport.return_value.open_session.return_value = chan
+    output: list[str] = []
+
+    ok, msg = await run_ssh_command_stream(
+        host_ip="192.168.100.27", ssh_user="oliver", ssh_password="wrong",
+        command="apt-get dist-upgrade -y", output_callback=output.append,
+    )
+
+    assert ok is False
+    assert "Sudo password rejected" in msg
+    chan.close.assert_called_once()
+

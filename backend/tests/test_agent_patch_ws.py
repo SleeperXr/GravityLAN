@@ -226,6 +226,30 @@ async def test_run_patches_websocket_probe_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_patches_websocket_probe_error_when_patch_manager_already_detected(monkeypatch):
+    """_list_device_updates_blocking sets patch_manager='apt' before _query_apt_updates runs;
+    if _query_apt_updates sets error, the WebSocket must abort and report the error instead of hanging."""
+    token = _seed_patch_token(device_id=5)
+
+    async def fake_probe(host_ip, ssh_user, ssh_password, ssh_key, ssh_port):
+        return {
+            "patch_manager": "apt",
+            "packages": [],
+            "error": "Sudo password rejected on 192.168.100.27 for user 'oliver'.",
+        }
+
+    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", _auth_ok)
+    monkeypatch.setattr(agent_module, "list_device_updates", fake_probe)
+
+    ws = FakeWebSocket(query_params={"patch_token": token})
+    await agent_module.run_patches_websocket(ws, 5)
+
+    joined = "\n".join(ws.sent)
+    assert "[Error] Sudo password rejected" in joined
+    assert ws.close_code == 1000
+
+
+@pytest.mark.asyncio
 async def test_run_patches_websocket_failed_stream(monkeypatch):
     token = _seed_patch_token(device_id=5)
 

@@ -107,7 +107,7 @@ def _open_command_channel(
         return None
 
     channel = transport.open_session()
-    channel.get_pty()  # request pty to get combined output and avoid buffering issues
+    channel.set_combine_stderr(True)  # combine stderr into stdout without allocating a PTY (avoids sudo TCSAFLUSH race)
     channel.exec_command(run_cmd)
     return channel
 
@@ -154,22 +154,31 @@ async def run_ssh_command_stream(
             return False, "Failed to get SSH transport channel."
 
         password_sent = False
+        sudo_rejected = False
         while True:
             # Check if there is data to read
             if channel.recv_ready():
                 chunk = channel.recv(4096).decode("utf-8", errors="replace")
                 if not chunk:
                     break
-                if needs_sudo and ssh_password and not password_sent and _SUDO_PROMPT in chunk:
-                    channel.send(f"{ssh_password}\n")
-                    password_sent = True
-                    chunk = chunk.replace(_SUDO_PROMPT, "")
+                if needs_sudo and ssh_password and _SUDO_PROMPT in chunk:
+                    if not password_sent:
+                        await asyncio.sleep(0.05)
+                        channel.send(f"{ssh_password}\n")
+                        password_sent = True
+                        chunk = chunk.replace(_SUDO_PROMPT, "", 1)
+                    if _SUDO_PROMPT in chunk:
+                        sudo_rejected = True
+                        chunk = chunk.replace(_SUDO_PROMPT, "")
                 if chunk:
                     # An async callback is awaited before the next read: output keeps its
                     # order and no fire-and-forget send task outlives the session
                     result = output_callback(chunk)
                     if inspect.isawaitable(result):
                         await result
+                if sudo_rejected:
+                    channel.close()
+                    return False, f"Sudo password rejected on {host_ip} for user '{ssh_user}'. Please check your SSH/sudo password."
             elif channel.exit_status_ready():
                 # Exit once finished and no data remains
                 if not channel.recv_ready():
@@ -305,31 +314,48 @@ def _query_apt_updates(client, result: dict[str, Any], host_ip: str, ssh_user: s
         update_cmd = "sudo -n apt-get update"
 
     chan = client.get_transport().open_session()
-    chan.get_pty()
+    chan.set_combine_stderr(True)
     chan.exec_command(update_cmd)
 
     update_output = ""
     password_sent = False
+    sudo_rejected = False
     update_deadline = time.monotonic() + 90
     while time.monotonic() < update_deadline:
         if chan.recv_ready():
-            update_output += chan.recv(4096).decode("utf-8", errors="replace")
-            if (
-                needs_sudo
-                and ssh_password
-                and not password_sent
-                and "SUDOPROMPT" in update_output
-            ):
-                chan.send(f"{ssh_password}\n")
-                password_sent = True
+            chunk = chan.recv(4096).decode("utf-8", errors="replace")
+            update_output += chunk
+            if needs_sudo and ssh_password and _SUDO_PROMPT in chunk:
+                if not password_sent:
+                    time.sleep(0.05)
+                    chan.send(f"{ssh_password}\n")
+                    password_sent = True
+                    chunk = chunk.replace(_SUDO_PROMPT, "", 1)
+                if _SUDO_PROMPT in chunk or update_output.count(_SUDO_PROMPT) >= 2:
+                    sudo_rejected = True
+                    chan.close()
+                    break
+            elif password_sent and update_output.count(_SUDO_PROMPT) >= 2:
+                sudo_rejected = True
+                chan.close()
+                break
         elif chan.exit_status_ready():
             while chan.recv_ready():
                 update_output += chan.recv(4096).decode("utf-8", errors="replace")
             break
         time.sleep(0.1)
 
-    update_exit = chan.recv_exit_status() if chan.exit_status_ready() else None
-    if update_exit != 0:
+    update_exit = None if sudo_rejected else (chan.recv_exit_status() if chan.exit_status_ready() else None)
+    if sudo_rejected:
+        logger.warning(
+            "apt-get update on %s aborted: sudo rejected password for user '%s'",
+            host_ip, ssh_user,
+        )
+        result["error"] = (
+            f"Sudo password rejected on {host_ip} for user '{ssh_user}'. "
+            "Please check your SSH/sudo password or enable passwordless sudo."
+        )
+    elif update_exit != 0:
         logger.warning(
             "apt-get update on %s failed (exit %s): %s",
             host_ip, update_exit, update_output.strip()[-500:],

@@ -18,6 +18,7 @@ from app.models.device import Device
 from app.models.setting import Setting
 from app.scanner.utils import ensure_utc
 from app.schemas.agent import AgentSummary, GlobalMetricPoint
+from app.services.agent_deployer import LATEST_AGENT_VERSION
 from app.services.telemetry_query import MetricPoint, metric_point_from_row
 
 logger = logging.getLogger(__name__)
@@ -380,6 +381,7 @@ def _build_agent_summary(device: Device, token: AgentToken, last_m: DeviceMetric
         ip=device.ip,
         is_online=is_active,
         agent_version=token.agent_version,
+        latest_version=LATEST_AGENT_VERSION,
         os_pretty=token.os_pretty,
         os_name=token.os_name,
         os_version=token.os_version,

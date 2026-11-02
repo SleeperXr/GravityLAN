@@ -2,6 +2,7 @@ import type { AgentSummary } from '@/types';
 
 /** One agent of /api/agent/overview; the endpoint also reports the OS, which the shared type omits. */
 export interface AgentRow extends AgentSummary {
+  latest_version?: string | null;
   os_pretty?: string | null;
   os_name?: string | null;
   os_version?: string | null;
