@@ -14,7 +14,7 @@ permissions:
 jobs:
   agent-version:
     # Every change in agent/ raises the agent VERSION (docs/RELEASING.md)
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/'))
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4

@@ -30,8 +30,13 @@ def main() -> None:
         sys.exit(__doc__)
     base = sys.argv[1]
     # Logs and caches next to the script are not part of the agent
+    try:
+        diff_output = git("diff", "--name-only", f"{base}...HEAD", "--", "agent/")
+    except subprocess.CalledProcessError:
+        print(f"Base ref {base} cannot be diffed against HEAD, skipping agent version check.")
+        return
     changed = [
-        path for path in git("diff", "--name-only", f"{base}...HEAD", "--", "agent/").split()
+        path for path in diff_output.split()
         if not path.endswith((".log", ".pyc")) and "__pycache__" not in path
     ]
     if not changed:
