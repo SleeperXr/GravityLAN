@@ -22,6 +22,8 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 _background_webhook_tasks: set[asyncio.Task] = set()
+# One delivery pass at a time: an event's own pass and the retry loop must not send the same entry twice
+_delivery_lock = asyncio.Lock()
 _shared_client: httpx.AsyncClient | None = None
 
 
@@ -191,15 +193,22 @@ async def _blocked_target_reason(url: str) -> str | None:
     return None
 
 
-async def _deliver_single_entry(client: httpx.AsyncClient, entry: NotificationOutbox) -> bool:
+async def _deliver_single_entry(db, client: httpx.AsyncClient, entry: NotificationOutbox) -> bool:
     """Deliver a single outbox entry, updating its status, attempts, error, and next attempt time.
 
+    The token stays on the subscription, so a deleted or disabled subscription sends nothing more.
     Returns True if successfully delivered, False otherwise.
     """
+    sub = await db.get(WebhookSubscription, entry.subscription_id) if entry.subscription_id else None
+    if sub is None or not sub.is_active:
+        entry.status = "failed"
+        entry.last_error = "Subscription removed"
+        return False
+
     raw_token = None
-    if entry.encrypted_token:
+    if sub.encrypted_token:
         try:
-            raw_token = vault.decrypt_optional(entry.encrypted_token)
+            raw_token = vault.decrypt_optional(sub.encrypted_token)
         except Exception as exc:
             logger.error("Notification Outbox: Failed to decrypt secret token: %s", exc)
 
@@ -300,29 +309,23 @@ async def _enqueue_and_dispatch(event_type: str, data: dict):
                 return
 
             now = _utc_now()
-            entries = []
             for sub in target_subs:
-                entry = NotificationOutbox(
+                db.add(NotificationOutbox(
                     subscription_id=sub.id,
                     event_type=event_type,
                     target_url=sub.url,
                     service_type=sub.service_type or "webhook",
-                    encrypted_token=sub.encrypted_token,
                     payload=json.dumps(data),
                     attempts=0,
                     max_attempts=3,
                     status="pending",
                     next_attempt_at=now,
                     created_at=now,
-                )
-                db.add(entry)
-                entries.append(entry)
+                ))
 
-            client = await _get_client()
-            for entry in entries:
-                await _deliver_single_entry(client, entry)
-
+            # Stored before the first attempt: after a crash or restart the retry loop picks them up
             await db.commit()
+            await deliver_pending_outbox(db)
     except Exception as e:
         logger.error(f"Webhook: Failed to enqueue outbox notifications for {event_type}: {e}", exc_info=True)
 
@@ -377,31 +380,32 @@ async def deliver_pending_outbox(db=None) -> int:
         async with async_session() as session:
             return await deliver_pending_outbox(session)
 
-    now = _utc_now()
-    query = (
-        select(NotificationOutbox)
-        .where(
-            NotificationOutbox.status == "pending",
-            NotificationOutbox.next_attempt_at <= now,
-            NotificationOutbox.attempts < NotificationOutbox.max_attempts,
+    async with _delivery_lock:
+        now = _utc_now()
+        query = (
+            select(NotificationOutbox)
+            .where(
+                NotificationOutbox.status == "pending",
+                NotificationOutbox.next_attempt_at <= now,
+                NotificationOutbox.attempts < NotificationOutbox.max_attempts,
+            )
+            .order_by(NotificationOutbox.created_at.asc())
+            .limit(50)
         )
-        .order_by(NotificationOutbox.created_at.asc())
-        .limit(50)
-    )
-    result = await db.execute(query)
-    entries = result.scalars().all()
-    if not entries:
-        return 0
+        result = await db.execute(query)
+        entries = result.scalars().all()
+        if not entries:
+            return 0
 
-    delivered_count = 0
-    client = await _get_client()
-    for entry in entries:
-        if await _deliver_single_entry(client, entry):
-            delivered_count += 1
+        delivered_count = 0
+        client = await _get_client()
+        for entry in entries:
+            if await _deliver_single_entry(db, client, entry):
+                delivered_count += 1
+            # Per entry: a crash in this pass must not send the earlier ones again
+            await db.commit()
 
-    await db.commit()
-
-    return delivered_count
+        return delivered_count
 
 
 async def process_outbox() -> int:

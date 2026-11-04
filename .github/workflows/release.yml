@@ -51,11 +51,12 @@ jobs:
         if [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
           release="${BASH_REMATCH[1]}"
           tags="${IMAGE}:${release},${IMAGE}:latest"
-        elif [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-(rc\.[0-9]+)$ ]]; then
+          # A release whose commit already went out as a release candidate reuses that image unchanged
+          rc="$(git tag --points-at HEAD --list "v${release}-rc.*" --sort=-version:refname | head -n 1)"
+          echo "promote=${rc#v}" >> "$GITHUB_OUTPUT"
+        elif [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-rc\.[0-9]+$ ]]; then
           release="${BASH_REMATCH[1]}"
-          rc_label="${BASH_REMATCH[2]}"
           tags="${IMAGE}:${tag#v},${IMAGE}:next"
-          echo "build=${rc_label}+${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
         else
           echo "::error::$tag is neither vX.Y.Z nor vX.Y.Z-rc.N"
           exit 1
@@ -73,7 +74,15 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+    - name: Promote the release candidate image
+      if: steps.tags.outputs.promote != ''
+      run: |
+        args=""
+        for t in $(echo "${{ steps.tags.outputs.tags }}" | tr ',' ' '); do args="$args -t $t"; done
+        docker buildx imagetools create $args "${IMAGE}:${{ steps.tags.outputs.promote }}"
+
     - name: Build and push
+      if: steps.tags.outputs.promote == ''
       uses: docker/build-push-action@v6
       with:
         context: .

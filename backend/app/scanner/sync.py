@@ -30,6 +30,8 @@ class SyncContext:
     gateways: dict = field(default_factory=dict)  # Subnet.id -> effective gateway ip
     gateway_sources: dict = field(default_factory=dict)  # Subnet.id -> configured/detected/suggested
     is_initial: bool = True
+    # Sent once the batch is committed: a rollback must not announce what the next scan finds again
+    pending_webhooks: list = field(default_factory=list)  # [(event_type, data)]
 
     def subnet_for(self, ip: str | None):
         try:
@@ -127,11 +129,11 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
 
 
 async def _commit_with_retry(db):
-    """Commit with robust SQLite retry logic."""
+    """Commit with robust SQLite retry logic. Returns False when stale data rolled the batch back."""
     for attempt in range(5):
         outcome = await _commit_attempt(db, attempt)
         if outcome != "retry":
-            return
+            return outcome == "ok"
         await asyncio.sleep((attempt + 1) * 0.2)
 
 
@@ -176,7 +178,12 @@ async def sync_hosts_batch(hosts: list[dict], is_planner_scan: bool = True, shou
             except Exception as e:
                 logger.error(f"Sync: Failed to process host {host.get('ip')} ({host.get('mac')}): {e}")
 
-        await _commit_with_retry(db)
+        committed = await _commit_with_retry(db)
+
+    if committed and ctx.pending_webhooks:
+        from app.services.webhook_service import trigger_webhooks
+        for event_type, data in ctx.pending_webhooks:
+            await trigger_webhooks(event_type=event_type, data=data)
 
     if should_invalidate_cache:
         discovery_cache.invalidate()
@@ -437,7 +444,7 @@ async def _resolve_ip_conflict(db, ip: str, dev):
     logger.warning(f"Sync: Resolved IP conflict. Moved conflicting device {conflict_dev.id} to placeholder IP {conflict_dev.ip}")
 
 
-async def _update_dashboard_device(db, dev, disc, ip: str, mac: str | None, is_valid_mac: bool, dev_match_type: str | None, hostname: str | None = None):
+async def _update_dashboard_device(db, dev, disc, ip: str, mac: str | None, is_valid_mac: bool, dev_match_type: str | None, hostname: str | None = None, ctx: SyncContext | None = None):
     """Apply cross-sync updates to a monitored Device. Does NOT commit."""
     if not dev:
         return
@@ -483,18 +490,15 @@ async def _update_dashboard_device(db, dev, disc, ip: str, mac: str | None, is_v
             read=False,
             message=f"IP changed from {dev.old_ip} to {ip}"
         ))
-        from app.services.webhook_service import trigger_webhooks
-        await trigger_webhooks(
-            event_type="device.ip_changed",
-            data={
+        if ctx is not None:
+            ctx.pending_webhooks.append(("device.ip_changed", {
                 "device_id": dev.id,
                 "old_ip": dev.old_ip,
                 "new_ip": ip,
                 "mac": dev.mac,
                 "display_name": dev.display_name,
                 "hostname": dev.hostname,
-            }
-        )
+            }))
     else:
         logger.info(f"Sync: Updated IP of device {dev.id} to {ip} without DeviceHistory notification (unverified match).")
 
@@ -599,20 +603,16 @@ async def _sync_host_internal(db, host: dict, ctx: SyncContext | None = None):
     # 3. Apply Updates to DiscoveredHost
     disc = await _upsert_discovered_host(db, disc, dev, ip, mac, hostname, vendor, ports, is_valid_mac)
     if is_new_discovery and not ctx.is_initial:
-        from app.services.webhook_service import trigger_webhooks
-        await trigger_webhooks(
-            event_type="new_device",
-            data={
-                "ip": ip,
-                "mac": mac,
-                "hostname": hostname,
-                "vendor": vendor,
-                "first_seen": datetime.now(timezone.utc).isoformat(),
-            }
-        )
+        ctx.pending_webhooks.append(("new_device", {
+            "ip": ip,
+            "mac": mac,
+            "hostname": hostname,
+            "vendor": vendor,
+            "first_seen": datetime.now(timezone.utc).isoformat(),
+        }))
 
     # 4. Cross-Sync to Dashboard
-    await _update_dashboard_device(db, dev, disc, ip, mac, is_valid_mac, dev_match_type, hostname)
+    await _update_dashboard_device(db, dev, disc, ip, mac, is_valid_mac, dev_match_type, hostname, ctx)
 
     return disc
 

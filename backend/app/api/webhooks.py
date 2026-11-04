@@ -4,7 +4,7 @@ import logging
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_bearer_admin, get_current_admin
@@ -73,6 +73,12 @@ async def delete_webhook(
     if not db_sub:
         raise HTTPException(status_code=404, detail="Webhook subscription not found")
 
+    # A revoked subscription gets nothing more, not even the retries still waiting
+    await db.execute(
+        update(NotificationOutbox)
+        .where(NotificationOutbox.subscription_id == webhook_id, NotificationOutbox.status == "pending")
+        .values(status="failed", last_error="Subscription removed")
+    )
     await db.delete(db_sub)
     await db.commit()
     await audit(request, "webhook.delete", target=urlparse(db_sub.url).hostname or "")

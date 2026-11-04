@@ -35,7 +35,6 @@ class NotificationOutbox(Base):
     event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     target_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     service_type: Mapped[str] = mapped_column(String(20), default="webhook", server_default="webhook", nullable=False)
-    encrypted_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[str] = mapped_column(Text, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3, server_default="3", nullable=False)

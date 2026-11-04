@@ -17,6 +17,50 @@ def docker_unavailable(monkeypatch):
     return docker_service
 
 
+@pytest.mark.asyncio
+
+async def test_outbox_token_copies_are_dropped(db):
+    await db.execute(text('ALTER TABLE notification_outbox ADD COLUMN encrypted_token TEXT'))
+    await db.commit()
+
+    await migrations._drop_outbox_token_copies(db)
+    await migrations._drop_outbox_token_copies(db)  # a second start finds nothing to do
+
+    rows = (await db.execute(text("PRAGMA table_info(notification_outbox)"))).all()
+    assert "encrypted_token" not in {row[1] for row in rows}
+
+async def test_repair_alert_offline_keeps_individual_choices(db):
+    """A server someone took out of the alerts stays out when other devices are still in."""
+    db.add_all([
+        Device(ip="10.0.0.1", display_name="Lab Server", device_type="server", alert_offline=False),
+        Device(ip="10.0.0.2", display_name="Router", device_type="network", alert_offline=True),
+    ])
+    await db.commit()
+
+    await migrations._repair_infra_alert_offline(db)
+
+    server = (await db.execute(select(Device).where(Device.ip == "10.0.0.1"))).scalar_one()
+    assert server.alert_offline is False
+
+
+@pytest.mark.asyncio
+async def test_repair_alert_offline_after_a_restore_turned_all_off(db):
+    """All off at once is the damage of an old backup; clients stay off, the rest comes back."""
+    db.add_all([
+        Device(ip="10.0.0.1", display_name="Server", device_type="server", alert_offline=False),
+        Device(ip="10.0.0.2", display_name="Desktop", device_type="desktop", alert_offline=False),
+    ])
+    await db.commit()
+
+    await migrations._repair_infra_alert_offline(db)
+
+    db.expire_all()
+    server = (await db.execute(select(Device).where(Device.ip == "10.0.0.1"))).scalar_one()
+    desktop = (await db.execute(select(Device).where(Device.ip == "10.0.0.2"))).scalar_one()
+    assert (server.alert_offline, desktop.alert_offline) == (True, False)
+
+
+
 def test_no_hardcoded_developer_network_data():
     """The repair used to map device ids and names to one developer's 192.168.100.x IPs."""
     for name in ("KNOWN_CONTAINER_IPS", "RECONCILIATION_KEYWORD_MAP", "_ip_from_known_id", "_ip_from_keywords"):
