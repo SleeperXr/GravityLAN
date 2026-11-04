@@ -429,7 +429,11 @@ async def _deduplicate_generic_port_services(db: AsyncSession):
 
 
 async def _repair_infra_alert_offline(db: AsyncSession):
-    """One-time repair: ensure infrastructure/agent devices have alert_offline=True after backup restore."""
+    """Repair what restoring an old backup left behind: alert_offline=False on every device at once.
+
+    Only then. Devices that differ mean someone chose per device in the editor, and that choice stays.
+    Needs no marker when there is nothing to repair: the check finds the same again on every start.
+    """
     from app.models.device import Device
     from app.models.setting import Setting
     from app.scanner.classifier import is_client_hostname
@@ -439,9 +443,12 @@ async def _repair_infra_alert_offline(db: AsyncSession):
     if existing is not None:
         return
 
-    res_devs = await db.execute(select(Device).where(Device.alert_offline == False))
+    devices = (await db.execute(select(Device))).scalars().all()
+    if not devices or any(dev.alert_offline for dev in devices):
+        return
+
     repaired = 0
-    for dev in res_devs.scalars().all():
+    for dev in devices:
         name_check = dev.hostname or dev.display_name or ""
         is_explicit_client = (
             (dev.device_type or "").lower() in ("client", "desktop", "tv", "phone", "printer")
