@@ -27,6 +27,7 @@ from app.scanner.utils import (
     measure_ping_latency_ms,
     measure_tcp_latency_ms,
 )
+from app.services.agent_activity import load_intervals, stale_window
 from app.services.cache_service import dashboard_cache, topology_cache
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,7 @@ async def run_health_probe_pass() -> int:
         device_ids = [d.id for d in devices]
         res_tokens = await db.execute(select(AgentToken).where(AgentToken.device_id.in_(device_ids)))
         tokens_by_dev = {t.device_id: t for t in res_tokens.scalars().all()}
+        intervals = await load_intervals(db)
 
         # Run probes concurrently in batches
         tasks = [_probe_single_device(dev, now, semaphore) for dev in devices]
@@ -184,7 +186,7 @@ async def run_health_probe_pass() -> int:
                 token = tokens_by_dev.get(dev.id)
                 has_agent = bool(dev.has_agent or token)
                 agent_last_seen = ensure_utc(token.last_seen) if token and token.last_seen else None
-                agent_stale = not agent_last_seen or (now - agent_last_seen).total_seconds() > 75
+                agent_stale = not agent_last_seen or (now - agent_last_seen).total_seconds() > stale_window(intervals.get(dev.id))
 
                 if has_agent and agent_stale:
                     # Both independent channels (ICMP/TCP probe + 30s agent heartbeat) confirm offline

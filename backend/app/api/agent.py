@@ -56,6 +56,7 @@ from app.schemas.agent import (
     GlobalMetricPoint,
     GlobalMetricsResponse,
 )
+from app.services.agent_activity import active_window, load_intervals
 from app.services.agent_deployer import (
     HOST_KEY_CHANGED, deploy_agent, get_agent_script_sha256, is_host_key_refusal, remove_agent, LATEST_AGENT_VERSION,
 )
@@ -299,7 +300,8 @@ async def get_agents_overview(
     total_count_map: dict[int, int] = {row.device_id: row.cnt for row in total_count_res.all()}
 
     agents_list, n, active_count, total_metrics_count, avg_cpu, avg_ram = assemble_agents_overview_data(
-        device_ids, device_map, token_map, all_24h_metrics, total_count_map, now, cutoff_24h
+        device_ids, device_map, token_map, all_24h_metrics, total_count_map, now, cutoff_24h,
+        intervals=await load_intervals(db),
     )
     return AgentsOverviewResponse(
         agents=agents_list,
@@ -365,7 +367,9 @@ async def get_agent_status(
     is_healthy = False
     last_seen = ensure_utc(token.last_seen)
     if last_seen:
-        is_healthy = (datetime.now(timezone.utc) - last_seen).total_seconds() < 300
+        intervals = await load_intervals(db)
+        window = max(300, active_window(intervals.get(device_id)))
+        is_healthy = (datetime.now(timezone.utc) - last_seen).total_seconds() < window
 
     return AgentStatusResponse(
         device_id=device_id,
