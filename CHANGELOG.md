@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- GravityUI overview: the orbit map and the notices next to it can be folded away (button on the map, or the "…" menu). A slim bar then shows the online count and how many notices wait. The choice is kept per browser.
+
 ### Fixed
 - Package updates: a failing `apt-get update` (one broken repository is enough) stopped the whole update run since rc.4. It now shows as a warning and the upgrade goes ahead; only a rejected sudo password ends the run. The message no longer recommends an SSH password when one was given.
 
