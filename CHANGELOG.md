@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Upgrade: since rc.4 the first start switched the offline alert back on for every device not recognised as a client, including those someone had switched off in the device editor. It now only repairs the damage it was meant for, a restored old backup that left the alert off on all devices at once. An installation that already ran rc.4 to rc.6 has to switch those devices off again.
+
 ## [0.7.0] - 2026-11-02
 
 ### Added
