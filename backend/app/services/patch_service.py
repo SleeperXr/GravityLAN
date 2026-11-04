@@ -351,6 +351,7 @@ def _query_apt_updates(client, result: dict[str, Any], host_ip: str, ssh_user: s
             "apt-get update on %s aborted: sudo rejected password for user '%s'",
             host_ip, ssh_user,
         )
+        result["sudo_rejected"] = True
         result["error"] = (
             f"Sudo password rejected on {host_ip} for user '{ssh_user}'. "
             "Please check your SSH/sudo password or enable passwordless sudo."
@@ -360,10 +361,11 @@ def _query_apt_updates(client, result: dict[str, Any], host_ip: str, ssh_user: s
             "apt-get update on %s failed (exit %s): %s",
             host_ip, update_exit, update_output.strip()[-500:],
         )
-        result["error"] = (
-            "apt-get update failed (exit %s). Set an SSH password or "
-            "enable passwordless sudo to refresh package lists."
-        ) % (update_exit if update_exit is not None else "timeout")
+        # Only without a password can sudo be the reason; otherwise it is the repositories or the network
+        hint = " Set an SSH password or enable passwordless sudo to refresh package lists." if needs_sudo and not ssh_password else ""
+        result["error"] = "apt-get update failed (exit %s).%s" % (
+            update_exit if update_exit is not None else "timeout", hint,
+        )
 
     # Query upgradable packages
     _, stdout, _ = client.exec_command("apt list --upgradable 2>/dev/null", timeout=15)

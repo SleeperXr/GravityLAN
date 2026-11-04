@@ -377,11 +377,15 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
 
     pkg_manager = probe.get("patch_manager")
     probe_error = probe.get("error")
-    if probe_error:
+    # A refused password fails the run too; any other probe error (one broken repository makes
+    # apt-get update fail) must not block the upgrade, which reports its own errors
+    if probe_error and (probe.get("sudo_rejected") or not pkg_manager):
         await audit(websocket, "agent.patches", "failed", device_id=device_id, target=host_ip, detail=f"{mode}: {probe_error}", actor=actor)
         await websocket.send_text(f"[Error] {probe_error}\r\n")
         await websocket.close()
         return
+    if probe_error:
+        await websocket.send_text(f"[Warn] {probe_error}\r\n")
     if not pkg_manager:
         detected_os = probe.get("detected_os")
         detail = detected_os or "no recognizable package manager found"
