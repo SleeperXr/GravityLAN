@@ -382,6 +382,12 @@ async def run_migrations(db: AsyncSession):
         logger.error(f"Migration error while adding unique indexes: {e}")
 
     try:
+        await _drop_outbox_token_copies(db)
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Migration error while removing token copies from the notification outbox: {e}")
+
+    try:
         await _deduplicate_generic_port_services(db)
     except Exception as e:
         await db.rollback()
@@ -394,6 +400,21 @@ async def run_migrations(db: AsyncSession):
         logger.error(f"Migration error while repairing infrastructure alert_offline flags: {e}")
 
     logger.info("Schema migration complete.")
+
+
+async def _drop_outbox_token_copies(db: AsyncSession):
+    """rc.4 to rc.6 copied each subscription's token into every outbox row; it stays on the subscription now."""
+    def has_column(sync_conn) -> bool:
+        inspector = inspect(sync_conn)
+        return inspector.has_table("notification_outbox") and any(
+            col["name"] == "encrypted_token" for col in inspector.get_columns("notification_outbox")
+        )
+
+    conn = await db.connection()
+    if await conn.run_sync(has_column):
+        await db.execute(text('ALTER TABLE "notification_outbox" DROP COLUMN "encrypted_token"'))
+        await db.commit()
+        logger.info("Migration: Removed token copies from the notification outbox")
 
 
 async def _deduplicate_generic_port_services(db: AsyncSession):

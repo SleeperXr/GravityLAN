@@ -18,6 +18,17 @@ def docker_unavailable(monkeypatch):
 
 
 @pytest.mark.asyncio
+
+async def test_outbox_token_copies_are_dropped(db):
+    await db.execute(text('ALTER TABLE notification_outbox ADD COLUMN encrypted_token TEXT'))
+    await db.commit()
+
+    await migrations._drop_outbox_token_copies(db)
+    await migrations._drop_outbox_token_copies(db)  # a second start finds nothing to do
+
+    rows = (await db.execute(text("PRAGMA table_info(notification_outbox)"))).all()
+    assert "encrypted_token" not in {row[1] for row in rows}
+
 async def test_repair_alert_offline_keeps_individual_choices(db):
     """A server someone took out of the alerts stays out when other devices are still in."""
     db.add_all([
@@ -47,6 +58,7 @@ async def test_repair_alert_offline_after_a_restore_turned_all_off(db):
     server = (await db.execute(select(Device).where(Device.ip == "10.0.0.1"))).scalar_one()
     desktop = (await db.execute(select(Device).where(Device.ip == "10.0.0.2"))).scalar_one()
     assert (server.alert_offline, desktop.alert_offline) == (True, False)
+
 
 
 def test_no_hardcoded_developer_network_data():

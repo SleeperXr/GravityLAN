@@ -315,7 +315,7 @@ async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
             # Credentials of the old setup go too (#48): after a reset because something leaked,
             # an old API token, webhook or stored SSH key must not work for the new setup.
             tables = [
-                "api_tokens", "webhook_subscriptions",
+                "api_tokens", "notification_outbox", "webhook_subscriptions",
                 "ssh_history", "ssh_profiles", "ssh_known_hosts", "ssh_keys",
                 "topology_links", "agent_tokens", "agent_configs", "device_interfaces",
                 # Measurement data in the attached telemetry.db

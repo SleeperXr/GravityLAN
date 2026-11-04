@@ -8,8 +8,12 @@ All notable changes to this project will be documented in this file.
 - GravityUI overview: the orbit map and the notices next to it can be folded away (button on the map, or the "…" menu). A slim bar then shows the online count and how many notices wait. The choice is kept per browser.
 
 ### Fixed
+- Notifications: an event is stored before its first delivery attempt, so a crash or restart no longer loses it, and "new device" and "IP changed" are only announced once the scan has been saved, so a failed save no longer sends the same notification twice.
 - Upgrade: since rc.4 the first start switched the offline alert back on for every device not recognised as a client, including those someone had switched off in the device editor. It now only repairs the damage it was meant for, a restored old backup that left the alert off on all devices at once. An installation that already ran rc.4 to rc.6 has to switch those devices off again.
 - Package updates: a failing `apt-get update` (one broken repository is enough) stopped the whole update run since rc.4. It now shows as a warning and the upgrade goes ahead; only a rejected sudo password ends the run. The message no longer recommends an SSH password when one was given.
+
+### Security
+- Notifications: deleting a webhook or ntfy/Gotify subscription also stops the retries still waiting for it, and the database reset empties the delivery queue, which it left behind since rc.4. The queue no longer holds copies of the subscription tokens; copies from rc.4 to rc.6 are removed on the first start.
 
 ## [0.7.0] - 2026-11-02
 

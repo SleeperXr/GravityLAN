@@ -1,5 +1,6 @@
 """Tests for Notification Outbox and Service Presets (ntfy, Gotify, Webhooks)."""
 
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
@@ -97,7 +98,6 @@ async def test_outbox_successful_delivery(db):
         event_type="device.offline",
         target_url=sub.url,
         service_type=sub.service_type,
-        encrypted_token=sub.encrypted_token,
         payload=json.dumps({"display_name": "Printer", "ip": "192.168.1.50"}),
         attempts=0,
         max_attempts=3,
@@ -112,6 +112,7 @@ async def test_outbox_successful_delivery(db):
         delivered = await deliver_pending_outbox(db)
         assert delivered == 1
         assert mock_post.called
+        assert mock_post.await_args.kwargs["headers"]["Authorization"] == "Bearer my-ntfy-token"
 
     await db.refresh(outbox)
     assert outbox.status == "delivered"
@@ -189,7 +190,11 @@ async def test_outbox_retry_up_to_max_attempts(db):
 
 @pytest.mark.asyncio
 async def test_blocked_target_fails_outbox_immediately(db):
+    sub = WebhookSubscription(url="http://127.0.0.1:8080/hook", events="device.offline", is_active=True)
+    db.add(sub)
+    await db.flush()
     outbox = NotificationOutbox(
+        subscription_id=sub.id,
         event_type="device.offline",
         target_url="http://127.0.0.1:8080/hook",
         service_type="webhook",
@@ -241,7 +246,11 @@ async def test_api_create_webhook_with_preset_and_token(client, db, admin_token)
 
 @pytest.mark.asyncio
 async def test_api_list_outbox_and_retry(client, db, admin_token):
+    sub = WebhookSubscription(url="https://gotify.example.com/message", service_type="gotify", events="device.offline", is_active=True)
+    db.add(sub)
+    await db.flush()
     outbox = NotificationOutbox(
+        subscription_id=sub.id,
         event_type="device.offline",
         target_url="https://gotify.example.com/message",
         service_type="gotify",
@@ -319,3 +328,80 @@ async def test_test_webhook_targets_subscription_by_id(client, db, admin_token):
         )
         assert mock_send.await_count == 1
         assert mock_send.await_args.args[1] == "https://ntfy.example.com/sub2"
+
+
+class _SameSession:
+    def __init__(self, db):
+        self.db = db
+
+    async def __aenter__(self):
+        return self.db
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_event_is_stored_before_the_first_delivery_attempt(db):
+    """A crash during delivery must leave the entry for the retry loop."""
+    from app.services.webhook_service import _enqueue_and_dispatch
+
+    db.add(WebhookSubscription(url="https://ntfy.example.com/a", service_type="ntfy", events="device.offline", is_active=True))
+    await db.commit()
+
+    with patch("app.services.webhook_service.async_session", return_value=_SameSession(db)), \
+         patch("app.services.webhook_service._send_webhook_post", AsyncMock(side_effect=asyncio.CancelledError())):
+        with pytest.raises(asyncio.CancelledError):
+            await _enqueue_and_dispatch("device.offline", {"ip": "10.0.0.1"})
+    await db.rollback()
+
+    entry = (await db.execute(select(NotificationOutbox))).scalar_one()
+    assert entry.status == "pending"
+    assert entry.attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_deleted_subscription_gets_no_more_retries(client, db, admin_token):
+    sub = WebhookSubscription(url="https://ntfy.example.com/a", service_type="ntfy", events="device.offline", is_active=True)
+    db.add(sub)
+    await db.flush()
+    entry = NotificationOutbox(
+        subscription_id=sub.id,
+        event_type="device.offline",
+        target_url=sub.url,
+        service_type="ntfy",
+        payload="{}",
+        status="pending",
+        next_attempt_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    db.add(entry)
+    await db.commit()
+
+    res = await client.delete(f"/api/webhooks/{sub.id}", headers={"Authorization": f"Bearer {admin_token}"})
+    assert res.status_code == 200
+
+    with patch("app.services.webhook_service._send_webhook_post", AsyncMock()) as send:
+        assert await deliver_pending_outbox(db) == 0
+    send.assert_not_awaited()
+    await db.refresh(entry)
+    assert entry.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_entry_without_subscription_is_not_sent(db):
+    entry = NotificationOutbox(
+        event_type="device.offline",
+        target_url="https://ntfy.example.com/a",
+        service_type="ntfy",
+        payload="{}",
+        status="pending",
+        next_attempt_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    db.add(entry)
+    await db.commit()
+
+    with patch("app.services.webhook_service._send_webhook_post", AsyncMock()) as send:
+        assert await deliver_pending_outbox(db) == 0
+    send.assert_not_awaited()
+    await db.refresh(entry)
+    assert (entry.status, entry.last_error) == ("failed", "Subscription removed")
