@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- GravityUI overview: the orbit map and the notices next to it can be folded away (button on the map, or the "…" menu). A slim bar then shows the online count and how many notices wait. The choice is kept per browser.
+
 ## [0.7.0] - 2026-11-02
 
 ### Added
