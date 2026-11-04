@@ -18,6 +18,7 @@ from app.models.device import Device
 from app.models.setting import Setting
 from app.scanner.utils import ensure_utc
 from app.schemas.agent import AgentSummary, GlobalMetricPoint
+from app.services.agent_activity import active_window
 from app.services.agent_deployer import LATEST_AGENT_VERSION
 from app.services.telemetry_query import MetricPoint, metric_point_from_row
 
@@ -340,10 +341,10 @@ def downsample_metrics(metrics: list, range_str: str) -> list[dict]:
     return snapshots
 
 
-def _is_agent_active(token: AgentToken, now: datetime) -> bool:
-    """Active = last heartbeat within 2 minutes (agents report every 30s)."""
+def _is_agent_active(token: AgentToken, now: datetime, interval: int | None = None) -> bool:
+    """Active = a report within the window of this agent's interval."""
     last_seen = ensure_utc(token.last_seen)
-    return bool(last_seen and (now - last_seen).total_seconds() < 120)
+    return bool(last_seen and (now - last_seen).total_seconds() < active_window(interval))
 
 
 def _compute_uptime_pct(token: AgentToken, now: datetime, cutoff_24h: datetime, device_metrics_24h: list) -> float:
@@ -413,6 +414,7 @@ def assemble_agents_overview_data(
     total_count_map: dict[int, int],
     now: datetime,
     cutoff_24h: datetime,
+    intervals: dict[int, int] | None = None,
 ) -> tuple[list[AgentSummary], int, int, int, float, float]:
     """Aggregate metrics and calculate averages for all agent devices in one pass."""
     from collections import defaultdict
@@ -435,7 +437,7 @@ def assemble_agents_overview_data(
         m_count = total_count_map.get(device_id, 0)
         total_metrics_count += m_count
 
-        is_active = _is_agent_active(token, now)
+        is_active = _is_agent_active(token, now, (intervals or {}).get(device_id))
         if is_active:
             active_count += 1
 

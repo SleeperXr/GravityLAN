@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Agents with a long reporting interval: since rc.4 an agent counted as inactive two minutes after its last report, whatever its interval (up to 300 seconds), so a healthy host could show as critical in the Health Radar. The time now follows the interval, three missed reports and at least two minutes; at the default of 30 seconds nothing changes.
+
 ## [0.7.0] - 2026-11-02
 
 ### Added

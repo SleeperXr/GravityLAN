@@ -14,6 +14,7 @@ from app.database import get_db
 from app.models.agent import AgentToken, DeviceMetrics
 from app.models.device import Device, DeviceHistory
 from app.scanner.utils import ensure_utc
+from app.services.agent_activity import active_window, load_intervals
 from app.schemas.health import (
     AgentHealthAlerts,
     DeviceHealthDetailResponse,
@@ -62,9 +63,10 @@ async def get_health_summary(
 
     offline_agents = 0
     active_device_ids = set()
+    intervals = await load_intervals(db)
     for agent in agents:
         last_seen = ensure_utc(agent.last_seen)
-        is_active = bool(agent.is_active and last_seen and (now - last_seen).total_seconds() < 120)
+        is_active = bool(agent.is_active and last_seen and (now - last_seen).total_seconds() < active_window(intervals.get(agent.device_id)))
         if not is_active:
             offline_agents += 1
         else:
@@ -418,6 +420,7 @@ async def get_health_overview(
     # 2. Fetch agent tokens & latest metrics in bulk
     res_tokens = await db.execute(select(AgentToken).where(AgentToken.device_id.in_(device_ids)))
     tokens_by_dev = {t.device_id: t for t in res_tokens.scalars().all()}
+    intervals = await load_intervals(db)
 
     res_metrics = await db.execute(
         select(DeviceMetrics).where(DeviceMetrics.id.in_(
@@ -503,7 +506,7 @@ async def get_health_overview(
         agent_alerts = None
         if dev.has_agent or agent_token:
             m = metrics_by_dev.get(dev.id)
-            is_active = bool(agent_token and agent_token.last_seen and (now - ensure_utc(agent_token.last_seen)).total_seconds() < 120)
+            is_active = bool(agent_token and agent_token.last_seen and (now - ensure_utc(agent_token.last_seen)).total_seconds() < active_window(intervals.get(dev.id)))
             agent_alerts = AgentHealthAlerts(
                 has_agent=True,
                 agent_version=agent_token.agent_version if agent_token else None,
@@ -667,7 +670,8 @@ async def get_device_health_detail(
 
     agent_alerts = None
     if dev.has_agent or agent_token:
-        is_active = bool(agent_token and agent_token.last_seen and (now - ensure_utc(agent_token.last_seen)).total_seconds() < 120)
+        intervals = await load_intervals(db)
+        is_active = bool(agent_token and agent_token.last_seen and (now - ensure_utc(agent_token.last_seen)).total_seconds() < active_window(intervals.get(dev.id)))
         agent_alerts = AgentHealthAlerts(
             has_agent=True,
             agent_version=agent_token.agent_version if agent_token else None,
