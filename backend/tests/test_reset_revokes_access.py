@@ -1,4 +1,5 @@
 """A database reset revokes every credential of the old setup (#48)."""
+from datetime import datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -6,7 +7,7 @@ from sqlalchemy import func, select
 
 from app.models.api_token import ApiToken
 from app.models.ssh import SshKey, SshKnownHost, SshProfile
-from app.models.webhook import WebhookSubscription
+from app.models.webhook import NotificationOutbox, WebhookSubscription
 from app.services.enrollment_service import enrollment_store
 from app.services.session_service import session_store
 
@@ -37,6 +38,8 @@ async def test_reset_revokes_tokens_sessions_keys_and_webhooks(client, db, admin
         SshProfile(name="p", host="10.0.0.1", port=22, username="root", auth_method="key", key_id=key.id),
         SshKnownHost(host="10.0.0.1", port=22, key_type="ssh-ed25519", fingerprint="SHA256:h", public_key="x"),
         WebhookSubscription(url="http://hook.example/x", events="device.offline"),
+        NotificationOutbox(event_type="device.offline", target_url="http://hook.example/x", payload="{}",
+                           next_attempt_at=datetime(2026, 1, 1)),
     ])
     await db.commit()
     old_session = session_store.create_session(user_agent=None)
@@ -46,7 +49,7 @@ async def test_reset_revokes_tokens_sessions_keys_and_webhooks(client, db, admin
     assert res.status_code == 200, res.text
 
     db.expire_all()
-    for model in (ApiToken, SshKey, SshProfile, SshKnownHost, WebhookSubscription):
+    for model in (ApiToken, SshKey, SshProfile, SshKnownHost, WebhookSubscription, NotificationOutbox):
         assert await _count(db, model) == 0, model.__tablename__
     assert session_store.get_session(old_session) is None
     assert not enrollment_store.is_valid(old_code, 1)

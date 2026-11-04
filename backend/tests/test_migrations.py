@@ -17,6 +17,18 @@ def docker_unavailable(monkeypatch):
     return docker_service
 
 
+@pytest.mark.asyncio
+async def test_outbox_token_copies_are_dropped(db):
+    await db.execute(text('ALTER TABLE notification_outbox ADD COLUMN encrypted_token TEXT'))
+    await db.commit()
+
+    await migrations._drop_outbox_token_copies(db)
+    await migrations._drop_outbox_token_copies(db)  # a second start finds nothing to do
+
+    rows = (await db.execute(text("PRAGMA table_info(notification_outbox)"))).all()
+    assert "encrypted_token" not in {row[1] for row in rows}
+
+
 def test_no_hardcoded_developer_network_data():
     """The repair used to map device ids and names to one developer's 192.168.100.x IPs."""
     for name in ("KNOWN_CONTAINER_IPS", "RECONCILIATION_KEYWORD_MAP", "_ip_from_known_id", "_ip_from_keywords"):

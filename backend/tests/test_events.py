@@ -1,7 +1,7 @@
 """Tests for Phase 3: Events, Notifications, and History read state."""
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from sqlalchemy import select
 from app.models.device import Device, DeviceHistory, DiscoveredHost
@@ -221,3 +221,27 @@ async def test_add_device_from_ip_records_new_device_history(client, admin_token
     res_mark = await client.post(f"/api/devices/{dev_id}/history/read-all", headers=headers)
     assert res_mark.status_code == 200
     assert res_mark.json()["marked_read"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_new_device_is_announced_only_after_the_commit(db):
+    """A rolled back batch announces nothing, so the next scan's notification is the only one."""
+    from sqlalchemy.orm.exc import StaleDataError
+
+    db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
+    await db.commit()
+
+    captured_events = []
+
+    async def mock_trigger(event_type, data):
+        captured_events.append(event_type)
+
+    host = {"ip": "192.168.1.201", "mac": "aa:bb:cc:dd:ee:98", "hostname": "cam.lan", "vendor": None}
+    with patch("app.scanner.sync.async_session", return_value=DBSessionContextMock(db)), \
+         patch("app.services.webhook_service.trigger_webhooks", side_effect=mock_trigger):
+        with patch.object(db, "commit", AsyncMock(side_effect=StaleDataError())):
+            await sync_hosts_batch([host], is_planner_scan=True)
+        assert captured_events == []
+
+        await sync_hosts_batch([host], is_planner_scan=True)
+        assert captured_events == ["new_device"]

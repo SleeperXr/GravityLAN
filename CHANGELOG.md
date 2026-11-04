@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Notifications: an event is stored before its first delivery attempt, so a crash or restart no longer loses it, and "new device" and "IP changed" are only announced once the scan has been saved, so a failed save no longer sends the same notification twice.
+
+### Security
+- Notifications: deleting a webhook or ntfy/Gotify subscription also stops the retries still waiting for it, and the database reset empties the delivery queue, which it left behind since rc.4. The queue no longer holds copies of the subscription tokens; copies from rc.4 to rc.6 are removed on the first start.
+
 ## [0.7.0] - 2026-11-02
 
 ### Added
