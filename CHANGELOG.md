@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Package updates: a failing `apt-get update` (one broken repository is enough) stopped the whole update run since rc.4. It now shows as a warning and the upgrade goes ahead; only a rejected sudo password ends the run. The message no longer recommends an SSH password when one was given.
+
 ## [0.7.0] - 2026-11-02
 
 ### Added
