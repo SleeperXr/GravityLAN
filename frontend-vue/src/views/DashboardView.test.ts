@@ -36,9 +36,9 @@ describe('DashboardView Orbit collapse', () => {
         services: [],
         interfaces: [],
         has_agent: false,
-      } as any,
+      } as unknown as (typeof store.devices)[number],
     ];
-    store.subnets = [{ id: 1, name: 'LAN', cidr: '192.168.100.0/24', is_enabled: true } as any];
+    store.subnets = [{ id: 1, name: 'LAN', cidr: '192.168.100.0/24', is_enabled: true } as unknown as (typeof store.subnets)[number]];
 
     return mount(DashboardView, {
       global: {
