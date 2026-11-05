@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - GravityUI overview: the orbit map and the notices next to it can be folded away (button on the map, or the "…" menu). A slim bar then shows the online count and how many notices wait. The choice is kept per browser.
 
 ### Fixed
+- GravityUI Settings → Webhooks: the delivery status list took up the whole page. It shows the newest five, "Show all" opens the rest in a box of its own.
 - Agents with a long reporting interval: since rc.4 an agent counted as inactive two minutes after its last report, whatever its interval (up to 300 seconds), so a healthy host could show as critical in the Health Radar. The time now follows the interval, three missed reports and at least two minutes; at the default of 30 seconds nothing changes.
 - Notifications: an event is stored before its first delivery attempt, so a crash or restart no longer loses it, and "new device" and "IP changed" are only announced once the scan has been saved, so a failed save no longer sends the same notification twice.
 - Upgrade: since rc.4 the first start switched the offline alert back on for every device not recognised as a client, including those someone had switched off in the device editor. It now only repairs the damage it was meant for, a restored old backup that left the alert off on all devices at once. An installation that already ran rc.4 to rc.6 has to switch those devices off again.

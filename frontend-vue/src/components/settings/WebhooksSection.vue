@@ -33,6 +33,11 @@ const adding = ref(false);
 const testingId = ref<number | null>(null);
 const retryingId = ref<number | null>(null);
 
+// A frequent event fills the outbox quickly: the newest few, the rest on request
+const OUTBOX_PREVIEW = 5;
+const outboxExpanded = ref(false);
+const visibleOutbox = computed(() => (outboxExpanded.value ? outbox.value : outbox.value.slice(0, OUTBOX_PREVIEW)));
+
 // Form state
 const serviceType = ref<'webhook' | 'ntfy' | 'gotify'>('webhook');
 const newName = ref('');
@@ -327,9 +332,9 @@ function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
       </div>
 
       <div v-else class="rounded-md border border-line bg-raised/20 overflow-hidden">
-        <div class="divide-y divide-line text-xs">
+        <div class="divide-y divide-line overflow-y-auto text-xs" :class="outboxExpanded && 'max-h-[28rem]'" data-test="outbox-list">
           <div
-            v-for="item in outbox"
+            v-for="item in visibleOutbox"
             :key="item.id"
             class="flex items-center justify-between gap-3 p-2.5"
           >
@@ -378,6 +383,15 @@ function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
             </div>
           </div>
         </div>
+        <button
+          v-if="outbox.length > OUTBOX_PREVIEW"
+          type="button"
+          class="w-full border-t border-line px-3 py-2 text-xs font-medium text-fg-muted transition-colors hover:bg-control-hover hover:text-fg"
+          :aria-expanded="outboxExpanded"
+          @click="outboxExpanded = !outboxExpanded"
+        >
+          {{ outboxExpanded ? t('gv.webhooks.outbox_show_less') : t('gv.webhooks.outbox_show_all', { count: outbox.length }) }}
+        </button>
       </div>
     </div>
   </SettingsSection>
