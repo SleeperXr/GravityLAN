@@ -719,6 +719,8 @@
       "empty_desc": "Configure ntfy, Gotify, or generic webhooks to receive alerts on device outages or new discoveries.",
       "outbox_title": "Outbox & Delivery Status",
       "outbox_empty": "No recent deliveries in the outbox.",
+      "outbox_show_all": "Show all {{count}}",
+      "outbox_show_less": "Show less",
       "status_delivered": "Delivered",
       "status_pending": "Pending",
       "status_failed": "Failed",
