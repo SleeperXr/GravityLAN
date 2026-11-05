@@ -208,13 +208,14 @@ def _target_count(subnet: str) -> int:
         return 0
 
 
-async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_callback=None):
+async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_callback=None, announce: bool = True):
     """
     Executes a lightweight discovery scan for the Network Planner.
     Uses ARP + Ping + DNS.
 
     ``hosts_callback(subnet, hosts_scanned, hosts_total)`` is awaited when a subnet starts and
     when it is done; nmap sweeps a whole subnet at once, so the count moves per subnet.
+    ``announce=False`` for the recurring quick checks: every few minutes is no news worth a scan.complete.
     """
     subnets = _normalize_subnets(subnets)
     logger.info(f"Planner: Starting discovery on {subnets}")
@@ -294,15 +295,15 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
 
     logger.info(f"Planner: Scan complete. Found {total_found} hosts.")
 
-    # Trigger scan.complete webhook
-    from app.services.webhook_service import trigger_webhooks
-    await trigger_webhooks(
-        event_type="scan.complete",
-        data={
-            "scan_type": "planner",
-            "hosts_found": total_found,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-    )
+    if announce:
+        from app.services.webhook_service import trigger_webhooks
+        await trigger_webhooks(
+            event_type="scan.complete",
+            data={
+                "scan_type": "planner",
+                "hosts_found": total_found,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        )
 
     return total_found
