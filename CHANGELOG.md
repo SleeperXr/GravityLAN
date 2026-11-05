@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Webhooks: `scan.complete` is sent after full scans and scans you start yourself, no longer after each recurring quick check of known devices, which ran every few minutes. With the scan interval at 0 (off), it therefore only comes from scans you start.
 
 ### Fixed
+- Upgrade: before a start removes duplicate rows from an older database, it now saves a copy next to the database (`gravitylan.pre-cleanup-<date>-<time>.db`). Removing a duplicate can also remove the agent token, services or rack ports attached to it, and until now that could not be undone. If the copy fails, nothing is removed and the next start tries again. Without duplicates no copy is made. The database reset deletes these copies too.
 - GravityUI Settings → Webhooks: the delivery status list took up the whole page. It shows the newest five, "Show all" opens the rest in a box of its own.
 - Agents with a long reporting interval: since rc.4 an agent counted as inactive two minutes after its last report, whatever its interval (up to 300 seconds), so a healthy host could show as critical in the Health Radar. The time now follows the interval, three missed reports and at least two minutes; at the default of 30 seconds nothing changes.
 - Notifications: an event is stored before its first delivery attempt, so a crash or restart no longer loses it, and "new device" and "IP changed" are only announced once the scan has been saved, so a failed save no longer sends the same notification twice.

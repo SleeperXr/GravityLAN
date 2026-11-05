@@ -113,6 +113,50 @@ async def test_old_database_loses_duplicates_and_gains_unique_indexes(tmp_path, 
 
 
 @pytest.mark.asyncio
+async def test_duplicates_are_copied_before_they_go(tmp_path):
+    db_path = tmp_path / "gravitylan.db"
+    _old_database(db_path)
+
+    await _start(db_path, tmp_path / "telemetry.db")
+
+    copies = list(tmp_path.glob("gravitylan.pre-cleanup-*.db"))
+    assert len(copies) == 1
+    assert _query(copies[0], "SELECT COUNT(*) FROM topology_links") == [(3,)]
+    assert _query(copies[0], "SELECT COUNT(*) FROM racks") == [(2,)]
+    assert _query(db_path, "SELECT COUNT(*) FROM topology_links") == [(2,)]
+
+
+@pytest.mark.asyncio
+async def test_no_duplicates_no_copy(tmp_path):
+    db_path = tmp_path / "gravitylan.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(FROZEN_SQL.read_text(encoding="utf-8"))
+    finally:
+        conn.close()
+
+    await _start(db_path, tmp_path / "telemetry.db")
+
+    assert list(tmp_path.glob("*.pre-cleanup-*.db")) == []
+
+
+@pytest.mark.asyncio
+async def test_no_copy_no_deletion(tmp_path, monkeypatch, caplog):
+    db_path = tmp_path / "gravitylan.db"
+    _old_database(db_path)
+
+    async def no_copy(_db):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("app.database.migrations._copy_database_once", no_copy)
+    with caplog.at_level(logging.ERROR, logger="app.database.migrations"):
+        await _start(db_path, tmp_path / "telemetry.db")
+
+    assert _query(db_path, "SELECT COUNT(*) FROM topology_links") == [(3,)]
+    assert any("disk full" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_removing_a_duplicate_cascades_to_its_rows(tmp_path):
     db_path = tmp_path / "gravitylan.db"
     _old_database(db_path)

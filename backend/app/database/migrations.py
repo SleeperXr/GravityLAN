@@ -1,5 +1,7 @@
 import logging
 from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
 from sqlalchemy import inspect, select, or_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -297,6 +299,30 @@ def _missing_unique_sets(columns: set[str], live: list[frozenset[str]], table: s
     ]
 
 
+# Next to the database: the copy a start takes before it deletes rows
+CLEANUP_COPY_GLOB = "*.pre-cleanup-*.db"
+
+
+async def _copy_database_once(db: AsyncSession) -> None:
+    """Copy the database next to itself before a migration deletes rows, once per start.
+
+    Deleting a duplicate can take agent tokens, services or rack ports with it, and nobody chose that.
+    A failed copy raises, so the caller deletes nothing and the next start tries again.
+    """
+    if db.info.get("cleanup_copy_taken"):
+        return
+    await db.commit()  # VACUUM cannot run inside a transaction
+    url = (await db.connection()).engine.url
+    if url.get_backend_name() != "sqlite" or not url.database or url.database == ":memory:":
+        return
+    source = Path(url.database)
+    target = source.with_name(f"{source.stem}.pre-cleanup-{datetime.now():%Y%m%d-%H%M%S}.db")
+    await db.execute(text("VACUUM INTO :target"), {"target": str(target)})
+    await db.commit()
+    db.info["cleanup_copy_taken"] = True
+    logger.warning(f"Migration: Duplicates found, database copied to {target.name} before removing them")
+
+
 async def _deduplicate_and_index(db: AsyncSession, table: str, cols: tuple[str, ...]) -> int:
     """Keep the newest row (highest id) per key, then add the unique index. Returns the rows removed.
 
@@ -305,6 +331,11 @@ async def _deduplicate_and_index(db: AsyncSession, table: str, cols: tuple[str, 
     """
     quoted = ", ".join(f'"{c}"' for c in cols)
     not_null = " AND ".join(f'"{c}" IS NOT NULL' for c in cols)
+    has_duplicates = await db.execute(text(
+        f'SELECT 1 FROM "{table}" WHERE {not_null} GROUP BY {quoted} HAVING COUNT(*) > 1 LIMIT 1'
+    ))
+    if has_duplicates.first():
+        await _copy_database_once(db)
     result = await db.execute(text(
         f'DELETE FROM "{table}" WHERE {not_null} AND id NOT IN '
         f'(SELECT MAX(id) FROM "{table}" WHERE {not_null} GROUP BY {quoted})'
@@ -419,6 +450,12 @@ async def _drop_outbox_token_copies(db: AsyncSession):
 
 async def _deduplicate_generic_port_services(db: AsyncSession):
     """Remove duplicate Service rows on the same (device_id, port, name) created by classifier generic_web_ports."""
+    has_duplicates = await db.execute(text(
+        'SELECT 1 FROM "services" GROUP BY "device_id", "port", "name" HAVING COUNT(*) > 1 LIMIT 1'
+    ))
+    if not has_duplicates.first():
+        return
+    await _copy_database_once(db)
     res = await db.execute(text(
         'DELETE FROM "services" WHERE id NOT IN '
         '(SELECT MIN(id) FROM "services" GROUP BY "device_id", "port", "name")'
