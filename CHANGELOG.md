@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Added
 - GravityUI overview: the orbit map and the notices next to it can be folded away (button on the map, or the "…" menu). A slim bar then shows the online count and how many notices wait. The choice is kept per browser.
 
+### Changed
+- Webhooks: `scan.complete` is sent after full scans and scans you start yourself, no longer after each recurring quick check of known devices, which ran every few minutes. With the scan interval at 0 (off), it therefore only comes from scans you start.
+
 ### Fixed
 - Agents with a long reporting interval: since rc.4 an agent counted as inactive two minutes after its last report, whatever its interval (up to 300 seconds), so a healthy host could show as critical in the Health Radar. The time now follows the interval, three missed reports and at least two minutes; at the default of 30 seconds nothing changes.
 - Notifications: an event is stored before its first delivery attempt, so a crash or restart no longer loses it, and "new device" and "IP changed" are only announced once the scan has been saved, so a failed save no longer sends the same notification twice.

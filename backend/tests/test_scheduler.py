@@ -120,8 +120,8 @@ async def test_quick_loop_scans_every_enabled_subnet(monkeypatch, patch_async_se
     sched._running = True
     scanned = []
 
-    async def fake_planner_scan(subnets):
-        scanned.append(subnets)
+    async def fake_planner_scan(subnets, announce=True):
+        scanned.append((subnets, announce))
         sched._running = False
 
     monkeypatch.setattr(scheduler_module, "run_planner_scan", fake_planner_scan)
@@ -129,7 +129,7 @@ async def test_quick_loop_scans_every_enabled_subnet(monkeypatch, patch_async_se
     monkeypatch.setattr(scheduler_module.asyncio, "sleep", AsyncMock())
 
     await sched._quick_loop()
-    assert scanned == [["192.168.100.0/24", "192.168.110.0/24"]]
+    assert scanned == [(["192.168.100.0/24", "192.168.110.0/24"], False)]
 
 
 # --- _get_retention_days ----------------------------------------------------

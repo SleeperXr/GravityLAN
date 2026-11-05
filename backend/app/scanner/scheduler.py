@@ -152,7 +152,7 @@ class ScanScheduler:
                     logger.info(f"Scheduled Quick Scan (Planner) starting (Interval: {interval}s)")
 
                     if subnets:
-                        await run_planner_scan(subnets)
+                        await run_planner_scan(subnets, announce=False)
 
                     await asyncio.sleep(interval)
                 else:

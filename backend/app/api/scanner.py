@@ -147,7 +147,7 @@ def _subnets_param(subnets: str) -> list[str]:
 async def quick_subnet_scan(subnets: str) -> Dict[str, str]:
     """Turbo-fast subnet refresh (ARP + ICMP) via Planner scan."""
     subnet_list = _subnets_param(subnets)
-    await run_planner_scan(subnet_list)
+    await run_planner_scan(subnet_list, announce=False)
     return {"status": "ok", "message": "Quick scan triggered"}
 
 @router.post("/discover", dependencies=[Depends(get_current_admin)])

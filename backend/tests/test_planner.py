@@ -309,6 +309,23 @@ async def test_run_planner_scan_end_to_end(monkeypatch, patch_async_session, db,
     progress.assert_awaited()
 
 
+async def test_quick_check_sends_no_scan_complete(monkeypatch, patch_async_session, db):
+    """The recurring quick check runs every few minutes; only real scans announce themselves."""
+    monkeypatch.setattr(planner, "discover_hosts_simple", AsyncMock(return_value=[]))
+    monkeypatch.setattr(planner, "resolve_mac_addresses", AsyncMock(return_value=[]))
+    monkeypatch.setattr("app.scanner.sync.sync_hosts_batch", AsyncMock())
+    webhook_mock = AsyncMock()
+    monkeypatch.setattr("app.services.webhook_service.trigger_webhooks", webhook_mock)
+    docker_service = MagicMock()
+    docker_service.is_available.return_value = False
+    monkeypatch.setattr("app.services.docker_service.docker_service", docker_service)
+
+    await planner.run_planner_scan(["192.168.1.0/24"], announce=False)
+
+    events = [c.args[0] if c.args else c.kwargs.get("event_type") for c in webhook_mock.await_args_list]
+    assert "scan.complete" not in events
+
+
 async def test_run_planner_scan_skips_link_local_and_invalid_subnets(monkeypatch, patch_async_session, db):
     monkeypatch.setattr(planner, "discover_hosts_simple", AsyncMock(return_value=[]))
     monkeypatch.setattr(planner, "resolve_mac_addresses", AsyncMock(return_value=[]))
