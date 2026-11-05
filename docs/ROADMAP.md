@@ -16,9 +16,7 @@ it into an enterprise platform (SIEM export, signed audit trails, network access
 | 2 · Safer administration | A logged-in session alone is no longer root on every host | 🟡 in progress |
 | 3 · Events | Reliable notifications about new devices and changes | ✅ done |
 
-**Release state:** `:latest` is 0.6.0. 0.7.0-rc.3 is on `:next` (rc.1 was never released). 0.7.0 carries security stages, so it stays on `:next` for 7 days before the final tag.
-
-
+**Release state:** `:latest` is 0.6.0. 0.7.0-rc.7 is on `:next`, tested on real hosts before it went out. 0.7.0 carries security stages, so it stays on `:next` for 7 days and the final tag goes on the same commit. Earlier candidates cannot become the release: rc.4 to rc.6 carry a build label baked into the image.
 
 ## Phase 0 · Release foundation ✅
 
