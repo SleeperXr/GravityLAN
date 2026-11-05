@@ -44,6 +44,9 @@ async def test_reset_revokes_tokens_sessions_keys_and_webhooks(client, db, admin
     await db.commit()
     old_session = session_store.create_session(user_agent=None)
     old_code = enrollment_store.issue(1)
+    from app.config import settings
+    cleanup_copy = settings.data_dir / "gravitylan.pre-cleanup-20260101-000000.db"
+    cleanup_copy.write_bytes(b"old credentials")
 
     res = await client.post("/api/settings/reset-db", headers=HEADERS)
     assert res.status_code == 200, res.text
@@ -51,6 +54,7 @@ async def test_reset_revokes_tokens_sessions_keys_and_webhooks(client, db, admin
     db.expire_all()
     for model in (ApiToken, SshKey, SshProfile, SshKnownHost, WebhookSubscription, NotificationOutbox):
         assert await _count(db, model) == 0, model.__tablename__
+    assert not cleanup_copy.exists()
     assert session_store.get_session(old_session) is None
     assert not enrollment_store.is_valid(old_code, 1)
 

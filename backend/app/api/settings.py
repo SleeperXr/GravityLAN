@@ -346,6 +346,11 @@ async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
         await db.commit()
         logger.info("Database objects deleted and changes committed.")
         _drop_runtime_credentials()
+        # Old credentials must not survive a reset in a copy either (#48)
+        from app.config import settings as app_config
+        from app.database.migrations import CLEANUP_COPY_GLOB
+        for copy in app_config.data_dir.glob(CLEANUP_COPY_GLOB):
+            copy.unlink(missing_ok=True)
         from app.services.stream_revocation import close_all_streams
         closed_streams = await close_all_streams()
         logger.warning("Database reset: %d open log, scan or metric stream(s) closed", closed_streams)
