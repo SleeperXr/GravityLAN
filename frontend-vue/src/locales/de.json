@@ -719,6 +719,8 @@
       "empty_desc": "Richte hier ntfy, Gotify oder eigene Webhooks ein, um bei Statusänderungen oder neuen Geräten sofort benachrichtigt zu werden.",
       "outbox_title": "Outbox & Zustell-Status",
       "outbox_empty": "Keine kürzlichen Zustellungen in der Outbox.",
+      "outbox_show_all": "Alle {{count}} anzeigen",
+      "outbox_show_less": "Weniger anzeigen",
       "status_delivered": "Zugestellt",
       "status_pending": "Wartend",
       "status_failed": "Fehlgeschlagen",
