@@ -35,7 +35,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 # Constants & Logging
 # ---------------------------------------------------------------------------
 
-VERSION = "0.3.11"
+VERSION = "0.3.12"
 AGENT_NAME = "gravitylan-agent"
 DEFAULT_CONFIG_FILENAME = "agent.conf"
 DEFAULT_LOG_FILENAME = "gravitylan-agent.log"
@@ -145,71 +145,70 @@ class MetricProvider:
     def collect(self, config: AgentConfig) -> Any:
         raise NotImplementedError("Subclasses must implement collect()")
 
+def _read_if_exists(path: Path, binary: bool = False) -> Any:
+    """Contents of ``path`` (text, or bytes with ``binary``); None when it is missing or unreadable."""
+    try:
+        if not path.exists():
+            return None
+        return path.read_bytes() if binary else path.read_text(encoding="utf-8")
+    except Exception:
+        return None
+
+
 def is_lxc_container(root_path: str = "") -> bool:
     """Detect if running inside an LXC container."""
-    # Method 1: Check /run/systemd/container
-    try:
-        container_path = Path(root_path) / "run/systemd/container"
-        if container_path.exists():
-            return container_path.read_text(encoding="utf-8").strip() == "lxc"
-    except Exception:
-        pass
-
-    # Method 2: Check /proc/self/cgroup
-    try:
-        cgroup_path = Path(root_path) / "proc/self/cgroup"
-        if cgroup_path.exists():
-            with open(cgroup_path, encoding="utf-8") as fh:
-                content = fh.read()
-                if "lxc" in content or "/lxc/" in content:
-                    return True
-    except Exception:
-        pass
-
-    # Method 3: Check /proc/1/environ (if readable)
-    try:
-        environ_path = Path(root_path) / "proc/1/environ"
-        if environ_path.exists():
-            with open(environ_path, "rb") as fh:
-                env = fh.read().split(b"\x00")
-                for item in env:
-                    if item.startswith(b"container=lxc"):
-                        return True
-    except Exception:
-        pass
-
-    return False
+    root = Path(root_path)
+    # Method 1: systemd names the container type; when it says, that answer counts
+    marker = _read_if_exists(root / "run/systemd/container")
+    if marker is not None:
+        return marker.strip() == "lxc"
+    # Method 2: the cgroup path of this process
+    cgroup = _read_if_exists(root / "proc/self/cgroup")
+    if cgroup is not None and "lxc" in cgroup:
+        return True
+    # Method 3: the environment of PID 1 (if readable)
+    environ = _read_if_exists(root / "proc/1/environ", binary=True)
+    return environ is not None and any(item.startswith(b"container=lxc") for item in environ.split(b"\x00"))
 
 
 def get_lxc_cpu_count(root_path: str = "") -> float:
     """Get the CPU limit count for the LXC container from cgroups or host count."""
-    # 1. Try cgroup v2 cpu.max
-    cpu_max_v2 = Path(root_path) / "sys/fs/cgroup/cpu.max"
-    if cpu_max_v2.exists():
-        try:
-            parts = cpu_max_v2.read_text(encoding="utf-8").strip().split()
-            if len(parts) == 2 and parts[0] != "max":
-                limit = int(parts[0])
-                period = int(parts[1])
-                if period > 0:
-                    return limit / period
-        except Exception:
-            pass
-
-    # 2. Try cgroup v1 cfs_quota/period
-    quota_v1 = Path(root_path) / "sys/fs/cgroup/cpu/cpu.cfs_quota_us"
-    period_v1 = Path(root_path) / "sys/fs/cgroup/cpu/cpu.cfs_period_us"
-    if quota_v1.exists() and period_v1.exists():
-        try:
-            quota = int(quota_v1.read_text(encoding="utf-8").strip())
-            period = int(period_v1.read_text(encoding="utf-8").strip())
-            if quota > 0 and period > 0:
-                return quota / period
-        except Exception:
-            pass
-
+    root = Path(root_path)
+    limit = _cpu_limit_v2(root)
+    if limit is None:
+        limit = _cpu_limit_v1(root)
     # Fallback to host CPU count
-    return os.cpu_count() or 1.0
+    return limit if limit is not None else (os.cpu_count() or 1.0)
+
+
+def _cpu_limit_v2(root: Path) -> Optional[float]:
+    """CPUs allowed by cgroup v2 ``cpu.max`` ("<quota> <period>"; "max" means no limit)."""
+    try:
+        text = _read_if_exists(root / "sys/fs/cgroup/cpu.max")
+        parts = text.strip().split() if text is not None else []
+        if len(parts) == 2 and parts[0] != "max":
+            limit, period = int(parts[0]), int(parts[1])
+            if period > 0:
+                return limit / period
+    except Exception:
+        pass
+    return None
+
+
+def _cpu_limit_v1(root: Path) -> Optional[float]:
+    """CPUs allowed by cgroup v1 ``cpu.cfs_quota_us`` / ``cpu.cfs_period_us`` (quota -1 means no limit)."""
+    quota_path = root / "sys/fs/cgroup/cpu/cpu.cfs_quota_us"
+    period_path = root / "sys/fs/cgroup/cpu/cpu.cfs_period_us"
+    if not (quota_path.exists() and period_path.exists()):
+        return None
+    try:
+        quota = int(quota_path.read_text(encoding="utf-8").strip())
+        period = int(period_path.read_text(encoding="utf-8").strip())
+        if quota > 0 and period > 0:
+            return quota / period
+    except Exception:
+        pass
+    return None
 
 
 def get_lxc_cpu_usage_ns(root_path: str = "") -> int | None:
@@ -350,36 +349,12 @@ class RAMMetrics(MetricProvider):
 
     def _lxc_memory_limits(self) -> tuple[int | None, int | None]:
         """Read (used_bytes, total_bytes) from cgroups v2, then v1."""
-        used_bytes = None
-        total_bytes = None
-
-        # Check cgroups v2
-        mem_current_v2 = Path(self.root_path) / "sys/fs/cgroup/memory.current"
-        mem_max_v2 = Path(self.root_path) / "sys/fs/cgroup/memory.max"
-        if mem_current_v2.exists():
-            try:
-                used_bytes = int(mem_current_v2.read_text(encoding="utf-8").strip())
-                if mem_max_v2.exists():
-                    max_str = mem_max_v2.read_text(encoding="utf-8").strip()
-                    if max_str != "max":
-                        total_bytes = int(max_str)
-            except Exception:
-                pass
-
-        # Check cgroups v1
+        cgroup = Path(self.root_path) / "sys/fs/cgroup"
+        used_bytes, total_bytes = _cgroup_memory(cgroup / "memory.current", cgroup / "memory.max", _v2_memory_limit)
         if used_bytes is None:
-            mem_current_v1 = Path(self.root_path) / "sys/fs/cgroup/memory/memory.usage_in_bytes"
-            mem_max_v1 = Path(self.root_path) / "sys/fs/cgroup/memory/memory.limit_in_bytes"
-            if mem_current_v1.exists():
-                try:
-                    used_bytes = int(mem_current_v1.read_text(encoding="utf-8").strip())
-                    if mem_max_v1.exists():
-                        limit_val = int(mem_max_v1.read_text(encoding="utf-8").strip())
-                        if limit_val < 2**60:
-                            total_bytes = limit_val
-                except Exception:
-                    pass
-
+            used_bytes, total_bytes = _cgroup_memory(
+                cgroup / "memory/memory.usage_in_bytes", cgroup / "memory/memory.limit_in_bytes", _v1_memory_limit
+            )
         return used_bytes, total_bytes
 
     def _meminfo_total(self) -> int | None:
@@ -393,6 +368,34 @@ class RAMMetrics(MetricProvider):
         except Exception:
             pass
         return None
+
+def _v2_memory_limit(text: str) -> Optional[int]:
+    value = text.strip()
+    return None if value == "max" else int(value)
+
+
+def _v1_memory_limit(text: str) -> Optional[int]:
+    # cgroup v1 writes a huge number (close to 2**63) for "no limit"
+    value = int(text.strip())
+    return value if value < 2**60 else None
+
+
+def _cgroup_memory(current: Path, limit: Path, parse_limit: Callable[[str], Optional[int]]) -> tuple:
+    """(used, total) bytes of one cgroup version; used is None when that version is not there.
+
+    A limit that cannot be read keeps the usage already read, like the original single try block.
+    """
+    if not current.exists():
+        return None, None
+    used = total = None
+    try:
+        used = int(current.read_text(encoding="utf-8").strip())
+        if limit.exists():
+            total = parse_limit(limit.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return used, total
+
 
 def _collect_zfs_stats() -> Dict[str, Dict[str, int]]:
     """Pre-fetch ZFS dataset stats: {mountpoint: {used, avail, refer}}."""
@@ -737,27 +740,10 @@ class PatchMetrics(MetricProvider):
     def _collect_dnf(self, result: Dict[str, Any]) -> None:
         """Populate patch counts via the dnf package manager."""
         try:
-            cmd = ["dnf", "check-update", "--quiet"]
-            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
-            out = proc.stdout.decode("utf-8")
-
-            lines = [l.strip() for l in out.splitlines() if l.strip()]
-            pkg_count = 0
-            for line in lines:
-                parts = line.split()
-                if len(parts) >= 3 and not line.startswith("Last metadata"):
-                    pkg_count += 1
-            result["patch_available"] = pkg_count
-
-            # Security count
-            cmd_sec = ["dnf", "updateinfo", "list", "security", "--quiet"]
-            proc_sec = subprocess.run(cmd_sec, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
-            out_sec = proc_sec.stdout.decode("utf-8")
-            sec_count = 0
-            for line in out_sec.splitlines():
-                if line.strip() and not line.startswith("Last metadata"):
-                    sec_count += 1
-            result["patch_security"] = sec_count
+            result["patch_available"] = _count_update_lines(_run_quiet(["dnf", "check-update", "--quiet"]), skip_metadata=True)
+            # Security count: every non-empty line except the metadata note
+            out_sec = _run_quiet(["dnf", "updateinfo", "list", "security", "--quiet"])
+            result["patch_security"] = sum(1 for l in out_sec.splitlines() if l.strip() and not l.startswith("Last metadata"))
         except Exception:
             pass
 
@@ -772,18 +758,125 @@ class PatchMetrics(MetricProvider):
     def _collect_yum(self, result: Dict[str, Any]) -> None:
         """Populate patch counts via the yum package manager."""
         try:
-            cmd = ["yum", "check-update", "--quiet"]
-            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
-            out = proc.stdout.decode("utf-8")
-            lines = [l.strip() for l in out.splitlines() if l.strip()]
-            pkg_count = 0
-            for line in lines:
-                parts = line.split()
-                if len(parts) >= 3:
-                    pkg_count += 1
-            result["patch_available"] = pkg_count
+            result["patch_available"] = _count_update_lines(_run_quiet(["yum", "check-update", "--quiet"]), skip_metadata=False)
         except Exception:
             pass
+
+def _run_quiet(cmd: List[str]) -> str:
+    """stdout of a package manager query (stderr dropped, 15 s at most)."""
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
+    return proc.stdout.decode("utf-8")
+
+
+def _count_update_lines(out: str, skip_metadata: bool) -> int:
+    """Packages in ``dnf/yum check-update`` output: lines with at least name, version and repo."""
+    count = 0
+    for line in (l.strip() for l in out.splitlines()):
+        if len(line.split()) >= 3 and not (skip_metadata and line.startswith("Last metadata")):
+            count += 1
+    return count
+
+
+# /proc as the agent reads it (a test points it elsewhere)
+_PROC = Path("/proc")
+
+
+def _usable_subnet(net: ipaddress.IPv4Network) -> bool:
+    """Only /16 … /30 networks are worth probing."""
+    return 16 <= net.prefixlen <= 30
+
+
+def _subnets_from_ip_addr(out: str) -> List[ipaddress.IPv4Network]:
+    """Networks of ``ip -4 -o addr show`` lines, loopback and too large or small ones left out."""
+    networks: List[ipaddress.IPv4Network] = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[2] != "inet" or parts[3].startswith("127."):
+            continue
+        try:
+            net = ipaddress.ip_network(parts[3], strict=False)
+        except ValueError:
+            continue
+        if _usable_subnet(net):
+            networks.append(net)
+    return networks
+
+
+def _hex_ip(value: str) -> str:
+    """An IPv4 address as /proc/net/route writes it (little-endian hex)."""
+    return socket.inet_ntoa(bytes.fromhex(value)[::-1])
+
+
+def _route_line_subnet(line: str) -> Optional[ipaddress.IPv4Network]:
+    """The network of one /proc/net/route line if it is a usable route that is up; raises on a malformed line."""
+    parts = line.strip().split()
+    if len(parts) < 8 or parts[0] == "lo":
+        return None
+    # Flag 0x1: route is up; the default route has destination 0
+    if not (int(parts[3], 16) & 0x1) or parts[1] == "00000000":
+        return None
+    net = ipaddress.ip_network(f"{_hex_ip(parts[1])}/{_hex_ip(parts[7])}", strict=False)
+    return net if _usable_subnet(net) else None
+
+
+def _neighbors_from_proc_arp(lines: List[str]) -> Dict[str, Dict[str, str]]:
+    """Completed entries of /proc/net/arp (header line first) by IP."""
+    neighbors: Dict[str, Dict[str, str]] = {}
+    for line in lines[1:]:
+        parts = line.split()
+        if len(parts) < 6:
+            continue
+        ip, flags, mac, dev = parts[0], parts[2], parts[3].lower(), parts[5]
+        # 0x2 = ATF_COM (completed ARP resolution)
+        if flags == "0x2" and mac and mac != "00:00:00:00:00:00":
+            neighbors[ip] = {"ip": ip, "mac": mac, "interface": dev}
+    return neighbors
+
+
+def _apply_ip_neigh(neighbors: Dict[str, Dict[str, str]], out: str) -> None:
+    """Add what ``ip -4 neigh show`` knows; stale, failed and incomplete entries are removed."""
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 5 or "lladdr" not in parts:
+            continue
+        idx = parts.index("lladdr")
+        if idx + 1 >= len(parts):
+            continue
+        ip, mac = parts[0], parts[idx + 1].lower()
+        dev = parts[parts.index("dev") + 1] if "dev" in parts else ""
+        if parts[-1].upper() in ("STALE", "FAILED", "INCOMPLETE"):
+            neighbors.pop(ip, None)
+        elif mac != "00:00:00:00:00:00":
+            neighbors[ip] = {"ip": ip, "mac": mac, "interface": dev}
+
+
+def _udp_arp_burst(net: ipaddress.IPv4Network) -> None:
+    """One UDP packet per host: the kernel sends an ARP WHO-HAS for each address."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setblocking(False)
+        for host in net.hosts():
+            try:
+                sock.sendto(b"\x00", (str(host), 55555))
+            except Exception:
+                pass
+        sock.close()
+    except Exception:
+        pass
+
+
+def _broadcast_ping(net: ipaddress.IPv4Network) -> None:
+    """A directed subnet broadcast ping, if the ping tool is there."""
+    try:
+        subprocess.run(
+            ["ping", "-b", "-c", "1", "-W", "1", str(net.broadcast_address)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=1.5,
+        )
+    except Exception:
+        pass
+
 
 class ArpNeighborCollector(MetricProvider):
     """Collects Layer-2 ARP neighbors when enable_scanner_relay is True."""
@@ -805,80 +898,33 @@ class ArpNeighborCollector(MetricProvider):
 
     def _get_local_subnets(self) -> List[ipaddress.IPv4Network]:
         """Detect local IPv4 subnets attached to non-loopback interfaces."""
+        # 1. `ip -4 -o addr show`
         networks: List[ipaddress.IPv4Network] = []
-
-        # 1. Try `ip -4 -o addr show`
         try:
-            out = subprocess.check_output(
-                ["ip", "-4", "-o", "addr", "show"],
-                stderr=subprocess.DEVNULL,
-                timeout=2,
-            ).decode("utf-8")
-            for line in out.splitlines():
-                parts = line.split()
-                if len(parts) >= 4 and parts[2] == "inet":
-                    cidr = parts[3]
-                    if not cidr.startswith("127."):
-                        try:
-                            net = ipaddress.ip_network(cidr, strict=False)
-                            if 16 <= net.prefixlen <= 30:
-                                networks.append(net)
-                        except ValueError:
-                            pass
+            out = subprocess.check_output(["ip", "-4", "-o", "addr", "show"], stderr=subprocess.DEVNULL, timeout=2).decode("utf-8")
+            networks = _subnets_from_ip_addr(out)
         except Exception:
             pass
 
-        # 2. Fallback to /proc/net/route if ip command unavailable
+        # 2. Fallback to /proc/net/route if the ip command is unavailable; a bad line keeps what was read before it
         if not networks:
             try:
-                with open("/proc/net/route", "r", encoding="utf-8") as f:
+                with open(_PROC / "net/route", "r", encoding="utf-8") as f:
                     for line in f.readlines()[1:]:
-                        parts = line.strip().split()
-                        if len(parts) >= 8 and parts[0] != "lo":
-                            dest_hex = parts[1]
-                            mask_hex = parts[7]
-                            flags = int(parts[3], 16)
-                            if (flags & 0x1) and dest_hex != "00000000":
-                                dest_ip = socket.inet_ntoa(bytes.fromhex(dest_hex)[::-1])
-                                mask_ip = socket.inet_ntoa(bytes.fromhex(mask_hex)[::-1])
-                                net = ipaddress.ip_network(f"{dest_ip}/{mask_ip}", strict=False)
-                                if 16 <= net.prefixlen <= 30:
-                                    networks.append(net)
+                        net = _route_line_subnet(line)
+                        if net is not None:
+                            networks.append(net)
             except Exception:
                 pass
-
         return networks
 
     def _probe_local_subnets(self) -> None:
         """Actively triggers kernel ARP requests for all IPs in local subnets."""
-        networks = self._get_local_subnets()
-        for net in networks:
-            # Only sweep subnets with <= 512 hosts (e.g. /24 .. /30) to remain lightweight
+        # Only sweep subnets with <= 512 hosts (e.g. /24 .. /30) to remain lightweight
+        for net in self._get_local_subnets():
             if net.num_addresses <= 512:
-                # 1. Fast UDP burst (triggers kernel ARP WHO-HAS for each host IP)
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    sock.setblocking(False)
-                    for host in net.hosts():
-                        try:
-                            sock.sendto(b"\x00", (str(host), 55555))
-                        except Exception:
-                            pass
-                    sock.close()
-                except Exception:
-                    pass
-
-                # 2. Directed subnet broadcast ping if ping tool available
-                try:
-                    bcast = str(net.broadcast_address)
-                    subprocess.run(
-                        ["ping", "-b", "-c", "1", "-W", "1", bcast],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=1.5,
-                    )
-                except Exception:
-                    pass
+                _udp_arp_burst(net)
+                _broadcast_ping(net)
 
         # Allow 0.5s for kernel to receive and record ARP replies
         time.sleep(0.5)
@@ -886,45 +932,19 @@ class ArpNeighborCollector(MetricProvider):
     def _read_arp_table(self) -> List[Dict[str, str]]:
         neighbors: Dict[str, Dict[str, str]] = {}
 
-        # 1. Read /proc/net/arp
-        arp_path = Path("/proc/net/arp")
+        # 1. /proc/net/arp
+        arp_path = _PROC / "net/arp"
         if arp_path.exists():
             try:
                 with open(arp_path, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-                for line in lines[1:]:
-                    parts = line.split()
-                    if len(parts) >= 6:
-                        ip = parts[0]
-                        flags = parts[2]
-                        mac = parts[3].lower()
-                        dev = parts[5]
-                        # 0x2 = ATF_COM (completed ARP resolution)
-                        if flags == "0x2" and mac and mac != "00:00:00:00:00:00":
-                            neighbors[ip] = {"ip": ip, "mac": mac, "interface": dev}
+                    neighbors = _neighbors_from_proc_arp(f.readlines())
             except Exception as e:
                 logger.debug("Failed to read /proc/net/arp: %s", e)
 
         # 2. Supplementary `ip neigh` check (catches any entries not in /proc/net/arp)
         try:
-            out = subprocess.check_output(
-                ["ip", "-4", "neigh", "show"],
-                stderr=subprocess.DEVNULL,
-                timeout=2,
-            ).decode("utf-8")
-            for line in out.splitlines():
-                parts = line.split()
-                if len(parts) >= 5 and "lladdr" in parts:
-                    idx = parts.index("lladdr")
-                    if idx + 1 < len(parts):
-                        ip = parts[0]
-                        mac = parts[idx + 1].lower()
-                        dev = parts[parts.index("dev") + 1] if "dev" in parts else ""
-                        state = parts[-1].upper()
-                        if state in ("STALE", "FAILED", "INCOMPLETE"):
-                            neighbors.pop(ip, None)
-                        elif mac != "00:00:00:00:00:00":
-                            neighbors[ip] = {"ip": ip, "mac": mac, "interface": dev}
+            out = subprocess.check_output(["ip", "-4", "neigh", "show"], stderr=subprocess.DEVNULL, timeout=2).decode("utf-8")
+            _apply_ip_neigh(neighbors, out)
         except Exception:
             pass
 
@@ -971,6 +991,16 @@ class ReportSender:
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
+
+# Settings the server may change at runtime, and how each value is taken over
+_REMOTE_CONFIG_FIELDS: List[tuple] = [
+    ("interval", lambda v: v),
+    ("disk_paths", lambda v: v),
+    ("enable_temp", lambda v: v),
+    ("enable_patch_check", lambda v: v),
+    ("enable_scanner_relay", bool),
+]
+
 
 class AgentOrchestrator:
     """Coordinates metric collection and reporting loop."""
@@ -1028,21 +1058,10 @@ class AgentOrchestrator:
         # Runtime Config Updates
         remote_conf = response.get("config")
         if remote_conf and isinstance(remote_conf, dict):
-            if "interval" in remote_conf and self.config.interval != remote_conf["interval"]:
-                self.config.interval = remote_conf["interval"]
-                changed = True
-            if "disk_paths" in remote_conf and self.config.disk_paths != remote_conf["disk_paths"]:
-                self.config.disk_paths = remote_conf["disk_paths"]
-                changed = True
-            if "enable_temp" in remote_conf and self.config.enable_temp != remote_conf["enable_temp"]:
-                self.config.enable_temp = remote_conf["enable_temp"]
-                changed = True
-            if "enable_patch_check" in remote_conf and self.config.enable_patch_check != remote_conf["enable_patch_check"]:
-                self.config.enable_patch_check = remote_conf["enable_patch_check"]
-                changed = True
-            if "enable_scanner_relay" in remote_conf and self.config.enable_scanner_relay != remote_conf["enable_scanner_relay"]:
-                self.config.enable_scanner_relay = bool(remote_conf["enable_scanner_relay"])
-                changed = True
+            for key, convert in _REMOTE_CONFIG_FIELDS:
+                if key in remote_conf and getattr(self.config, key) != remote_conf[key]:
+                    setattr(self.config, key, convert(remote_conf[key]))
+                    changed = True
 
         if changed:
             self.config.save()

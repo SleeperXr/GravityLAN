@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Agent 0.3.12: the agent's readers for containers, cgroup limits, package updates, subnets and neighbours are split into smaller parts. What it reports is unchanged; GravityLAN offers the update so the new version can be rolled out and tested.
+
 ### Fixed
 - Service refresh of a device: a scan whose ports match no known device kind no longer resets the device type to "unknown". A NAS, firewall or server set by hand or found earlier keeps its type; a scan that recognises a kind still sets it.
 - Services: changing a service's protocol no longer replaces a link you wrote yourself. A link with a path (`https://{ip}/admin`), another port or a host name stays; only an empty link or one GravityLAN generated (`http://{ip}`, `http://{ip}:{port}`, `http://{ip}:<the service's port>`) follows the new protocol.
