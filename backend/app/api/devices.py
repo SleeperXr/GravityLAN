@@ -1,5 +1,6 @@
 import ipaddress
 import logging
+import re
 
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
@@ -580,6 +581,23 @@ async def add_service(device_id: int, data: ServiceCreate, db: AsyncSession = De
     topology_cache.invalidate()
     return service
 
+_GENERATED_LINK = re.compile(r"[a-z][a-z0-9+.-]*://\{ip\}(?::(\{port\}|\d+))?/?", re.IGNORECASE)
+
+
+def _is_generated_link(template: str | None, port: int) -> bool:
+    """True for an empty link or one GravityLAN made itself: scheme://{ip}, optionally with {port} or the service's port.
+
+    Anything else (a path, another port, a host name) was written by the user and is kept.
+    """
+    if not template:
+        return True
+    match = _GENERATED_LINK.fullmatch(template)
+    if not match:
+        return False
+    link_port = match.group(1)
+    return link_port is None or link_port == "{port}" or link_port == str(port)
+
+
 @router_services.patch("/{service_id}", response_model=ServiceResponse)
 async def update_service(service_id: int, data: ServiceUpdate, db: AsyncSession = Depends(get_db)):
     """Update an existing service. Manually updated services are no longer 'auto_detected'."""
@@ -589,8 +607,8 @@ async def update_service(service_id: int, data: ServiceUpdate, db: AsyncSession 
     
     update_data = data.model_dump(exclude_unset=True)
     
-    # If protocol changed but url_template is default or null, update url_template too
-    if "protocol" in update_data and (not service.url_template or "{ip}" in service.url_template):
+    # If protocol changed but url_template is a generated one or null, update url_template too
+    if "protocol" in update_data and _is_generated_link(service.url_template, service.port):
         proto = update_data["protocol"].lower()
         if proto in ["http", "https"]:
             service.url_template = f"{proto}://{{ip}}:{{port}}"
