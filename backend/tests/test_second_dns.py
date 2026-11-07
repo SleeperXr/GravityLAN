@@ -64,6 +64,8 @@ _QUERY = dns.message.make_query("30.2.0.192.in-addr.arpa.", "PTR")
         (hostname.dns.resolver.NoNameservers(request=_QUERY, errors=[("192.0.2.2", False, 53, "REFUSED", None)]), "refused"),
         (hostname.dns.resolver.NoNameservers(request=_QUERY, errors=[("192.0.2.2", False, 53, "SERVFAIL", None)]), "server_error"),
         (OSError("network unreachable"), "error"),
+        # A server address that merely contains the word is not a refusal; an error without an rcode is no server error
+        (hostname.dns.resolver.NoNameservers(request=_QUERY, errors=[("fe80::1%REFUSED", False, 53, OSError("no route"), None)]), "error"),
     ],
 )
 def test_ptr_lookup_says_why_there_is_no_name(monkeypatch, error, reason):
@@ -159,6 +161,16 @@ async def test_the_editor_gets_why_a_server_gave_no_name(client, db, auth, monke
     # Answers stored before reasons existed carry none
     dev.dns_names = '{"1": "nas.lan", "2": null}'
     assert dev.dns_errors == {}
+
+
+@pytest.mark.asyncio
+async def test_broken_stored_names_do_not_break_the_device_list(client, db, auth):
+    db.add(Device(ip="192.0.2.30", display_name="x", dns_names='{"1": 42, "2": ["x"], "2_reason": 7}'))
+    await db.commit()
+
+    res = await client.get("/api/devices", headers=auth)
+    assert res.status_code == 200, res.text
+    assert [(d["dns_names"], d["dns_errors"]) for d in res.json()] == [({"1": None, "2": None}, {})]
 
 
 @pytest.mark.asyncio
