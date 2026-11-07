@@ -14,6 +14,7 @@ import {
   computeLightBeams,
   computeOrbitRings,
   findDropTargetBody,
+  freeOrbitSlot,
   getDescendantIds,
   linkCount,
   moveWithDescendants,
@@ -506,22 +507,9 @@ async function assignOrbitToTarget(childId: number, target: OrbitBody) {
   const child = bodies.value.get(childId);
   if (!child || child.id === target.id) return;
   if (target.id !== child.parentId && warnPortLimit(target.device)) return;
-  const tPos = posOf(target.id);
-  const siblings = bodyList.value.filter((b) => b.parentId === target.id && b.kind === 'moon');
-  const radius = siblings.length ? Math.round(Math.hypot(posOf(siblings[0].id).x - tPos.x, posOf(siblings[0].id).y - tPos.y)) : target.kind === 'star' ? 140 : 90;
-  const taken = siblings.map((s) => Math.atan2(posOf(s.id).y - tPos.y, posOf(s.id).x - tPos.x));
-  // The free angle furthest from the siblings already there
-  let best = -Math.PI / 2;
-  let bestGap = -1;
-  for (let k = 0; k < 24; k++) {
-    const a = -Math.PI + (k * Math.PI) / 12;
-    const gap = taken.length ? Math.min(...taken.map((x) => Math.abs(Math.atan2(Math.sin(a - x), Math.cos(a - x))))) : Math.PI;
-    if (gap > bestGap) {
-      bestGap = gap;
-      best = a;
-    }
-  }
-  const newPos = { x: Math.round(tPos.x + radius * Math.cos(best)), y: Math.round(tPos.y + radius * Math.sin(best)) };
+  // The free spot on the target's moon ring, furthest from the moons already there
+  const siblings = bodyList.value.filter((b) => b.parentId === target.id && b.kind === 'moon').map((b) => posOf(b.id));
+  const newPos = freeOrbitSlot(posOf(target.id), siblings, target.kind === 'star' ? 140 : 90);
   try {
     await ensureCustom();
     localPositions.value = new Map(localPositions.value).set(childId, newPos);

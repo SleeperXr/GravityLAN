@@ -616,6 +616,29 @@ function nearestSiblingRadius(
   return best;
 }
 
+/** Smallest angle between two directions, in radians (0 … π). */
+const angleBetween = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+
+/**
+ * Where a body newly assigned to `center` goes: on the ring of the moons already there (or `emptyRadius` for an
+ * empty orbit), at the one of 24 directions furthest from them; straight up when nothing is there.
+ */
+export function freeOrbitSlot(center: Point, siblings: Point[], emptyRadius: number): Point {
+  const radius = siblings.length ? Math.round(Math.hypot(siblings[0].x - center.x, siblings[0].y - center.y)) : emptyRadius;
+  const taken = siblings.map((s) => Math.atan2(s.y - center.y, s.x - center.x));
+  let best = -Math.PI / 2;
+  let bestGap = -1;
+  for (let k = 0; k < 24; k++) {
+    const a = -Math.PI + (k * Math.PI) / 12;
+    const gap = taken.length ? Math.min(...taken.map((x) => angleBetween(a, x))) : Math.PI;
+    if (gap > bestGap) {
+      bestGap = gap;
+      best = a;
+    }
+  }
+  return { x: Math.round(center.x + radius * Math.cos(best)), y: Math.round(center.y + radius * Math.sin(best)) };
+}
+
 /**
  * Find a Planet or Star under the cursor when dragging a body so the user can drop a Moon/Planet
  * onto another Planet/AP/Switch/Star to reassign its orbit and create/move the Light Beam link.
