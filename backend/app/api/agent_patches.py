@@ -309,6 +309,94 @@ async def _clear_device_patch_state(device_id: int) -> None:
         logger.error("Failed to update database metrics after patch execution: %s", e)
 
 
+def _ssh_kwargs_for(fn: Any, base: dict[str, Any], **optional: Any) -> dict[str, Any]:
+    """``base`` plus the optional SSH arguments ``fn`` accepts; values that are None are left out.
+
+    Test doubles of the probe and stream functions may take fewer arguments than the real ones.
+    """
+    params = inspect.signature(fn).parameters
+    accepts_any = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    kwargs = dict(base)
+    for name, value in optional.items():
+        if value is not None and (accepts_any or name in params):
+            kwargs[name] = value
+    return kwargs
+
+
+async def _probe_package_manager(
+    websocket: WebSocket, device_id: int, mode: str, actor: Any, ssh: dict[str, Any], optional: dict[str, Any],
+) -> str | None:
+    """Ask the host which package manager it has; None after the client was told why the run stops."""
+    host_ip = ssh["host_ip"]
+    list_updates_fn = _get_agent_attr("list_device_updates", list_device_updates)
+    try:
+        probe = await list_updates_fn(**_ssh_kwargs_for(list_updates_fn, ssh, **optional))
+    except Exception as e:
+        logger.exception("SSH probe failed for device %s", device_id)
+        await audit(websocket, "agent.patches", "failed", device_id=device_id, target=host_ip, detail=f"{mode}: SSH probe failed", actor=actor)
+        await websocket.send_text(f"[Error] SSH probe failed: {e}\r\n")
+        await websocket.close()
+        return None
+
+    pkg_manager = probe.get("patch_manager")
+    probe_error = probe.get("error")
+    # A refused password fails the run too; any other probe error (one broken repository makes
+    # apt-get update fail) must not block the upgrade, which reports its own errors
+    if probe_error and (probe.get("sudo_rejected") or not pkg_manager):
+        await audit(websocket, "agent.patches", "failed", device_id=device_id, target=host_ip, detail=f"{mode}: {probe_error}", actor=actor)
+        await websocket.send_text(f"[Error] {probe_error}\r\n")
+        await websocket.close()
+        return None
+    if probe_error:
+        await websocket.send_text(f"[Warn] {probe_error}\r\n")
+    if not pkg_manager:
+        detail = probe.get("detected_os") or "no recognizable package manager found"
+        await websocket.send_text("[Error] Unsupported package manager or system type.\r\n")
+        await websocket.send_text(f"[Info] Target system reports: {detail}\r\n")
+        await websocket.close()
+        return None
+    return pkg_manager
+
+
+async def _remember_host_key(host_ip: str, ssh_port: int, captured: Any) -> None:
+    """Store a host key learned on first contact (TOFU)."""
+    async with async_session() as db:
+        await _persist_captured_host_key(db, host_ip, ssh_port, captured)
+
+
+class _ClientSink:
+    """Output callback for run_ssh_command_stream: forwards to the browser while it is there.
+
+    Awaited per chunk, so output arrives in order and no send task is left behind. If the
+    browser goes away mid-run, the update keeps running to completion on the host (aborting
+    apt/dnf halfway is worse) and the remaining output is dropped.
+    """
+
+    def __init__(self, websocket: WebSocket, device_id: int):
+        self.websocket = websocket
+        self.device_id = device_id
+        self.connected = True
+
+    async def __call__(self, data: str) -> None:
+        if not self.connected:
+            return
+        cleaned = data.replace("\r\n", "\n").replace("\n", "\r\n")
+        self.connected = await _send_ws_text(self.websocket, cleaned)
+        if not self.connected:
+            logger.info("Patch run on device %s: client disconnected, update continues on the host", self.device_id)
+
+
+async def _report_result(websocket: WebSocket, success: bool, msg: str) -> None:
+    if success:
+        await _send_ws_text(websocket, "\r\n[Success] Updates completed successfully!\r\n")
+    else:
+        await _send_ws_text(websocket, f"\r\n[Error] Update failed: {msg}\r\n")
+    try:
+        await websocket.close()
+    except (RuntimeError, OSError):
+        pass
+
+
 @patch_router.websocket("/patches/{device_id}/run-ws")
 async def run_patches_websocket(websocket: WebSocket, device_id: int):
     """WebSocket endpoint to run updates and stream output live to the frontend."""
@@ -324,7 +412,6 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
     if not auth_info:
         return
 
-    # Accept the connection
     await websocket.accept()
 
     # Validate and consume the one-shot patch session token
@@ -334,140 +421,51 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
         return
 
     mode = session_data["mode"]
-    host_ip = session_data["host_ip"]
     actor = actor_from_identity(auth_info.get("identity"))
-    ssh_user = session_data["ssh_user"]
-    ssh_password = session_data["ssh_password"]
-    ssh_key = session_data["ssh_key"]
-    ssh_key_passphrase = session_data.get("ssh_key_passphrase")
-    ssh_port = session_data["ssh_port"]
-
+    ssh = {key: session_data[key] for key in ("host_ip", "ssh_user", "ssh_password", "ssh_key", "ssh_port")}
+    host_ip, ssh_port = ssh["host_ip"], ssh["ssh_port"]
     pinned_host_key = session_data.get("pinned_host_key")
     tofu_policy = TofuHostKeyPolicy() if pinned_host_key is None and not settings.ssh_strict_mode else None
+    optional = {
+        "ssh_key_passphrase": session_data.get("ssh_key_passphrase"),
+        "pinned_host_key": pinned_host_key,
+        "tofu_policy": tofu_policy,
+    }
 
-    # Detect package manager or construct update commands
     await websocket.send_text("[Info] Starting update session...\r\n")
     await websocket.send_text("[Info] Detecting target system configuration...\r\n")
-
-    probe_kwargs = dict(
-        host_ip=host_ip,
-        ssh_user=ssh_user,
-        ssh_password=ssh_password,
-        ssh_key=ssh_key,
-        ssh_port=ssh_port,
-    )
-    list_updates_fn = _get_agent_attr("list_device_updates", list_device_updates)
-    sig = inspect.signature(list_updates_fn)
-    accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
-    if ("ssh_key_passphrase" in sig.parameters or accepts_var_kw) and ssh_key_passphrase is not None:
-        probe_kwargs["ssh_key_passphrase"] = ssh_key_passphrase
-    if ("pinned_host_key" in sig.parameters or accepts_var_kw) and pinned_host_key is not None:
-        probe_kwargs["pinned_host_key"] = pinned_host_key
-    if ("tofu_policy" in sig.parameters or accepts_var_kw) and tofu_policy is not None:
-        probe_kwargs["tofu_policy"] = tofu_policy
-
-    try:
-        probe = await list_updates_fn(**probe_kwargs)
-    except Exception as e:
-        logger.exception("SSH probe failed for device %s", device_id)
-        await audit(websocket, "agent.patches", "failed", device_id=device_id, target=host_ip, detail=f"{mode}: SSH probe failed", actor=actor)
-        await websocket.send_text(f"[Error] SSH probe failed: {e}\r\n")
-        await websocket.close()
+    pkg_manager = await _probe_package_manager(websocket, device_id, mode, actor, ssh, optional)
+    if pkg_manager is None:
         return
 
-    pkg_manager = probe.get("patch_manager")
-    probe_error = probe.get("error")
-    # A refused password fails the run too; any other probe error (one broken repository makes
-    # apt-get update fail) must not block the upgrade, which reports its own errors
-    if probe_error and (probe.get("sudo_rejected") or not pkg_manager):
-        await audit(websocket, "agent.patches", "failed", device_id=device_id, target=host_ip, detail=f"{mode}: {probe_error}", actor=actor)
-        await websocket.send_text(f"[Error] {probe_error}\r\n")
-        await websocket.close()
-        return
-    if probe_error:
-        await websocket.send_text(f"[Warn] {probe_error}\r\n")
-    if not pkg_manager:
-        detected_os = probe.get("detected_os")
-        detail = detected_os or "no recognizable package manager found"
-        await websocket.send_text("[Error] Unsupported package manager or system type.\r\n")
-        await websocket.send_text(f"[Info] Target system reports: {detail}\r\n")
-        await websocket.close()
-        return
-
+    # A host key learned during the probe is stored and pinned for the run itself
     if tofu_policy and tofu_policy.captured:
-        async with async_session() as db:
-            await _persist_captured_host_key(db, host_ip, ssh_port, tofu_policy.captured)
-            pinned_host_key = PinnedHostKey(
-                key_type=tofu_policy.captured.key_type,
-                fingerprint=tofu_policy.captured.fingerprint,
-            )
-            tofu_policy = None
+        await _remember_host_key(host_ip, ssh_port, tofu_policy.captured)
+        optional["pinned_host_key"] = PinnedHostKey(
+            key_type=tofu_policy.captured.key_type, fingerprint=tofu_policy.captured.fingerprint,
+        )
+        optional["tofu_policy"] = tofu_policy = None
 
     await websocket.send_text(f"[Info] Detected package manager: {pkg_manager}\r\n")
-
     cmd = _build_update_command(pkg_manager, mode)
     if cmd is None:
         await websocket.send_text(f"[Error] Package manager {pkg_manager} is not supported.\r\n")
         await websocket.close()
         return
-
     if mode == "security-only":
         await websocket.send_text("[Info] Running security updates only...\r\n")
     else:
         await websocket.send_text("[Info] Running full system upgrade...\r\n")
 
-    # Awaited per chunk by run_ssh_command_stream: output arrives in order and no
-    # send task is left behind. If the browser goes away mid-run, the update keeps
-    # running to completion on the host (aborting apt/dnf halfway is worse) and
-    # the remaining output is dropped.
-    client_connected = True
-
-    async def stream_callback(data: str) -> None:
-        nonlocal client_connected
-        if client_connected:
-            cleaned = data.replace("\r\n", "\n").replace("\n", "\r\n")
-            client_connected = await _send_ws_text(websocket, cleaned)
-            if not client_connected:
-                logger.info("Patch run on device %s: client disconnected, update continues on the host", device_id)
-
-    # Execute and stream
-    stream_kwargs = dict(
-        host_ip=host_ip,
-        ssh_user=ssh_user,
-        ssh_password=ssh_password,
-        ssh_key=ssh_key,
-        ssh_port=ssh_port,
-        command=cmd,
-        output_callback=stream_callback,
-    )
+    sink = _ClientSink(websocket, device_id)
     stream_fn = _get_agent_attr("run_ssh_command_stream", run_ssh_command_stream)
-    stream_sig = inspect.signature(stream_fn)
-    stream_accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in stream_sig.parameters.values())
-    if ("ssh_key_passphrase" in stream_sig.parameters or stream_accepts_var_kw) and ssh_key_passphrase is not None:
-        stream_kwargs["ssh_key_passphrase"] = ssh_key_passphrase
-    if ("pinned_host_key" in stream_sig.parameters or stream_accepts_var_kw) and pinned_host_key is not None:
-        stream_kwargs["pinned_host_key"] = pinned_host_key
-    if ("tofu_policy" in stream_sig.parameters or stream_accepts_var_kw) and tofu_policy is not None:
-        stream_kwargs["tofu_policy"] = tofu_policy
-
-    success, msg = await stream_fn(**stream_kwargs)
+    success, msg = await stream_fn(**_ssh_kwargs_for(stream_fn, {**ssh, "command": cmd, "output_callback": sink}, **optional))
     await audit(websocket, "agent.patches", "ok" if success else "failed", device_id=device_id, target=host_ip, detail=mode, actor=actor)
-    if success and tofu_policy and tofu_policy.captured:
-        async with async_session() as db:
-            await _persist_captured_host_key(db, host_ip, ssh_port, tofu_policy.captured)
 
     if success:
+        if tofu_policy and tofu_policy.captured:
+            await _remember_host_key(host_ip, ssh_port, tofu_policy.captured)
         clear_fn = _get_agent_attr("_clear_device_patch_state", _clear_device_patch_state)
         await clear_fn(device_id)
-    if not client_connected:
-        return
-
-    if success:
-        await _send_ws_text(websocket, "\r\n[Success] Updates completed successfully!\r\n")
-    else:
-        await _send_ws_text(websocket, f"\r\n[Error] Update failed: {msg}\r\n")
-
-    try:
-        await websocket.close()
-    except (RuntimeError, OSError):
-        pass
+    if sink.connected:
+        await _report_result(websocket, success, msg)
