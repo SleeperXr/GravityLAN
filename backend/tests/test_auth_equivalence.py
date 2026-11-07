@@ -214,10 +214,25 @@ async def _old_authenticate_websocket_impl(websocket, endpoint_type, device_id, 
 METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE")
 
 
-def _all_paths() -> list[str]:
-    from app.main import app
+def _router_paths() -> set[str]:
+    """Paths of every APIRouter in app.api, read from the routers rather than the assembled app."""
+    import importlib
+    import pkgutil
 
-    routes = {re.sub(r"\{[^}]+\}", "1", r.path) for r in app.routes if getattr(r, "path", "").startswith("/api")}
+    import app.api
+    from fastapi import APIRouter
+
+    paths = set()
+    for info in pkgutil.iter_modules(app.api.__path__):
+        module = importlib.import_module(f"app.api.{info.name}")
+        for obj in vars(module).values():
+            if isinstance(obj, APIRouter):
+                paths.update(getattr(r, "path", "") for r in obj.routes)
+    return {p for p in paths if p.startswith("/api")}
+
+
+def _all_paths() -> list[str]:
+    routes = {re.sub(r"\{[^}]+\}", "1", p) for p in _router_paths()}
     extras = {
         "/api/scanner/live-discovery/", "/api/scanner/scan-ip/", "/api/webhooks/test/", "/api/agents",
         "/api/agentsx", "/api/agent/token/rotate", "/api/agent/adopt/1", "/api/agent/enroll", "/api/agent/deploy",
