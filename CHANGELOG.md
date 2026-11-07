@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Agent 0.3.12: the agent's readers for containers, cgroup limits, package updates, subnets and neighbours are split into smaller parts. What it reports is unchanged; GravityLAN offers the update so the new version can be rolled out and tested.
 
 ### Fixed
+- Agent Update Center: with "use saved SSH connections", a device whose connection logs in as a user other than root no longer fails on sudo. The password typed in the dialog now goes along as the sudo password (it is not stored). A failed update also says why (sudo needs a password, sudo refused the password, a command did not finish in time, the host is not reachable on its SSH port) instead of "Deployment failed due to an unexpected internal error".
 - GravityUI: closing a notification (its ×) no longer closes the device editor or the dialog it sits on. Before, a click on a notification counted as a click outside the panel.
 - Service refresh of a device: a scan whose ports match no known device kind no longer resets the device type to "unknown". A NAS, firewall or server set by hand or found earlier keeps its type; a scan that recognises a kind still sets it.
 - Services: changing a service's protocol no longer replaces a link you wrote yourself. A link with a path (`https://{ip}/admin`), another port or a host name stays; only an empty link or one GravityLAN generated (`http://{ip}`, `http://{ip}:{port}`, `http://{ip}:<the service's port>`) follows the new protocol.

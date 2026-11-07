@@ -406,7 +406,7 @@
     "sudo_password": "sudo-Passwort (optional)",
     "sudo_password_hint": "Nur nötig, wenn der Benutzer nicht root ist und sudo nach einem Passwort fragt. Wird nicht gespeichert.",
     "use_saved_connections": "Gespeicherte SSH-Verbindungen verwenden, wo vorhanden",
-    "use_saved_connections_hint": "Geräte mit einer gespeicherten Key-Verbindung melden sich damit an, alle anderen mit Benutzer und Passwort unten.",
+    "use_saved_connections_hint": "Geräte mit einer gespeicherten Key-Verbindung melden sich damit an, alle anderen mit Benutzer und Passwort unten. Ist der Benutzer der Verbindung nicht root, dient das Passwort unten als sudo-Passwort.",
     "via_saved_connection": "über {{name}}",
     "update_agent": "Agent aktualisieren",
     "install_via_ssh": "Über SSH installieren",

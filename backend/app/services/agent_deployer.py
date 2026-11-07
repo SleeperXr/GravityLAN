@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import socket
 import time
 import uuid
 from pathlib import Path
@@ -18,6 +19,7 @@ from pathlib import Path
 from app.services.ssh_utils import (
     HostKeyNotTrusted,
     PinnedHostKey,
+    RemoteCommandError,
     RemoteRunner,
     build_connect_kwargs,
     build_pinned_ssh_client,
@@ -256,6 +258,12 @@ def _map_ssh_error(exc: Exception, host_ip: str) -> tuple[bool, str] | None:
                 msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
             return False, msg
         return False, "SSH connection failed. Please check host availability and port."
+    # Written for the user and free of the command text (see RemoteCommandError)
+    if isinstance(exc, RemoteCommandError):
+        return False, str(exc)
+    # Network errors only: a missing local file is an OSError too and stays an internal error
+    if isinstance(exc, (TimeoutError, ConnectionError, socket.gaierror, paramiko.ssh_exception.NoValidConnectionsError)):
+        return False, f"SSH connection to {host_ip} failed ({type(exc).__name__}). Please check that the host is reachable on its SSH port."
     return None
 
 

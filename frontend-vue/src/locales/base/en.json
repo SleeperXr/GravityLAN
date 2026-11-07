@@ -409,7 +409,7 @@
     "sudo_password": "sudo password (optional)",
     "sudo_password_hint": "Only needed when the user is not root and sudo asks for a password. Not stored.",
     "use_saved_connections": "Use saved SSH connections where available",
-    "use_saved_connections_hint": "Devices with a saved key connection log in with it, all others with the user and password below.",
+    "use_saved_connections_hint": "Devices with a saved key connection log in with it, all others with the user and password below. When the connection's user is not root, the password below is used for sudo.",
     "via_saved_connection": "via {{name}}",
     "update_agent": "Update Agent",
     "install_via_ssh": "Install Agent",

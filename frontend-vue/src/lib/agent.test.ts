@@ -2,7 +2,18 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/api/client', () => ({ api: {} }));
 
-import { patchState } from './agent';
+import { patchState, updateCenterLogin } from './agent';
+
+describe('updateCenterLogin', () => {
+  it('sends the typed password as sudo password with a saved key connection', () => {
+    expect(updateCenterLogin({ id: 4 }, 'root', 'pw')).toEqual({ profile_id: 4, sudo_password: 'pw' });
+    expect(updateCenterLogin({ id: 4 }, 'root', '')).toEqual({ profile_id: 4 });
+  });
+
+  it('logs in with the typed user and password without one', () => {
+    expect(updateCenterLogin(undefined, 'sleeper', 'pw')).toEqual({ ssh_user: 'sleeper', ssh_password: 'pw', ssh_port: 22 });
+  });
+});
 
 describe('patchState', () => {
   it('reads pending, security and reboot from the latest agent report', () => {
