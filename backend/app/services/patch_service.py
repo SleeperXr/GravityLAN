@@ -112,6 +112,55 @@ def _open_command_channel(
     return channel
 
 
+async def _answer_sudo_prompt(channel, chunk: str, password: str, password_sent: bool) -> tuple[str, bool, bool]:
+    """Send the password on the first prompt; a further prompt means sudo rejected it.
+
+    Returns the chunk without prompt markers, whether the password is out, and whether it was rejected.
+    """
+    if not password_sent:
+        await asyncio.sleep(0.05)
+        channel.send(f"{password}\n")
+        password_sent = True
+        chunk = chunk.replace(_SUDO_PROMPT, "", 1)
+    rejected = _SUDO_PROMPT in chunk
+    if rejected:
+        chunk = chunk.replace(_SUDO_PROMPT, "")
+    return chunk, password_sent, rejected
+
+
+async def _emit(output_callback: Callable[[str], Awaitable[None] | None], chunk: str) -> None:
+    # An async callback is awaited before the next read: output keeps its order and no
+    # fire-and-forget send task outlives the session
+    result = output_callback(chunk)
+    if inspect.isawaitable(result):
+        await result
+
+
+async def _pump_output(channel, sudo_password: str | None, output_callback) -> bool:
+    """Stream the channel to ``output_callback`` until EOF or exit; True when sudo rejected the password.
+
+    Only reads what recv_ready() reports as buffered, so it stays on the event loop. The fixed
+    prompt marker is answered whenever it shows up, however late or localised.
+    """
+    password_sent = False
+    while True:
+        if channel.recv_ready():
+            chunk = channel.recv(4096).decode("utf-8", errors="replace")
+            if not chunk:
+                return False
+            rejected = False
+            if sudo_password and _SUDO_PROMPT in chunk:
+                chunk, password_sent, rejected = await _answer_sudo_prompt(channel, chunk, sudo_password, password_sent)
+            if chunk:
+                await _emit(output_callback, chunk)
+            if rejected:
+                channel.close()
+                return True
+        elif channel.exit_status_ready() and not channel.recv_ready():
+            return False  # finished and nothing left to read
+        await asyncio.sleep(0.1)
+
+
 async def run_ssh_command_stream(
     *,
     host_ip: str,
@@ -138,52 +187,17 @@ async def run_ssh_command_stream(
             return False, err
 
         needs_sudo = ssh_user != "root"
-        if not needs_sudo:
-            run_cmd = command
-        elif ssh_password:
-            # The whole command runs as root in one shell (a plain "sudo <cmd>" left env
-            # assignments and $(...) of the update command outside sudo). The fixed prompt
-            # marker is answered whenever it shows up in the stream, however late or localised.
-            run_cmd = f"sudo -S -p '{_SUDO_PROMPT}' sh -c {shlex.quote(command)}"
-        else:
-            # No password: fail fast (passwordless sudo only) instead of waiting for input
-            run_cmd = f"sudo -n sh -c {shlex.quote(command)}"
+        # As non-root the whole command runs as root in one shell (a plain "sudo <cmd>" left
+        # env assignments and $(...) of the update command outside sudo). Without a password
+        # it fails fast (passwordless sudo only) instead of waiting for input.
+        run_cmd = _with_sudo(f"sh -c {shlex.quote(command)}", ssh_password) if needs_sudo else command
 
         channel = await asyncio.to_thread(_open_command_channel, client, connect_kwargs, host_ip, run_cmd)
         if channel is None:
             return False, "Failed to get SSH transport channel."
 
-        password_sent = False
-        sudo_rejected = False
-        while True:
-            # Check if there is data to read
-            if channel.recv_ready():
-                chunk = channel.recv(4096).decode("utf-8", errors="replace")
-                if not chunk:
-                    break
-                if needs_sudo and ssh_password and _SUDO_PROMPT in chunk:
-                    if not password_sent:
-                        await asyncio.sleep(0.05)
-                        channel.send(f"{ssh_password}\n")
-                        password_sent = True
-                        chunk = chunk.replace(_SUDO_PROMPT, "", 1)
-                    if _SUDO_PROMPT in chunk:
-                        sudo_rejected = True
-                        chunk = chunk.replace(_SUDO_PROMPT, "")
-                if chunk:
-                    # An async callback is awaited before the next read: output keeps its
-                    # order and no fire-and-forget send task outlives the session
-                    result = output_callback(chunk)
-                    if inspect.isawaitable(result):
-                        await result
-                if sudo_rejected:
-                    channel.close()
-                    return False, f"Sudo password rejected on {host_ip} for user '{ssh_user}'. Please check your SSH/sudo password."
-            elif channel.exit_status_ready():
-                # Exit once finished and no data remains
-                if not channel.recv_ready():
-                    break
-            await asyncio.sleep(0.1)
+        if await _pump_output(channel, ssh_password if needs_sudo else None, output_callback):
+            return False, f"Sudo password rejected on {host_ip} for user '{ssh_user}'. Please check your SSH/sudo password."
 
         # paramiko has no Channel.get_exit_status(). After an EOF break recv_exit_status()
         # may still wait for the exit-status message, so it runs in a worker thread too.
@@ -294,169 +308,169 @@ def _list_device_updates_blocking(
         client.close()
 
 
-def _query_apt_updates(client, result: dict[str, Any], host_ip: str, ssh_user: str, ssh_password: str | None) -> None:
-    """Populate apt upgrade results (refresh cache + parse 'apt list --upgradable').
+def _with_sudo(command: str, ssh_password: str | None) -> str:
+    """``command`` run through sudo: answering the fixed prompt with a password, else never prompting.
 
-    Blocking; runs inside :func:`_list_device_updates_blocking`'s worker thread.
+    -n (never prompt) only without a password: combined with -S it made sudo refuse
+    ("a password is required") before the password could be sent.
     """
-    # Refresh package cache first (requires sudo/root).
-    # Read the channel continuously so the PTY buffer never fills up
-    # (previously this hung forever), and only send the password when
-    # sudo actually asks for it (SUDOPROMPT).
-    needs_sudo = ssh_user != "root"
-    # -n (never prompt) only without a password: combined with -S it made sudo refuse
-    # ("a password is required") before the password below could be sent.
-    if not needs_sudo:
-        update_cmd = "apt-get update"
-    elif ssh_password:
-        update_cmd = "sudo -S -p 'SUDOPROMPT:' apt-get update"
-    else:
-        update_cmd = "sudo -n apt-get update"
+    if ssh_password:
+        return f"sudo -S -p '{_SUDO_PROMPT}' {command}"
+    return f"sudo -n {command}"
 
-    chan = client.get_transport().open_session()
-    chan.set_combine_stderr(True)
-    chan.exec_command(update_cmd)
 
-    update_output = ""
+def _drain(chan) -> str:
+    """Whatever is still buffered on a finished channel."""
+    output = ""
+    while chan.recv_ready():
+        output += chan.recv(4096).decode("utf-8", errors="replace")
+    return output
+
+
+def _read_apt_update(chan, sudo_password: str | None) -> tuple[str, bool]:
+    """Read ``apt-get update`` until it ends or 90 s pass; returns (output, sudo rejected the password).
+
+    The channel is read continuously so the PTY buffer never fills up (it used to hang
+    forever), and the password goes out only when sudo actually asks (SUDOPROMPT).
+    """
+    output = ""
     password_sent = False
-    sudo_rejected = False
-    update_deadline = time.monotonic() + 90
-    while time.monotonic() < update_deadline:
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
         if chan.recv_ready():
             chunk = chan.recv(4096).decode("utf-8", errors="replace")
-            update_output += chunk
-            if needs_sudo and ssh_password and _SUDO_PROMPT in chunk:
+            output += chunk
+            if sudo_password and _SUDO_PROMPT in chunk:
                 if not password_sent:
                     time.sleep(0.05)
-                    chan.send(f"{ssh_password}\n")
+                    chan.send(f"{sudo_password}\n")
                     password_sent = True
                     chunk = chunk.replace(_SUDO_PROMPT, "", 1)
-                if _SUDO_PROMPT in chunk or update_output.count(_SUDO_PROMPT) >= 2:
-                    sudo_rejected = True
+                if _SUDO_PROMPT in chunk or output.count(_SUDO_PROMPT) >= 2:
                     chan.close()
-                    break
-            elif password_sent and update_output.count(_SUDO_PROMPT) >= 2:
-                sudo_rejected = True
+                    return output, True
+            elif password_sent and output.count(_SUDO_PROMPT) >= 2:
                 chan.close()
-                break
+                return output, True
         elif chan.exit_status_ready():
-            while chan.recv_ready():
-                update_output += chan.recv(4096).decode("utf-8", errors="replace")
-            break
+            return output + _drain(chan), False
         time.sleep(0.1)
+    return output, False
 
-    update_exit = None if sudo_rejected else (chan.recv_exit_status() if chan.exit_status_ready() else None)
+
+def _record_apt_update_failure(
+    result: dict[str, Any], host_ip: str, ssh_user: str, needs_sudo: bool, ssh_password: str | None,
+    output: str, sudo_rejected: bool, exit_code: int | None,
+) -> None:
+    """Note a rejected sudo password or a failed refresh in ``result`` (the package list is still read)."""
     if sudo_rejected:
-        logger.warning(
-            "apt-get update on %s aborted: sudo rejected password for user '%s'",
-            host_ip, ssh_user,
-        )
+        logger.warning("apt-get update on %s aborted: sudo rejected password for user '%s'", host_ip, ssh_user)
         result["sudo_rejected"] = True
         result["error"] = (
             f"Sudo password rejected on {host_ip} for user '{ssh_user}'. "
             "Please check your SSH/sudo password or enable passwordless sudo."
         )
-    elif update_exit != 0:
-        logger.warning(
-            "apt-get update on %s failed (exit %s): %s",
-            host_ip, update_exit, update_output.strip()[-500:],
-        )
+    elif exit_code != 0:
+        logger.warning("apt-get update on %s failed (exit %s): %s", host_ip, exit_code, output.strip()[-500:])
         # Only without a password can sudo be the reason; otherwise it is the repositories or the network
         hint = " Set an SSH password or enable passwordless sudo to refresh package lists." if needs_sudo and not ssh_password else ""
-        result["error"] = "apt-get update failed (exit %s).%s" % (
-            update_exit if update_exit is not None else "timeout", hint,
-        )
+        result["error"] = "apt-get update failed (exit %s).%s" % (exit_code if exit_code is not None else "timeout", hint)
 
-    # Query upgradable packages
-    _, stdout, _ = client.exec_command("apt list --upgradable 2>/dev/null", timeout=15)
-    output = stdout.read().decode("utf-8")
 
-    # Parse apt list --upgradable output. Format:
-    # package/suite version arch [upgradable from: old_version]
-    # e.g., curl/jammy-updates 7.81.0-1ubuntu1.16 amd64 [upgradable from: 7.81.0-1ubuntu1.15]
+# package/suite version arch [upgradable from: old_version], e.g.
+# curl/jammy-updates 7.81.0-1ubuntu1.16 amd64 [upgradable from: 7.81.0-1ubuntu1.15]
+_APT_UPGRADABLE = re.compile(r"^([^/]+)/([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+\[upgradable from:\s+([^\]]+)\]")
+
+
+def _parse_apt_upgradable(output: str) -> list[dict[str, str]]:
+    """Packages from ``apt list --upgradable``."""
+    packages = []
     for line in output.splitlines():
-        if "upgradable from" in line:
-            match = re.match(r"^([^/]+)/([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+\[upgradable from:\s+([^\]]+)\]", line)
-            if match:
-                pkg_name, suite, new_ver, arch, old_ver = match.groups()
-                result["packages"].append({
-                    "package": pkg_name,
-                    "current_version": old_ver,
-                    "new_version": new_ver,
-                    "repo": suite
-                })
+        match = _APT_UPGRADABLE.match(line) if "upgradable from" in line else None
+        if match:
+            pkg_name, suite, new_ver, _arch, old_ver = match.groups()
+            packages.append({"package": pkg_name, "current_version": old_ver, "new_version": new_ver, "repo": suite})
+    return packages
 
-    # Check major upgrade (Ubuntu only)
+
+def _parse_release_upgrade(output: str) -> str | None:
+    """The release named in ``do-release-upgrade -c`` ("New release '24.04 LTS' available"), the last one wins."""
+    release = None
+    for line in output.splitlines():
+        parts = line.split("'")
+        if "New release" in line and "available" in line and len(parts) >= 3:
+            release = parts[1]
+    return release
+
+
+def _query_apt_updates(client, result: dict[str, Any], host_ip: str, ssh_user: str, ssh_password: str | None) -> None:
+    """Populate apt upgrade results (refresh cache + parse 'apt list --upgradable').
+
+    Blocking; runs inside :func:`_list_device_updates_blocking`'s worker thread.
+    """
+    # Refresh the package cache first (needs root)
+    needs_sudo = ssh_user != "root"
+    chan = client.get_transport().open_session()
+    chan.set_combine_stderr(True)
+    chan.exec_command(_with_sudo("apt-get update", ssh_password) if needs_sudo else "apt-get update")
+
+    output, sudo_rejected = _read_apt_update(chan, ssh_password if needs_sudo else None)
+    exit_code = None if sudo_rejected else (chan.recv_exit_status() if chan.exit_status_ready() else None)
+    _record_apt_update_failure(result, host_ip, ssh_user, needs_sudo, ssh_password, output, sudo_rejected, exit_code)
+
+    _, stdout, _ = client.exec_command("apt list --upgradable 2>/dev/null", timeout=15)
+    result["packages"].extend(_parse_apt_upgradable(stdout.read().decode("utf-8")))
+
+    # Major release upgrade (Ubuntu only)
     _, stdout, _ = client.exec_command("which do-release-upgrade", timeout=5)
     if stdout.read().decode().strip():
         _, stdout, _ = client.exec_command("do-release-upgrade -c", timeout=10)
-        out_upgrade = stdout.read().decode("utf-8")
-        for line in out_upgrade.splitlines():
-            if "New release" in line and "available" in line:
-                parts = line.split("'")
-                if len(parts) >= 3:
-                    result["major_upgrade_available"] = parts[1]
+        release = _parse_release_upgrade(stdout.read().decode("utf-8"))
+        if release is not None:
+            result["major_upgrade_available"] = release
+
+
+def _parse_check_update(output: str, skip_metadata_line: bool) -> list[dict[str, str]]:
+    """Packages from ``dnf/yum check-update``: ``curl.x86_64   7.81.0-1.fc39   updates``."""
+    upgrades = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) < 3 or (skip_metadata_line and line.startswith("Last metadata")):
+            continue
+        upgrades.append({
+            "package": parts[0].rsplit(".", 1)[0],
+            "new_version": parts[1],
+            "repo": parts[2],
+            "current_version": "Installed",  # until rpm says otherwise
+        })
+    return upgrades
+
+
+def _installed_versions(client, pkg_names: list[str]) -> dict[str, str]:
+    """Installed versions of up to 100 packages in one ``rpm -q`` call."""
+    quoted_pkgs = " ".join(shlex.quote(p) for p in pkg_names[:100])
+    batch_cmd = f"rpm -q --qf '%{{NAME}} %{{VERSION}}-%{{RELEASE}}\\n' {quoted_pkgs}"
+    _, stdout_rpm, _ = client.exec_command(batch_cmd, timeout=10)
+    versions = {}
+    for line in stdout_rpm.read().decode("utf-8").splitlines():
+        subparts = line.split()
+        if len(subparts) == 2:
+            versions[subparts[0]] = subparts[1]
+    return versions
 
 
 def _query_dnf_updates(client, result: dict[str, Any]) -> None:
     """Populate dnf upgrade results (check-update + batch rpm current versions); blocking."""
-    # Get list of upgrades
     _, stdout, _ = client.exec_command("dnf check-update --quiet", timeout=20)
-    output = stdout.read().decode("utf-8")
-
-    # Parse dnf check-update output. Lines look like:
-    # curl.x86_64               7.81.0-1.fc39             updates
-    # Let's get installed versions of those packages to populate current_version
-    upgrades = []
-    pkg_names = []
-    for line in output.splitlines():
-        parts = line.split()
-        if len(parts) >= 3 and not line.startswith("Last metadata"):
-            # parts: [package_name.arch, new_version, repo]
-            pkg_and_arch = parts[0]
-            pkg_name = pkg_and_arch.rsplit(".", 1)[0]
-            upgrades.append({
-                "package": pkg_name,
-                "new_version": parts[1],
-                "repo": parts[2],
-                "current_version": "Installed"  # Default fallback
-            })
-            pkg_names.append(pkg_name)
-
-    # Optimisation: fetch current versions in a batch if there are upgrades
-    if pkg_names:
-        quoted_pkgs = " ".join(shlex.quote(p) for p in pkg_names[:100])
-        batch_cmd = f"rpm -q --qf '%{{NAME}} %{{VERSION}}-%{{RELEASE}}\\n' {quoted_pkgs}"
-        _, stdout_rpm, _ = client.exec_command(batch_cmd, timeout=10)
-        rpm_output = stdout_rpm.read().decode("utf-8")
-        version_map = {}
-        for line in rpm_output.splitlines():
-            subparts = line.split()
-            if len(subparts) == 2:
-                version_map[subparts[0]] = subparts[1]
-
+    upgrades = _parse_check_update(stdout.read().decode("utf-8"), skip_metadata_line=True)
+    if upgrades:
+        versions = _installed_versions(client, [item["package"] for item in upgrades])
         for item in upgrades:
-            if item["package"] in version_map:
-                item["current_version"] = version_map[item["package"]]
-
+            item["current_version"] = versions.get(item["package"], item["current_version"])
     result["packages"] = upgrades
 
 
 def _query_yum_updates(client, result: dict[str, Any]) -> None:
     """Populate yum upgrade results (check-update); blocking."""
     _, stdout, _ = client.exec_command("yum check-update --quiet", timeout=20)
-    output = stdout.read().decode("utf-8")
-
-    upgrades = []
-    for line in output.splitlines():
-        parts = line.split()
-        if len(parts) >= 3:
-            pkg_and_arch = parts[0]
-            pkg_name = pkg_and_arch.rsplit(".", 1)[0]
-            upgrades.append({
-                "package": pkg_name,
-                "new_version": parts[1],
-                "repo": parts[2],
-                "current_version": "Installed"
-            })
-    result["packages"] = upgrades
+    result["packages"] = _parse_check_update(stdout.read().decode("utf-8"), skip_metadata_line=False)
