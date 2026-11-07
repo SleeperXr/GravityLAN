@@ -210,6 +210,42 @@ SERVICE_TEMPLATES: Dict[str, Dict[str, Any]] = {
 
 # --- Helper Functions ---
 
+# Longer words that also live inside common device names (IPHONE, SMARTPHONE)
+_WHOLE_PART_PATTERNS = {"PHONE"}
+
+
+def _name_parts(hostname: str) -> tuple[str, set[str]]:
+    """The first label of a host name and its parts.
+
+    Parts are the pieces between separators plus the letter runs inside them, so
+    ``SRV-DC01`` gives ``SRV``, ``DC01`` and ``DC``, and ``SRV-3CX`` gives ``3CX``.
+    """
+    label = (hostname or "").upper().split(".")[0]
+    pieces = [p for p in re.split(r"[^A-Z0-9]+", label) if p]
+    parts = set(pieces)
+    for piece in pieces:
+        parts.update(re.findall(r"[A-Z]+", piece))
+    return label, parts
+
+
+def _name_has(hostname: str, patterns) -> bool:
+    """True when the host name matches one of the patterns.
+
+    Only the first label counts: the domain (``fritz.box``, ``corp.lan``) says nothing
+    about the device. A short code of up to three letters or digits (``AD``, ``NAS``,
+    ``3CX``) must be a whole part of the name, so ``IPAD`` is no ``AD`` and ``JONAS`` no
+    ``NAS``; longer patterns and patterns with a separator (``FW-``) match anywhere.
+    """
+    label, parts = _name_parts(hostname)
+    for pattern in patterns:
+        if (len(pattern) <= 3 and pattern.isalnum()) or pattern in _WHOLE_PART_PATTERNS:
+            if pattern in parts:
+                return True
+        elif pattern in label:
+            return True
+    return False
+
+
 def is_client_hostname(hostname: str) -> bool:
     """Check if a hostname belongs to a client device (desktop, printer, IoT).
 
@@ -233,7 +269,7 @@ def is_client_hostname(hostname: str) -> bool:
         return True
 
     # Generic client patterns
-    return any(p in h for p in CLIENT_HOSTNAME_PATTERNS)
+    return _name_has(h, CLIENT_HOSTNAME_PATTERNS)
 
 
 def _refine_server_subtype(hostname: str, port_set: set[int]) -> str:
@@ -251,7 +287,7 @@ def _refine_server_subtype(hostname: str, port_set: set[int]) -> str:
     ]
 
     for keywords, subtype in role_map:
-        if any(kw in hostname for kw in keywords):
+        if _name_has(hostname, keywords):
             return subtype
 
     # Fallback by port
@@ -364,7 +400,7 @@ class FirewallRule(ClassificationRule):
     def matches(self, hostname: str, port_set: Set[int]) -> bool:
         if 4444 in port_set or 4445 in port_set: return True
         if 11115 in port_set: return True
-        return any(p in hostname for p in FIREWALL_HOSTNAME_PATTERNS)
+        return _name_has(hostname, FIREWALL_HOSTNAME_PATTERNS)
 
     def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
         if 4444 in port_set or 4445 in port_set:
@@ -379,12 +415,12 @@ class HypervisorRule(ClassificationRule):
         if 902 in port_set: return True
         if 9440 in port_set: return True
         # Only match by name if very specific
-        h = hostname.upper()
+        h = _name_parts(hostname)[0]
         if "PROXMOX" in h or h.startswith("PVE-"): return True
-        return any(kw in h for kw in ["ESXI", "VCENTER", "HYPER-V", "XEN"])
+        return _name_has(hostname, ["PVE", "ESXI", "VCENTER", "HYPER-V", "XEN"])
 
     def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
-        if 8006 in port_set or "PVE" in hostname:
+        if 8006 in port_set or _name_has(hostname, ["PVE", "PROXMOX"]):
             return {**host_info, "device_type": "server", "device_subtype": "Proxmox", "services": _build_services(port_set, add_specific=["proxmox"])}
         if 902 in port_set:
             return {**host_info, "device_type": "server", "device_subtype": "ESXi", "services": _build_services(port_set, add_specific=["esxi"])}
@@ -395,19 +431,19 @@ class HypervisorRule(ClassificationRule):
 class NasRule(ClassificationRule):
     def matches(self, hostname: str, port_set: Set[int]) -> bool:
         is_synology_port = bool(port_set & {5000, 5001})
-        is_nas_name = any(p in hostname for p in NAS_SYNOLOGY_PATTERNS) or any(p in hostname for p in NAS_QNAP_PATTERNS)
+        is_nas_name = _name_has(hostname, NAS_SYNOLOGY_PATTERNS) or _name_has(hostname, NAS_QNAP_PATTERNS)
         return is_synology_port or is_nas_name
 
     def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
         is_synology_port = bool(port_set & {5000, 5001})
         has_file_services = bool(port_set & {445, 2049})
-        is_synology_name = any(p in hostname for p in NAS_SYNOLOGY_PATTERNS)
+        is_synology_name = _name_has(hostname, NAS_SYNOLOGY_PATTERNS)
         
         if (is_synology_port and has_file_services) or (is_synology_port and is_synology_name):
             specific = ["synology" if 5001 in port_set else "synology_http"]
             return {**host_info, "device_type": "server", "device_subtype": "Synology", "services": _build_services(port_set, add_specific=specific)}
         
-        if any(p in hostname for p in NAS_QNAP_PATTERNS) and port_set & {80, 443, 8080}:
+        if _name_has(hostname, NAS_QNAP_PATTERNS) and port_set & {80, 443, 8080}:
             return {**host_info, "device_type": "server", "device_subtype": "QNAP", "services": _build_services(port_set, add_specific=["qnap"])}
         
         return {**host_info, "device_type": "server", "device_subtype": "NAS", "services": _build_services(port_set)}
@@ -423,7 +459,7 @@ class IotRule(ClassificationRule):
 
 class ServerRule(ClassificationRule):
     def matches(self, hostname: str, port_set: Set[int]) -> bool:
-        return any(kw in hostname for kw in SERVER_HOSTNAME_PATTERNS)
+        return _name_has(hostname, SERVER_HOSTNAME_PATTERNS)
 
     def apply(self, host_info: Dict[str, Any], hostname: str, port_set: Set[int]) -> Dict[str, Any]:
         return {**host_info, "device_type": "server", "device_subtype": _refine_server_subtype(hostname, port_set), "services": _build_services(port_set)}
