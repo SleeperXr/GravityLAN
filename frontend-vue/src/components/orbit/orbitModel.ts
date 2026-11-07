@@ -130,12 +130,9 @@ export function roleOf(body: OrbitBody): OrbitRole {
   return body.kind === 'planet' && body.dwarf ? 'dwarf' : body.kind;
 }
 
+/** Network gear, hosts and devices with VMs or at least two links orbit as planets. */
 export function isPlanetCandidate(device: Device, degree: number, hasVmChildren: boolean): boolean {
-  const dt = (device.device_type || '').toLowerCase();
-  const sub = (device.device_subtype || '').toLowerCase();
-  if (device.is_ap || device.is_host || hasVmChildren) return true;
-  if (dt === 'switch' || dt === 'ap' || sub === 'switch' || sub === 'ap') return true;
-  return degree >= 2;
+  return device.is_host || hasVmChildren || isNetworkGear(device) || degree >= 2;
 }
 
 type Adjacency = Map<number, { neighborId: number; link: OrbitLink }[]>;
@@ -162,21 +159,22 @@ function buildAdjacency(devices: Device[], links: OrbitLink[], byId: Map<number,
   return adj;
 }
 
+/** A star by choice, or, without a chosen role, a gateway or router. */
+function isStarCandidate(d: Device, role: OrbitRole | undefined, gatewayIds: Set<number>): boolean {
+  if (role) return role === 'star';
+  return gatewayIds.has(d.id) || (d.device_type || '').toLowerCase() === 'router';
+}
+
+/** The device with the most links (the lowest id on a tie). */
+function mostLinked(devices: Device[], adj: Adjacency): Device {
+  const degree = (d: Device) => adj.get(d.id)?.length ?? 0;
+  return [...devices].sort((a, b) => degree(b) - degree(a) || a.id - b.id)[0];
+}
+
 /** Chosen stars, else gateways and routers; without any, the device with the most links. */
 function findStars(devices: Device[], adj: Adjacency, gatewayIds: Set<number>, roles: OrbitRoles): Set<number> {
-  const starIds = new Set<number>();
-  for (const d of devices) {
-    const role = roles[String(d.id)];
-    if (role === 'star' || (!role && (gatewayIds.has(d.id) || (d.device_type || '').toLowerCase() === 'router'))) {
-      starIds.add(d.id);
-    }
-  }
-  if (starIds.size === 0 && devices.length > 0) {
-    const sorted = [...devices].sort(
-      (a, b) => (adj.get(b.id)?.length ?? 0) - (adj.get(a.id)?.length ?? 0) || a.id - b.id,
-    );
-    starIds.add(sorted[0].id);
-  }
+  const starIds = new Set(devices.filter((d) => isStarCandidate(d, roles[String(d.id)], gatewayIds)).map((d) => d.id));
+  if (starIds.size === 0 && devices.length > 0) starIds.add(mostLinked(devices, adj).id);
   return starIds;
 }
 
@@ -211,18 +209,21 @@ function linkParents(
   return parents;
 }
 
+/** True when following the parents from ``id`` comes back to a device already passed. */
+function parentChainLoops(id: number, rawParents: Map<number, RawParent>): boolean {
+  const seen = new Set<number>([id]);
+  for (let curr = rawParents.get(id)?.parentId ?? null; curr != null; curr = rawParents.get(curr)?.parentId ?? null) {
+    if (seen.has(curr)) return true;
+    seen.add(curr);
+  }
+  return false;
+}
+
 /** Re-parent every device whose parent chain loops (e.g. a host whose parent_id points to its VM) to the primary star. */
 function breakCycles(devices: Device[], rawParents: Map<number, RawParent>, primaryStarId: number | null): void {
   for (const d of devices) {
-    const seen = new Set<number>([d.id]);
-    let curr = rawParents.get(d.id)?.parentId ?? null;
-    while (curr != null) {
-      if (seen.has(curr)) {
-        rawParents.set(d.id, { parentId: primaryStarId !== d.id ? primaryStarId : null, wireless: false, linkId: null });
-        break;
-      }
-      seen.add(curr);
-      curr = rawParents.get(curr)?.parentId ?? null;
+    if (parentChainLoops(d.id, rawParents)) {
+      rawParents.set(d.id, { parentId: primaryStarId !== d.id ? primaryStarId : null, wireless: false, linkId: null });
     }
   }
 }
@@ -272,62 +273,13 @@ export function resolveOrbitSystem(
   const aps = devices.filter((d) => d.is_ap || (d.device_type || '').toLowerCase() === 'ap');
   const primaryStarId = [...starIds][0] ?? null;
 
-  const starForSubnet = (subnetId: number | null | undefined, selfId: number): number | null => {
-    const others = [...starIds].filter((sid) => sid !== selfId);
-    return others.find((sid) => subnetId != null && byId.get(sid)?.subnet_id === subnetId) ?? others[0] ?? null;
-  };
-
-  const parentOf = (d: Device): RawParent => {
-    if (starIds.has(d.id)) return { parentId: null, wireless: false, linkId: null };
-
-    // 1. VM / Container -> Host
-    if (d.parent_id != null && byId.has(d.parent_id) && d.parent_id !== d.id) {
-      const explicitLink = (adj.get(d.id) ?? []).find((n) => n.neighborId === d.parent_id)?.link ?? null;
-      return {
-        parentId: d.parent_id,
-        wireless: explicitLink?.link_type === 'WLAN',
-        linkId: explicitLink?.id ?? null,
-        linkColor: explicitLink?.color,
-      };
-    }
-
-    // 2. Explicit TopologyLink (BFS neighbor closer to Star)
-    const bfs = bfsParent.get(d.id);
-    if (bfs) {
-      return {
-        parentId: bfs.parentId,
-        wireless: bfs.link.link_type === 'WLAN' || Boolean(d.is_wlan),
-        linkId: bfs.link.id,
-        linkColor: bfs.link.color,
-      };
-    }
-
-    // 3. Unlinked WLAN device -> Access Point in same subnet (or first AP)
-    if (d.is_wlan && !d.is_ap) {
-      const ap = aps.find((a) => a.id !== d.id && a.subnet_id === d.subnet_id) ?? aps.find((a) => a.id !== d.id);
-      if (ap) return { parentId: ap.id, wireless: true, linkId: null };
-    }
-
-    // 4. Default -> Star of its subnet (or primary Star)
-    const fallbackStar = starForSubnet(d.subnet_id, d.id) ?? primaryStarId;
-    return {
-      parentId: fallbackStar && fallbackStar !== d.id ? fallbackStar : null,
-      wireless: Boolean(d.is_wlan),
-      linkId: null,
-    };
-  };
-
-  const rawParents = new Map(devices.map((d) => [d.id, parentOf(d)]));
+  const ctx: ParentContext = { byId, adj, starIds, bfsParent, aps, primaryStarId };
+  const rawParents = new Map(devices.map((d) => [d.id, rawParentOf(d, ctx)]));
   breakCycles(devices, rawParents, primaryStarId);
-
-  const childCount = new Map<number, number>();
-  for (const { parentId } of rawParents.values()) {
-    if (parentId != null) childCount.set(parentId, (childCount.get(parentId) ?? 0) + 1);
-  }
+  const childCount = countChildren(rawParents);
 
   const result = new Map<number, OrbitBody>();
   for (const d of devices) {
-    const info = rawParents.get(d.id)!;
     const { kind, dwarf } = classify(
       d,
       starIds.has(d.id),
@@ -336,27 +288,94 @@ export function resolveOrbitSystem(
       childCount.get(d.id) ?? 0,
       vmParentIds.has(d.id),
     );
-    const state = bodyState(d);
-    const ownColor = networkColor(d.subnet_id, d.ip);
-    const primaryColor = info.linkColor || ownColor;
-
-    result.set(d.id, {
-      id: d.id,
-      device: d,
-      kind,
-      dwarf,
-      state,
-      parentId: info.parentId,
-      orbitStyle: state === 'offline' ? 'broken' : info.wireless ? 'dashed' : 'solid',
-      color: primaryColor,
-      rings: [
-        ...new Set([primaryColor, ownColor, ...(d.interfaces ?? []).map((i) => networkColor(i.subnet_id, i.ip))]),
-      ],
-      parentLinkId: info.linkId,
-    });
+    result.set(d.id, toBody(d, rawParents.get(d.id)!, kind, dwarf));
   }
-
   return result;
+}
+
+/** What deciding a device's orbit parent needs to know about the whole map. */
+interface ParentContext {
+  byId: Map<number, Device>;
+  adj: Adjacency;
+  starIds: Set<number>;
+  bfsParent: Map<number, { parentId: number; link: OrbitLink }>;
+  aps: Device[];
+  primaryStarId: number | null;
+}
+
+/** 1. A VM or container orbits its host, over their link if there is one. */
+function hostParent(d: Device, ctx: ParentContext): RawParent | null {
+  if (d.parent_id == null || !ctx.byId.has(d.parent_id) || d.parent_id === d.id) return null;
+  const explicitLink = (ctx.adj.get(d.id) ?? []).find((n) => n.neighborId === d.parent_id)?.link ?? null;
+  return {
+    parentId: d.parent_id,
+    wireless: explicitLink?.link_type === 'WLAN',
+    linkId: explicitLink?.id ?? null,
+    linkColor: explicitLink?.color,
+  };
+}
+
+/** 2. A linked device orbits its neighbour one hop closer to a star. */
+function linkedParent(d: Device, ctx: ParentContext): RawParent | null {
+  const bfs = ctx.bfsParent.get(d.id);
+  if (!bfs) return null;
+  return {
+    parentId: bfs.parentId,
+    wireless: bfs.link.link_type === 'WLAN' || Boolean(d.is_wlan),
+    linkId: bfs.link.id,
+    linkColor: bfs.link.color,
+  };
+}
+
+/** 3. An unlinked WLAN client orbits an access point of its subnet, else any access point. */
+function accessPointParent(d: Device, ctx: ParentContext): RawParent | null {
+  if (!d.is_wlan || d.is_ap) return null;
+  const others = ctx.aps.filter((a) => a.id !== d.id);
+  const ap = others.find((a) => a.subnet_id === d.subnet_id) ?? others[0];
+  return ap ? { parentId: ap.id, wireless: true, linkId: null } : null;
+}
+
+/** 4. Anything else orbits the star of its subnet, else the first other star, else the primary star. */
+function starParent(d: Device, ctx: ParentContext): RawParent {
+  const otherStars = [...ctx.starIds].filter((sid) => sid !== d.id);
+  const subnetStar = otherStars.find((sid) => d.subnet_id != null && ctx.byId.get(sid)?.subnet_id === d.subnet_id);
+  const fallbackStar = subnetStar ?? otherStars[0] ?? ctx.primaryStarId;
+  return {
+    parentId: fallbackStar && fallbackStar !== d.id ? fallbackStar : null,
+    wireless: Boolean(d.is_wlan),
+    linkId: null,
+  };
+}
+
+function rawParentOf(d: Device, ctx: ParentContext): RawParent {
+  if (ctx.starIds.has(d.id)) return { parentId: null, wireless: false, linkId: null };
+  return hostParent(d, ctx) ?? linkedParent(d, ctx) ?? accessPointParent(d, ctx) ?? starParent(d, ctx);
+}
+
+function countChildren(rawParents: Map<number, RawParent>): Map<number, number> {
+  const childCount = new Map<number, number>();
+  for (const { parentId } of rawParents.values()) {
+    if (parentId != null) childCount.set(parentId, (childCount.get(parentId) ?? 0) + 1);
+  }
+  return childCount;
+}
+
+function toBody(d: Device, info: RawParent, kind: BodyKind, dwarf: boolean): OrbitBody {
+  const state = bodyState(d);
+  const ownColor = networkColor(d.subnet_id, d.ip);
+  const primaryColor = info.linkColor || ownColor;
+  return {
+    id: d.id,
+    device: d,
+    kind,
+    dwarf,
+    state,
+    parentId: info.parentId,
+    orbitStyle: state === 'offline' ? 'broken' : info.wireless ? 'dashed' : 'solid',
+    color: primaryColor,
+    rings: [...new Set([primaryColor, ownColor, ...(d.interfaces ?? []).map((i) => networkColor(i.subnet_id, i.ip))])],
+    parentLinkId: info.linkId,
+  };
 }
 
 /**
@@ -373,24 +392,38 @@ export function computeLightBeams(
   for (const l of links) {
     const a = bodies.get(l.source_id);
     const b = bodies.get(l.target_id);
-    if (!a || !b) continue;
-    const isPrimaryBridge = (a.kind !== 'moon' && b.kind !== 'moon') || a.kind === 'star' || b.kind === 'star';
-    // The link's own colour, else the colour chosen for its type (10GbE, WLAN, ...), else its network
-    const color = l.color || typeColors[l.link_type || '1GbE'] || (b.kind !== 'star' ? b.color : a.color);
-    beams.push({
-      id: l.id,
-      sourceId: l.source_id,
-      targetId: l.target_id,
-      linkType: l.link_type || '1GbE',
-      color,
-      interrupted: !a.device.is_online || !b.device.is_online,
-      isWireless: l.link_type === 'WLAN',
-      isPrimaryBridge: isPrimaryBridge && !isBackupLink(l),
-      isBackup: isBackupLink(l),
-      failover: isBackupLink(l) && activeBackupIds.has(l.id),
-    });
+    if (a && b) beams.push(toBeam(l, a, b, typeColors, activeBackupIds));
   }
   return beams;
+}
+
+/** A link between two non-moons, or one touching a star, carries the backbone. */
+function isBridge(a: OrbitBody, b: OrbitBody): boolean {
+  return (a.kind !== 'moon' && b.kind !== 'moon') || a.kind === 'star' || b.kind === 'star';
+}
+
+function toBeam(
+  l: OrbitLink,
+  a: OrbitBody,
+  b: OrbitBody,
+  typeColors: Record<string, string>,
+  activeBackupIds: ReadonlySet<number>,
+): LightBeam {
+  const linkType = l.link_type || '1GbE';
+  const backup = isBackupLink(l);
+  return {
+    id: l.id,
+    sourceId: l.source_id,
+    targetId: l.target_id,
+    linkType,
+    // The link's own colour, else the colour chosen for its type (10GbE, WLAN, ...), else its network
+    color: l.color || typeColors[linkType] || (b.kind !== 'star' ? b.color : a.color),
+    interrupted: !a.device.is_online || !b.device.is_online,
+    isWireless: l.link_type === 'WLAN',
+    isPrimaryBridge: isBridge(a, b) && !backup,
+    isBackup: backup,
+    failover: backup && activeBackupIds.has(l.id),
+  };
 }
 
 /**
@@ -402,60 +435,71 @@ export function computeOrbitRings(
   positions: Map<number, Point>,
   tolerance = ORBIT_SNAP_TOLERANCE,
 ): OrbitRing[] {
-  // Moons ring around their planet, planets around the star of their system
-  const byParent = new Map<number, { body: OrbitBody; dist: number }[]>();
-  for (const body of bodies.values()) {
-    const centerId = orbitCenterId(body, bodies);
-    if (centerId == null) continue;
-    const pPos = positions.get(centerId);
-    const cPos = positions.get(body.id);
-    if (!pPos || !cPos) continue;
-    const dist = Math.hypot(cPos.x - pPos.x, cPos.y - pPos.y);
-    if (dist < 12) continue;
-    if (!byParent.has(centerId)) byParent.set(centerId, []);
-    byParent.get(centerId)!.push({ body, dist });
-  }
-
   const rings: OrbitRing[] = [];
-  for (const [centerId, children] of byParent.entries()) {
-    const sorted = [...children].sort((a, b) => a.dist - b.dist);
-    const clusters: { radius: number; members: OrbitBody[] }[] = [];
-
-    for (const item of sorted) {
-      const last = clusters[clusters.length - 1];
-      if (last && Math.abs(item.dist - last.radius) <= tolerance) {
-        last.members.push(item.body);
-        last.radius = Math.round(
-          last.members.reduce((sum, m) => {
-            const p = positions.get(centerId)!;
-            const c = positions.get(m.id)!;
-            return sum + Math.hypot(c.x - p.x, c.y - p.y);
-          }, 0) / last.members.length,
-        );
-      } else {
-        clusters.push({ radius: Math.round(item.dist), members: [item.body] });
-      }
-    }
-
-    clusters.forEach((cluster, idx) => {
-      const hasOffline = cluster.members.every((m) => m.state === 'offline');
-      const hasDashed = cluster.members.some((m) => m.orbitStyle === 'dashed');
-      const style: OrbitStyle = hasOffline ? 'broken' : hasDashed ? 'dashed' : 'solid';
-      // Planet tiers around the star are neutral tracks; moon rings take the members' network colour
-      const isTier = cluster.members.some((m) => m.kind !== 'moon');
-      const dominantColor = isTier ? 'var(--gl-fg-subtle)' : (cluster.members[0]?.color ?? 'var(--gl-accent)');
+  for (const [centerId, children] of distancesByCenter(bodies, positions)) {
+    clusterByRadius(centerId, children, positions, tolerance).forEach((cluster, idx) => {
       rings.push({
         id: `ring-${centerId}-${idx}-${cluster.radius}`,
         centerId,
         radius: cluster.radius,
-        color: dominantColor,
-        style,
+        color: ringColor(cluster.members),
+        style: ringStyle(cluster.members),
         memberIds: cluster.members.map((m) => m.id),
       });
     });
   }
-
   return rings;
+}
+
+const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/** Each body's distance to its orbit centre: moons ring around their planet, planets around the star of their system. */
+function distancesByCenter(bodies: Map<number, OrbitBody>, positions: Map<number, Point>) {
+  const byCenter = new Map<number, { body: OrbitBody; dist: number }[]>();
+  for (const body of bodies.values()) {
+    const centerId = orbitCenterId(body, bodies);
+    const center = centerId == null ? undefined : positions.get(centerId);
+    const pos = positions.get(body.id);
+    if (centerId == null || !center || !pos) continue;
+    const dist = distance(pos, center);
+    if (dist < 12) continue;
+    if (!byCenter.has(centerId)) byCenter.set(centerId, []);
+    byCenter.get(centerId)!.push({ body, dist });
+  }
+  return byCenter;
+}
+
+/** Group siblings, nearest first, into rings whose radius is the mean distance of their members. */
+function clusterByRadius(
+  centerId: number,
+  children: { body: OrbitBody; dist: number }[],
+  positions: Map<number, Point>,
+  tolerance: number,
+): { radius: number; members: OrbitBody[] }[] {
+  const center = positions.get(centerId)!;
+  const clusters: { radius: number; members: OrbitBody[] }[] = [];
+  for (const item of [...children].sort((a, b) => a.dist - b.dist)) {
+    const last = clusters[clusters.length - 1];
+    if (last && Math.abs(item.dist - last.radius) <= tolerance) {
+      last.members.push(item.body);
+      const total = last.members.reduce((sum, m) => sum + distance(positions.get(m.id)!, center), 0);
+      last.radius = Math.round(total / last.members.length);
+    } else {
+      clusters.push({ radius: Math.round(item.dist), members: [item.body] });
+    }
+  }
+  return clusters;
+}
+
+function ringStyle(members: OrbitBody[]): OrbitStyle {
+  if (members.every((m) => m.state === 'offline')) return 'broken';
+  return members.some((m) => m.orbitStyle === 'dashed') ? 'dashed' : 'solid';
+}
+
+/** Planet tiers around the star are neutral tracks; moon rings take the members' network colour. */
+function ringColor(members: OrbitBody[]): string {
+  if (members.some((m) => m.kind !== 'moon')) return 'var(--gl-fg-subtle)';
+  return members[0]?.color ?? 'var(--gl-accent)';
 }
 
 /**
@@ -527,44 +571,49 @@ export function snapToOrbitRing(
   positions: Map<number, Point>,
   tolerance = ORBIT_SNAP_TOLERANCE,
 ): Point {
+  const rounded = { x: Math.round(candidatePos.x), y: Math.round(candidatePos.y) };
   const body = bodies.get(bodyId);
   const centerId = body ? orbitCenterId(body, bodies) : null;
-  if (!body || centerId == null) {
-    return { x: Math.round(candidatePos.x), y: Math.round(candidatePos.y) };
-  }
-  const center = positions.get(centerId);
-  if (!center) {
-    return { x: Math.round(candidatePos.x), y: Math.round(candidatePos.y) };
-  }
+  const center = centerId == null ? undefined : positions.get(centerId);
+  if (!body || centerId == null || !center) return rounded;
 
   const dx = candidatePos.x - center.x;
   const dy = candidatePos.y - center.y;
   const rawDist = Math.hypot(dx, dy);
-  if (rawDist < 24) {
-    return { x: Math.round(candidatePos.x), y: Math.round(candidatePos.y) };
-  }
+  if (rawDist < 24) return rounded;
 
+  const radius = nearestSiblingRadius(body, centerId, center, rawDist, bodies, positions, tolerance) ?? rawDist;
   const angle = Math.atan2(dy, dx);
+  return {
+    x: Math.round(center.x + radius * Math.cos(angle)),
+    y: Math.round(center.y + radius * Math.sin(angle)),
+  };
+}
 
-  // Check sibling distances around the same parent
-  let snappedRadius = rawDist;
+/** The orbit radius of the closest sibling of the same kind (moon or not) within ``tolerance``, if any. */
+function nearestSiblingRadius(
+  body: OrbitBody,
+  centerId: number,
+  center: Point,
+  rawDist: number,
+  bodies: Map<number, OrbitBody>,
+  positions: Map<number, Point>,
+  tolerance: number,
+): number | null {
+  let best: number | null = null;
   let bestDiff = tolerance + 1;
   for (const other of bodies.values()) {
-    if (other.id === bodyId || orbitCenterId(other, bodies) !== centerId || (other.kind === 'moon') !== (body.kind === 'moon')) continue;
-    const oPos = positions.get(other.id);
-    if (!oPos) continue;
-    const oDist = Math.hypot(oPos.x - center.x, oPos.y - center.y);
-    const diff = Math.abs(rawDist - oDist);
+    const pos = positions.get(other.id);
+    const sibling = other.id !== body.id && (other.kind === 'moon') === (body.kind === 'moon');
+    if (!sibling || !pos || orbitCenterId(other, bodies) !== centerId) continue;
+    const otherDist = distance(pos, center);
+    const diff = Math.abs(rawDist - otherDist);
     if (diff <= tolerance && diff < bestDiff) {
       bestDiff = diff;
-      snappedRadius = oDist;
+      best = otherDist;
     }
   }
-
-  return {
-    x: Math.round(center.x + snappedRadius * Math.cos(angle)),
-    y: Math.round(center.y + snappedRadius * Math.sin(angle)),
-  };
+  return best;
 }
 
 /**
