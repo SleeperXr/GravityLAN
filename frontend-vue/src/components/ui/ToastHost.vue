@@ -10,6 +10,7 @@ const tones = { success: 'text-accent-text', error: 'text-danger-text', info: 't
 
 <template>
   <section
+    data-gl-toasts
     :aria-label="t('gv.toast.region')"
     class="pointer-events-none fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-[60] flex flex-col items-end gap-2 md:inset-x-auto md:right-5 md:bottom-5 md:w-96"
   >
