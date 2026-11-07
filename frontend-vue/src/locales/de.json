@@ -765,7 +765,17 @@
       "source_label": "Hostname von",
       "source_auto": "Automatisch",
       "source_dns": "Von DNS {{n}}",
-      "source_saved": "Hostname jetzt: {{name}}"
+      "source_saved": "Hostname jetzt: {{name}}",
+      "reason_no_entry": "kein Eintrag",
+      "reason_no_entry_hint": "Der Server hat geantwortet, kennt für diese IP aber keinen Namen. Router kennen meist nur Geräte, die ihre IP per DHCP von ihnen bekommen, keine festen IPs.",
+      "reason_timeout": "keine Antwort (Zeitüberschreitung)",
+      "reason_timeout_hint": "Unter dieser Adresse hat innerhalb von 2 Sekunden kein DNS-Server geantwortet: keiner eingerichtet, Port 53 gesperrt oder nicht erreichbar.",
+      "reason_refused": "abgelehnt",
+      "reason_refused_hint": "Der Server hat die Anfrage abgewiesen, z. B. weil er GravityLAN (die IP des Docker-Hosts) nicht als Client zulässt.",
+      "reason_server_error": "Serverfehler",
+      "reason_server_error_hint": "Der Server konnte die Anfrage nicht beantworten (SERVFAIL), z. B. weil seine eigene Weiterleitung fehlschlug.",
+      "reason_error": "Fehler",
+      "reason_error_hint": "Die Anfrage ist gescheitert, bevor ein Server antworten konnte. Details stehen im Log."
     }
   }
 }

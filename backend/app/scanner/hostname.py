@@ -5,6 +5,7 @@ import sys
 import subprocess
 
 try:
+    import dns.exception  # type: ignore
     import dns.resolver # type: ignore
     import dns.reversename  # noqa: F401 — availability probe used inside resolve_hostname
     HAS_DNS_PYTHON = True
@@ -220,10 +221,21 @@ async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None
 HOSTNAME_SOURCES = ("dns1", "dns2")
 
 
-def query_ptr(ip: str, dns_server: str | None, timeout: float = 2.0) -> str | None:
-    """The PTR name one DNS server gives for an IP (None: the system's servers), or None."""
+def _ptr_failure(error: Exception) -> str:
+    """Why a PTR query found no name, in the words the editor shows."""
+    if isinstance(error, (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer)):
+        return "no_entry"  # the server answered: it has no name for this IP
+    if isinstance(error, dns.exception.Timeout):
+        return "timeout"  # nothing answered in time: no DNS there, or blocked
+    if isinstance(error, dns.resolver.NoNameservers):
+        return "refused" if "REFUSED" in str(error) else "server_error"
+    return "error"
+
+
+def ptr_lookup(ip: str, dns_server: str | None, timeout: float = 2.0) -> tuple[str | None, str | None]:
+    """The PTR name one DNS server gives for an IP (None: the system's servers) and, without one, why not."""
     if not HAS_DNS_PYTHON:
-        return None
+        return None, "error"
     try:
         resolver = dns.resolver.Resolver()
         if dns_server:
@@ -231,20 +243,31 @@ def query_ptr(ip: str, dns_server: str | None, timeout: float = 2.0) -> str | No
         resolver.timeout = resolver.lifetime = timeout
         answers = resolver.resolve(dns.reversename.from_address(ip), "PTR")
         name = str(answers[0]).rstrip(".") if answers else ""
-        return name or None
+        return (name, None) if name else (None, "no_entry")
     except Exception as e:
-        logger.debug("PTR query at %s failed: %s", dns_server or "system DNS", e)
-        return None
+        logger.info("PTR query for %s at %s found no name: %s", mask_ip(ip), dns_server or "system DNS", e)
+        return None, _ptr_failure(e)
+
+
+def query_ptr(ip: str, dns_server: str | None, timeout: float = 2.0) -> str | None:
+    """The PTR name one DNS server gives for an IP, or None."""
+    return ptr_lookup(ip, dns_server, timeout)[0]
 
 
 async def lookup_dns_names(ip: str, primary: str | None, secondary: str | None) -> dict[str, str | None]:
-    """What DNS 1 and DNS 2 each call an IP, asked side by side: {"1": name, "2": name}."""
+    """What DNS 1 and DNS 2 each call an IP, asked side by side: {"1": name, "2": name}, plus
+    "<n>_reason" for a server that gave no name (see `_ptr_failure`)."""
     loop = asyncio.get_running_loop()
-    first, second = await asyncio.gather(
-        loop.run_in_executor(None, query_ptr, ip, primary),
-        loop.run_in_executor(None, query_ptr, ip, secondary),
+    results = await asyncio.gather(
+        loop.run_in_executor(None, ptr_lookup, ip, primary),
+        loop.run_in_executor(None, ptr_lookup, ip, secondary),
     )
-    return {"1": first, "2": second}
+    names: dict[str, str | None] = {}
+    for n, (name, reason) in zip(("1", "2"), results):
+        names[n] = name
+        if reason:
+            names[f"{n}_reason"] = reason
+    return names
 
 
 def choose_hostname(found: str | None, names: dict[str, str | None] | None, source: str | None) -> str | None:
