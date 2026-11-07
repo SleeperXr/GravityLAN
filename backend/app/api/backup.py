@@ -142,46 +142,50 @@ def _read_protected_settings(cursor) -> dict[str, str]:
     return dict(cursor.fetchall())
 
 
+# Columns without an SQL default whose model default is not the type's zero value
+_MODEL_DEFAULTS: dict[tuple[str, str], int] = {
+    ("devices", "alert_offline"): 1,
+    ("devices", "is_online"): 1,
+    ("services", "is_up"): 1,
+    ("services", "is_auto_detected"): 1,
+    ("discovered_hosts", "is_online"): 1,
+    ("device_interfaces", "is_online"): 1,
+    ("agent_configs", "enable_temp"): 1,
+    ("agent_configs", "enable_patch_check"): 1,
+    ("agent_tokens", "is_active"): 1,
+    ("agent_configs", "interval"): 30,
+    ("agent_configs", "version"): 1,
+}
+
+
+def _is_numeric_type(col_type: str) -> bool:
+    return any(t in col_type.upper() for t in ("INT", "BOOLEAN"))
+
+
+def _from_sql_default(sql_default, col_type: str, now_str: str):
+    """The value a column's SQL default stands for (CURRENT_TIMESTAMP, TRUE/FALSE, numbers, text)."""
+    cleaned = str(sql_default).strip().strip("'\"")
+    if cleaned.upper() in ("CURRENT_TIMESTAMP", "NOW()"):
+        return now_str
+    if _is_numeric_type(col_type):
+        if cleaned.upper() in ("TRUE", "FALSE"):
+            return 1 if cleaned.upper() == "TRUE" else 0
+        try:
+            return int(cleaned)
+        except ValueError:
+            pass
+    return cleaned
+
+
 def _default_for_missing_col(table: str, col: str, info: dict, now_str: str):
     """Fallback value for a NOT NULL column missing from an older backup."""
-    sql_default = info.get("default")
-    if sql_default is not None:
-        cleaned = str(sql_default).strip().strip("'\"")
-        if cleaned.upper() in ("CURRENT_TIMESTAMP", "NOW()"):
-            return now_str
-        if any(t in info["type"].upper() for t in ("INT", "BOOLEAN")):
-            if cleaned.upper() == "TRUE":
-                return 1
-            if cleaned.upper() == "FALSE":
-                return 0
-            try:
-                return int(cleaned)
-            except ValueError:
-                pass
-        return cleaned
-
-    if (table, col) in {
-        ("devices", "alert_offline"),
-        ("devices", "is_online"),
-        ("services", "is_up"),
-        ("services", "is_auto_detected"),
-        ("discovered_hosts", "is_online"),
-        ("device_interfaces", "is_online"),
-        ("agent_configs", "enable_temp"),
-        ("agent_configs", "enable_patch_check"),
-        ("agent_tokens", "is_active"),
-    }:
-        return 1
-    if (table, col) == ("agent_configs", "interval"):
-        return 30
-    if (table, col) == ("agent_configs", "version"):
-        return 1
-
+    if info.get("default") is not None:
+        return _from_sql_default(info["default"], info["type"], now_str)
+    if (table, col) in _MODEL_DEFAULTS:
+        return _MODEL_DEFAULTS[(table, col)]
     if any(t in info["type"].upper() for t in ("DATETIME", "TIMESTAMP")):
         return now_str
-    if any(t in info["type"].upper() for t in ("INT", "BOOLEAN")):
-        return 0
-    return ""
+    return 0 if _is_numeric_type(info["type"]) else ""
 
 
 def _clean_rows(cursor, table: str, rows: list[dict]) -> list[dict]:
@@ -202,22 +206,24 @@ def _clean_rows(cursor, table: str, rows: list[dict]) -> list[dict]:
         table_info.pop("id", None)
 
     now_str = datetime.now(timezone.utc).isoformat().replace("T", " ")
-    valid_rows = []
-    for row in rows:
-        clean_row = {
-            col: val
-            for col, val in row.items()
-            if col in table_info and not (val is None and table_info[col]["notnull"])
-        }
-        for col, info in table_info.items():
-            if info["notnull"] and (col not in clean_row or clean_row[col] is None):
-                clean_row[col] = _default_for_missing_col(table, col, info, now_str)
-        if table == "services" and not is_safe_url_template(clean_row.get("url_template") or ""):
-            # A tampered backup must not smuggle javascript: links into the dashboard (#42)
-            logger.warning(f"Backup: Dropping unsafe url_template of service {clean_row.get('name')!r}")
-            clean_row["url_template"] = ""
-        valid_rows.append(clean_row)
-    return valid_rows
+    return [_clean_row(table, row, table_info, now_str) for row in rows]
+
+
+def _clean_row(table: str, row: dict, table_info: dict, now_str: str) -> dict:
+    """Known columns only; NOT NULL columns the backup left out or empty get their default."""
+    clean_row = {
+        col: val
+        for col, val in row.items()
+        if col in table_info and not (val is None and table_info[col]["notnull"])
+    }
+    for col, info in table_info.items():
+        if info["notnull"] and clean_row.get(col) is None:
+            clean_row[col] = _default_for_missing_col(table, col, info, now_str)
+    if table == "services" and not is_safe_url_template(clean_row.get("url_template") or ""):
+        # A tampered backup must not smuggle javascript: links into the dashboard (#42)
+        logger.warning(f"Backup: Dropping unsafe url_template of service {clean_row.get('name')!r}")
+        clean_row["url_template"] = ""
+    return clean_row
 
 
 # Rows outside the backup that belong to one device (#47): when a device id names another
@@ -326,6 +332,23 @@ def _drop_duplicates(table: str, rows: list[dict]) -> tuple[list[dict], int]:
     return kept, len(rows) - len(kept)
 
 
+def _replace_table(cursor, table: str, rows: list[dict]) -> None:
+    """Delete the table's rows (protected settings stay) and insert ``rows``; the columns of the first row count."""
+    if table == "app_settings":
+        placeholders = ", ".join("?" * len(PROTECTED_SETTING_KEYS))
+        cursor.execute(f"DELETE FROM app_settings WHERE key NOT IN ({placeholders})", PROTECTED_SETTING_KEYS)
+    else:
+        cursor.execute(f"DELETE FROM {table}")
+    if not rows:
+        return
+    columns = list(rows[0].keys())
+    placeholders = ", ".join(["?"] * len(columns))
+    cursor.executemany(
+        f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
+        [tuple(r.get(c) for c in columns) for r in rows],
+    )
+
+
 def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str, int]:
     """Replace the allowed tables with the backup rows in a single transaction.
 
@@ -363,19 +386,7 @@ def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str,
                 duplicates[table] = dropped
                 logger.warning("Backup: %d duplicate row(s) in %s skipped, the newest of each kept", dropped, table)
 
-            if table == "app_settings":
-                placeholders = ", ".join("?" * len(PROTECTED_SETTING_KEYS))
-                cursor.execute(f"DELETE FROM app_settings WHERE key NOT IN ({placeholders})", PROTECTED_SETTING_KEYS)
-            else:
-                cursor.execute(f"DELETE FROM {table}")
-            if valid_rows:
-                columns = list(valid_rows[0].keys())
-                placeholders = ", ".join(["?"] * len(columns))
-                col_names = ", ".join(columns)
-                cursor.executemany(
-                    f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})",
-                    [tuple(r.get(c) for c in columns) for r in valid_rows],
-                )
+            _replace_table(cursor, table, valid_rows)
             imported[table] = len(valid_rows)
 
         if _read_protected_settings(cursor) != protected_before:
