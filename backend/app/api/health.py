@@ -57,89 +57,78 @@ async def get_health_summary(
     online_devices = sum(1 for d in devices if d.is_online)
     offline_devices = total_devices - online_devices
 
-    # 2. Agent counts
-    agents_res = await db.execute(select(AgentToken))
-    agents = agents_res.scalars().all()
-    total_agents = len(agents)
-
-    offline_agents = 0
-    active_device_ids = set()
-    intervals = await load_intervals(db)
-    for agent in agents:
-        last_seen = ensure_utc(agent.last_seen)
-        is_active = bool(agent.is_active and last_seen and (now - last_seen).total_seconds() < active_window(intervals.get(agent.device_id)))
-        if not is_active:
-            offline_agents += 1
-        else:
-            active_device_ids.add(agent.device_id)
-
-    # Calculate high CPU (> 90%) and high temperature (> 75°C) active agents
-    high_cpu = 0
-    high_temp = 0
-    if active_device_ids:
-        metrics_res = await db.execute(
-            select(DeviceMetrics).where(DeviceMetrics.id.in_(
-                select(func.max(DeviceMetrics.id)).where(DeviceMetrics.device_id.in_(active_device_ids)).group_by(DeviceMetrics.device_id)
-            ))
-        )
-        latest_metrics = metrics_res.scalars().all()
-        for m in latest_metrics:
-            if m.device_id in active_device_ids:
-                if m.cpu_percent > 90.0:
-                    high_cpu += 1
-                if m.temperature is not None and m.temperature > 75.0:
-                    high_temp += 1
+    # 2. Agents: active ones, and how many of those run hot
+    agents = (await db.execute(select(AgentToken))).scalars().all()
+    active_device_ids = _active_agent_devices(agents, await load_intervals(db), now)
+    high_cpu, high_temp = await _hot_agent_counts(db, active_device_ids)
 
     # 3. Active issues by type
     summary = await get_summary(token, db)
-    active_issues_count = len(summary.active_issues)
-    issues_by_type = {"agent_offline": 0, "service_down": 0}
-    for issue in summary.active_issues:
-        issues_by_type[issue.type] = issues_by_type.get(issue.type, 0) + 1
 
     # 4. Notifications
-    unread_res = await db.execute(select(func.count(DeviceHistory.id)))
-    unread_count = unread_res.scalar_one()
-
+    unread_count = (await db.execute(select(func.count(DeviceHistory.id)))).scalar_one()
     cutoff_30min = now.replace(tzinfo=None) - timedelta(minutes=30)
-    fresh_res = await db.execute(select(func.count(DeviceHistory.id)).where(DeviceHistory.timestamp >= cutoff_30min))
-    fresh_count = fresh_res.scalar_one()
-
-    # 5. Scanner
-    scanner_status = summary.scanner.status
-    is_scanner_running = scanner_status in ("running", "discovering", "identifying")
-    last_scan = summary.scanner.last_scan
-    stale_hours = None
-    if last_scan:
-        stale_hours = round((now - last_scan).total_seconds() / 3600.0, 1)
+    fresh_count = (
+        await db.execute(select(func.count(DeviceHistory.id)).where(DeviceHistory.timestamp >= cutoff_30min))
+    ).scalar_one()
 
     return HealthSummaryResponse(
         api_version=VERSION,
-        devices={
-            "total": total_devices,
-            "online": online_devices,
-            "offline": offline_devices
-        },
+        devices={"total": total_devices, "online": online_devices, "offline": offline_devices},
         agents={
-            "total": total_agents,
+            "total": len(agents),
             "high_cpu": high_cpu,
             "high_temp": high_temp,
-            "offline_agents": offline_agents
+            "offline_agents": len(agents) - _count_active(agents, active_device_ids),
         },
-        issues={
-            "active": active_issues_count,
-            "by_type": issues_by_type
-        },
-        notifications={
-            "unread": unread_count,
-            "fresh_30min": fresh_count
-        },
-        scanner={
-            "running": is_scanner_running,
-            "last_run": last_scan,
-            "stale_hours": stale_hours
-        }
+        issues={"active": len(summary.active_issues), "by_type": _issues_by_type(summary.active_issues)},
+        notifications={"unread": unread_count, "fresh_30min": fresh_count},
+        scanner=_scanner_state(summary.scanner, now),
     )
+
+
+def _agent_is_active(agent: AgentToken, intervals: dict, now: datetime) -> bool:
+    last_seen = ensure_utc(agent.last_seen)
+    return bool(agent.is_active and last_seen and (now - last_seen).total_seconds() < active_window(intervals.get(agent.device_id)))
+
+
+def _active_agent_devices(agents, intervals: dict, now: datetime) -> set[int]:
+    return {a.device_id for a in agents if _agent_is_active(a, intervals, now)}
+
+
+def _count_active(agents, active_device_ids: set[int]) -> int:
+    return sum(1 for a in agents if a.device_id in active_device_ids)
+
+
+async def _hot_agent_counts(db: AsyncSession, active_device_ids: set[int]) -> tuple[int, int]:
+    """Active agents whose latest report shows CPU above 90 % and temperature above 75 °C."""
+    if not active_device_ids:
+        return 0, 0
+    latest = (await db.execute(
+        select(DeviceMetrics).where(DeviceMetrics.id.in_(
+            select(func.max(DeviceMetrics.id)).where(DeviceMetrics.device_id.in_(active_device_ids)).group_by(DeviceMetrics.device_id)
+        ))
+    )).scalars().all()
+    reported = [m for m in latest if m.device_id in active_device_ids]
+    high_cpu = sum(1 for m in reported if m.cpu_percent > 90.0)
+    high_temp = sum(1 for m in reported if m.temperature is not None and m.temperature > 75.0)
+    return high_cpu, high_temp
+
+
+def _issues_by_type(issues) -> dict[str, int]:
+    by_type = {"agent_offline": 0, "service_down": 0}
+    for issue in issues:
+        by_type[issue.type] = by_type.get(issue.type, 0) + 1
+    return by_type
+
+
+def _scanner_state(scanner, now: datetime) -> dict:
+    last_scan = scanner.last_scan
+    return {
+        "running": scanner.status in ("running", "discovering", "identifying"),
+        "last_run": last_scan,
+        "stale_hours": round((now - last_scan).total_seconds() / 3600.0, 1) if last_scan else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -160,51 +149,39 @@ def _as_points(samples: list) -> list[HealthPoint]:
     return [s if isinstance(s, HealthPoint) else health_point_from_sample(s) for s in samples]
 
 
+def _jitter_ms(measured: list[HealthPoint]) -> float:
+    """Mean jitter: rollups carry their own jitter sums, raw probes add consecutive differences."""
+    jitter_sum = sum(p.jitter_sum for p in measured if not p.is_raw)
+    jitter_count = sum(p.jitter_count for p in measured if not p.is_raw)
+    raw_latencies = [p.latency_avg for p in measured if p.is_raw]
+    jitter_sum += sum(abs(b - a) for a, b in zip(raw_latencies, raw_latencies[1:]))
+    jitter_count += max(0, len(raw_latencies) - 1)
+    return round(jitter_sum / jitter_count, 1) if jitter_count else 0.0
+
+
+def _sparkline(points: list[HealthPoint]) -> list[float | None]:
+    """Up to 20 representative latency values across the window."""
+    if not points:
+        return []
+    step = max(1, len(points) // 20)
+    return [points[i].latency_ms for i in range(0, len(points), step)][-20:]
+
+
 def _latency_stats(points: list[HealthPoint]) -> LatencyStats:
     """Latency min/avg/max/jitter over raw probes and rollup buckets alike."""
-    current_ms = None
-    probe_type = None
-    min_ms = avg_ms = max_ms = jitter_ms = None
+    stats = LatencyStats(sparkline=_sparkline(points))
+    if points:
+        stats.current_ms = points[-1].latency_ms
+        stats.probe_type = points[-1].probe_type
 
     measured = [p for p in points if p.latency_count]
     if measured:
-        min_ms = round(min(p.latency_min for p in measured if p.latency_min is not None), 1)
-        max_ms = round(max(p.latency_max for p in measured if p.latency_max is not None), 1)
         total = sum(p.latency_count for p in measured)
-        avg_ms = round(sum(p.latency_avg * p.latency_count for p in measured) / total, 1)
-
-        # Rollups carry their own jitter sums; raw probes add consecutive differences
-        jitter_sum = sum(p.jitter_sum for p in measured if not p.is_raw)
-        jitter_count = sum(p.jitter_count for p in measured if not p.is_raw)
-        raw_latencies = [p.latency_avg for p in measured if p.is_raw]
-        for i in range(1, len(raw_latencies)):
-            jitter_sum += abs(raw_latencies[i] - raw_latencies[i - 1])
-            jitter_count += 1
-        jitter_ms = round(jitter_sum / jitter_count, 1) if jitter_count else 0.0
-
-    if points:
-        last = points[-1]
-        current_ms = last.latency_ms
-        probe_type = last.probe_type
-
-    # Sparkline: downsample up to 20 representative values across the window
-    sparkline: list[float | None] = []
-    if points:
-        step = max(1, len(points) // 20)
-        for i in range(0, len(points), step):
-            sparkline.append(points[i].latency_ms)
-        if len(sparkline) > 20:
-            sparkline = sparkline[-20:]
-
-    return LatencyStats(
-        current_ms=current_ms,
-        min_ms=min_ms,
-        avg_ms=avg_ms,
-        max_ms=max_ms,
-        jitter_ms=jitter_ms,
-        sparkline=sparkline,
-        probe_type=probe_type,
-    )
+        stats.min_ms = round(min(p.latency_min for p in measured if p.latency_min is not None), 1)
+        stats.max_ms = round(max(p.latency_max for p in measured if p.latency_max is not None), 1)
+        stats.avg_ms = round(sum(p.latency_avg * p.latency_count for p in measured) / total, 1)
+        stats.jitter_ms = _jitter_ms(measured)
+    return stats
 
 
 def _uptime_pct(online: int, samples: int) -> float:
@@ -225,63 +202,52 @@ def _compute_uptime_and_latency(
     weighted by the number of probes behind it.
     """
     points = _as_points(samples)
-    latency_stats = _latency_stats(points)
+    timed = [(p, t) for p in points if (t := ensure_utc(p.timestamp))]
+    current = 100.0 if dev.is_online else 0.0
 
-    # Uptime & Heartbeat Bars
-    total_seconds = (now - window_start).total_seconds()
-    bucket_sec = total_seconds / bucket_count
-    bars: list[float | None] = [None] * bucket_count
-    bucket_online = [0] * bucket_count
-    bucket_samples = [0] * bucket_count
-
-    cutoff_24h = now - timedelta(hours=24)
-    cutoff_7d = now - timedelta(days=7)
-    online_24h = total_24h = online_7d = total_7d = 0
-
-    for p in points:
-        p_time = ensure_utc(p.timestamp)
-        if not p_time:
-            continue
-        if p_time >= cutoff_24h:
-            total_24h += p.samples
-            online_24h += p.online
-        if p_time >= cutoff_7d:
-            total_7d += p.samples
-            online_7d += p.online
-        idx = int((p_time - window_start).total_seconds() // bucket_sec)
-        if 0 <= idx < bucket_count:
-            bucket_online[idx] += p.online
-            bucket_samples[idx] += p.samples
-
-    for i in range(bucket_count):
-        if bucket_samples[i]:
-            bars[i] = _uptime_pct(bucket_online[i], bucket_samples[i])
-        else:
-            # If no probe happened in bucket yet, fallback based on current device status
-            b_end = window_start + timedelta(seconds=(i + 1) * bucket_sec)
-            dev_first_seen = ensure_utc(dev.first_seen) or now
-            if dev_first_seen <= b_end:
-                bars[i] = 100.0 if dev.is_online else 0.0
-
-    # Overall uptime percentage in window
     total_samples = sum(p.samples for p in points)
-    if total_samples:
-        uptime_pct = _uptime_pct(sum(p.online for p in points), total_samples)
-    else:
-        uptime_pct = 100.0 if dev.is_online else 0.0
-
-    uptime_24h = _uptime_pct(online_24h, total_24h) if total_24h else uptime_pct
-    uptime_7d = _uptime_pct(online_7d, total_7d) if total_7d else uptime_pct
-
+    uptime_pct = _uptime_pct(sum(p.online for p in points), total_samples) if total_samples else current
     uptime_stats = UptimeStats(
         uptime_pct=uptime_pct,
-        uptime_24h=uptime_24h,
-        uptime_7d=uptime_7d,
+        uptime_24h=_uptime_since(timed, now - timedelta(hours=24), uptime_pct),
+        uptime_7d=_uptime_since(timed, now - timedelta(days=7), uptime_pct),
         uptime_30d=uptime_pct,
-        history_bars=bars,
+        history_bars=_heartbeat_bars(dev, timed, now, window_start, bucket_count),
     )
+    return uptime_stats, _latency_stats(points)
 
-    return uptime_stats, latency_stats
+
+def _uptime_since(timed: list[tuple[HealthPoint, datetime]], cutoff: datetime, fallback: float) -> float:
+    """Uptime of the points at or after ``cutoff``; ``fallback`` when there are none."""
+    recent = [p for p, t in timed if t >= cutoff]
+    total = sum(p.samples for p in recent)
+    return _uptime_pct(sum(p.online for p in recent), total) if total else fallback
+
+
+def _heartbeat_bars(
+    dev: Device, timed: list[tuple[HealthPoint, datetime]], now: datetime, window_start: datetime, bucket_count: int,
+) -> list[float | None]:
+    """Availability per bucket; a bucket without probes shows the current status once the device existed."""
+    bucket_sec = (now - window_start).total_seconds() / bucket_count
+    online = [0] * bucket_count
+    samples = [0] * bucket_count
+    for p, t in timed:
+        idx = int((t - window_start).total_seconds() // bucket_sec)
+        if 0 <= idx < bucket_count:
+            online[idx] += p.online
+            samples[idx] += p.samples
+
+    first_seen = ensure_utc(dev.first_seen) or now
+    current = 100.0 if dev.is_online else 0.0
+    bars: list[float | None] = []
+    for i in range(bucket_count):
+        if samples[i]:
+            bars.append(_uptime_pct(online[i], samples[i]))
+        elif first_seen <= window_start + timedelta(seconds=(i + 1) * bucket_sec):
+            bars.append(current)
+        else:
+            bars.append(None)
+    return bars
 
 
 def _certificate_penalty(svc: ServiceHealthItem) -> int:
@@ -526,21 +492,37 @@ def _rounded_mean(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 1) if values else None
 
 
+def _is_reachable(d: DeviceHealthItem) -> bool:
+    return d.is_online and d.health_status != "offline"
+
+
+def _has_patch_warning(d: DeviceHealthItem) -> bool:
+    return bool(d.agent and (d.agent.patch_security > 0 or d.agent.reboot_required))
+
+
+def _count(items: list[DeviceHealthItem], predicate) -> int:
+    return sum(1 for d in items if predicate(d))
+
+
+def _present(values: list[float | None]) -> list[float]:
+    return [v for v in values if v is not None]
+
+
 def _overview_kpis(items: list[DeviceHealthItem]) -> HealthOverviewKPIs:
-    """Network-wide figures over the device entries of the overview."""
+    """Network-wide figures over the device entries of the overview; offline and issues only count devices that alert."""
     scores = [d.health_score for d in items]
     alerting = [d for d in items if getattr(d, "alert_offline", True)]
     return HealthOverviewKPIs(
         network_health_score=round(sum(scores) / len(scores)) if scores else 100,
         total_devices=len(items),
-        online_devices=sum(1 for d in items if d.is_online and d.health_status != "offline"),
-        offline_devices=sum(1 for d in alerting if not d.is_online or d.health_status == "offline"),
-        flapping_devices=sum(1 for d in items if d.health_status == "flapping"),
-        avg_latency_ms=_rounded_mean([d.latency.avg_ms for d in items if d.latency.avg_ms is not None]),
-        avg_jitter_ms=_rounded_mean([d.latency.jitter_ms for d in items if d.latency.jitter_ms is not None]),
-        active_issues_count=sum(1 for d in alerting if d.health_status in ("offline", "critical", "flapping")),
-        ssl_warning_count=sum(1 for d in items for s in d.services if _ssl_warning(s)),
-        patch_warning_count=sum(1 for d in items if d.agent and (d.agent.patch_security > 0 or d.agent.reboot_required)),
+        online_devices=_count(items, _is_reachable),
+        offline_devices=_count(alerting, lambda d: not _is_reachable(d)),
+        flapping_devices=_count(items, lambda d: d.health_status == "flapping"),
+        avg_latency_ms=_rounded_mean(_present([d.latency.avg_ms for d in items])),
+        avg_jitter_ms=_rounded_mean(_present([d.latency.jitter_ms for d in items])),
+        active_issues_count=_count(alerting, lambda d: d.health_status in ("offline", "critical", "flapping")),
+        ssl_warning_count=sum(_count(d.services, _ssl_warning) for d in items),
+        patch_warning_count=_count(items, _has_patch_warning),
     )
 
 
