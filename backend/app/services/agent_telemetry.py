@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any, Dict
 
 from fastapi import HTTPException, WebSocket
@@ -125,6 +126,17 @@ async def _resolve_token_mismatch(
     raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
 
 
+# (key in the agent's "system" block, AgentToken column, column length)
+_OS_FIELDS = (
+    ("os", "os_pretty", 255),
+    ("os_name", "os_name", 100),
+    ("os_version", "os_version", 100),
+    ("os_codename", "os_codename", 100),
+    ("arch", "os_arch", 50),
+    ("kernel", "os_kernel", 100),
+)
+
+
 def _persist_device_metadata(db_token: AgentToken, device: Device, payload: Any) -> None:
     """Update token/device metadata from the agent payload."""
     now = datetime.now(timezone.utc)
@@ -136,20 +148,11 @@ def _persist_device_metadata(db_token: AgentToken, device: Device, payload: Any)
     if db_token.agent_version != payload.agent_version:
         db_token.agent_version = payload.agent_version
 
-    # Persist OS metadata reported by the agent (e.g. from /etc/os-release)
+    # Persist OS metadata reported by the agent (e.g. from /etc/os-release); empty values keep the old one
     system = payload.system or {}
-    if system.get("os"):
-        db_token.os_pretty = str(system["os"])[:255]
-    if system.get("os_name"):
-        db_token.os_name = str(system["os_name"])[:100]
-    if system.get("os_version"):
-        db_token.os_version = str(system["os_version"])[:100]
-    if system.get("os_codename"):
-        db_token.os_codename = str(system["os_codename"])[:100]
-    if system.get("arch"):
-        db_token.os_arch = str(system["arch"])[:50]
-    if system.get("kernel"):
-        db_token.os_kernel = str(system["kernel"])[:100]
+    for key, column, limit in _OS_FIELDS:
+        if system.get(key):
+            setattr(db_token, column, str(system[key])[:limit])
     if not device.has_agent:
         device.has_agent = True
         device.alert_offline = True
@@ -291,54 +294,49 @@ def downsample_metrics(metrics: list, range_str: str) -> list[dict]:
     """
     if not metrics:
         return []
+    bucket_seconds = _BUCKET_SECONDS.get(range_str, 900)
+    buckets = _bucket_points(metrics, bucket_seconds)
+    return [_bucket_snapshot(epoch, buckets[epoch]) for epoch in sorted(buckets)]
 
-    # Map range to bucket size in seconds
-    bucket_seconds = {
-        "6h": 300,       # 5 minutes
-        "24h": 900,      # 15 minutes
-        "7d": 7200,      # 2 hours
-        "30d": 21600     # 6 hours
-    }.get(range_str, 900)
 
+# Chart bucket size per range: 5 min, 15 min, 2 h, 6 h
+_BUCKET_SECONDS = {"6h": 300, "24h": 900, "7d": 7200, "30d": 21600}
+
+
+def _bucket_points(metrics: list, bucket_seconds: int) -> dict[int, list[MetricPoint]]:
+    """Metric points grouped by the start (epoch seconds) of their bucket; points without a time are dropped."""
     buckets: dict[int, list[MetricPoint]] = {}
     for m in metrics:
         point = m if isinstance(m, MetricPoint) else metric_point_from_row(m)
         ts = ensure_utc(point.timestamp)
-        if not ts:
-            continue
-        bucket_epoch = (int(ts.timestamp()) // bucket_seconds) * bucket_seconds
-        buckets.setdefault(bucket_epoch, []).append(point)
+        if ts:
+            buckets.setdefault((int(ts.timestamp()) // bucket_seconds) * bucket_seconds, []).append(point)
+    return buckets
 
-    snapshots = []
-    for epoch in sorted(buckets.keys()):
-        points = buckets[epoch]
-        weight = sum(p.samples for p in points) or 1
 
-        def avg(attr: str) -> float:
-            return sum(getattr(p, attr) * p.samples for p in points) / weight
+def _bucket_snapshot(epoch: int, points: list[MetricPoint]) -> dict:
+    """One chart point: averages weighted by the reports behind each point, the newest disk/net snapshot."""
+    weight = sum(p.samples for p in points) or 1
 
-        temp_weight = sum(p.temp_count for p in points)
-        avg_temp = None
-        if temp_weight:
-            avg_temp = sum(p.temp_avg * p.temp_count for p in points if p.temp_avg is not None) / temp_weight
+    def avg(attr: str) -> float:
+        return sum(getattr(p, attr) * p.samples for p in points) / weight
 
-        disk_json = next((p.disk_json for p in reversed(points) if p.disk_json), None)
-        net_json = next((p.net_json for p in reversed(points) if p.net_json), None)
-
-        snapshots.append({
-            "cpu_percent": avg("cpu_avg"),
-            "ram": {
-                "used_mb": int(avg("ram_used_mb_avg")),
-                "total_mb": int(avg("ram_total_mb")),
-                "percent": avg("ram_percent_avg")
-            },
-            "disk": json.loads(disk_json) if disk_json else [],
-            "temperature": avg_temp,
-            "network": json.loads(net_json) if net_json else {},
-            "timestamp": datetime.fromtimestamp(epoch, tz=timezone.utc)
-        })
-
-    return snapshots
+    temp_weight = sum(p.temp_count for p in points)
+    avg_temp = sum(p.temp_avg * p.temp_count for p in points if p.temp_avg is not None) / temp_weight if temp_weight else None
+    disk_json = next((p.disk_json for p in reversed(points) if p.disk_json), None)
+    net_json = next((p.net_json for p in reversed(points) if p.net_json), None)
+    return {
+        "cpu_percent": avg("cpu_avg"),
+        "ram": {
+            "used_mb": int(avg("ram_used_mb_avg")),
+            "total_mb": int(avg("ram_total_mb")),
+            "percent": avg("ram_percent_avg"),
+        },
+        "disk": json.loads(disk_json) if disk_json else [],
+        "temperature": avg_temp,
+        "network": json.loads(net_json) if net_json else {},
+        "timestamp": datetime.fromtimestamp(epoch, tz=timezone.utc),
+    }
 
 
 def _is_agent_active(token: AgentToken, now: datetime, interval: int | None = None) -> bool:
@@ -376,6 +374,7 @@ def _compute_uptime_history(token: AgentToken, now: datetime, cutoff_24h: dateti
 
 def _build_agent_summary(device: Device, token: AgentToken, last_m: DeviceMetrics | None, m_count: int, is_active: bool, uptime_pct: float, uptime_history: list[float]) -> AgentSummary:
     """Assemble a single AgentSummary entry from prefetched data."""
+    m = last_m or _NO_METRICS
     return AgentSummary(
         device_id=device.id,
         hostname=device.hostname or device.display_name,
@@ -390,20 +389,27 @@ def _build_agent_summary(device: Device, token: AgentToken, last_m: DeviceMetric
         os_arch=token.os_arch,
         os_kernel=token.os_kernel,
         last_seen=token.last_seen,
-        cpu_usage=last_m.cpu_percent if last_m else 0.0,
-        ram_usage=last_m.ram_percent if last_m else 0.0,
-        temp=last_m.temperature if last_m else None,
+        cpu_usage=m.cpu_percent,
+        ram_usage=m.ram_percent,
+        temp=m.temperature,
         uptime_pct=uptime_pct,
         uptime_history=uptime_history,
         metrics_count=m_count,
         has_pending_token=bool(token.pending_token),
         pending_at=token.pending_at,
-        patch_available=last_m.patch_available if last_m else 0,
-        patch_security=last_m.patch_security if last_m else 0,
-        patch_manager=last_m.patch_manager if last_m else None,
-        reboot_required=last_m.reboot_required if last_m else False,
-        major_upgrade_available=last_m.major_upgrade_available if last_m else None
+        patch_available=m.patch_available,
+        patch_security=m.patch_security,
+        patch_manager=m.patch_manager,
+        reboot_required=m.reboot_required,
+        major_upgrade_available=m.major_upgrade_available,
     )
+
+
+# What an agent summary shows before the agent's first report
+_NO_METRICS = SimpleNamespace(
+    cpu_percent=0.0, ram_percent=0.0, temperature=None, patch_available=0, patch_security=0,
+    patch_manager=None, reboot_required=False, major_upgrade_available=None,
+)
 
 
 def assemble_agents_overview_data(
