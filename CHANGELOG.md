@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Service refresh of a device: a scan whose ports match no known device kind no longer resets the device type to "unknown". A NAS, firewall or server set by hand or found earlier keeps its type; a scan that recognises a kind still sets it.
+
 ## [0.7.0] - 2026-11-05
 
 ### Added
