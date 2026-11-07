@@ -2,13 +2,13 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { AlertCircle, CheckCircle2, ChevronDown, KeyRound, RefreshCw, Shield, Terminal } from 'lucide-vue-next';
 import { api } from '@/api/client';
-import type { AgentSshLogin, Device, SshProfile } from '@/types';
+import type { Device, SshProfile } from '@/types';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Field from '@/components/ui/Field.vue';
 import Input from '@/components/ui/Input.vue';
 import ManualInstallCommand from '@/components/agents/ManualInstallCommand.vue';
-import { agentKeyProfiles, isAgentOutdated } from '@/lib/agent';
+import { agentKeyProfiles, isAgentOutdated, updateCenterLogin } from '@/lib/agent';
 import { deviceLabel } from '@/lib/networks';
 import { confirmAction } from '@/composables/useConfirm';
 import { t } from '@/i18n';
@@ -56,8 +56,7 @@ async function update(device: Device) {
   }
   statuses[device.id] = { status: 'running' };
   try {
-    const login: AgentSshLogin = saved ? { profile_id: saved.id } : { ssh_user: sshUser.value, ssh_password: sshPassword.value, ssh_port: 22 };
-    const res = await api.deployAgent(device.id, login);
+    const res = await api.deployAgent(device.id, updateCenterLogin(saved, sshUser.value, sshPassword.value));
     const message = res.error_code === 'host_key_changed' ? t('agent.host_key_changed', { ip: device.ip }) : res.message;
     statuses[device.id] = { status: res.status === 'success' ? 'success' : 'failed', message };
   } catch (err) {

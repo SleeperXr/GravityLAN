@@ -274,6 +274,24 @@ class RemoteRunner:
         return _exec_impl(self._client, wrapped, timeout, self._sudo_password)
 
 
+class RemoteCommandError(RuntimeError):
+    """A remote command failed; the message is meant for the user and never holds the command itself
+    (staged files carry the agent token)."""
+
+
+class SudoPasswordError(RemoteCommandError):
+    """sudo needed a password it did not get, or refused the one it got."""
+
+
+class RemoteTimeoutError(RemoteCommandError):
+    """A remote command did not finish in time."""
+
+
+# sudo's "password needed" in English and the German translations seen in the field
+_SUDO_PASSWORD_NEEDED = ("a password is required", "passwort erforderlich", "es wurde kein passwort angegeben", "ein passwort ist notwendig")
+_SUDO_PASSWORD_WRONG = ("incorrect password", "falsches passwort", "nicht funktioniert", "fehlversuch")
+
+
 def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass: Optional[str]) -> str:
     """Low-level command execution with sudo password support and timeout handling."""
     stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
@@ -290,7 +308,9 @@ def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass
     while not stdout.channel.exit_status_ready():
         if time.time() - start_time > timeout:
             stdout.channel.close()
-            raise RuntimeError(f"Command timed out after {timeout}s: {command}")
+            logger.warning("Remote command timed out after %ds", timeout)
+            hint = " sudo may be waiting for a password." if "sudo -n" in command else ""
+            raise RemoteTimeoutError(f"A command on the host did not finish within {timeout}s.{hint}")
         time.sleep(0.1)
 
     exit_code = stdout.channel.recv_exit_status()
@@ -301,15 +321,17 @@ def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass
         if exit_code == 1 and ("not found" in err or "no such" in err.lower()):
             return out
         err_lower = (err or out).lower()
-        if "a password is required" in err_lower or "passwort erforderlich" in err_lower or "es wurde kein passwort angegeben" in err_lower:
-            raise RuntimeError(
-                "Sudo requires a password for non-root user. Please provide a sudo password in the agent settings."
+        if any(term in err_lower for term in _SUDO_PASSWORD_NEEDED):
+            raise SudoPasswordError(
+                "sudo needs a password for this user. Enter the user's password; it is used for sudo and not stored."
             )
-        if any(term in err_lower for term in ["incorrect password", "falsches passwort", "nicht funktioniert", "fehlversuch"]):
-            raise RuntimeError(
+        if any(term in err_lower for term in _SUDO_PASSWORD_WRONG):
+            raise SudoPasswordError(
                 "Sudo password rejected by remote host. Please check your SSH / sudo password."
             )
-        logger.warning("Command '%s' failed (exit %d): %s", command, exit_code, err)
-        raise RuntimeError(f"Command failed with exit code {exit_code}: {err or out}")
+        # Not the command itself: staged files (heredocs) carry the agent token
+        logger.warning("Remote command failed (exit %d): %s", exit_code, err)
+        detail = (err or out).splitlines()[-1][:200] if (err or out) else ""
+        raise RemoteCommandError(f"A command on the host failed (exit {exit_code}){': ' + detail if detail else ''}.")
 
     return out

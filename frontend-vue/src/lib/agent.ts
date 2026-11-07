@@ -1,6 +1,6 @@
 /** Agent helpers ported from the React UI (Agents/ManualInstallCommand.tsx, Agents/savedLogins.ts). */
 import { api } from '@/api/client';
-import type { Device, SshProfile } from '@/types';
+import type { AgentSshLogin, Device, SshProfile } from '@/types';
 
 export { isAgentOutdated } from './version';
 
@@ -85,6 +85,15 @@ export function agentKeyProfiles(profiles: SshProfile[], device: Pick<Device, 'i
   return profiles.filter(
     (p) => p.auth_method === 'key' && p.key_id !== null && (p.device_id !== null ? p.device_id === device.id : p.host === device.ip),
   );
+}
+
+/**
+ * The update center's login for one device: its saved key connection, or the typed user and password.
+ * A saved key logs in without a password, but sudo for a non-root user still needs one: the typed password.
+ */
+export function updateCenterLogin(saved: Pick<SshProfile, 'id'> | undefined, user: string, password: string): AgentSshLogin {
+  if (!saved) return { ssh_user: user, ssh_password: password, ssh_port: 22 };
+  return password ? { profile_id: saved.id, sudo_password: password } : { profile_id: saved.id };
 }
 
 /** "user@host" (with a port other than 22) of a saved connection. */
