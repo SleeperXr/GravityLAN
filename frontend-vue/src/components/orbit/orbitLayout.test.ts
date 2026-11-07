@@ -155,3 +155,43 @@ describe('cosmic starfield', () => {
     expect(cosmicStarfield()).toEqual(cosmicStarfield());
   });
 });
+
+describe('many moons', () => {
+  const r = (p: { x: number; y: number }, c = { x: 0, y: 0 }) => Math.round(Math.hypot(p.x - c.x, p.y - c.y));
+
+  it('packs 40 unlinked devices on a few rings instead of one giant circle', () => {
+    const many = [dev(1, { device_type: 'router' }), ...Array.from({ length: 40 }, (_, i) => dev(100 + i, { group_id: i % 3 }))];
+    const system = resolveOrbitSystem(many, [], new Set([1]));
+    const pos = layoutOrbit(system);
+    const radii = new Set(many.slice(1).map((d) => r(pos.get(d.id)!)));
+    expect(radii.size).toBeGreaterThan(2);
+    // One ring would need 40 slots: about 660 px; the rings stay well inside that
+    expect(Math.max(...radii)).toBeLessThan(400);
+    const ids = many.map((d) => d.id);
+    for (let i = 0; i < ids.length; i++)
+      for (let j = i + 1; j < ids.length; j++) expect(r(pos.get(ids[i])!, pos.get(ids[j])!), `${ids[i]}–${ids[j]}`).toBeGreaterThan(40);
+  });
+
+  it('keeps few moons on a single ring at the smallest radius', () => {
+    const few = [dev(1, { device_type: 'router' }), dev(2), dev(3), dev(4)];
+    const pos = layoutOrbit(resolveOrbitSystem(few, [], new Set([1])));
+    expect(new Set([2, 3, 4].map((id) => r(pos.get(id)!))).size).toBe(1);
+  });
+
+  it('puts the moons of a busy switch on several rings around it', () => {
+    const lab = [dev(1, { device_type: 'router' }), dev(2, { device_type: 'switch' }), ...Array.from({ length: 14 }, (_, i) => dev(200 + i))];
+    const wires = [link(1, 1, 2), ...lab.slice(2).map((d, i) => link(10 + i, 2, d.id))];
+    const pos = layoutOrbit(resolveOrbitSystem(lab, wires, new Set([1])));
+    const sw = pos.get(2)!;
+    expect(new Set(lab.slice(2).map((d) => r(pos.get(d.id)!, sw))).size).toBeGreaterThan(1);
+  });
+
+  it('places devices of one group next to each other', () => {
+    const grouped = [dev(1, { device_type: 'router' }), dev(2, { group_id: 2 }), dev(3, { group_id: 1 }), dev(4, { group_id: 2 }), dev(5, { group_id: 1 })];
+    const pos = layoutOrbit(resolveOrbitSystem(grouped, [], new Set([1])));
+    const angle = (id: number) => Math.atan2(pos.get(id)!.y, pos.get(id)!.x);
+    const order = [2, 3, 4, 5].sort((a, b) => angle(a) - angle(b));
+    const groups = order.map((id) => grouped.find((d) => d.id === id)!.group_id);
+    expect(groups.join(',')).toMatch(/^(1,1,2,2|2,2,1,1|1,2,2,1|2,1,1,2)$/);
+  });
+});

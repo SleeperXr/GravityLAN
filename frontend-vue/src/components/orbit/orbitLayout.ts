@@ -54,9 +54,56 @@ function childrenOf(bodies: Map<number, OrbitBody>) {
   return { moons, planets };
 }
 
-/** Radius of a ring that fits `n` bodies on an arc of `span` radians, never below `min`. */
-function ringRadius(n: number, span: number, min: number): number {
-  return n === 0 ? 0 : Math.max(min, Math.ceil((n * SLOT) / span));
+/** Distance between two moon rings: a moon, its two label lines and some air. */
+export const RING_STEP = 2 * BODY_RADIUS.moon + LABEL_PAD + 12;
+
+/**
+ * Concentric rings for `n` moons on an arc of `span`: the innermost at `min`, each holding as many as fit with
+ * their labels, the next one `RING_STEP` further out. Many moons no longer stretch a single giant circle.
+ */
+export function packRings(n: number, span: number, min: number): { radius: number; count: number }[] {
+  const rings: { radius: number; count: number }[] = [];
+  let radius = min;
+  let left = n;
+  while (left > 0) {
+    const count = Math.min(left, Math.max(1, Math.floor((span * radius) / SLOT)));
+    rings.push({ radius, count });
+    left -= count;
+    radius += RING_STEP;
+  }
+  return rings;
+}
+
+/** Outer radius of the moon rings around a body (0 without moons). */
+const outerRing = (rings: { radius: number }[]) => (rings.length ? rings[rings.length - 1].radius : 0);
+
+/**
+ * Put `moons` (in order) on their rings around `centre`, fanned around `towards` over at most `span`.
+ * Every other ring is turned half a slot so the labels of neighbouring rings do not line up.
+ */
+function placeOnRings(
+  out: Map<number, Point>,
+  moons: OrbitBody[],
+  centre: Point,
+  rings: { radius: number; count: number }[],
+  towards: number,
+  span: number,
+  full: boolean,
+): void {
+  let next = 0;
+  rings.forEach((ring, index) => {
+    const arc = full ? span : Math.min(span, (ring.count * SLOT) / Math.max(ring.radius, 1));
+    const shift = index % 2 ? arc / ring.count / 2 : 0;
+    fan(ring.count, towards + shift, arc).forEach((a) => out.set(moons[next++].id, polar(centre, ring.radius, a)));
+  });
+}
+
+/** Moons of one body in drawing order: grouped by device group, then subnet, so related devices sit together. */
+function moonOrder(list: OrbitBody[]): OrbitBody[] {
+  const key = (v: number | null | undefined) => (v == null ? Number.MAX_SAFE_INTEGER : v);
+  return [...list].sort(
+    (a, b) => key(a.device.group_id) - key(b.device.group_id) || key(a.device.subnet_id) - key(b.device.subnet_id) || a.id - b.id,
+  );
 }
 
 /** Angles of `n` items spread evenly over `span`, centred on `centre`. */
@@ -76,7 +123,7 @@ export function layoutOrbit(bodies: Map<number, OrbitBody>): Map<number, Point> 
   function extent(p: OrbitBody): number {
     if (extentCache.has(p.id)) return extentCache.get(p.id)!;
     const n = moons.get(p.id)?.length ?? 0;
-    const value = n ? ringRadius(n, MOON_FAN, MOON_RING_MIN) + BODY_RADIUS.moon + LABEL_PAD : BODY_RADIUS.planet + LABEL_PAD;
+    const value = n ? outerRing(packRings(n, MOON_FAN, MOON_RING_MIN)) + BODY_RADIUS.moon + LABEL_PAD : BODY_RADIUS.planet + LABEL_PAD;
     extentCache.set(p.id, value);
     return value;
   }
@@ -100,11 +147,11 @@ export function layoutOrbit(bodies: Map<number, OrbitBody>): Map<number, Point> 
     const centre = { x: 0, y: 0 };
     local.set(root.id, centre);
 
-    // Moons of the star on their own ring around it
-    const starMoons = moons.get(root.id) ?? [];
-    const rStar = ringRadius(starMoons.length, TAU, STAR_MOON_RING_MIN);
-    fan(starMoons.length, -Math.PI / 2 + Math.PI / Math.max(1, starMoons.length), TAU).forEach((a, i) => local.set(starMoons[i].id, polar(centre, rStar, a)));
-    let reach = starMoons.length ? rStar + BODY_RADIUS.moon + LABEL_PAD : BODY_RADIUS.star + LABEL_PAD;
+    // Moons of the star on their own rings around it, as many rings as they need
+    const starMoons = moonOrder(moons.get(root.id) ?? []);
+    const starRings = packRings(starMoons.length, TAU, STAR_MOON_RING_MIN);
+    placeOnRings(local, starMoons, centre, starRings, -Math.PI / 2 + Math.PI / Math.max(1, starRings[0]?.count ?? 1), TAU, true);
+    let reach = starMoons.length ? outerRing(starRings) + BODY_RADIUS.moon + LABEL_PAD : BODY_RADIUS.star + LABEL_PAD;
 
     // Planets tier by tier, as a radial tree: every planet owns a sector of the circle, sized
     // by how much hangs below it, and its child planets share that sector. So a single core
@@ -132,10 +179,9 @@ export function layoutOrbit(bodies: Map<number, OrbitBody>): Map<number, Point> 
         const angle = s.start + s.span / 2;
         const pos = polar(centre, radius, angle);
         local.set(p.id, pos);
-        // The planet's moons, fanned away from the star
-        const own = moons.get(p.id) ?? [];
-        const rMoon = ringRadius(own.length, MOON_FAN, MOON_RING_MIN);
-        fan(own.length, angle, Math.min(MOON_FAN, (own.length * SLOT) / Math.max(rMoon, 1))).forEach((a, k) => local.set(own[k].id, polar(pos, rMoon, a)));
+        // The planet's moons, fanned away from the star, on as many rings as they need
+        const own = moonOrder(moons.get(p.id) ?? []);
+        placeOnRings(local, own, pos, packRings(own.length, MOON_FAN, MOON_RING_MIN), angle, MOON_FAN, false);
         // Split the sector among the child planets
         const kids = planets.get(p.id) ?? [];
         const wk = kids.map(weight);
