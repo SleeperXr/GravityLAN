@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- GravityUI orbit map, "Arrange automatically": many devices around the router or a switch no longer stretch one huge circle. They sit on several rings from the inside out, as many per ring as fit with their labels, and devices of the same group and subnet sit next to each other. A network with 40 devices and no links now needs about half the room.
 - Agent 0.3.12: the agent's readers for containers, cgroup limits, package updates, subnets and neighbours are split into smaller parts. What it reports is unchanged; GravityLAN offers the update so the new version can be rolled out and tested.
 
 ### Fixed
