@@ -1,3 +1,4 @@
+import asyncio
 import ipaddress
 import json
 import logging
@@ -68,10 +69,14 @@ async def _lookup_device_hostname(dev, ip: str, servers: tuple[str | None, str |
     """A device's hostname. With a second DNS server both servers are asked, their answers kept on the
     device for the editor, and the one the user picked wins (`lookup` is the usual resolver chain)."""
     primary, secondary = servers
-    found = await lookup(ip, dns_server=primary, use_cache=use_cache)
     if not secondary:
-        return found
-    names = await lookup_dns_names(ip, primary, secondary)
+        # Answers kept from a DNS 2 that is gone would stay pickable in the editor
+        dev.dns_names = None
+        return await lookup(ip, dns_server=primary, use_cache=use_cache)
+    # Asked side by side, so a slow or unreachable DNS 2 adds no wait to the usual lookup
+    found, names = await asyncio.gather(
+        lookup(ip, dns_server=primary, use_cache=use_cache), lookup_dns_names(ip, primary, secondary)
+    )
     dev.dns_names = json.dumps(names)
     return choose_hostname(found, names, dev.hostname_source)
 

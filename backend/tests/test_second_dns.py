@@ -132,6 +132,27 @@ async def test_refresh_all_follows_the_pick(client, db, auth, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_removing_dns2_drops_its_answers_and_picks(client, db, auth, monkeypatch):
+    dev = await _setup(db)
+    dev.dns_names, dev.hostname_source = '{"1": "nas.lan", "2": "nas.fritz.box"}', "dns2"
+    await db.commit()
+
+    assert (await client.post("/api/settings", json={"dns.server_secondary": ""}, headers=auth)).status_code == 200
+    await db.refresh(dev)
+    assert (dev.dns_names, dev.hostname_source) == (None, None)
+
+    # A refresh without DNS 2 also forgets answers kept from it
+    dev2 = Device(ip="192.0.2.31", display_name="x", dns_names='{"1": null, "2": "old.fritz.box"}')
+    db.add(dev2)
+    await db.commit()
+    monkeypatch.setattr("app.api.devices.resolve_hostname", AsyncMock(return_value="x.lan"))
+    monkeypatch.setattr("app.api.devices.get_vendor", lambda mac: None)
+    monkeypatch.setattr("app.scanner.arp.resolve_mac_addresses", AsyncMock())
+    body = (await client.post(f"/api/devices/{dev2.id}/refresh-info", headers=auth)).json()
+    assert body["dns_names"] is None
+
+
+@pytest.mark.asyncio
 async def test_second_dns_setting_must_be_an_ip(client, auth):
     bad = await client.post("/api/settings", json={"dns.server_secondary": "dns.example; rm -rf /"}, headers=auth)
     assert bad.status_code == 400

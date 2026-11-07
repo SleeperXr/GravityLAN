@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from pydantic import RootModel
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update as sa_update
 from app.services.stepup import require_step_up
 from app.database import get_db
 from app.models.device import Device, Service, DeviceGroup
@@ -221,6 +221,11 @@ async def update_settings(settings: SettingsUpdate, request: Request, db: AsyncS
         if validator and value:
             validator(value)
         await _store_setting(db, key, value)
+    if "dns.server_secondary" in values and not str(values["dns.server_secondary"] or "").strip():
+        # Without DNS 2 its kept answers and the picks made from them no longer apply
+        from app.services.cache_service import dashboard_cache
+        await db.execute(sa_update(Device).values(dns_names=None, hostname_source=None))
+        dashboard_cache.invalidate_all()
     await db.commit()
 
     # Apply log level if changed
