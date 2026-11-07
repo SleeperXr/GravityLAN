@@ -209,60 +209,72 @@ _VALIDATORS = {
 @router.post("", dependencies=[Depends(get_current_admin)])
 async def update_settings(settings: SettingsUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     """Update or create system settings."""
-    protected = SENSITIVE_KEYS.intersection(settings.root)
+    values = settings.root
+    _refuse_unwritable_keys(values)
+    await _confirm_grant_change(db, request, values)
+    _mirror_server_url(values)
+
+    for key, value in values.items():
+        # Validate known keys before persisting
+        validator = _VALIDATORS.get(key)
+        if validator and value:
+            validator(value)
+        await _store_setting(db, key, value)
+    await db.commit()
+
+    # Apply log level if changed
+    if "system.log_level" in values:
+        from app.services.log_streamer import apply_log_level
+        apply_log_level(values["system.log_level"])
+    return {"status": "success"}
+
+
+def _refuse_unwritable_keys(values: dict) -> None:
+    """The password and master token have their own flow; everything else must be on the allow-list."""
+    protected = SENSITIVE_KEYS.intersection(values)
     if protected:
         raise HTTPException(
             status_code=400,
             detail=f"{', '.join(sorted(protected))} cannot be changed here. Change the password under Settings > Access.",
         )
-    rejected = sorted(key for key in settings.root if not is_writable_key(key))
+    rejected = sorted(key for key in values if not is_writable_key(key))
     if rejected:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{', '.join(rejected)} cannot be changed through /api/settings.",
-        )
-    # Lengthening the step-up grant is itself an instance change (AP-12); the settings form sends every
-    # field on each save, so only an actual change asks for the password
+        raise HTTPException(status_code=400, detail=f"{', '.join(rejected)} cannot be changed through /api/settings.")
+
+
+async def _confirm_grant_change(db: AsyncSession, request: Request, values: dict) -> None:
+    """Lengthening the step-up grant is itself an instance change (AP-12).
+
+    The settings form sends every field on each save, so only an actual change asks for the password.
+    """
     from app.services import stepup
-    if stepup.SETTING_KEY in settings.root:
-        current = (await db.execute(select(Setting).where(Setting.key == stepup.SETTING_KEY))).scalar_one_or_none()
-        stored = current.value if current and current.value else str(stepup.DEFAULT_MINUTES)
-        if settings.root[stepup.SETTING_KEY] != stored:
-            stepup.check(request, "instance")
-    # Mirror server_url_override and server.url so UI and backend are always in sync
-    if "server_url_override" in settings.root and "server.url" not in settings.root:
-        settings.root["server.url"] = settings.root["server_url_override"]
-    elif "server.url" in settings.root and "server_url_override" not in settings.root:
-        settings.root["server_url_override"] = settings.root["server.url"]
+    if stepup.SETTING_KEY not in values:
+        return
+    current = (await db.execute(select(Setting).where(Setting.key == stepup.SETTING_KEY))).scalar_one_or_none()
+    stored = current.value if current and current.value else str(stepup.DEFAULT_MINUTES)
+    if values[stepup.SETTING_KEY] != stored:
+        stepup.check(request, "instance")
 
-    for key, value in settings.root.items():
-        # Validate known keys before persisting
-        validator = _VALIDATORS.get(key)
-        if validator and value:
-            validator(value)
 
-        if key == "scan_subnets":
-            # Scan subnets live in the Subnet table (#18); older clients still send the old
-            # comma-separated setting, so its entries are added there instead of stored here
-            await merge_subnets(db, [s for s in value.split(",") if s.strip()])
-            continue
+def _mirror_server_url(values: dict) -> None:
+    """server_url_override and server.url name the same thing: a save of one sets the other too."""
+    if "server_url_override" in values and "server.url" not in values:
+        values["server.url"] = values["server_url_override"]
+    elif "server.url" in values and "server_url_override" not in values:
+        values["server_url_override"] = values["server.url"]
 
-        result = await db.execute(select(Setting).where(Setting.key == key))
-        setting = result.scalar_one_or_none()
-        
-        if setting:
-            setting.value = value
-        else:
-            db.add(Setting(key=key, value=value))
-    
-    await db.commit()
-    
-    # Apply log level if changed
-    if "system.log_level" in settings.root:
-        from app.services.log_streamer import apply_log_level
-        apply_log_level(settings.root["system.log_level"])
-        
-    return {"status": "success"}
+
+async def _store_setting(db: AsyncSession, key: str, value: str) -> None:
+    if key == "scan_subnets":
+        # Scan subnets live in the Subnet table (#18); older clients still send the old
+        # comma-separated setting, so its entries are added there instead of stored here
+        await merge_subnets(db, [s for s in value.split(",") if s.strip()])
+        return
+    setting = (await db.execute(select(Setting).where(Setting.key == key))).scalar_one_or_none()
+    if setting:
+        setting.value = value
+    else:
+        db.add(Setting(key=key, value=value))
 
 
 def _drop_runtime_credentials() -> None:
