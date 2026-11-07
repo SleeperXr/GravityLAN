@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -283,6 +284,97 @@ def _compute_uptime_and_latency(
     return uptime_stats, latency_stats
 
 
+def _certificate_penalty(svc: ServiceHealthItem) -> int:
+    """Points lost for a certificate that runs out soon (none when the service ignores SSL)."""
+    days = svc.ssl_expiry_days
+    if getattr(svc, "ignore_ssl", False) or days is None:
+        return 0
+    if days <= 3:
+        return 15
+    if days <= 14:
+        return 5
+    return 0
+
+
+def _maintenance_penalty(agent: AgentHealthAlerts) -> int:
+    """Points lost for pending security patches and a needed reboot."""
+    return (10 if agent.patch_security > 0 else 0) + (5 if agent.reboot_required else 0)
+
+
+def _score_part_time_device(
+    dev: Device, latency: LatencyStats, services: list[ServiceHealthItem], agent: AgentHealthAlerts | None
+) -> tuple[int, str]:
+    """A device without offline alert (TV, PC, laptop, phone) may sleep; when on, only certificates and patches count."""
+    is_sleeping = (
+        not dev.is_online
+        or (dev.missed_scans or 0) > 0
+        or latency.current_ms is None
+        or bool(services and all(not s.is_up for s in services))
+    )
+    if is_sleeping:
+        return 100, "standby"
+
+    score = 100 - sum(_certificate_penalty(svc) for svc in services)
+    if agent and agent.is_active:
+        score -= _maintenance_penalty(agent)
+    return score, "healthy" if score >= 85 else "degraded"
+
+
+def _reachability_penalty(dev: Device, uptime: UptimeStats, latency: LatencyStats) -> int:
+    """Points lost for missed scans, uptime below 99 % and high latency."""
+    penalty = 0
+    if dev.missed_scans > 0:
+        penalty += min(30, dev.missed_scans * 15)
+    if uptime.uptime_pct < 99.0:
+        penalty += int((99.0 - uptime.uptime_pct) * 0.8)
+    if latency.avg_ms is not None:
+        if latency.avg_ms > 150:
+            penalty += 15
+        elif latency.avg_ms > 60:
+            penalty += 8
+    return penalty
+
+
+def _service_penalty(services: list[ServiceHealthItem]) -> int:
+    """20 points per service that is down; a running one can lose points for its certificate."""
+    return sum(20 if not svc.is_up else _certificate_penalty(svc) for svc in services)
+
+
+def _agent_host_gone(agent: AgentHealthAlerts | None, latency: LatencyStats, services: list[ServiceHealthItem]) -> bool:
+    """The agent stopped reporting and nothing else answers: the host counts as offline."""
+    return bool(
+        agent and agent.has_agent and not agent.is_active
+        and latency.current_ms is None
+        and (not services or all(not s.is_up for s in services))
+    )
+
+
+def _agent_penalty(agent: AgentHealthAlerts | None) -> int:
+    """Points lost for a silent agent, or for patches, reboot, CPU and temperature of an active one."""
+    if not (agent and agent.has_agent):
+        return 0
+    if not agent.is_active:
+        return 35
+    penalty = _maintenance_penalty(agent)
+    if agent.cpu_percent is not None and agent.cpu_percent > 90:
+        penalty += 10
+    if agent.temperature is not None and agent.temperature > 75:
+        penalty += 10
+    return penalty
+
+
+def _monitored_status(
+    dev: Device, score: int, latency: LatencyStats, services: list[ServiceHealthItem], agent: AgentHealthAlerts | None
+) -> str:
+    if dev.missed_scans > 0:
+        return "flapping"
+    if score < 60 or any(not s.is_up for s in services) or (agent and agent.has_agent and not agent.is_active):
+        return "critical"
+    if score < 85 or (latency.avg_ms and latency.avg_ms > 60):
+        return "degraded"
+    return "healthy"
+
+
 def _calculate_health_score(
     dev: Device,
     uptime: UptimeStats,
@@ -290,97 +382,181 @@ def _calculate_health_score(
     services: list[ServiceHealthItem],
     agent: AgentHealthAlerts | None
 ) -> tuple[int, str]:
-    is_alert_enabled = getattr(dev, "alert_offline", True)
+    """Score 0-100 and status of a device; 24/7 infrastructure is rated stricter than devices that may sleep."""
+    if not getattr(dev, "alert_offline", True):
+        return _score_part_time_device(dev, latency, services, agent)
 
-    if not is_alert_enabled:
-        # Non-24/7 client (e.g. TV, PC, laptop, phone)
-        # If it's not online, or has missed scans, or has no current latency, or all services are down:
-        is_sleeping = (
-            not dev.is_online
-            or (dev.missed_scans or 0) > 0
-            or latency.current_ms is None
-            or (services and all(not s.is_up for s in services))
-        )
-        if is_sleeping:
-            return 100, "standby"
-
-        # If it is currently on and reachable:
-        score = 100
-        for svc in services:
-            if not getattr(svc, "ignore_ssl", False) and svc.ssl_expiry_days is not None:
-                if svc.ssl_expiry_days <= 3:
-                    score -= 15
-                elif svc.ssl_expiry_days <= 14:
-                    score -= 5
-
-        if agent and agent.is_active:
-            if agent.patch_security > 0:
-                score -= 10
-            if agent.reboot_required:
-                score -= 5
-
-        status = "healthy" if score >= 85 else "degraded"
-        return score, status
-
-    # 24/7 Monitored Infrastructure (Servers, Gateways, Switches, APs)
+    # 24/7 monitored infrastructure (servers, gateways, switches, APs)
     if not dev.is_online:
         return 0, "offline"
 
-    score = 100
+    reachability = _reachability_penalty(dev, uptime, latency)
+    if _agent_host_gone(agent, latency, services):
+        return 0, "offline"
 
-    # Reachability & flapping penalties
-    if dev.missed_scans > 0:
-        score -= min(30, dev.missed_scans * 15)
-
-    # Uptime SLA penalty
-    if uptime.uptime_pct < 99.0:
-        score -= int((99.0 - uptime.uptime_pct) * 0.8)
-
-    # High latency penalty
-    if latency.avg_ms is not None:
-        if latency.avg_ms > 150:
-            score -= 15
-        elif latency.avg_ms > 60:
-            score -= 8
-
-    # Services down or expiring certificates
-    for svc in services:
-        if not svc.is_up:
-            score -= 20
-        elif not getattr(svc, "ignore_ssl", False) and svc.ssl_expiry_days is not None:
-            if svc.ssl_expiry_days <= 3:
-                score -= 15
-            elif svc.ssl_expiry_days <= 14:
-                score -= 5
-
-    # Agent host warnings
-    if agent and agent.has_agent:
-        if not agent.is_active:
-            if latency.current_ms is None and (not services or all(not s.is_up for s in services)):
-                return 0, "offline"
-            score -= 35
-        else:
-            if agent.patch_security > 0:
-                score -= 10
-            if agent.reboot_required:
-                score -= 5
-            if agent.cpu_percent is not None and agent.cpu_percent > 90:
-                score -= 10
-            if agent.temperature is not None and agent.temperature > 75:
-                score -= 10
-
+    score = 100 - reachability - _service_penalty(services) - _agent_penalty(agent)
     score = max(0, min(100, score))
+    return score, _monitored_status(dev, score, latency, services, agent)
 
-    if dev.missed_scans > 0:
-        status = "flapping"
-    elif score < 60 or any(not s.is_up for s in services) or (agent and agent.has_agent and not agent.is_active):
-        status = "critical"
-    elif score < 85 or (latency.avg_ms and latency.avg_ms > 60):
-        status = "degraded"
-    else:
-        status = "healthy"
 
-    return score, status
+_OVERVIEW_CRITICAL = ("offline", "service_down", "down")
+_DETAIL_CRITICAL = ("offline", "service_down")
+MAX_OVERVIEW_INCIDENTS = 40
+MAX_DETAIL_POINTS = 120
+# What an agent block shows before the agent's first report
+_NO_METRICS = SimpleNamespace(
+    cpu_percent=None, ram_percent=None, temperature=None, patch_available=0, patch_security=0,
+    reboot_required=False, major_upgrade_available=None,
+)
+
+
+def _display_name(dev: Device) -> str:
+    return dev.display_name or dev.hostname or dev.ip
+
+
+def _service_items(dev: Device) -> list[ServiceHealthItem]:
+    return [
+        ServiceHealthItem(
+            id=s.id,
+            name=s.name,
+            protocol=s.protocol,
+            port=s.port,
+            is_up=s.is_up,
+            latency_ms=s.latency_ms,
+            ssl_expiry_days=s.ssl_expiry_days,
+            ignore_ssl=bool(s.ignore_ssl),
+        )
+        for s in dev.services
+    ]
+
+
+def _agent_alerts(
+    dev: Device, agent_token: AgentToken | None, metric: DeviceMetrics | None, now: datetime, interval: int | None
+) -> AgentHealthAlerts | None:
+    """The agent block of a device that has an agent or a token; None otherwise."""
+    if not (dev.has_agent or agent_token):
+        return None
+    is_active = bool(
+        agent_token
+        and agent_token.last_seen
+        and (now - ensure_utc(agent_token.last_seen)).total_seconds() < active_window(interval)
+    )
+    m = metric or _NO_METRICS
+    return AgentHealthAlerts(
+        has_agent=True,
+        agent_version=agent_token.agent_version if agent_token else None,
+        is_active=is_active,
+        cpu_percent=m.cpu_percent,
+        ram_percent=m.ram_percent,
+        temperature=m.temperature,
+        patch_available=m.patch_available,
+        patch_security=m.patch_security,
+        reboot_required=m.reboot_required,
+        major_upgrade_available=m.major_upgrade_available,
+    )
+
+
+def _device_item(
+    dev: Device,
+    score: int,
+    status: str,
+    latency: LatencyStats,
+    uptime: UptimeStats,
+    services: list[ServiceHealthItem],
+    agent: AgentHealthAlerts | None,
+) -> DeviceHealthItem:
+    return DeviceHealthItem(
+        id=dev.id,
+        ip=dev.ip,
+        display_name=_display_name(dev),
+        hostname=dev.hostname,
+        device_type=dev.device_type,
+        group_id=dev.group_id,
+        group_name=dev.group.name if dev.group else None,
+        is_online=dev.is_online,
+        alert_offline=bool(dev.alert_offline),
+        missed_scans=dev.missed_scans or 0,
+        health_score=score,
+        health_status=status,
+        latency=latency,
+        uptime=uptime,
+        services=services,
+        agent=agent,
+        ip_changed_at=ensure_utc(dev.ip_changed_at),
+        status_changed_at=ensure_utc(dev.status_changed_at),
+        last_seen=ensure_utc(dev.last_seen),
+    )
+
+
+def _hidden_while_asleep(dev: Device, status: str) -> bool:
+    """A device that may sleep (no offline alert) does not report going offline or flapping."""
+    return not getattr(dev, "alert_offline", True) and status in ("offline", "flapping")
+
+
+def _incident(hist: DeviceHistory, dev: Device, critical: tuple[str, ...], now: datetime) -> HealthIncident:
+    severity = "critical" if hist.status in critical else "warn" if hist.status == "flapping" else "info"
+    return HealthIncident(
+        id=hist.id,
+        device_id=dev.id,
+        device_name=_display_name(dev),
+        device_ip=dev.ip,
+        status=hist.status,
+        severity=severity,
+        message=hist.message,
+        timestamp=ensure_utc(hist.timestamp) or now,
+    )
+
+
+def _overview_incidents(rows, now: datetime) -> list[HealthIncident]:
+    incidents: list[HealthIncident] = []
+    for hist, dev in rows:
+        if _hidden_while_asleep(dev, hist.status):
+            continue
+        incidents.append(_incident(hist, dev, _OVERVIEW_CRITICAL, now))
+        if len(incidents) >= MAX_OVERVIEW_INCIDENTS:
+            break
+    return incidents
+
+
+def _ssl_warning(svc: ServiceHealthItem) -> bool:
+    return not svc.ignore_ssl and svc.ssl_expiry_days is not None and svc.ssl_expiry_days <= 14
+
+
+def _rounded_mean(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 1) if values else None
+
+
+def _overview_kpis(items: list[DeviceHealthItem]) -> HealthOverviewKPIs:
+    """Network-wide figures over the device entries of the overview."""
+    scores = [d.health_score for d in items]
+    alerting = [d for d in items if getattr(d, "alert_offline", True)]
+    return HealthOverviewKPIs(
+        network_health_score=round(sum(scores) / len(scores)) if scores else 100,
+        total_devices=len(items),
+        online_devices=sum(1 for d in items if d.is_online and d.health_status != "offline"),
+        offline_devices=sum(1 for d in alerting if not d.is_online or d.health_status == "offline"),
+        flapping_devices=sum(1 for d in items if d.health_status == "flapping"),
+        avg_latency_ms=_rounded_mean([d.latency.avg_ms for d in items if d.latency.avg_ms is not None]),
+        avg_jitter_ms=_rounded_mean([d.latency.jitter_ms for d in items if d.latency.jitter_ms is not None]),
+        active_issues_count=sum(1 for d in alerting if d.health_status in ("offline", "critical", "flapping")),
+        ssl_warning_count=sum(1 for d in items for s in d.services if _ssl_warning(s)),
+        patch_warning_count=sum(1 for d in items if d.agent and (d.agent.patch_security > 0 or d.agent.reboot_required)),
+    )
+
+
+def _empty_overview(period: str) -> HealthOverviewResponse:
+    return HealthOverviewResponse(
+        kpis=HealthOverviewKPIs(
+            network_health_score=100,
+            total_devices=0,
+            online_devices=0,
+            offline_devices=0,
+            flapping_devices=0,
+        ),
+        devices=[],
+        recent_incidents=[],
+        period=period,
+    )
 
 
 @router.get("/overview", response_model=HealthOverviewResponse)
@@ -404,18 +580,7 @@ async def get_health_overview(
     device_ids = [d.id for d in devices]
 
     if not device_ids:
-        return HealthOverviewResponse(
-            kpis=HealthOverviewKPIs(
-                network_health_score=100,
-                total_devices=0,
-                online_devices=0,
-                offline_devices=0,
-                flapping_devices=0
-            ),
-            devices=[],
-            recent_incidents=[],
-            period=period
-        )
+        return _empty_overview(period)
 
     # 2. Fetch agent tokens & latest metrics in bulk
     res_tokens = await db.execute(select(AgentToken).where(AgentToken.device_id.in_(device_ids)))
@@ -446,145 +611,44 @@ async def get_health_overview(
         .order_by(DeviceHistory.timestamp.desc())
         .limit(60)
     )
-    recent_incidents = []
-    for hist, dev in res_incidents.all():
-        if not getattr(dev, "alert_offline", True) and hist.status in ("offline", "flapping"):
-            continue
-        sev = (
-            "critical"
-            if hist.status in ("offline", "service_down", "down")
-            else "warn"
-            if hist.status == "flapping"
-            else "info"
-        )
-        recent_incidents.append(HealthIncident(
-            id=hist.id,
-            device_id=dev.id,
-            device_name=dev.display_name or dev.hostname or dev.ip,
-            device_ip=dev.ip,
-            status=hist.status,
-            severity=sev,
-            message=hist.message,
-            timestamp=ensure_utc(hist.timestamp) or now
-        ))
-        if len(recent_incidents) >= 40:
-            break
+    recent_incidents = _overview_incidents(res_incidents.all(), now)
 
     # 5. Assemble per-device health models
     device_items: list[DeviceHealthItem] = []
-    total_scores = []
-    valid_avg_latencies = []
-    valid_avg_jitters = []
-    flapping_count = 0
-    ssl_warning_count = 0
-    patch_warning_count = 0
-
     for dev in devices:
-        dev_samples = samples_by_dev.get(dev.id, [])
-        uptime_stats, latency_stats = _compute_uptime_and_latency(dev, dev_samples, now, window_start, bucket_count)
-
-        # Services
-        service_items = [
-            ServiceHealthItem(
-                id=s.id,
-                name=s.name,
-                protocol=s.protocol,
-                port=s.port,
-                is_up=s.is_up,
-                latency_ms=s.latency_ms,
-                ssl_expiry_days=s.ssl_expiry_days,
-                ignore_ssl=bool(s.ignore_ssl),
-            )
-            for s in dev.services
-        ]
-        for s in service_items:
-            if not s.ignore_ssl and s.ssl_expiry_days is not None and s.ssl_expiry_days <= 14:
-                ssl_warning_count += 1
-
-        # Agent alerts
-        agent_token = tokens_by_dev.get(dev.id)
-        agent_alerts = None
-        if dev.has_agent or agent_token:
-            m = metrics_by_dev.get(dev.id)
-            is_active = bool(agent_token and agent_token.last_seen and (now - ensure_utc(agent_token.last_seen)).total_seconds() < active_window(intervals.get(dev.id)))
-            agent_alerts = AgentHealthAlerts(
-                has_agent=True,
-                agent_version=agent_token.agent_version if agent_token else None,
-                is_active=is_active,
-                cpu_percent=m.cpu_percent if m else None,
-                ram_percent=m.ram_percent if m else None,
-                temperature=m.temperature if m else None,
-                patch_available=m.patch_available if m else 0,
-                patch_security=m.patch_security if m else 0,
-                reboot_required=m.reboot_required if m else False,
-                major_upgrade_available=m.major_upgrade_available if m else None
-            )
-            if agent_alerts.patch_security > 0 or agent_alerts.reboot_required:
-                patch_warning_count += 1
-
-        # Health score & status
-        health_score, health_status = _calculate_health_score(dev, uptime_stats, latency_stats, service_items, agent_alerts)
-        total_scores.append(health_score)
-
-        if health_status == "flapping":
-            flapping_count += 1
-
-        if latency_stats.avg_ms is not None:
-            valid_avg_latencies.append(latency_stats.avg_ms)
-        if latency_stats.jitter_ms is not None:
-            valid_avg_jitters.append(latency_stats.jitter_ms)
-
-        device_items.append(DeviceHealthItem(
-            id=dev.id,
-            ip=dev.ip,
-            display_name=dev.display_name or dev.hostname or dev.ip,
-            hostname=dev.hostname,
-            device_type=dev.device_type,
-            group_id=dev.group_id,
-            group_name=dev.group.name if dev.group else None,
-            is_online=dev.is_online,
-            alert_offline=bool(dev.alert_offline),
-            missed_scans=dev.missed_scans or 0,
-            health_score=health_score,
-            health_status=health_status,
-            latency=latency_stats,
-            uptime=uptime_stats,
-            services=service_items,
-            agent=agent_alerts,
-            ip_changed_at=ensure_utc(dev.ip_changed_at),
-            status_changed_at=ensure_utc(dev.status_changed_at),
-            last_seen=ensure_utc(dev.last_seen),
-        ))
-
-    # Overall KPIs
-    avg_score = round(sum(total_scores) / len(total_scores)) if total_scores else 100
-    avg_lat = round(sum(valid_avg_latencies) / len(valid_avg_latencies), 1) if valid_avg_latencies else None
-    avg_jit = round(sum(valid_avg_jitters) / len(valid_avg_jitters), 1) if valid_avg_jitters else None
-    online_count = sum(1 for d in device_items if d.is_online and d.health_status != "offline")
-    offline_count = sum(1 for d in device_items if (not d.is_online or d.health_status == "offline") and getattr(d, 'alert_offline', True))
-
-    kpis = HealthOverviewKPIs(
-        network_health_score=avg_score,
-        total_devices=len(device_items),
-        online_devices=online_count,
-        offline_devices=offline_count,
-        flapping_devices=flapping_count,
-        avg_latency_ms=avg_lat,
-        avg_jitter_ms=avg_jit,
-        active_issues_count=len([
-            d for d in device_items
-            if d.health_status in ("offline", "critical", "flapping")
-            and getattr(d, 'alert_offline', True)
-        ]),
-        ssl_warning_count=ssl_warning_count,
-        patch_warning_count=patch_warning_count,
-    )
+        uptime_stats, latency_stats = _compute_uptime_and_latency(
+            dev, samples_by_dev.get(dev.id, []), now, window_start, bucket_count
+        )
+        service_items = _service_items(dev)
+        agent_alerts = _agent_alerts(dev, tokens_by_dev.get(dev.id), metrics_by_dev.get(dev.id), now, intervals.get(dev.id))
+        score, status = _calculate_health_score(dev, uptime_stats, latency_stats, service_items, agent_alerts)
+        device_items.append(_device_item(dev, score, status, latency_stats, uptime_stats, service_items, agent_alerts))
 
     return HealthOverviewResponse(
-        kpis=kpis,
+        kpis=_overview_kpis(device_items),
         devices=device_items,
         recent_incidents=recent_incidents,
         period=period
+    )
+
+
+def _downsample(samples: list, limit: int = MAX_DETAIL_POINTS) -> list:
+    """At most ``limit`` evenly spread samples, the newest always kept, so 7d/30d charts stay light."""
+    if len(samples) <= limit:
+        return samples
+    step = len(samples) / float(limit)
+    return [samples[int(i * step)] for i in range(limit - 1)] + [samples[-1]]
+
+
+def _sample_point(s, now: datetime) -> HealthSamplePoint:
+    return HealthSamplePoint(
+        timestamp=ensure_utc(s.timestamp) or now,
+        is_online=s.is_online,
+        latency_ms=round(s.latency_ms, 2) if s.latency_ms is not None else None,
+        probe_type=s.probe_type,
+        ports_up=round(s.ports_up),
+        ports_total=s.ports_total,
+        uptime_pct=s.uptime_pct,
     )
 
 
@@ -635,104 +699,21 @@ async def get_device_health_detail(
         .order_by(DeviceHistory.timestamp.desc())
         .limit(50)
     )
-    incidents = []
-    for h in res_hist.scalars().all():
-        if not getattr(dev, "alert_offline", True) and h.status in ("offline", "flapping"):
-            continue
-        sev = "critical" if h.status in ("offline", "service_down") else "warn" if h.status == "flapping" else "info"
-        incidents.append(HealthIncident(
-            id=h.id,
-            device_id=dev.id,
-            device_name=dev.display_name or dev.hostname or dev.ip,
-            device_ip=dev.ip,
-            status=h.status,
-            severity=sev,
-            message=h.message,
-            timestamp=ensure_utc(h.timestamp) or now
-        ))
+    incidents = [
+        _incident(h, dev, _DETAIL_CRITICAL, now)
+        for h in res_hist.scalars().all()
+        if not _hidden_while_asleep(dev, h.status)
+    ]
 
     # Compute stats
     uptime_stats, latency_stats = _compute_uptime_and_latency(dev, samples, now, window_start, bucket_count)
-
-    services = [
-        ServiceHealthItem(
-            id=s.id,
-            name=s.name,
-            protocol=s.protocol,
-            port=s.port,
-            is_up=s.is_up,
-            latency_ms=s.latency_ms,
-            ssl_expiry_days=s.ssl_expiry_days,
-            ignore_ssl=bool(s.ignore_ssl),
-        )
-        for s in dev.services
-    ]
-
-    agent_alerts = None
-    if dev.has_agent or agent_token:
-        intervals = await load_intervals(db)
-        is_active = bool(agent_token and agent_token.last_seen and (now - ensure_utc(agent_token.last_seen)).total_seconds() < active_window(intervals.get(dev.id)))
-        agent_alerts = AgentHealthAlerts(
-            has_agent=True,
-            agent_version=agent_token.agent_version if agent_token else None,
-            is_active=is_active,
-            cpu_percent=latest_metric.cpu_percent if latest_metric else None,
-            ram_percent=latest_metric.ram_percent if latest_metric else None,
-            temperature=latest_metric.temperature if latest_metric else None,
-            patch_available=latest_metric.patch_available if latest_metric else 0,
-            patch_security=latest_metric.patch_security if latest_metric else 0,
-            reboot_required=latest_metric.reboot_required if latest_metric else False,
-            major_upgrade_available=latest_metric.major_upgrade_available if latest_metric else None
-        )
-
+    services = _service_items(dev)
+    intervals = await load_intervals(db) if (dev.has_agent or agent_token) else {}
+    agent_alerts = _agent_alerts(dev, agent_token, latest_metric, now, intervals.get(dev.id))
     score, status = _calculate_health_score(dev, uptime_stats, latency_stats, services, agent_alerts)
 
-    device_item = DeviceHealthItem(
-        id=dev.id,
-        ip=dev.ip,
-        display_name=dev.display_name or dev.hostname or dev.ip,
-        hostname=dev.hostname,
-        device_type=dev.device_type,
-        group_id=dev.group_id,
-        group_name=dev.group.name if dev.group else None,
-        is_online=dev.is_online,
-        alert_offline=bool(dev.alert_offline),
-        missed_scans=dev.missed_scans or 0,
-        health_score=score,
-        health_status=status,
-        latency=latency_stats,
-        uptime=uptime_stats,
-        services=services,
-        agent=agent_alerts,
-        ip_changed_at=ensure_utc(dev.ip_changed_at),
-        status_changed_at=ensure_utc(dev.status_changed_at),
-        last_seen=ensure_utc(dev.last_seen),
-    )
-
-    # Downsample time_series points to prevent browser canvas freeze on 7d/30d
-    MAX_DETAIL_POINTS = 120
-    if len(samples) > MAX_DETAIL_POINTS:
-        step = len(samples) / float(MAX_DETAIL_POINTS)
-        selected_samples = [samples[int(i * step)] for i in range(MAX_DETAIL_POINTS - 1)]
-        selected_samples.append(samples[-1])
-    else:
-        selected_samples = samples
-
-    time_series = [
-        HealthSamplePoint(
-            timestamp=ensure_utc(s.timestamp) or now,
-            is_online=s.is_online,
-            latency_ms=round(s.latency_ms, 2) if s.latency_ms is not None else None,
-            probe_type=s.probe_type,
-            ports_up=round(s.ports_up),
-            ports_total=s.ports_total,
-            uptime_pct=s.uptime_pct,
-        )
-        for s in selected_samples
-    ]
-
     return DeviceHealthDetailResponse(
-        device=device_item,
-        time_series=time_series,
+        device=_device_item(dev, score, status, latency_stats, uptime_stats, services, agent_alerts),
+        time_series=[_sample_point(s, now) for s in _downsample(samples)],
         incidents=incidents
     )
