@@ -1,4 +1,5 @@
 import ipaddress
+import json
 import logging
 import re
 
@@ -13,7 +14,7 @@ from app.models.device import Device, DeviceGroup, Service
 from app.models.agent import AgentToken
 from app.scanner.vendor import get_vendor
 from app.services.cache_service import topology_cache, dashboard_cache
-from app.scanner.hostname import resolve_hostname, is_ip_like
+from app.scanner.hostname import HOSTNAME_SOURCES, choose_hostname, lookup_dns_names, resolve_hostname, is_ip_like
 from app.services.interface_service import annotate_primary_subnets, device_for_interface_ip
 from app.schemas.device import (
     DeviceResponse,
@@ -53,6 +54,40 @@ async def _dns_server(db: AsyncSession) -> str | None:
     from app.models.setting import Setting
     row = (await db.execute(select(Setting).where(Setting.key == "dns.server"))).scalar_one_or_none()
     return row.value if row else None
+
+
+async def _dns_servers(db: AsyncSession) -> tuple[str | None, str | None]:
+    """DNS 1 and DNS 2 from the settings; empty values count as unset."""
+    from app.models.setting import Setting
+    rows = (await db.execute(select(Setting).where(Setting.key.in_(("dns.server", "dns.server_secondary"))))).scalars().all()
+    values = {r.key: (r.value or "").strip() or None for r in rows}
+    return values.get("dns.server"), values.get("dns.server_secondary")
+
+
+async def _lookup_device_hostname(dev, ip: str, servers: tuple[str | None, str | None], lookup, use_cache: bool = True) -> str | None:
+    """A device's hostname. With a second DNS server both servers are asked, their answers kept on the
+    device for the editor, and the one the user picked wins (`lookup` is the usual resolver chain)."""
+    primary, secondary = servers
+    found = await lookup(ip, dns_server=primary, use_cache=use_cache)
+    if not secondary:
+        return found
+    names = await lookup_dns_names(ip, primary, secondary)
+    dev.dns_names = json.dumps(names)
+    return choose_hostname(found, names, dev.hostname_source)
+
+
+def _set_hostname_source(device, source: str | None) -> None:
+    """Pin the DNS server that names the device; a pinned server that answered sets the hostname right away."""
+    device.hostname_source = source if source in HOSTNAME_SOURCES else None
+    if not device.hostname_source or not device.dns_names:
+        return
+    try:
+        names = json.loads(device.dns_names)
+    except ValueError:
+        return
+    name = names.get(device.hostname_source[-1]) if isinstance(names, dict) else None
+    if name:
+        _apply_hostname(device, name)
 
 
 @router.get("", response_model=list[DeviceResponse])
@@ -116,10 +151,11 @@ async def list_devices(
     return responses
 
 
-async def _refresh_device_metadata(dev, ip: str, mac_map: dict[str, str], dns_server: str | None) -> bool:
+async def _refresh_device_metadata(dev, ip: str, mac_map: dict[str, str], servers: tuple[str | None, str | None]) -> bool:
     """Fill a missing MAC, update the vendor and the hostname; True when anything changed."""
     from app.scanner.hostname import resolve_hostname as lookup_hostname, is_ip_like as ip_like
 
+    names_before = dev.dns_names
     changed = False
     if not dev.mac and ip in mac_map:
         dev.mac = mac_map[ip]
@@ -128,16 +164,16 @@ async def _refresh_device_metadata(dev, ip: str, mac_map: dict[str, str], dns_se
     if new_vendor and dev.vendor != new_vendor:
         dev.vendor = new_vendor
         changed = True
-    new_hostname = await lookup_hostname(ip, dns_server=dns_server)
+    new_hostname = await _lookup_device_hostname(dev, ip, servers, lookup_hostname)
     if new_hostname and dev.hostname != new_hostname:
         dev.hostname = new_hostname
         if ip_like(dev.display_name) and not ip_like(new_hostname):
             dev.display_name = new_hostname.split('.')[0]
         changed = True
-    return changed
+    return changed or dev.dns_names != names_before
 
 
-async def _bulk_metadata_refresh(devices_to_refresh, dns_server: str | None) -> None:
+async def _bulk_metadata_refresh(devices_to_refresh, servers: tuple[str | None, str | None]) -> None:
     """Background part of refresh-all: one ARP sweep, then each device in its own session."""
     from app.database import async_session
     from app.scanner.arp import resolve_mac_addresses
@@ -152,7 +188,7 @@ async def _bulk_metadata_refresh(devices_to_refresh, dns_server: str | None) -> 
         try:
             async with async_session() as local_db:
                 dev = await local_db.get(Device, d_id)
-                if dev and await _refresh_device_metadata(dev, d_ip, mac_map, dns_server):
+                if dev and await _refresh_device_metadata(dev, d_ip, mac_map, servers):
                     await local_db.commit()
                     updated += 1
         except Exception as e:
@@ -169,8 +205,7 @@ async def refresh_all_devices(background_tasks: BackgroundTasks, db: AsyncSessio
     """Trigger a metadata refresh (DNS, MAC, Vendor) for all known devices."""
     try:
         devices_to_refresh = (await db.execute(select(Device.id, Device.ip, Device.display_name))).all()
-        dns_server = await _dns_server(db)
-        background_tasks.add_task(_bulk_metadata_refresh, devices_to_refresh, dns_server)
+        background_tasks.add_task(_bulk_metadata_refresh, devices_to_refresh, await _dns_servers(db))
         return {"status": "success", "message": f"Bulk metadata refresh (DNS/MAC/Vendor) started for {len(devices_to_refresh)} devices"}
     except Exception as e:
         logger.error(f"Refresh all failed: {e}")
@@ -280,6 +315,8 @@ async def update_device(
         raise HTTPException(status_code=404, detail="Device not found")
 
     update_data = update.model_dump(exclude_unset=True)
+    if "hostname_source" in update_data:
+        _set_hostname_source(device, update_data.pop("hostname_source"))
     for field, value in update_data.items():
         setattr(device, field, value)
 
@@ -381,7 +418,7 @@ async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=404, detail="Device not found")
     
     # 1. Hostname (a user's request always looks again instead of answering from the cache)
-    new_hostname = await resolve_hostname(device.ip, dns_server=await _dns_server(db), use_cache=False)
+    new_hostname = await _lookup_device_hostname(device, device.ip, await _dns_servers(db), resolve_hostname, use_cache=False)
     if new_hostname:
         _apply_hostname(device, new_hostname)
 

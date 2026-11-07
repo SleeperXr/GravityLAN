@@ -115,6 +115,10 @@ class Device(Base):
     topology_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_ports: Mapped[int] = mapped_column(Integer, default=24)
     topology_config: Mapped[str | None] = mapped_column(Text, nullable=True) # JSON config for handles, etc.
+    # With a second DNS server: what each one calls the device ({"1": name, "2": name}, JSON) and
+    # which of them the user picked for the hostname (None: automatic, "dns1", "dns2")
+    dns_names: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hostname_source: Mapped[str | None] = mapped_column(String(10), nullable=True)
     is_wlan: Mapped[bool] = mapped_column(Boolean, default=False)
     is_ap: Mapped[bool] = mapped_column(Boolean, default=False)
     is_host: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -30,7 +30,7 @@ SENSITIVE_KEYS = {"api.master_token", "api.admin_password"}
 WRITABLE_KEYS = frozenset({
     # Settings page (React useSettingsForm, Vue SettingsView)
     "scan_interval", "quick_scan_interval", "scan_timeout", "scanner.offline_threshold",
-    "scanner.health_probe_interval", "dns.server", "history_retention_days",
+    "scanner.health_probe_interval", "dns.server", "dns.server_secondary", "history_retention_days",
     "server_url_override", "server.url", "system.log_level", "ui.start_page", "ui.default_frontend",
     "ui.health_resilience",
     # Network view groups, topology flow controls, GravityUI appearance
@@ -196,6 +196,7 @@ _VALIDATORS = {
     "server.url": _validate_server_url,
     "server_url_override": _validate_server_url,
     "dns.server": _validate_dns_server,
+    "dns.server_secondary": _validate_dns_server,
     "scan_subnets": _validate_scan_subnets,
     "scanner.offline_threshold": _validate_offline_threshold,
     "ui.start_page": _validate_start_page,

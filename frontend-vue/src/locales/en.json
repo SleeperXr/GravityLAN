@@ -756,6 +756,16 @@
       "apply": "Apply & arrange",
       "applied": "Network applied and arranged",
       "partly_failed": "Arranged, but {{n}} links could not be saved"
+    },
+    "dns": {
+      "secondary_title": "Second DNS server",
+      "secondary_desc": "Optional, e.g. the router next to Pi-hole. \"Refresh info\" then asks both and shows on the device which name comes from where; pick there which one counts.",
+      "names_title": "Names from the DNS servers",
+      "no_answer": "no answer",
+      "source_label": "Hostname from",
+      "source_auto": "Automatic",
+      "source_dns": "From DNS {{n}}",
+      "source_saved": "Hostname now: {{name}}"
     }
   }
 }

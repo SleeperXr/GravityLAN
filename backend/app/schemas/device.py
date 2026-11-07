@@ -1,7 +1,9 @@
 """Pydantic schemas for device-related API requests and responses."""
 
+import json
 import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -156,6 +158,9 @@ class DeviceResponse(BaseModel):
     topology_y: int | None = None
     max_ports: int | None = None
     topology_config: str | None = None
+    # What DNS 1 and DNS 2 call the device (only with a second DNS server) and which one the user picked
+    dns_names: dict[str, str | None] | None = None
+    hostname_source: str | None = None
     is_wlan: bool = False
     is_ap: bool = False
     is_host: bool = False
@@ -172,6 +177,17 @@ class DeviceResponse(BaseModel):
     interfaces: list[DeviceInterfaceResponse] = []
 
     model_config = {"from_attributes": True}
+
+    @field_validator("dns_names", mode="before")
+    @classmethod
+    def _parse_dns_names(cls, value):
+        """The column holds JSON; anything unreadable counts as "not asked yet"."""
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                return None
+        return value if isinstance(value, dict) else None
 
 
 class DeviceUpdate(BaseModel):
@@ -211,6 +227,8 @@ class DeviceUpdate(BaseModel):
     is_host: bool | None = None
     # Parent host (for VMs)
     parent_id: int | None = None
+    # Which DNS server names the device; "auto" hands it back to the usual lookup
+    hostname_source: Literal["auto", "dns1", "dns2"] | None = None
 
 
 class GroupResponse(BaseModel):

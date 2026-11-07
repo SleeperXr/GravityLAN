@@ -15,6 +15,9 @@ export interface Service {
   ignore_ssl?: boolean;
 }
 
+/** Which DNS server names a device; "auto" (only sent, never stored) hands it back to the usual lookup */
+export type HostnameSource = 'auto' | 'dns1' | 'dns2';
+
 export interface Device {
   id: number;
   ip: string;
@@ -71,6 +74,9 @@ export interface Device {
   topology_y: number | null;
   max_ports?: number | null;
   topology_config?: string | null;
+  /** With a second DNS server: what DNS 1 and DNS 2 call the device, and which one the user picked */
+  dns_names?: { '1'?: string | null; '2'?: string | null } | null;
+  hostname_source?: HostnameSource | null;
   is_wlan: boolean;
   is_ap: boolean;
   is_host: boolean;
