@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock
 
+import dns.message
 import pytest
 
 from app.models.device import Device
@@ -49,6 +50,41 @@ def test_query_ptr_asks_the_given_server(monkeypatch):
 
     monkeypatch.setattr(hostname.dns.resolver, "Resolver", Failing)
     assert hostname.query_ptr("192.0.2.30", None) is None
+
+
+_QUERY = dns.message.make_query("30.2.0.192.in-addr.arpa.", "PTR")
+
+
+@pytest.mark.parametrize(
+    "error, reason",
+    [
+        (hostname.dns.resolver.NXDOMAIN(), "no_entry"),
+        (hostname.dns.resolver.NoAnswer(), "no_entry"),
+        (hostname.dns.resolver.LifetimeTimeout(timeout=2.0, errors=[]), "timeout"),
+        (hostname.dns.resolver.NoNameservers(request=_QUERY, errors=[("192.0.2.2", False, 53, "REFUSED", None)]), "refused"),
+        (hostname.dns.resolver.NoNameservers(request=_QUERY, errors=[("192.0.2.2", False, 53, "SERVFAIL", None)]), "server_error"),
+        (OSError("network unreachable"), "error"),
+    ],
+)
+def test_ptr_lookup_says_why_there_is_no_name(monkeypatch, error, reason):
+    class Failing:
+        def __init__(self):
+            self.nameservers = []
+
+        def resolve(self, name, kind):
+            raise error
+
+    monkeypatch.setattr(hostname.dns.resolver, "Resolver", Failing)
+    assert hostname.ptr_lookup("192.0.2.30", "192.0.2.2") == (None, reason)
+
+
+@pytest.mark.asyncio
+async def test_lookup_dns_names_keeps_the_reasons(monkeypatch):
+    answers = {"192.0.2.1": ("nas.lan", None), "192.0.2.2": (None, "no_entry")}
+    monkeypatch.setattr(hostname, "ptr_lookup", lambda ip, server: answers[server])
+    assert await hostname.lookup_dns_names("192.0.2.30", "192.0.2.1", "192.0.2.2") == {
+        "1": "nas.lan", "2": None, "2_reason": "no_entry",
+    }
 
 
 async def _setup(db, secondary: str | None = "192.0.2.2") -> Device:
@@ -105,6 +141,24 @@ async def test_without_a_second_dns_nothing_changes(client, db, auth, monkeypatc
     body = (await client.patch(f"/api/devices/{dev.id}", json={"hostname_source": "dns2"}, headers=auth)).json()
     assert (body["hostname"], body["hostname_source"]) == ("nas.lan", "dns2")
     assert (await client.patch(f"/api/devices/{dev.id}", json={"hostname_source": "dns3"}, headers=auth)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_the_editor_gets_why_a_server_gave_no_name(client, db, auth, monkeypatch):
+    dev = await _setup(db)
+    monkeypatch.setattr("app.api.devices.resolve_hostname", AsyncMock(return_value="nas.lan"))
+    monkeypatch.setattr(
+        "app.api.devices.lookup_dns_names", AsyncMock(return_value={"1": "nas.lan", "2": None, "2_reason": "no_entry"})
+    )
+    monkeypatch.setattr("app.api.devices.get_vendor", lambda mac: None)
+
+    body = (await client.post(f"/api/devices/{dev.id}/refresh-info", headers=auth)).json()
+    assert body["dns_names"] == {"1": "nas.lan", "2": None}
+    assert body["dns_errors"] == {"2": "no_entry"}
+
+    # Answers stored before reasons existed carry none
+    dev.dns_names = '{"1": "nas.lan", "2": null}'
+    assert dev.dns_errors == {}
 
 
 @pytest.mark.asyncio

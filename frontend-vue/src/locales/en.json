@@ -765,7 +765,17 @@
       "source_label": "Hostname from",
       "source_auto": "Automatic",
       "source_dns": "From DNS {{n}}",
-      "source_saved": "Hostname now: {{name}}"
+      "source_saved": "Hostname now: {{name}}",
+      "reason_no_entry": "no entry",
+      "reason_no_entry_hint": "The server answered but has no name for this IP. Routers usually only know devices that got their IP from them via DHCP, not fixed IPs.",
+      "reason_timeout": "no answer (timeout)",
+      "reason_timeout_hint": "No DNS server answered at this address within 2 seconds: none set up, port 53 blocked or unreachable.",
+      "reason_refused": "refused",
+      "reason_refused_hint": "The server turned the query down, e.g. because it does not accept GravityLAN (the Docker host's IP) as a client.",
+      "reason_server_error": "server error",
+      "reason_server_error_hint": "The server could not answer (SERVFAIL), e.g. because its own forwarding failed.",
+      "reason_error": "error",
+      "reason_error_hint": "The query failed before a server could answer. The log has the details."
     }
   }
 }

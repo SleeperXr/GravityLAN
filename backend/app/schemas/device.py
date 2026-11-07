@@ -160,6 +160,8 @@ class DeviceResponse(BaseModel):
     topology_config: str | None = None
     # What DNS 1 and DNS 2 call the device (only with a second DNS server) and which one the user picked
     dns_names: dict[str, str | None] | None = None
+    # Why a server gave no name: no_entry, timeout, refused, server_error, error
+    dns_errors: dict[str, str] | None = None
     hostname_source: str | None = None
     is_wlan: bool = False
     is_ap: bool = False
@@ -187,7 +189,8 @@ class DeviceResponse(BaseModel):
                 value = json.loads(value)
             except ValueError:
                 return None
-        return value if isinstance(value, dict) else None
+        # The reasons stored next to the names go out as dns_errors
+        return {n: value.get(n) for n in ("1", "2")} if isinstance(value, dict) else None
 
 
 class DeviceUpdate(BaseModel):

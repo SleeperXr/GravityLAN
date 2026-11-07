@@ -76,6 +76,8 @@ export interface Device {
   topology_config?: string | null;
   /** With a second DNS server: what DNS 1 and DNS 2 call the device, and which one the user picked */
   dns_names?: { '1'?: string | null; '2'?: string | null } | null;
+  /** Why a server gave no name: no_entry, timeout, refused, server_error, error */
+  dns_errors?: { '1'?: string; '2'?: string } | null;
   hostname_source?: HostnameSource | null;
   is_wlan: boolean;
   is_ap: boolean;

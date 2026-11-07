@@ -1,5 +1,6 @@
 """SQLAlchemy ORM models for devices, groups, and services."""
 
+import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -119,6 +120,20 @@ class Device(Base):
     # which of them the user picked for the hostname (None: automatic, "dns1", "dns2")
     dns_names: Mapped[str | None] = mapped_column(Text, nullable=True)
     hostname_source: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+    @property
+    def dns_errors(self) -> dict[str, str] | None:
+        """Why DNS 1 or DNS 2 gave no name ({"2": "no_entry"}), kept in dns_names as "<n>_reason"."""
+        if not self.dns_names:
+            return None
+        try:
+            stored = json.loads(self.dns_names)
+        except ValueError:
+            return None
+        if not isinstance(stored, dict):
+            return None
+        return {n: stored[f"{n}_reason"] for n in ("1", "2") if isinstance(stored.get(f"{n}_reason"), str)}
+
     is_wlan: Mapped[bool] = mapped_column(Boolean, default=False)
     is_ap: Mapped[bool] = mapped_column(Boolean, default=False)
     is_host: Mapped[bool] = mapped_column(Boolean, default=False)
