@@ -109,6 +109,29 @@ async def test_refresh_services_falls_back_to_the_socket_scan(client, db, auth, 
 
 
 @pytest.mark.asyncio
+async def test_refresh_services_keeps_the_type_when_the_scan_recognises_nothing(client, db, auth, monkeypatch):
+    """The classifier answers "unknown" when no rule matches; that must not replace a known type."""
+    dev = await _device(db, device_type="nas", device_subtype="Synology")
+    monkeypatch.setattr("app.scanner.port_scanner.nmap_scan", AsyncMock(return_value=[12345]))
+
+    assert (await client.post(f"/api/devices/{dev.id}/refresh-services", headers=auth)).status_code == 200
+
+    await db.refresh(dev)
+    assert dev.device_type == "nas"
+
+
+@pytest.mark.asyncio
+async def test_refresh_services_still_sets_a_recognised_type(client, db, auth, monkeypatch):
+    dev = await _device(db, device_type="unknown")
+    monkeypatch.setattr("app.scanner.port_scanner.nmap_scan", AsyncMock(return_value=[22]))
+
+    assert (await client.post(f"/api/devices/{dev.id}/refresh-services", headers=auth)).status_code == 200
+
+    await db.refresh(dev)
+    assert dev.device_type == "server"
+
+
+@pytest.mark.asyncio
 async def test_refresh_services_unknown_device(client, auth):
     assert (await client.post("/api/devices/999/refresh-services", headers=auth)).status_code == 404
 

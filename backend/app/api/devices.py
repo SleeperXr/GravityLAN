@@ -507,7 +507,8 @@ async def refresh_device_services(device_id: int, db: AsyncSession = Depends(get
     
     # 2. Re-classify to update metadata based on new ports
     classification = classify_device({"ip": device.ip, "ports": open_ports})
-    if classification and classification.get("device_type") != "Unbekannt":
+    # The classifier answers "unknown" when no rule matches; that must not replace a known type
+    if classification and classification.get("device_type") not in ("unknown", "Unbekannt"):
         device.device_type = classification.get("device_type")
         if not device.icon:
             device.icon = classification.get("icon")
