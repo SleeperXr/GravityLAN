@@ -725,6 +725,37 @@
       "status_pending": "Pending",
       "status_failed": "Failed",
       "attempts": "Attempts: {{count}}/{{max}}"
+    },
+    "arrange": {
+      "title": "Build and arrange the network",
+      "description": "Say what each device is and what it hangs on. That becomes roles and links, then the map is laid out cleanly.",
+      "search": "Search device, host name or IP …",
+      "step_kinds": "1 · What is what",
+      "step_uplinks": "2 · Uplinks",
+      "step_clients": "3 · Assign devices",
+      "kinds_hint": "\"Automatic\" keeps what the map detected. Switches, access points and hosts become planets, clients become moons.",
+      "kind_auto": "Automatic ({{kind}})",
+      "kind_star": "Router / firewall",
+      "kind_switch": "Switch",
+      "kind_ap": "Access point",
+      "kind_host": "Host / server",
+      "kind_client": "Client",
+      "kind_of": "Kind of {{name}}",
+      "uplinks_hint": "What does each switch, access point and host hang on? Without a choice the existing link stays.",
+      "uplink_keep": "Leave unchanged",
+      "uplink_of": "Uplink of {{name}}",
+      "now_on": "now on {{name}}",
+      "no_hubs": "No switches, access points or hosts yet. Set them in the first step.",
+      "pick_hub": "Choose target …",
+      "assign": "Assign {{n}}",
+      "only_unassigned": "Unassigned only",
+      "clients_hint": "Choose a target, tick devices, press \"Assign\". Repeat as often as you like. VMs already hang on their host.",
+      "no_clients": "No matching clients.",
+      "summary": "{{links}} new links · {{removed}} removed · {{roles}} roles",
+      "only_arrange": "Only arrange",
+      "apply": "Apply & arrange",
+      "applied": "Network applied and arranged",
+      "partly_failed": "Arranged, but {{n}} links could not be saved"
     }
   }
 }

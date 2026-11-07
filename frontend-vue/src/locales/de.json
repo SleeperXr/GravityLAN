@@ -725,6 +725,37 @@
       "status_pending": "Wartend",
       "status_failed": "Fehlgeschlagen",
       "attempts": "Versuche: {{count}}/{{max}}"
+    },
+    "arrange": {
+      "title": "Netz aufbauen und anordnen",
+      "description": "Sag, was jedes Gerät ist und woran es hängt. Daraus entstehen Rollen und Verbindungen, danach wird die Karte sauber angeordnet.",
+      "search": "Gerät, Hostname oder IP suchen …",
+      "step_kinds": "1 · Was ist was",
+      "step_uplinks": "2 · Uplinks",
+      "step_clients": "3 · Geräte zuordnen",
+      "kinds_hint": "„Automatisch“ übernimmt, was die Karte erkannt hat. Switches, Access Points und Hosts werden Planeten, Endgeräte Monde.",
+      "kind_auto": "Automatisch ({{kind}})",
+      "kind_star": "Router / Firewall",
+      "kind_switch": "Switch",
+      "kind_ap": "Access Point",
+      "kind_host": "Host / Server",
+      "kind_client": "Endgerät",
+      "kind_of": "Art von {{name}}",
+      "uplinks_hint": "Woran hängt jeder Switch, Access Point und Host? Ohne Auswahl bleibt die bestehende Verbindung.",
+      "uplink_keep": "Unverändert lassen",
+      "uplink_of": "Uplink von {{name}}",
+      "now_on": "jetzt an {{name}}",
+      "no_hubs": "Noch keine Switches, Access Points oder Hosts. Lege sie im ersten Schritt fest.",
+      "pick_hub": "Ziel wählen …",
+      "assign": "{{n}} zuordnen",
+      "only_unassigned": "Nur nicht zugeordnete",
+      "clients_hint": "Ziel wählen, Geräte anhaken, „Zuordnen“ drücken. Beliebig oft wiederholbar. VMs hängen schon über ihren Host.",
+      "no_clients": "Keine passenden Endgeräte.",
+      "summary": "{{links}} neue Verbindungen · {{removed}} entfernt · {{roles}} Rollen",
+      "only_arrange": "Nur anordnen",
+      "apply": "Übernehmen & anordnen",
+      "applied": "Netz übernommen und angeordnet",
+      "partly_failed": "Angeordnet, aber {{n}} Verbindungen konnten nicht gespeichert werden"
     }
   }
 }

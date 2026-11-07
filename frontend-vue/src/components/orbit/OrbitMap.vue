@@ -39,6 +39,8 @@ import OrbitTracePanel from './OrbitTracePanel.vue';
 import OrbitLinkInspector from './OrbitLinkInspector.vue';
 import OrbitBodyInspector from './OrbitBodyInspector.vue';
 import OrbitResiliencePanel from './OrbitResiliencePanel.vue';
+import OrbitArrangeAssistant from './OrbitArrangeAssistant.vue';
+import type { ArrangePlan } from './orbitArrange';
 import { deviceLabel } from '@/lib/networks';
 import { t } from '@/i18n';
 
@@ -594,10 +596,47 @@ async function deleteLink() {
   }
 }
 
+const arrangeOpen = ref(false);
+const arrangeBusy = ref(false);
+
 /** Back to clean automatic orbits, saved as the user's arrangement. */
 async function arrange() {
   const ok = await confirm({ title: t('gv.plan.arrange'), message: t('gv.plan.arrange_confirm') });
   if (!ok) return;
+  arrangeOpen.value = false;
+  await layOut();
+}
+
+/** The assistant's plan: roles in one save, then the link changes, then clean orbits. */
+async function applyArrangePlan(plan: ArrangePlan) {
+  arrangeBusy.value = true;
+  let failed = 0;
+  try {
+    await appearance.setOrbitRoles(plan.roles);
+    for (const id of plan.removeLinkIds) {
+      await api.deleteTopologyLink(id).then(
+        () => (links.value = links.value.filter((l) => l.id !== id)),
+        () => failed++,
+      );
+    }
+    for (const link of plan.createLinks) {
+      await (api.createTopologyLink(link) as Promise<OrbitLink>).then(
+        (created) => (links.value = [...links.value, created]),
+        () => failed++,
+      );
+    }
+    arrangeOpen.value = false;
+    await layOut();
+    if (failed) showToast('error', t('gv.arrange.partly_failed', { n: failed }), '');
+    else showToast('success', t('gv.arrange.applied'), '');
+  } catch (err) {
+    showToast('error', t('notifications.save_failed'), (err as Error).message);
+  } finally {
+    arrangeBusy.value = false;
+  }
+}
+
+async function layOut() {
   const layout = autoOrbitLayout(orbitDevices.value, links.value, gatewayIds.value, appearance.orbitRoles);
   localPositions.value = new Map(layout);
   await Promise.all([...layout].map(([id, p]) => api.updateDevice(id, { topology_x: p.x, topology_y: p.y }).catch(() => {})));
@@ -1119,7 +1158,7 @@ useResizeObserver(svgRef, initialFit);
           </ul>
         </div>
       </div>
-      <Button v-if="editing" size="sm" @click="arrange"><Wand2 aria-hidden="true" />{{ t('gv.plan.arrange') }}</Button>
+      <Button v-if="editing" size="sm" data-test="orbit-arrange" @click="arrangeOpen = true"><Wand2 aria-hidden="true" />{{ t('gv.plan.arrange') }}</Button>
       <Button size="sm" :variant="editing ? 'primary' : 'secondary'" @click="toggleEditing">
         <component :is="editing ? Check : Pencil" aria-hidden="true" />
         {{ editing ? t('dashboard.edit_finish') : t('gv.plan.edit') }}
@@ -1150,6 +1189,15 @@ useResizeObserver(svgRef, initialFit);
       @open="emit('openDevice', selectedDevice)"
       @close="selectedDeviceId = null"
       @assign="(targetId) => { const tgt = bodies.get(targetId); if (tgt && selectedBody) assignOrbitToTarget(selectedBody.id, tgt); }"
+    />
+    <OrbitArrangeAssistant
+      v-model:open="arrangeOpen"
+      :bodies="bodies"
+      :links="links"
+      :roles="appearance.orbitRoles"
+      :busy="arrangeBusy"
+      @apply="applyArrangePlan"
+      @arrange-only="arrange"
     />
   </div>
 </template>
