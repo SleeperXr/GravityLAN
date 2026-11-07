@@ -24,42 +24,46 @@ from app.services.auth_service import hash_password, verify_password, looks_hash
 from app.services.session_service import session_store
 from app.services.agent_telemetry import _setting_cache
 
+_READ_METHODS = ("GET", "HEAD")
+
+# Paths that need one scope whatever the method (compared without a trailing slash)
+_FIXED_SCOPES = {
+    # GETs that start active scans: live discovery sweeps subnets and stores what it
+    # finds, scan-ip runs nmap against an address (#43)
+    "/api/scanner/live-discovery": "scanner:start",
+    "/api/scanner/scan-ip": "scanner:start",
+    # /test posts to every subscriber, so even its GET variant needs write access
+    "/api/webhooks/test": "settings:write",
+}
+# Agent routes that hand out credentials or enroll a host: write access for every method
+_AGENT_WRITE_PREFIXES = ("/api/agent/download/config", "/api/agent/token", "/api/agent/enroll")
+
+# (path prefixes, scope for GET/HEAD, scope for other methods); the first match wins
+_SCOPE_RULES: tuple[tuple[tuple[str, ...], str, str], ...] = (
+    (("/api/devices", "/api/groups", "/api/services", "/api/interfaces"), "devices:read", "devices:write"),
+    (("/api/topology",), "topology:read", "topology:write"),
+    (("/api/network",), "network:read", "network:write"),
+    (("/api/agent",), "agent:read", "agent:write"),  # also covers /api/agents
+    (("/api/settings",), "settings:read", "settings:write"),
+    (("/api/backup",), "backup:read", "backup:write"),
+    (("/api/scanner",), "scanner:read", "scanner:start"),
+    (("/api/webhooks",), "settings:read", "settings:write"),
+    (("/api/summary", "/api/issues"), "devices:read", "devices:read"),  # general read permission
+    (("/api/auth/tokens", "/api/logs", "/api/audit"), "settings:read", "settings:write"),
+    (("/api/notifications", "/api/health"), "devices:read", "devices:write"),
+)
+
+
 def _required_scope_for(path: str, method: str) -> str | None:
     """Map an API path/method to the scope a read-only token needs."""
-    read_methods = ("GET", "HEAD")
-    if path.startswith(("/api/devices", "/api/groups", "/api/services", "/api/interfaces")):
-        return "devices:read" if method in read_methods else "devices:write"
-    if path.startswith("/api/topology"):
-        return "topology:read" if method in read_methods else "topology:write"
-    if path.startswith("/api/network"):
-        return "network:read" if method in read_methods else "network:write"
-    if path.startswith("/api/agent"):
-        if path.startswith("/api/agent/download/config") or path.startswith("/api/agent/token") or path.startswith("/api/agent/enroll"):
-            return "agent:write"
-        return "agent:read" if method in read_methods else "agent:write"
-    if path.startswith("/api/settings"):
-        return "settings:read" if method in read_methods else "settings:write"
-    if path.startswith("/api/backup"):
-        return "backup:read" if method in read_methods else "backup:write"
-    if path.startswith("/api/scanner"):
-        # GETs that start active scans: live discovery sweeps subnets and stores what it
-        # finds, scan-ip runs nmap against an address (#43)
-        if path.rstrip("/") in ("/api/scanner/live-discovery", "/api/scanner/scan-ip"):
-            return "scanner:start"
-        return "scanner:read" if method in read_methods else "scanner:start"
-    if path.startswith("/api/webhooks"):
-        # /test posts to every subscriber, so even its GET variant needs write access
-        if path.rstrip("/") == "/api/webhooks/test":
-            return "settings:write"
-        return "settings:read" if method in read_methods else "settings:write"
-    if path.startswith("/api/summary") or path.startswith("/api/issues"):
-        return "devices:read"  # summary/issues require general read permission
-    if path.startswith("/api/auth/tokens") or path.startswith("/api/logs") or path.startswith("/api/audit"):
-        return "settings:read" if method in read_methods else "settings:write"
-    if path.startswith("/api/agents"):
-        return "agent:read" if method in read_methods else "agent:write"
-    if path.startswith("/api/notifications") or path.startswith("/api/health"):
-        return "devices:read" if method in read_methods else "devices:write"
+    fixed = _FIXED_SCOPES.get(path.rstrip("/"))
+    if fixed:
+        return fixed
+    if path.startswith(_AGENT_WRITE_PREFIXES):
+        return "agent:write"
+    for prefixes, read_scope, write_scope in _SCOPE_RULES:
+        if path.startswith(prefixes):
+            return read_scope if method in _READ_METHODS else write_scope
     return None
 
 
@@ -99,68 +103,50 @@ async def _verify_api_token(db: AsyncSession, token_val: str, conn: HTTPConnecti
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     _enforce_token_scopes(db_token, conn)
-
-    # Update last_used_at timestamp with throttling
-    try:
-        now = datetime.now(timezone.utc)
-        last_used = db_token.last_used_at
-        if last_used and last_used.tzinfo is None:
-            last_used = last_used.replace(tzinfo=timezone.utc)
-        if not last_used or (now - last_used).total_seconds() > 60:
-            db_token.last_used_at = now
-            await db.commit()
-    except Exception as e:
-        logger.error(f"Failed to update API token last_used_at: {e}")
-        await db.rollback()
-
+    await _touch_api_token(db, db_token)
     return f"api_token:{db_token.name}"
+
+
+# Not scoped: who-am-I checks, and routes that do their own check (step-up, browser session)
+_SCOPE_EXEMPT_PATHS = ("/api/auth/check", "/api/auth/me", "/api/ssh/sessions/prepare")
+_SCOPE_EXEMPT_PREFIXES = ("/api/agent/enroll/", "/api/agent/deploy/", "/api/agent/uninstall/", "/api/agent/patches/")
+# Token management, SSH and agent credentials/deployment are never open to an API token
+_TOKEN_FORBIDDEN_PREFIXES = (
+    "/api/auth/tokens", "/api/ssh", "/api/agent/download/config", "/api/agent/enroll", "/api/agent/adopt",
+    "/api/agent/deploy", "/api/agent/uninstall", "/api/agent/patches",
+)
+
+
+def _token_scopes(db_token) -> set[str]:
+    """The scopes of an API token; a token without any gets the read-only defaults."""
+    if db_token.scopes:
+        return {s.strip() for s in db_token.scopes.split(",") if s.strip()}
+    return _READONLY_DEFAULT_SCOPES
 
 
 def _enforce_token_scopes(db_token, conn: HTTPConnection) -> None:
     """Enforce scope rules for a read-only API token on HTTP requests."""
-    if db_token.scopes:
-        token_scopes = {s.strip() for s in db_token.scopes.split(",") if s.strip()}
-    else:
-        token_scopes = _READONLY_DEFAULT_SCOPES
-
     if conn.scope.get("type") != "http":
         return
 
     method = conn.method
     path = conn.url.path
-
-    # Exclude path /api/auth/check and /api/auth/me from strict scoping
-    if path in ("/api/auth/check", "/api/auth/me") or path == "/api/ssh/sessions/prepare" or path.startswith(("/api/agent/enroll/", "/api/agent/deploy/", "/api/agent/uninstall/", "/api/agent/patches/")):
+    if path in _SCOPE_EXEMPT_PATHS or path.startswith(_SCOPE_EXEMPT_PREFIXES):
         return
 
-    # Block read-only token from accessing sensitive admin/export, token-management, SSH or sensitive agent endpoints
-    if (
-        path in _READONLY_FORBIDDEN_PATHS
-        or path.startswith("/api/auth/tokens")
-        or path.startswith("/api/ssh")
-        or path.startswith("/api/agent/download/config")
-        or path.startswith("/api/agent/enroll")
-        or path.startswith("/api/agent/adopt")
-        or path.startswith("/api/agent/deploy")
-        or path.startswith("/api/agent/uninstall")
-        or path.startswith("/api/agent/patches")
-    ):
+    if path in _READONLY_FORBIDDEN_PATHS or path.startswith(_TOKEN_FORBIDDEN_PREFIXES):
         raise HTTPException(
             status_code=403,
             detail="Read-only token is not authorized for this administrative action. Token is not authorized for sensitive administrative actions."
         )
 
     required_scope = _required_scope_for(path, method)
-    if required_scope and required_scope not in token_scopes:
-        if method not in ("GET", "HEAD"):
-            raise HTTPException(
-                status_code=403,
-                detail=f"Read-only token cannot perform state-modifying actions. Token is missing the required scope '{required_scope}'."
-            )
-        raise HTTPException(
-            status_code=403,
-            detail=f"Token is missing the required scope '{required_scope}'."
-        )
+    if not required_scope or required_scope in _token_scopes(db_token):
+        return
+    detail = f"Token is missing the required scope '{required_scope}'."
+    if method not in _READ_METHODS:
+        detail = f"Read-only token cannot perform state-modifying actions. {detail}"
+    raise HTTPException(status_code=403, detail=detail)
 
 
 async def _authenticate_query_param(db: AsyncSession, token: str, conn: HTTPConnection) -> str:
@@ -201,14 +187,40 @@ async def get_current_admin(
     return identity
 
 
+async def _setup_completed(db: AsyncSession) -> bool:
+    row = (await db.execute(select(Setting).where(Setting.key == "setup.complete"))).scalar_one_or_none()
+    return row is not None and row.value == "true"
+
+
+def _warn_on_user_agent_change(session, headers, channel: str = "Session") -> None:
+    """Weak plausibility check: a session used from another browser is logged, not refused."""
+    req_ua = headers.get("user-agent")
+    if session.user_agent and req_ua and session.user_agent != req_ua:
+        logger.warning("%s User-Agent mismatch: expected '%s', got '%s'", channel, session.user_agent, req_ua)
+
+
+async def _authenticate_cookie(db: AsyncSession, conn: HTTPConnection, cookie_token: str) -> str:
+    """A browser session cookie, or the deprecated master token in the cookie."""
+    if cookie_token.startswith("session_"):
+        session = session_store.get_session(cookie_token)
+        if not session:
+            raise HTTPException(status_code=401, detail="Session expired or invalid")
+        _warn_on_user_agent_change(session, conn.headers)
+        return cookie_token
+
+    master_token = await _load_master_token(db)
+    if master_token and secure_compare(cookie_token, master_token):
+        logger.warning(
+            "DEPRECATION WARNING: Master-Token used in browser cookie. "
+            "This legacy authentication path is deprecated and will be removed in a future release."
+        )
+        return cookie_token
+    raise HTTPException(status_code=401, detail="Invalid token")
+
+
 async def _resolve_admin(conn: HTTPConnection, authorization: str | None, token: str | None, db: AsyncSession) -> str:
     # 0. Before setup is complete no credentials exist: only the wizard's routes are open
-    from app.models.setting import Setting
-    setup_res = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
-    setup_setting = setup_res.scalar_one_or_none()
-    is_setup_done = setup_setting is not None and setup_setting.value == "true"
-
-    if not is_setup_done:
+    if not await _setup_completed(db):
         if _is_setup_wizard_route(conn):
             return "setup_mode"
         raise HTTPException(status_code=403, detail="Initial setup not completed.")
@@ -216,26 +228,7 @@ async def _resolve_admin(conn: HTTPConnection, authorization: str | None, token:
     # 1. Try Browser Cookie (Primary channel for Browser sessions)
     cookie_token = conn.cookies.get("gravitylan_token")
     if cookie_token:
-        if cookie_token.startswith("session_"):
-            session = session_store.get_session(cookie_token)
-            if session:
-                # Weak plausibility check for User-Agent (not a hard security guarantee)
-                req_ua = conn.headers.get("user-agent")
-                if session.user_agent and req_ua and session.user_agent != req_ua:
-                    logger.warning("Session User-Agent mismatch: expected '%s', got '%s'", session.user_agent, req_ua)
-                return cookie_token
-            raise HTTPException(status_code=401, detail="Session expired or invalid")
-        else:
-            # Deprecated Legacy Cookie Fallback (Master-Token in Cookie)
-            res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-            master_setting = res_token.scalar_one_or_none()
-            if master_setting and secure_compare(cookie_token, master_setting.value):
-                logger.warning(
-                    "DEPRECATION WARNING: Master-Token used in browser cookie. "
-                    "This legacy authentication path is deprecated and will be removed in a future release."
-                )
-                return cookie_token
-            raise HTTPException(status_code=401, detail="Invalid token")
+        return await _authenticate_cookie(db, conn, cookie_token)
 
     # 2. Try Authorization Header (Primary channel for external API/Agent calls)
     if authorization and authorization.startswith("Bearer "):
@@ -354,7 +347,7 @@ async def _touch_api_token(db: AsyncSession, db_token) -> None:
             db_token.last_used_at = now
             await db.commit()
     except Exception as e:
-        logger.error(f"Failed to update WebSocket API token last_used_at: {e}")
+        logger.error(f"Failed to update API token last_used_at: {e}")
         await db.rollback()
 
 
@@ -434,111 +427,93 @@ async def _auth_query_by_endpoint(
     return None
 
 
+async def _ws_close(websocket: WebSocket, code: int, reason: str, log_message: str, *args) -> dict:
+    """Log why a WebSocket is refused, close it and return a failed auth dict."""
+    logger.warning(log_message, *args)
+    await websocket.close(code=code, reason=reason)
+    return {"authenticated": False}
+
+
+# The scope an API token needs on each WebSocket channel
+_WS_TOKEN_SCOPES = {"logs": "settings:read", "scanner": "scanner:read", "agent": "agent:read"}
+
+
+async def _ws_session_cookie(websocket: WebSocket, cookie_token: str) -> dict:
+    """Browser session from the cookie; every channel accepts it (UI clients subscribing)."""
+    session = session_store.get_session(cookie_token)
+    if not session:
+        return await _ws_close(
+            websocket, 4003, "Session expired or invalid", "WebSocket connection rejected: Expired or invalid session cookie."
+        )
+    _warn_on_user_agent_change(session, websocket.headers, channel="WebSocket Session")
+    return _auth_result("session", cookie_token)
+
+
+async def _ws_api_token(db: AsyncSession, websocket: WebSocket, endpoint_type: str, db_token) -> dict:
+    required_scope = _WS_TOKEN_SCOPES.get(endpoint_type)
+    if required_scope and required_scope not in _token_scopes(db_token):
+        return await _ws_close(
+            websocket, 4003, "Insufficient token scopes",
+            "WebSocket API token '%s' rejected: missing required scope '%s'", db_token.name, required_scope,
+        )
+    await _touch_api_token(db, db_token)
+    return _auth_result("api_token", f"api_token:{db_token.name}")
+
+
+async def _ws_query_token(
+    db: AsyncSession, websocket: WebSocket, endpoint_type: str, query_token: str, device_id: int | None
+) -> dict:
+    """``?token=``: an API token, else the master or agent token the channel allows."""
+    from app.models.api_token import ApiToken
+
+    h = hashlib.sha256(query_token.encode()).hexdigest()
+    db_token = (
+        await db.execute(select(ApiToken).where(ApiToken.token_hash == h, ApiToken.is_active == True))
+    ).scalar_one_or_none()
+    if db_token:
+        return await _ws_api_token(db, websocket, endpoint_type, db_token)
+
+    channel_auth = await _auth_query_by_endpoint(db, endpoint_type, query_token, device_id, websocket)
+    if channel_auth is not None:
+        return channel_auth
+    # An invalid query token must not fall through to other channels: reject it.
+    return await _ws_close(websocket, 4003, "Unauthorized", "WebSocket connection rejected: Invalid query token.")
+
+
 async def _authenticate_websocket_impl(
     websocket: WebSocket,
     endpoint_type: str,
     device_id: int | None,
     db: AsyncSession
 ) -> dict:
-    from app.models.setting import Setting
-    from app.services.auth_service import secure_compare
-    from sqlalchemy import select
-
-    # 1. Setup Bypass Check
-    # Only "scanner" endpoint allows setup bypass so the wizard can show progress of initial scans.
-    setup_res = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
-    setup_setting = setup_res.scalar_one_or_none()
-    is_setup_done = setup_setting is not None and setup_setting.value == "true"
-
-    if not is_setup_done:
+    # 1. Before setup only the scanner channel is open, so the wizard can show the first scans
+    if not await _setup_completed(db):
         if endpoint_type == "scanner":
-            return {
-                "authenticated": True,
-                "auth_type": "setup_bypass",
-                "identity": "anonymous"
-            }
-        logger.warning(
-            "WebSocket connection rejected: Setup bypass requested on non-scanner route '%s'.",
-            endpoint_type
+            return _auth_result("setup_bypass", "anonymous")
+        return await _ws_close(
+            websocket, 4003, "Setup incomplete",
+            "WebSocket connection rejected: Setup bypass requested on non-scanner route '%s'.", endpoint_type,
         )
-        await websocket.close(code=4003, reason="Setup incomplete")
-        return {"authenticated": False}
 
     cookie_token = websocket.cookies.get("gravitylan_token")
     query_token = websocket.query_params.get("token")
 
-    # Reject any attempts to pass a Session ID (?token=session_...) via query params globally
+    # Session IDs never travel in the query string
     if query_token and query_token.startswith("session_"):
-        logger.warning("WebSocket connection rejected: Session-IDs via query parameters are strictly forbidden.")
-        await websocket.close(code=4003, reason="Query-based session auth forbidden")
-        return {"authenticated": False}
+        return await _ws_close(
+            websocket, 4003, "Query-based session auth forbidden",
+            "WebSocket connection rejected: Session-IDs via query parameters are strictly forbidden.",
+        )
 
-    # 2. Browser Session Validation (via HTTP Cookie)
-    # Both "logs", "scanner", and "agent" endpoints support Cookie auth (UI clients subscribing)
+    # 2. Browser session cookie
     if cookie_token and cookie_token.startswith("session_"):
-        session = session_store.get_session(cookie_token)
-        if session:
-            # User-Agent check (weak mitigation signal)
-            req_ua = websocket.headers.get("user-agent")
-            if session.user_agent and req_ua and session.user_agent != req_ua:
-                logger.warning(
-                    "WebSocket Session User-Agent mismatch: expected '%s', got '%s'",
-                    session.user_agent, req_ua
-                )
-            return {
-                "authenticated": True,
-                "auth_type": "session",
-                "identity": cookie_token
-            }
-        # Reject and close if session cookie is invalid
-        logger.warning("WebSocket connection rejected: Expired or invalid session cookie.")
-        await websocket.close(code=4003, reason="Session expired or invalid")
-        return {"authenticated": False}
+        return await _ws_session_cookie(websocket, cookie_token)
 
-    # 3. Dedicated Query Parameter Auth per channel policy
+    # 3. Query token per channel policy
     if query_token:
-        # Check if query_token is a valid read-only API Token
-        h = hashlib.sha256(query_token.encode()).hexdigest()
-        from app.models.api_token import ApiToken
-        token_res = await db.execute(select(ApiToken).where(ApiToken.token_hash == h, ApiToken.is_active == True))
-        db_token = token_res.scalar_one_or_none()
+        return await _ws_query_token(db, websocket, endpoint_type, query_token, device_id)
 
-        if db_token:
-            if db_token.scopes:
-                token_scopes = {s.strip() for s in db_token.scopes.split(",") if s.strip()}
-            else:
-                token_scopes = _READONLY_DEFAULT_SCOPES
-
-            ws_scope_map = {
-                "logs": "settings:read",
-                "scanner": "scanner:read",
-                "agent": "agent:read",
-            }
-            required_scope = ws_scope_map.get(endpoint_type)
-            if required_scope and required_scope not in token_scopes:
-                logger.warning(
-                    "WebSocket API token '%s' rejected: missing required scope '%s'",
-                    db_token.name, required_scope
-                )
-                await websocket.close(code=4003, reason="Insufficient token scopes")
-                return {"authenticated": False}
-
-            await _touch_api_token(db, db_token)
-            return {
-                "authenticated": True,
-                "auth_type": "api_token",
-                "identity": f"api_token:{db_token.name}"
-            }
-
-        channel_auth = await _auth_query_by_endpoint(db, endpoint_type, query_token, device_id, websocket)
-        if channel_auth is not None:
-            return channel_auth
-        # An invalid query token must not fall through to other channels: reject it.
-        logger.warning("WebSocket connection rejected: Invalid query token.")
-        await websocket.close(code=4003, reason="Unauthorized")
-        return {"authenticated": False}
-
-    # 4. Deprecated Legacy Cookie Fallback (Master-Token in Cookie)
+    # 4. Deprecated legacy cookie fallback (master token in the cookie)
     if cookie_token:
         master_token = await _load_master_token(db)
         if master_token and secure_compare(cookie_token, master_token):
@@ -546,16 +521,12 @@ async def _authenticate_websocket_impl(
                 "DEPRECATION WARNING: Master-Token used in browser cookie for WebSocket auth. "
                 "This legacy path is deprecated and will be removed in a future release."
             )
-            return {
-                "authenticated": True,
-                "auth_type": "master_legacy",
-                "identity": cookie_token
-            }
+            return _auth_result("master_legacy", cookie_token)
 
-    # 5. Missing Credentials
-    logger.warning("WebSocket connection rejected: Missing authentication token.")
-    await websocket.close(code=4001, reason="Missing authentication token")
-    return {"authenticated": False}
+    # 5. Missing credentials
+    return await _ws_close(
+        websocket, 4001, "Missing authentication token", "WebSocket connection rejected: Missing authentication token."
+    )
 
 # Brute-force guard for /login: at most LOGIN_MAX_FAILURES attempts per client IP
 # within the sliding window. In memory, which fits the single uvicorn worker.
