@@ -38,29 +38,33 @@ from app.exceptions import GravityLANError
 
 logger = logging.getLogger(__name__)
 
+# Error statuses looked for in an access line whose status is not in the record's arguments
+_ERROR_MARKERS = (" 400", " 401", " 403", " 404", " 422", " 500", " 502", " 503", " 504")
+# Endpoints the UI polls; their successful requests would drown the log
+_POLLED_PATHS = ("/api/agent/status/", "/api/devices", "/api/groups", "/api/scanner/status", "/api/health", "/api/scanner/ws")
+
+
+def _access_status(record: logging.LogRecord) -> int | None:
+    """The status code of a uvicorn access record ('%s - "%s %s HTTP/%s" %d'), if its arguments carry one."""
+    if not (isinstance(getattr(record, "args", None), tuple) and len(record.args) >= 5):
+        return None
+    try:
+        return int(record.args[4])
+    except (ValueError, TypeError):
+        return None
+
+
 # Custom filter for Uvicorn access logs to ignore polling noise (only on success)
 class PollingFilter(logging.Filter):
     def filter(self, record):
-        status_code = None
-        if hasattr(record, "args") and isinstance(record.args, tuple) and len(record.args) >= 5:
-            try:
-                status_code = int(record.args[4])
-            except (ValueError, TypeError):
-                pass
-
+        status_code = _access_status(record)
         # Never filter out warnings or errors (status >= 400)
         if status_code is not None and status_code >= 400:
             return True
-
         msg = record.getMessage()
-        # Fallback parse check from formatted message
-        if status_code is None:
-            if any(err_status in msg for err_status in [" 400", " 401", " 403", " 404", " 422", " 500", " 502", " 503", " 504"]):
-                return True
-
-        if any(x in msg for x in ["/api/agent/status/", "/api/devices", "/api/groups", "/api/scanner/status", "/api/health", "/api/scanner/ws"]):
-            return False
-        return True
+        if status_code is None and any(marker in msg for marker in _ERROR_MARKERS):
+            return True
+        return not any(path in msg for path in _POLLED_PATHS)
 
 # Detection: Use /app/static in Docker, fallback to local dist for development
 FRONTEND_DIR = Path("/app/static") if Path("/app/static").exists() else Path(__file__).parent.parent / "frontend" / "dist"
@@ -125,38 +129,33 @@ async def _ensure_default_rack() -> None:
         await db.commit()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan manager — runs on startup and shutdown."""
-    # Startup
-    from app.services.log_streamer import CorrelationIdFilter, SafeCorrelationIdFormatter
+def _configure_logging() -> None:
+    """Correlation-id formatting, quieter libraries, the access-log filters and the live log stream."""
+    from app.services.enrollment_service import EnrollmentCodeLogFilter
+    from app.services.log_streamer import CorrelationIdFilter, SafeCorrelationIdFormatter, log_handler
+
     logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO)
-    
-    # Configure safe formatter on all root handlers to prevent KeyError during child logger propagation
+    # A safe formatter on every root handler prevents KeyError during child logger propagation
     formatter = SafeCorrelationIdFormatter("%(asctime)s [%(levelname)s] [%(correlation_id)s] %(name)s: %(message)s")
     for handler in logging.getLogger().handlers:
         handler.setFormatter(formatter)
-        
     logging.getLogger().addFilter(CorrelationIdFilter())
 
-    # Aggressively suppress noisy logs
-    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
-    logging.getLogger("paramiko").setLevel(logging.WARNING)
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-    # If not in debug, also suppress the transport layer specifically
-    if not settings.debug:
-        logging.getLogger("paramiko.transport").setLevel(logging.WARNING)
+    # Aggressively suppress noisy logs; outside debug also paramiko's transport layer
+    noisy = ["aiosqlite", "paramiko", "sqlalchemy.engine"] + ([] if settings.debug else ["paramiko.transport"])
+    for name in noisy:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
+    access = logging.getLogger("uvicorn.access")
+    access.addFilter(PollingFilter())
+    access.addFilter(EnrollmentCodeLogFilter())
+    access.setLevel(logging.INFO)
 
-
-    logging.getLogger("uvicorn.access").addFilter(PollingFilter())
-    from app.services.enrollment_service import EnrollmentCodeLogFilter
-    logging.getLogger("uvicorn.access").addFilter(EnrollmentCodeLogFilter())
-    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
-
-    # Attach Live Log Streamer
-    from app.services.log_streamer import log_handler
     logging.getLogger().addHandler(log_handler)
+
+
+async def _apply_saved_log_level() -> None:
+    """The log level chosen under Settings (``system.log_level``); best effort, the default stays otherwise."""
     try:
         from app.database import async_session
         from app.models.setting import Setting
@@ -170,14 +169,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-    loop = asyncio.get_running_loop()
-    logger.info("GravityLAN v%s starting (Loop: %s, Timeout: %ss)...", 
-                settings.app_version, loop.__class__.__name__, settings.scan_timeout)
 
-    # Ensure data directory exists and is writable
+def _ensure_writable_data_dir() -> None:
+    """Create the data directory and prove it is writable; a clear message on how to fix it otherwise."""
     try:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
-        # Test write permission by creating a temporary file
         test_file = settings.data_dir / ".write_test"
         test_file.touch()
         test_file.unlink()
@@ -196,34 +192,32 @@ async def lifespan(app: FastAPI):
         logger.critical("Failed to initialize data directory '%s': %s", settings.data_dir, e)
         raise RuntimeError(f"Failed to initialize data directory '{settings.data_dir}': {e}") from e
 
-    # Ensure models are imported for metadata creation
-    from app.models.device import Device, DeviceGroup, Service, DeviceHistory, DiscoveredHost
-    from app.models.topology import Rack, TopologyLink
-    from app.models.network import Subnet
-    from app.models.setting import Setting
-    from app.models.agent import AgentToken, DeviceMetrics, AgentConfig
-    from app.models.api_token import ApiToken
-    from app.models.webhook import WebhookSubscription, NotificationOutbox
-    from app.models.ssh import SshKey, SshProfile, SshKnownHost
-    from app.models.router_import import RouterImportSource
+
+def _register_models() -> None:
+    """Import every model so init_db creates all tables."""
+    from app.models.device import Device, DeviceGroup, Service, DeviceHistory, DiscoveredHost  # noqa: F401
+    from app.models.topology import Rack, TopologyLink  # noqa: F401
+    from app.models.network import Subnet  # noqa: F401
+    from app.models.setting import Setting  # noqa: F401
+    from app.models.agent import AgentToken, DeviceMetrics, AgentConfig  # noqa: F401
+    from app.models.api_token import ApiToken  # noqa: F401
+    from app.models.webhook import WebhookSubscription, NotificationOutbox  # noqa: F401
+    from app.models.ssh import SshKey, SshProfile, SshKnownHost  # noqa: F401
+    from app.models.router_import import RouterImportSource  # noqa: F401
     from app.models.audit import AuditEvent  # noqa: F401
 
-    # Initialize database tables
-    await init_db()
-    logger.info("Database initialized: %s", settings.effective_database_url)
 
-    # Start Background Tasks (registered on app.state to allow clean shutdown)
-    app.state.background_tasks = set()
-
-    # --- Schema Migration ---
+async def _run_startup_migrations() -> None:
+    """Schema migrations, the telemetry move, legacy scan subnets and the subnet cleanup, in this order."""
+    from app.api.network import cleanup_invalid_subnets
+    from app.database import async_session, engine
     from app.database.migrations import run_migrations
-    from app.database import async_session
+    from app.services.telemetry_store import migrate_legacy_telemetry, vacuum_inventory
+
     async with async_session() as db:
         await run_migrations(db)
 
-    # Migration: measurement tables of older versions move from the inventory into telemetry.db
-    from app.database import engine
-    from app.services.telemetry_store import migrate_legacy_telemetry, vacuum_inventory
+    # Measurement tables of older versions move from the inventory into telemetry.db
     try:
         async with async_session() as db:
             moved = await migrate_legacy_telemetry(db)
@@ -232,27 +226,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Telemetry migration failed (retried on next start): %s", e, exc_info=True)
 
-    # Migration: fold scan_subnets into the Subnet table before the scheduler reads it
+    # Fold scan_subnets into the Subnet table before the scheduler reads it
     await _migrate_legacy_scan_subnets()
-
     # Cleanup any invalid or ghost subnets
-    from app.api.network import cleanup_invalid_subnets
     await cleanup_invalid_subnets()
 
-    # Start the scan scheduler
-    from app.scanner.scheduler import scheduler
-    await scheduler.start()
 
-    # Create default rack if empty
-    await _ensure_default_rack()
-
-    yield
-
-    # Shutdown
+async def _shutdown(app: FastAPI) -> None:
+    """Stop the scheduler and cancel the background tasks registered on app.state."""
     from app.scanner.scheduler import scheduler
     await scheduler.stop()
 
-    # Cancel all registered background tasks
     if hasattr(app.state, "background_tasks"):
         tasks = list(app.state.background_tasks)
         logger.info("Canceling %d background tasks...", len(tasks))
@@ -261,6 +245,35 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(*tasks, return_exceptions=True)
 
     logger.info("GravityLAN shutting down.")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager — runs on startup and shutdown."""
+    _configure_logging()
+    await _apply_saved_log_level()
+
+    loop = asyncio.get_running_loop()
+    logger.info("GravityLAN v%s starting (Loop: %s, Timeout: %ss)...",
+                settings.app_version, loop.__class__.__name__, settings.scan_timeout)
+
+    _ensure_writable_data_dir()
+    _register_models()
+    await init_db()
+    logger.info("Database initialized: %s", settings.effective_database_url)
+
+    # Background tasks are registered on app.state to allow a clean shutdown
+    app.state.background_tasks = set()
+
+    await _run_startup_migrations()
+
+    from app.scanner.scheduler import scheduler
+    await scheduler.start()
+    await _ensure_default_rack()
+
+    yield
+
+    await _shutdown(app)
 
 
 app = FastAPI(
@@ -499,35 +512,48 @@ async def root(request: Request, db: AsyncSession = Depends(get_db)):
     }
 
 
-async def serve_spa(full_path: str):
-    """Serve a file from the frontend build, or index.html for client-side routes."""
-    # Prevent directory traversal / path injection attacks
+def _reject_unsafe_path(full_path: str) -> None:
+    """Refuse parent references, backslashes and absolute paths before touching the disk."""
     if ".." in full_path or "\\" in full_path or full_path.startswith("/"):
         raise HTTPException(status_code=400, detail="Invalid path")
 
+
+def _file_in_build(build_dir: Path, full_path: str) -> tuple[str, str | None]:
+    """(real build folder, the requested file inside it or None when there is no such file); 400 when it points outside.
+
+    realpath + startswith is the traversal check CodeQL recognises; commonpath also rejects
+    siblings sharing the prefix, e.g. /app/static_other.
+    """
+    try:
+        base_dir = os.path.realpath(str(build_dir))
+        resolved_path = os.path.realpath(os.path.join(base_dir, full_path))
+        if not resolved_path.startswith(base_dir) or os.path.commonpath([base_dir, resolved_path]) != base_dir:
+            raise HTTPException(status_code=400, detail="Invalid path")
+        return base_dir, (resolved_path if os.path.isfile(resolved_path) else None)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+
+def _build_file_response(path: str) -> FileResponse:
+    # index.html names the hashed bundles, so it must be revalidated on every load
+    headers = INDEX_HEADERS if os.path.basename(path) == "index.html" else None
+    return FileResponse(path, headers=headers)
+
+
+async def serve_spa(full_path: str):
+    """Serve a file from the frontend build, or index.html for client-side routes."""
+    _reject_unsafe_path(full_path)
     # Exclude API calls from the catch-all
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="API endpoint not found")
 
-    # Exclude existing files (assets/etc)
-    try:
-        base_dir = os.path.realpath(str(FRONTEND_DIR))
-        resolved_path = os.path.realpath(os.path.join(base_dir, full_path))
-
-        # CodeQL-recognized path traversal validation pattern (realpath + startswith);
-        # commonpath also rejects siblings sharing the prefix, e.g. /app/static_other
-        if not resolved_path.startswith(base_dir) or os.path.commonpath([base_dir, resolved_path]) != base_dir:
-            raise HTTPException(status_code=400, detail="Invalid path")
-
-        if os.path.isfile(resolved_path):
-            headers = INDEX_HEADERS if os.path.basename(resolved_path) == "index.html" else None
-            return FileResponse(resolved_path, headers=headers)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid path")
-
+    base_dir, file_path = _file_in_build(FRONTEND_DIR, full_path)
+    if file_path:
+        return _build_file_response(file_path)
     # Fallback to index.html for SPA routing
-    index_file = os.path.realpath(os.path.join(base_dir, "index.html"))
-    return FileResponse(index_file, headers=INDEX_HEADERS)
+    return FileResponse(os.path.realpath(os.path.join(base_dir, "index.html")), headers=INDEX_HEADERS)
 
 
 @app.get("/frontend-vue")
@@ -544,27 +570,14 @@ async def serve_vue_root():
 @app.get("/frontend-vue/{full_path:path}")
 async def serve_vue_spa(full_path: str):
     """Serve assets or SPA fallback for GravityUI under /frontend-vue/."""
-    if ".." in full_path or "\\" in full_path or full_path.startswith("/"):
-        raise HTTPException(status_code=400, detail="Invalid path")
-
+    _reject_unsafe_path(full_path)
     vue_dir = _resolve_frontend_vue_dir()
     if not vue_dir.exists():
         raise HTTPException(status_code=404, detail="GravityUI build not found")
 
-    try:
-        base_dir = os.path.realpath(str(vue_dir))
-        resolved_path = os.path.realpath(os.path.join(base_dir, full_path))
-        if not resolved_path.startswith(base_dir) or os.path.commonpath([base_dir, resolved_path]) != base_dir:
-            raise HTTPException(status_code=400, detail="Invalid path")
-
-        if os.path.isfile(resolved_path):
-            headers = INDEX_HEADERS if os.path.basename(resolved_path) == "index.html" else None
-            return FileResponse(resolved_path, headers=headers)
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid path")
-
+    base_dir, file_path = _file_in_build(vue_dir, full_path)
+    if file_path:
+        return _build_file_response(file_path)
     index_file = os.path.realpath(os.path.join(base_dir, "index.html"))
     if os.path.isfile(index_file):
         return FileResponse(index_file, headers=INDEX_HEADERS)
