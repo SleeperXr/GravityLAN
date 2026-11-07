@@ -123,3 +123,51 @@ def test_missing_hostname_and_ports_are_tolerated():
     result = classify_device({"ip": "192.0.2.21"})
 
     assert (result["device_type"], result["services"]) == ("unknown", [])
+
+
+# --- hostname matching: short codes only as a whole name part, the domain is ignored ---
+
+@pytest.mark.parametrize(
+    ("hostname", "ports", "device_type", "subtype"),
+    [
+        ("iphone.fritz.box", [80], "webui", "Web Interface"),        # the router's domain is not the device
+        ("ipad-lisa", [22], "server", "SSH Device"),                 # "AD" inside IPAD is no Domain Controller
+        ("jonas-pc", [445], "unknown", "Unknown"),                   # "NAS" inside JONAS is no NAS
+        ("apple-tv", [80], "webui", "Web Interface"),                # "APP" inside APPLE is no server
+        ("canon-mx920", [80], "webui", "Web Interface"),             # "CA" inside CANON is no PKI server
+        ("simon-laptop", [22], "server", "SSH Device"),              # "MON" inside SIMON is no monitoring
+        ("smartphone-max", [22], "server", "SSH Device"),            # "PHONE" inside a word is no phone system
+    ],
+)
+def test_short_codes_inside_a_word_or_the_domain_do_not_classify(hostname, ports, device_type, subtype):
+    result = classify(hostname, ports)
+    assert (result["device_type"], result["device_subtype"]) == (device_type, subtype)
+
+
+@pytest.mark.parametrize(
+    ("hostname", "subtype"),
+    [
+        ("SRV-DC01", "Domain Controller"),
+        ("dc01.corp.lan", "Domain Controller"),
+        ("srv-ts02", "Terminal Server"),
+        ("db1", "Database"),
+        ("mon-zabbix", "Monitoring"),
+        ("SRVFILE01", "File Server"),     # long patterns still match inside a name
+    ],
+)
+def test_short_codes_as_a_name_part_still_classify(hostname, subtype):
+    result = classify(hostname, [22])
+    assert (result["device_type"], result["device_subtype"]) == ("server", subtype)
+
+
+def test_router_names_still_classify_as_firewall():
+    assert classify("fritzbox.fritz.box", [80])["device_type"] == "firewall"
+    assert classify("usg-pro", [443])["device_type"] == "firewall"
+    assert classify("fw-office", [443])["device_type"] == "firewall"
+
+
+def test_nas_and_hypervisor_names_need_the_whole_part():
+    assert classify("nas", [80])["device_subtype"] == "NAS"
+    assert classify("pve01", [22])["device_subtype"] == "Proxmox"
+    assert classify("xen-host", [22])["device_subtype"] == "Hypervisor"
+    assert classify("xenia-pc", [22])["device_subtype"] == "SSH Device"
