@@ -308,7 +308,7 @@ def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass
     while not stdout.channel.exit_status_ready():
         if time.time() - start_time > timeout:
             stdout.channel.close()
-            logger.warning("Command timed out after %ds: %s", timeout, command.splitlines()[0][:200])
+            logger.warning("Remote command timed out after %ds", timeout)
             hint = " sudo may be waiting for a password." if "sudo -n" in command else ""
             raise RemoteTimeoutError(f"A command on the host did not finish within {timeout}s.{hint}")
         time.sleep(0.1)
@@ -329,7 +329,8 @@ def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass
             raise SudoPasswordError(
                 "Sudo password rejected by remote host. Please check your SSH / sudo password."
             )
-        logger.warning("Command '%s' failed (exit %d): %s", command, exit_code, err)
+        # Not the command itself: staged files (heredocs) carry the agent token
+        logger.warning("Remote command failed (exit %d): %s", exit_code, err)
         detail = (err or out).splitlines()[-1][:200] if (err or out) else ""
         raise RemoteCommandError(f"A command on the host failed (exit {exit_code}){': ' + detail if detail else ''}.")
 

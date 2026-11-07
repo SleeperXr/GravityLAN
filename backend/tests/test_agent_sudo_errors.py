@@ -51,8 +51,9 @@ def test_a_failed_command_does_not_show_the_command():
 
 
 def test_a_hanging_sudo_says_it_may_wait_for_a_password(monkeypatch):
-    clock = iter([0, 0, 100])
-    monkeypatch.setattr(ssh_utils.time, "time", lambda: next(clock))
+    # The first reading starts the wait, every later one (logging reads the clock too) is past the timeout
+    clock = iter([0])
+    monkeypatch.setattr(ssh_utils.time, "time", lambda: next(clock, 100))
     monkeypatch.setattr(ssh_utils.time, "sleep", lambda _s: None)
     with pytest.raises(RemoteTimeoutError) as caught:
         ssh_utils._exec_impl(_client(ready=False), SECRET_CMD, 15, None)
