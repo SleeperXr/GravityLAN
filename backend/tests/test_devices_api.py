@@ -222,6 +222,38 @@ async def test_update_service_switches_the_link_and_keeps_it_from_the_scan(clien
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("template", [
+    "http://{ip}/admin",            # a path
+    "http://{ip}:8080/ui?x=1",      # a path and query
+    "http://{ip}:9443",             # another port than the service's
+    "http://nas.lan:{port}",        # a name instead of the IP
+])
+async def test_update_service_keeps_a_custom_link_when_the_protocol_changes(client, db, auth, template):
+    dev = await _device(db)
+    svc = Service(device_id=dev.id, name="Web", protocol="http", port=80, url_template=template)
+    db.add(svc)
+    await db.commit()
+
+    res = await client.patch(f"/api/services/{svc.id}", json={"protocol": "https"}, headers=auth)
+
+    assert res.status_code == 200, res.text
+    assert res.json()["url_template"] == template
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("template", ["http://{ip}", "http://{ip}:{port}", "http://{ip}:5000", "", None])
+async def test_update_service_replaces_a_generated_link_when_the_protocol_changes(client, db, auth, template):
+    dev = await _device(db)
+    svc = Service(device_id=dev.id, name="DSM", protocol="http", port=5000, url_template=template)
+    db.add(svc)
+    await db.commit()
+
+    res = await client.patch(f"/api/services/{svc.id}", json={"protocol": "https"}, headers=auth)
+
+    assert res.json()["url_template"] == "https://{ip}:{port}"
+
+
+@pytest.mark.asyncio
 async def test_update_service_ssl_toggle_resets_its_state(client, db, auth):
     dev = await _device(db)
     svc = Service(device_id=dev.id, name="Web", protocol="https", port=443, url_template="https://{ip}",
