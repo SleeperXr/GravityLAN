@@ -151,3 +151,141 @@ async def test_use_cache_false_always_looks_again(fresh_lookup):
     hostname._dns_cache["10.0.0.5"] = _cached(None, 10)
     assert await hostname.resolve_hostname("10.0.0.5", use_cache=False) == "fresh-name"
     assert fresh_lookup == ["10.0.0.5"]
+
+
+# --- the lookup chain: Win32 API, direct DNS, OS resolver, shell tools --------
+
+from types import SimpleNamespace
+
+
+class _FakeResolver:
+    """dns.resolver.Resolver double: answers ``answer`` or raises it."""
+
+    answer: object = None
+    instances: list = []
+
+    def __init__(self):
+        self.nameservers = ["system"]
+        _FakeResolver.instances.append(self)
+
+    def resolve(self, _name, _rdtype):
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+@pytest.fixture
+def chain(monkeypatch):
+    """No Win32 API, a fake DNS resolver; OS resolver and shell tools set per test."""
+    import dns.resolver
+
+    _FakeResolver.answer, _FakeResolver.instances = None, []
+    monkeypatch.setattr(hostname, "_dns_cache", {})
+    monkeypatch.setattr(hostname, "_resolve_win32", lambda ip: None)
+    monkeypatch.setattr(hostname, "HAS_DNS_PYTHON", True)
+    monkeypatch.setattr(dns.resolver, "Resolver", _FakeResolver)
+    monkeypatch.setattr(hostname, "socket", SimpleNamespace(getnameinfo=lambda addr, flags: (addr[0], "0")))
+    monkeypatch.setattr(hostname, "_resolve_shell", lambda ip, dns_server=None: None)
+    return monkeypatch
+
+
+@pytest.mark.asyncio
+async def test_direct_dns_asks_the_configured_server(chain):
+    _FakeResolver.answer = ["nas.lan."]
+
+    assert await hostname.resolve_hostname("192.0.2.5", dns_server="192.0.2.53") == "nas.lan"
+    assert _FakeResolver.instances[0].nameservers == ["192.0.2.53"]
+
+
+@pytest.mark.asyncio
+async def test_os_resolver_when_dns_fails(chain):
+    _FakeResolver.answer = OSError("no answer")
+    chain.setattr(hostname, "socket", SimpleNamespace(getnameinfo=lambda addr, flags: ("pc.lan", "0")))
+
+    assert await hostname.resolve_hostname("192.0.2.5") == "pc.lan"
+
+
+@pytest.mark.asyncio
+async def test_shell_tools_when_the_os_only_echoes_the_ip(chain):
+    chain.setattr(hostname, "_resolve_shell", lambda ip, dns_server=None: "tv.local")
+
+    assert await hostname.resolve_hostname("192.0.2.5") == "tv.local"
+
+
+@pytest.mark.asyncio
+async def test_no_name_anywhere_is_remembered_as_a_miss(chain):
+    chain.setattr(hostname, "socket", SimpleNamespace(getnameinfo=lambda addr, flags: (_ for _ in ()).throw(OSError())))
+
+    assert await hostname.resolve_hostname("192.0.2.5") is None
+    assert hostname._dns_cache["192.0.2.5"][0] is None
+
+
+@pytest.mark.asyncio
+async def test_without_dnspython_the_os_resolver_answers(chain):
+    chain.setattr(hostname, "HAS_DNS_PYTHON", False)
+    chain.setattr(hostname, "socket", SimpleNamespace(getnameinfo=lambda addr, flags: ("pc.lan", "0")))
+
+    assert await hostname.resolve_hostname("192.0.2.5") == "pc.lan"
+    assert _FakeResolver.instances == []
+
+
+@pytest.mark.asyncio
+async def test_a_slow_lookup_times_out_as_a_miss(chain):
+    import time
+
+    chain.setattr(hostname, "_resolve_win32", lambda ip: time.sleep(1.3) or "too-late")
+
+    assert await hostname.resolve_hostname("192.0.2.5", timeout=0.0) is None
+    assert hostname._dns_cache["192.0.2.5"][0] is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_hostnames_fills_in_what_it_finds(monkeypatch):
+    names = {"192.0.2.5": "nas.lan"}
+
+    async def fake_resolve(ip, timeout, dns_server):
+        return names.get(ip)
+
+    monkeypatch.setattr(hostname, "resolve_hostname", fake_resolve)
+    hosts = [{"ip": "192.0.2.5"}, {"ip": "192.0.2.6", "hostname": "kept"}]
+
+    assert await hostname.resolve_hostnames(hosts) == [{"ip": "192.0.2.5", "hostname": "nas.lan"}, {"ip": "192.0.2.6", "hostname": "kept"}]
+
+
+@pytest.mark.asyncio
+async def test_resolve_hostnames_stops_when_cancelled(monkeypatch):
+    import asyncio
+
+    async def must_not_run(*_args):
+        raise AssertionError("looked up despite cancellation")
+
+    monkeypatch.setattr(hostname, "resolve_hostname", must_not_run)
+    cancel = asyncio.Event()
+    cancel.set()
+
+    assert await hostname.resolve_hostnames([{"ip": "192.0.2.5"}], cancel_event=cancel) == [{"ip": "192.0.2.5"}]
+
+
+def _run_result(returncode=0, stdout=""):
+    return lambda cmd, **kwargs: SimpleNamespace(returncode=returncode, stdout=stdout)
+
+
+def test_try_avahi_reads_the_name(monkeypatch):
+    monkeypatch.setattr(hostname.subprocess, "run", _run_result(stdout="192.0.2.5\tnas.local\n"))
+    assert hostname._try_avahi("192.0.2.5") == "nas.local"
+
+
+@pytest.mark.parametrize("run", [_run_result(returncode=1, stdout="Failed"), _run_result(stdout="192.0.2.5"), lambda cmd, **kw: (_ for _ in ()).throw(OSError())])
+def test_try_avahi_without_an_answer(monkeypatch, run):
+    monkeypatch.setattr(hostname.subprocess, "run", run)
+    assert hostname._try_avahi("192.0.2.5") is None
+
+
+def test_try_dig_without_dig_installed(monkeypatch):
+    monkeypatch.setattr(hostname.subprocess, "run", lambda cmd, **kw: (_ for _ in ()).throw(FileNotFoundError()))
+    assert hostname._try_dig("192.0.2.5") is None
+
+
+def test_win32_api_is_only_used_on_windows(monkeypatch):
+    monkeypatch.setattr(hostname.sys, "platform", "linux")
+    assert hostname._resolve_win32("192.0.2.5") is None
