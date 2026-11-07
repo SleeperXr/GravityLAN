@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { ArrowRight, History, Network, Save, Server, Settings2, Trash2, Waypoints } from 'lucide-vue-next';
 import { api } from '@/api/client';
-import type { Device, DeviceGroup, DeviceInterface, Rack } from '@/types';
+import type { Device, DeviceGroup, DeviceInterface, HostnameSource, Rack } from '@/types';
 import {
   computeGroupPlacement,
   deviceRoleOf,
@@ -125,6 +125,22 @@ async function refreshInfo() {
   }
 }
 
+/** Which DNS server names the device: saved right away, the hostname follows the pick */
+const savingSource = ref(false);
+async function setHostnameSource(source: HostnameSource) {
+  savingSource.value = true;
+  try {
+    const updated = await api.updateDevice(current.value.id, { hostname_source: source });
+    current.value = { ...current.value, hostname: updated.hostname, hostname_source: updated.hostname_source, dns_names: updated.dns_names };
+    showToast('success', t('gv.dns.source_saved', { name: updated.hostname || current.value.ip }), '');
+    emit('saved');
+  } catch (err) {
+    showToast('error', t('notifications.save_failed'), (err as Error).message);
+  } finally {
+    savingSource.value = false;
+  }
+}
+
 async function scanServices() {
   scanningServices.value = true;
   showToast('info', t('network.nmap_scan'), t('notifications.nmap_scan_started', { ip: current.value.ip }));
@@ -219,7 +235,7 @@ async function remove() {
     </div>
 
     <div class="py-1">
-      <SettingsTab v-if="tab === 'settings'" v-model:form="form" :device="current" :devices="store.devices" :groups="groups" :racks="racks" :refreshing="refreshing" @refresh-info="refreshInfo" @submit="save" />
+      <SettingsTab v-if="tab === 'settings'" v-model:form="form" :device="current" :devices="store.devices" :groups="groups" :racks="racks" :refreshing="refreshing" :saving-source="savingSource" @refresh-info="refreshInfo" @hostname-source="setHostnameSource" @submit="save" />
       <ServicesTab v-else-if="tab === 'services'" v-model:device="current" :scanning="scanningServices" @changed="emit('saved')" @scan="scanServices" />
       <InterfacesTab v-else-if="tab === 'interfaces'" :device="current" @changed="emit('saved')" @merged-away="open = false" @interfaces="onInterfaces" />
       <HistoryTab v-else-if="tab === 'history'" :device-id="current.id" :active="tab === 'history'" />

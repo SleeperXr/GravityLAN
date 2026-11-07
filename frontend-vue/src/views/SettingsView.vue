@@ -29,6 +29,7 @@ const DEFAULT_FORM = {
   scan_timeout: '1.5',
   'scanner.offline_threshold': '3',
   'dns.server': '',
+  'dns.server_secondary': '',
   history_retention_days: '7',
   server_url_override: '',
   'system.log_level': 'info',
@@ -136,6 +137,9 @@ const languages: { value: Locale; key: string }[] = [
             <UnitField v-model="form['scanner.offline_threshold']" :label="t('settings.offline_threshold_label')" :hint="t('settings.offline_threshold_hint')" :unit="t('settings.unit_checks')" />
             <Field v-slot="{ id, describedBy }" :label="t('settings.dns_custom_title')" :hint="t('settings.dns_custom_desc')">
               <Input :id="id" v-model="form['dns.server']" mono placeholder="192.168.1.1" :aria-describedby="describedBy" />
+            </Field>
+            <Field v-slot="{ id, describedBy }" :label="t('gv.dns.secondary_title')" :hint="t('gv.dns.secondary_desc')">
+              <Input :id="id" v-model="form['dns.server_secondary']" mono placeholder="192.168.178.1" :aria-describedby="describedBy" data-test="dns-secondary" />
             </Field>
           </div>
         </SettingsSection>

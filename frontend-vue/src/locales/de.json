@@ -756,6 +756,16 @@
       "apply": "Übernehmen & anordnen",
       "applied": "Netz übernommen und angeordnet",
       "partly_failed": "Angeordnet, aber {{n}} Verbindungen konnten nicht gespeichert werden"
+    },
+    "dns": {
+      "secondary_title": "Zweiter DNS-Server",
+      "secondary_desc": "Optional, z. B. die FritzBox neben Pi-hole. „Info aktualisieren“ fragt dann beide und zeigt am Gerät, welcher Name von wo kommt; dort wählst du, welcher gilt.",
+      "names_title": "Namen der DNS-Server",
+      "no_answer": "keine Antwort",
+      "source_label": "Hostname von",
+      "source_auto": "Automatisch",
+      "source_dns": "Von DNS {{n}}",
+      "source_saved": "Hostname jetzt: {{name}}"
     }
   }
 }

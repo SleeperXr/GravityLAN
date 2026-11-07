@@ -217,6 +217,45 @@ async def resolve_hostname(ip: str, timeout: float = 3.0, dns_server: str | None
         _dns_cache[ip] = (None, datetime.now(timezone.utc))
         return None
 
+HOSTNAME_SOURCES = ("dns1", "dns2")
+
+
+def query_ptr(ip: str, dns_server: str | None, timeout: float = 2.0) -> str | None:
+    """The PTR name one DNS server gives for an IP (None: the system's servers), or None."""
+    if not HAS_DNS_PYTHON:
+        return None
+    try:
+        resolver = dns.resolver.Resolver()
+        if dns_server:
+            resolver.nameservers = [dns_server]
+        resolver.timeout = resolver.lifetime = timeout
+        answers = resolver.resolve(dns.reversename.from_address(ip), "PTR")
+        name = str(answers[0]).rstrip(".") if answers else ""
+        return name or None
+    except Exception as e:
+        logger.debug("PTR query at %s failed: %s", dns_server or "system DNS", e)
+        return None
+
+
+async def lookup_dns_names(ip: str, primary: str | None, secondary: str | None) -> dict[str, str | None]:
+    """What DNS 1 and DNS 2 each call an IP, asked side by side: {"1": name, "2": name}."""
+    loop = asyncio.get_running_loop()
+    first, second = await asyncio.gather(
+        loop.run_in_executor(None, query_ptr, ip, primary),
+        loop.run_in_executor(None, query_ptr, ip, secondary),
+    )
+    return {"1": first, "2": second}
+
+
+def choose_hostname(found: str | None, names: dict[str, str | None] | None, source: str | None) -> str | None:
+    """The hostname a device gets: the DNS server the user picked when it answered, else the usual lookup
+    (`found`), else DNS 2's answer, else DNS 1's."""
+    names = names or {}
+    if source in HOSTNAME_SOURCES and names.get(source[-1]):
+        return names[source[-1]]
+    return found or names.get("2") or names.get("1")
+
+
 async def resolve_hostnames(
     hosts: list[dict],
     timeout: float = 3.5,

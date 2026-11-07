@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from pydantic import RootModel
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update as sa_update
 from app.services.stepup import require_step_up
 from app.database import get_db
 from app.models.device import Device, Service, DeviceGroup
@@ -30,7 +30,7 @@ SENSITIVE_KEYS = {"api.master_token", "api.admin_password"}
 WRITABLE_KEYS = frozenset({
     # Settings page (React useSettingsForm, Vue SettingsView)
     "scan_interval", "quick_scan_interval", "scan_timeout", "scanner.offline_threshold",
-    "scanner.health_probe_interval", "dns.server", "history_retention_days",
+    "scanner.health_probe_interval", "dns.server", "dns.server_secondary", "history_retention_days",
     "server_url_override", "server.url", "system.log_level", "ui.start_page", "ui.default_frontend",
     "ui.health_resilience",
     # Network view groups, topology flow controls, GravityUI appearance
@@ -196,6 +196,7 @@ _VALIDATORS = {
     "server.url": _validate_server_url,
     "server_url_override": _validate_server_url,
     "dns.server": _validate_dns_server,
+    "dns.server_secondary": _validate_dns_server,
     "scan_subnets": _validate_scan_subnets,
     "scanner.offline_threshold": _validate_offline_threshold,
     "ui.start_page": _validate_start_page,
@@ -220,6 +221,11 @@ async def update_settings(settings: SettingsUpdate, request: Request, db: AsyncS
         if validator and value:
             validator(value)
         await _store_setting(db, key, value)
+    if "dns.server_secondary" in values and not str(values["dns.server_secondary"] or "").strip():
+        # Without DNS 2 its kept answers and the picks made from them no longer apply
+        from app.services.cache_service import dashboard_cache
+        await db.execute(sa_update(Device).values(dns_names=None, hostname_source=None))
+        dashboard_cache.invalidate_all()
     await db.commit()
 
     # Apply log level if changed

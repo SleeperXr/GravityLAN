@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Bell, BellOff, Orbit, Radio, RefreshCw, Server, Wifi } from 'lucide-vue-next';
-import type { Device, DeviceGroup, Rack } from '@/types';
+import type { Device, DeviceGroup, HostnameSource, Rack } from '@/types';
 import type { DeviceFormData } from '@/lib/deviceForm';
 import Button from '@/components/ui/Button.vue';
 import Field from '@/components/ui/Field.vue';
@@ -17,8 +17,18 @@ import { t } from '@/i18n';
 
 /** "General" tab: identity, placement, role and monitoring of a device. */
 const form = defineModel<DeviceFormData>('form', { required: true });
-const props = defineProps<{ device: Device; devices: Device[]; groups: DeviceGroup[]; racks: Rack[]; refreshing: boolean }>();
-const emit = defineEmits<{ refreshInfo: []; submit: [] }>();
+const props = defineProps<{ device: Device; devices: Device[]; groups: DeviceGroup[]; racks: Rack[]; refreshing: boolean; savingSource?: boolean }>();
+const emit = defineEmits<{ refreshInfo: []; submit: []; hostnameSource: [source: HostnameSource] }>();
+
+/** Which DNS server names the device; a server without an answer cannot be picked */
+const sourceOptions = computed(() => [
+  { value: 'auto' as HostnameSource, label: t('gv.dns.source_auto') },
+  ...(['1', '2'] as const).map((n) => ({
+    value: `dns${n}` as HostnameSource,
+    label: t('gv.dns.source_dns', { n }),
+    disabled: !props.device.dns_names?.[n] && props.device.hostname_source !== `dns${n}`,
+  })),
+]);
 
 /** Orbit map visibility is an appearance setting, saved right away rather than with the form */
 const appearance = useAppearance();
@@ -185,6 +195,24 @@ function intOrNull(value: string | number | null | undefined): number | null {
         <dd class="text-fg-muted">
           {{ device.hostname || t('editor.no_dns_name') }}
           <span v-if="device.hostname?.includes('.')" class="mt-0.5 block font-mono text-xs text-info-text">FQDN: {{ device.hostname }}</span>
+        </dd>
+      </div>
+      <div v-if="device.dns_names" class="sm:col-span-2" data-test="dns-names">
+        <dt class="gl-eyebrow mb-1.5">{{ t('gv.dns.names_title') }}</dt>
+        <dd class="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <span v-for="n in (['1', '2'] as const)" :key="n" class="grid grid-cols-[3.5rem_1fr] items-baseline">
+            <span class="text-fg-subtle">DNS {{ n }}</span>
+            <span class="font-mono" :class="device.dns_names[n] ? 'text-fg' : 'text-fg-subtle'">{{ device.dns_names[n] || t('gv.dns.no_answer') }}</span>
+          </span>
+          <Select
+            class="ml-auto w-56"
+            :model-value="device.hostname_source ?? 'auto'"
+            :options="sourceOptions"
+            :disabled="savingSource"
+            :aria-label="t('gv.dns.source_label')"
+            data-test="hostname-source"
+            @update:model-value="(v) => emit('hostnameSource', v as HostnameSource)"
+          />
         </dd>
       </div>
     </dl>

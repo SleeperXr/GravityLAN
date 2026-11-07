@@ -150,4 +150,11 @@ async def test_backup_roundtrip_onto_a_fresh_host(client, admin_token, tmp_path,
     _empty_instance(fresh)
     backup._write_db(str(fresh), {**exported, "metadata": {"version": app_config.app_version}})
 
-    assert await _export(client, admin_token, fresh, monkeypatch) == exported
+    # Columns added since the frozen release come back empty; everything the backup carried comes back as it was
+    imported = await _export(client, admin_token, fresh, monkeypatch)
+    for table, rows in imported.items():
+        known = {key for row in exported.get(table) or [] for key in row} if isinstance(rows, list) else None
+        for row in rows if known else []:
+            for key in set(row) - known:
+                assert row.pop(key) is None, f"{table}.{key} is new since the frozen release and must import empty"
+    assert imported == exported
