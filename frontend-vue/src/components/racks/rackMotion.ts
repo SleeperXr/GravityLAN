@@ -30,6 +30,54 @@ export function stepSpring(spring: Spring, target: number, dt: number, stiffness
   return true;
 }
 
+/** A faceplate in motion: its springs and the seconds before it starts falling into place. */
+export interface Faceplate {
+  y: Spring;
+  x: Spring;
+  /** Seconds before it starts falling into place when the rack first fills */
+  wait: number;
+}
+
+/**
+ * One frame of a faceplate. `grab` is where a grabbed one goes (pointer height, sideways offset: 0 in the rack,
+ * pulled aside outside it), or null. `snap` puts everything straight where it belongs (a hidden or busy page,
+ * reduced motion). Returns whether it still moves.
+ */
+export function stepFaceplate(m: Faceplate, target: number, dt: number, snap: boolean, grab: { y: number; x: number } | null): boolean {
+  if (snap) m.wait = 0;
+  if (m.wait > 0) {
+    m.wait -= dt;
+    return true;
+  }
+  if (grab) {
+    // A grabbed faceplate follows the pointer; pulled out of the rack it slides aside
+    m.y.velocity = dt > 0 ? (grab.y - m.y.value) / dt : 0;
+    m.y.value = grab.y;
+    stepSpring(m.x, grab.x, dt);
+    return true;
+  }
+  if (snap) {
+    m.y = { value: target, velocity: 0 };
+    m.x = { value: 0, velocity: 0 };
+    return false;
+  }
+  const movedY = stepSpring(m.y, target, dt);
+  const movedX = stepSpring(m.x, 0, dt);
+  return movedY || movedX;
+}
+
+/**
+ * One frame of a cable's sag. A cable lags behind its moving ends (`pull`: their mean vertical speed): it hangs
+ * deeper while they rise and bunches while they fall. Returns whether it still swings; at rest it lands on `rest`.
+ */
+export function stepSag(s: Spring, pull: number, dt: number, rest: number): boolean {
+  s.velocity += ((rest - s.value) * SWING.stiffness - s.velocity * SWING.damping - pull * 5) * dt;
+  s.value = Math.min(64, Math.max(3, s.value + s.velocity * dt));
+  if (Math.abs(s.velocity) > 0.5 || Math.abs(s.value - rest) > 0.3) return true;
+  s.value = rest;
+  return false;
+}
+
 /**
  * Calls `tick` on every animation frame while it returns true; `kick()` starts it again after a change. The
  * time step is capped, so a tab that was in the background does not fling everything at once; `stalled` says
