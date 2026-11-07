@@ -30,7 +30,7 @@ import {
   type JackSpot,
   type Point,
 } from './rackGeometry';
-import { SWING, prefersReducedMotion, stepSpring, useFrameLoop, type Spring } from './rackMotion';
+import { prefersReducedMotion, stepFaceplate, stepSag, useFrameLoop, type Faceplate, type Spring } from './rackMotion';
 import { blockerAt, cableDefaults, ownerKeyOf, sideOf, type PortSide, type RackEntry } from './rackModel';
 import type { DragState, DragTarget } from './useRackDrag';
 
@@ -181,13 +181,7 @@ const jackOfPort = computed(() => {
 });
 
 // ── Motion ───────────────────────────────────────────────────────────────────
-interface Motion {
-  y: Spring;
-  x: Spring;
-  /** Seconds before it starts falling into place when the rack first fills */
-  wait: number;
-}
-const motion = new Map<string, Motion>();
+const motion = new Map<string, Faceplate>();
 const sags = new Map<number, Spring>();
 const frameNo = ref(0);
 const arrived = ref(new Set<string>());
@@ -254,55 +248,49 @@ function velocityOfPort(portId: number): number {
 }
 
 function tick(dt: number, stalled = false): boolean {
-  const f = frame.value;
   const d = props.drag;
-  const draggedKey = d?.lifted && d.from === 'rack' ? d.key : null;
-  const local = draggedKey && d ? localOf(d) : null;
   // Frames far apart (a hidden or busy page): everything goes straight to where it belongs
   const snap = reduceMotion || stalled;
+  let moving = stepFaceplates(dt, snap);
+  if (snap) for (const s of sags.values()) Object.assign(s, { value: REST_SAG, velocity: 0 });
+  else moving = stepSags(dt) || moving;
+  frameNo.value++;
+  return moving || Boolean(d?.lifted) || patch.value !== null;
+}
+
+/** Where the faceplate grabbed from this rack goes now (pointer height, sideways offset), or null. */
+function grabTarget(): { key: string; y: number; x: number } | null {
+  const d = props.drag;
+  if (!d?.lifted || d.from !== 'rack') return null;
+  const local = localOf(d);
+  if (!local) return null;
+  const f = frame.value;
+  const y = clamp(local.y - d.grabY, f.padPx - f.unitPx, frameHeight(f) - f.padPx);
+  return { key: d.key, y, x: d.zone === 'stage' ? 0 : -22 };
+}
+
+function stepFaceplates(dt: number, snap: boolean): boolean {
+  const f = frame.value;
+  const grab = grabTarget();
   let moving = false;
   for (const e of placed.value) {
     const m = motion.get(e.key);
     if (!m || e.unit === null) continue;
-    if (snap) m.wait = 0;
-    if (m.wait > 0) {
-      m.wait -= dt;
-      moving = true;
-      continue;
-    }
-    if (e.key === draggedKey && local && d) {
-      // A grabbed faceplate follows the pointer; pulled out of the rack it slides aside
-      const y = clamp(local.y - d.grabY, f.padPx - f.unitPx, frameHeight(f) - f.padPx);
-      m.y.velocity = dt > 0 ? (y - m.y.value) / dt : 0;
-      m.y.value = y;
-      stepSpring(m.x, d.zone === 'stage' ? 0 : -22, dt);
-      moving = true;
-      continue;
-    }
-    const target = faceTop(f, e.unit);
-    if (snap) {
-      m.y = { value: target, velocity: 0 };
-      m.x = { value: 0, velocity: 0 };
-      continue;
-    }
-    if (stepSpring(m.y, target, dt)) moving = true;
-    if (stepSpring(m.x, 0, dt)) moving = true;
+    if (stepFaceplate(m, faceTop(f, e.unit), dt, snap, grab?.key === e.key ? grab : null)) moving = true;
   }
-  if (snap) for (const s of sags.values()) Object.assign(s, { value: REST_SAG, velocity: 0 });
-  else {
-    for (const c of props.cables) {
-      let s = sags.get(c.id);
-      if (!s) sags.set(c.id, (s = { value: REST_SAG, velocity: 0 }));
-      // A cable lags behind its moving ends: it hangs deeper while they rise and bunches while they fall
-      const pull = (velocityOfPort(c.a_port_id) + velocityOfPort(c.b_port_id)) / 2;
-      s.velocity += ((REST_SAG - s.value) * SWING.stiffness - s.velocity * SWING.damping - pull * 5) * dt;
-      s.value = clamp(s.value + s.velocity * dt, 3, 64);
-      if (Math.abs(s.velocity) > 0.5 || Math.abs(s.value - REST_SAG) > 0.3) moving = true;
-      else s.value = REST_SAG;
-    }
+  return moving;
+}
+
+function stepSags(dt: number): boolean {
+  let moving = false;
+  for (const c of props.cables) {
+    let s = sags.get(c.id);
+    if (!s) sags.set(c.id, (s = { value: REST_SAG, velocity: 0 }));
+    // A cable lags behind its moving ends: it hangs deeper while they rise and bunches while they fall
+    const pull = (velocityOfPort(c.a_port_id) + velocityOfPort(c.b_port_id)) / 2;
+    if (stepSag(s, pull, dt, REST_SAG)) moving = true;
   }
-  frameNo.value++;
-  return moving || Boolean(d?.lifted) || patch.value !== null;
+  return moving;
 }
 
 const positions = computed(() => {
