@@ -52,122 +52,106 @@ EVENT_ALIASES = {
 }
 
 
-def format_event_notification(event_type: str, data: dict) -> tuple[str, str, int, list[str]]:
+Notification = tuple[str, str, int, list[str]]
+
+
+def _device_label(data: dict, *fields: str, fallback: str) -> str:
+    return next((data[f] for f in fields if data.get(f)), fallback)
+
+
+def _offline_text(data: dict) -> Notification:
+    name = _device_label(data, "display_name", "hostname", "ip", fallback="Device")
+    return "GravityLAN: Device Offline", f"Device '{name}' ({data.get('ip', 'unknown')}) is offline", 8, ["warning", "skull"]
+
+
+def _online_text(data: dict) -> Notification:
+    name = _device_label(data, "display_name", "hostname", "ip", fallback="Device")
+    return "GravityLAN: Device Online", f"Device '{name}' ({data.get('ip', 'unknown')}) is back online", 5, ["white_check_mark"]
+
+
+def _new_device_text(data: dict) -> Notification:
+    name = _device_label(data, "hostname", "vendor", "ip", fallback="New device")
+    message = f"New device discovered: {name} (IP: {data.get('ip', 'unknown')}, MAC: {data.get('mac') or 'N/A'})"
+    return "GravityLAN: New Device Discovered", message, 5, ["sparkles", "computer"]
+
+
+def _ip_changed_text(data: dict) -> Notification:
+    name = _device_label(data, "display_name", "hostname", fallback="Device")
+    message = f"Device '{name}' changed IP from {data.get('old_ip', 'unknown')} to {data.get('new_ip', 'unknown')}"
+    return "GravityLAN: IP Address Changed", message, 5, ["satellite"]
+
+
+def _scan_complete_text(data: dict) -> Notification:
+    return "GravityLAN: Scan Complete", f"Network discovery scan complete: {data.get('hosts_found', 0)} hosts found", 3, ["mag"]
+
+
+def _test_text(data: dict) -> Notification:
+    dest = data.get("destination") or "endpoint"
+    return "GravityLAN: Test Notification", f"Test notification for {dest} delivered successfully.", 5, ["white_check_mark", "bell"]
+
+
+# Event (canonical name or its short form) -> text of the notification
+_EVENT_TEXTS = {
+    "device.offline": _offline_text, "offline": _offline_text,
+    "device.online": _online_text, "online": _online_text,
+    "new_device": _new_device_text, "device.new": _new_device_text,
+    "device.ip_changed": _ip_changed_text, "ip_changed": _ip_changed_text,
+    "scan.complete": _scan_complete_text,
+    "test.event": _test_text,
+}
+
+
+def _canonical_event(event_type: str) -> str:
+    return next((canonical for canonical, aliases in EVENT_ALIASES.items() if event_type in aliases), event_type)
+
+
+def format_event_notification(event_type: str, data: dict) -> Notification:
     """Return (title, message, priority_1_to_10, tags) for an event notification."""
-    alias_key = event_type
-    for canonical, aliases in EVENT_ALIASES.items():
-        if event_type in aliases:
-            alias_key = canonical
-            break
+    text = _EVENT_TEXTS.get(_canonical_event(event_type))
+    if text:
+        return text(data)
+    return f"GravityLAN: {event_type}", json.dumps(data, ensure_ascii=False), 5, ["bell"]
 
-    if alias_key in ("device.offline", "offline"):
-        dev_name = data.get("display_name") or data.get("hostname") or data.get("ip") or "Device"
-        ip = data.get("ip", "unknown")
-        return (
-            "GravityLAN: Device Offline",
-            f"Device '{dev_name}' ({ip}) is offline",
-            8,
-            ["warning", "skull"],
-        )
 
-    if alias_key in ("device.online", "online"):
-        dev_name = data.get("display_name") or data.get("hostname") or data.get("ip") or "Device"
-        ip = data.get("ip", "unknown")
-        return (
-            "GravityLAN: Device Online",
-            f"Device '{dev_name}' ({ip}) is back online",
-            5,
-            ["white_check_mark"],
-        )
+def _ntfy_request(url: str, token: str | None, note: Notification) -> tuple[str, dict[str, str], bytes]:
+    title, message, prio, tags = note
+    headers = {
+        "Title": title,
+        "Priority": "high" if prio >= 8 else ("low" if prio <= 3 else "default"),
+        "Tags": ",".join(tags),
+        "Content-Type": "text/plain; charset=utf-8",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return url, headers, message.encode("utf-8")
 
-    if alias_key in ("new_device", "device.new"):
-        dev_name = data.get("hostname") or data.get("vendor") or data.get("ip") or "New device"
-        ip = data.get("ip", "unknown")
-        mac = data.get("mac") or "N/A"
-        return (
-            "GravityLAN: New Device Discovered",
-            f"New device discovered: {dev_name} (IP: {ip}, MAC: {mac})",
-            5,
-            ["sparkles", "computer"],
-        )
 
-    if alias_key in ("device.ip_changed", "ip_changed"):
-        dev_name = data.get("display_name") or data.get("hostname") or "Device"
-        old_ip = data.get("old_ip", "unknown")
-        new_ip = data.get("new_ip", "unknown")
-        return (
-            "GravityLAN: IP Address Changed",
-            f"Device '{dev_name}' changed IP from {old_ip} to {new_ip}",
-            5,
-            ["satellite"],
-        )
-
-    if alias_key == "scan.complete":
-        hosts_found = data.get("hosts_found", 0)
-        return (
-            "GravityLAN: Scan Complete",
-            f"Network discovery scan complete: {hosts_found} hosts found",
-            3,
-            ["mag"],
-        )
-
-    if alias_key == "test.event":
-        dest = data.get("destination") or "endpoint"
-        return (
-            "GravityLAN: Test Notification",
-            f"Test notification for {dest} delivered successfully.",
-            5,
-            ["white_check_mark", "bell"],
-        )
-
-    return (
-        f"GravityLAN: {event_type}",
-        json.dumps(data, ensure_ascii=False),
-        5,
-        ["bell"],
-    )
+def _gotify_request(url: str, token: str | None, note: Notification) -> tuple[str, dict[str, str], dict]:
+    title, message, prio, _tags = note
+    parsed = urlparse(url)
+    if not parsed.path.rstrip("/").endswith("/message"):
+        url = urlunparse(parsed._replace(path=parsed.path.rstrip("/") + "/message"))
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Gotify-Key"] = token
+    return url, headers, {"title": title, "message": message, "priority": prio}
 
 
 def prepare_request_for_service(
     service_type: str, url: str, token: str | None, event_type: str, data: dict
 ) -> tuple[str, dict[str, str], dict | bytes]:
     """Prepare target URL, headers, and payload body (json dict or raw bytes) based on service preset."""
-    title, message, prio, tags = format_event_notification(event_type, data)
-
+    note = format_event_notification(event_type, data)
     if service_type == "ntfy":
-        ntfy_prio = "high" if prio >= 8 else ("low" if prio <= 3 else "default")
-        headers = {
-            "Title": title,
-            "Priority": ntfy_prio,
-            "Tags": ",".join(tags),
-            "Content-Type": "text/plain; charset=utf-8",
-        }
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        return url, headers, message.encode("utf-8")
-
+        return _ntfy_request(url, token, note)
     if service_type == "gotify":
-        parsed = urlparse(url)
-        eff_url = url
-        if not parsed.path.rstrip("/").endswith("/message"):
-            new_path = parsed.path.rstrip("/") + "/message"
-            eff_url = urlunparse(parsed._replace(path=new_path))
-        headers = {"Content-Type": "application/json"}
-        if token:
-            headers["X-Gotify-Key"] = token
-        body = {"title": title, "message": message, "priority": prio}
-        return eff_url, headers, body
+        return _gotify_request(url, token, note)
 
     # Default: generic webhook
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    body = {
-        "event": event_type,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "data": data,
-    }
-    return url, headers, body
+    return url, headers, {"event": event_type, "timestamp": datetime.now(timezone.utc).isoformat(), "data": data}
 
 
 async def _blocked_target_reason(url: str) -> str | None:
