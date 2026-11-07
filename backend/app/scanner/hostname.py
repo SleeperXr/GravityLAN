@@ -228,7 +228,11 @@ def _ptr_failure(error: Exception) -> str:
     if isinstance(error, dns.exception.Timeout):
         return "timeout"  # nothing answered in time: no DNS there, or blocked
     if isinstance(error, dns.resolver.NoNameservers):
-        return "refused" if "REFUSED" in str(error) else "server_error"
+        # Each entry is (server, tcp, port, error, response); the error is the rcode's text when one answered
+        codes = [entry[3] for entry in error.kwargs.get("errors") or [] if len(entry) > 3]
+        if "REFUSED" in codes:
+            return "refused"
+        return "server_error" if any(isinstance(code, str) for code in codes) else "error"
     return "error"
 
 

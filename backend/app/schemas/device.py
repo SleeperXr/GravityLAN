@@ -189,8 +189,11 @@ class DeviceResponse(BaseModel):
                 value = json.loads(value)
             except ValueError:
                 return None
-        # The reasons stored next to the names go out as dns_errors
-        return {n: value.get(n) for n in ("1", "2")} if isinstance(value, dict) else None
+        # The reasons stored next to the names go out as dns_errors; a name that is not text
+        # (a hand-edited backup) counts as no answer instead of failing the whole device list
+        if not isinstance(value, dict):
+            return None
+        return {n: value[n] if isinstance(value.get(n), str) else None for n in ("1", "2")}
 
 
 class DeviceUpdate(BaseModel):
