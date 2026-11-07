@@ -66,6 +66,12 @@ export const useAppearance = defineStore('appearance', () => {
     await api.updateSettings({ [ROLES_KEY]: JSON.stringify(next) });
   }
 
+  /** Replace all pinned orbit roles in one save (the arrange assistant). */
+  async function setOrbitRoles(roles: OrbitRoles) {
+    orbitRoles.value = { ...roles };
+    await api.updateSettings({ [ROLES_KEY]: JSON.stringify(orbitRoles.value) });
+  }
+
   /** Show or hide a device on the orbit map, whatever the dashboard does with it; a failed save puts it back. */
   async function setOrbitVisible(deviceId: number, shown: boolean) {
     const previous = orbitVisibility.value;
@@ -95,5 +101,5 @@ export const useAppearance = defineStore('appearance', () => {
     await api.updateSettings({ [SETTING_KEY]: JSON.stringify(next) });
   }
 
-  return { lineColors, linkTypeColors, orbitCustom, orbitRoles, orbitVisibility, load, setLineColor, setLinkTypeColor, setOrbitCustom, setOrbitRole, setOrbitVisible };
+  return { lineColors, linkTypeColors, orbitCustom, orbitRoles, orbitVisibility, load, setLineColor, setLinkTypeColor, setOrbitCustom, setOrbitRole, setOrbitRoles, setOrbitVisible };
 });
