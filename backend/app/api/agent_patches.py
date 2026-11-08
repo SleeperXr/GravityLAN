@@ -5,7 +5,8 @@ import logging
 import sys
 import time
 import uuid
-from typing import Any, Dict
+from dataclasses import dataclass
+from typing import Any
 
 from fastapi import (
     APIRouter,
@@ -16,11 +17,10 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_admin
-from app.services.audit import actor_from_identity, record as audit
-from app.services.stepup import require_step_up
 from app.config import settings
 from app.database import async_session, get_db
 from app.models.agent import DeviceMetrics
@@ -34,18 +34,38 @@ from app.schemas.agent import (
     runner_password,
 )
 from app.services.agent_telemetry import _latest_metrics, _ws_subscribers
+from app.services.audit import actor_from_identity
+from app.services.audit import record as audit
 from app.services.patch_service import list_device_updates, run_ssh_command_stream
 from app.services.session_service import has_browser_session
-from app.services.ssh_credentials import StoredLoginError, resolve_key_profile, resolve_stored_key
+from app.services.ssh_credentials import (
+    StoredLoginError,
+    resolve_key_profile,
+    resolve_stored_key,
+)
 from app.services.ssh_utils import PinnedHostKey, TofuHostKeyPolicy
+from app.services.stepup import require_step_up
 
 logger = logging.getLogger(__name__)
 
 patch_router = APIRouter()
 
 # Cache for temporary patch session credentials
-_temp_patch_tokens: Dict[str, Dict[str, Any]] = {}
+_temp_patch_tokens: dict[str, dict[str, Any]] = {}
 PATCH_TOKEN_TTL_SECONDS = 60
+
+
+@dataclass(slots=True)
+class PatchStreamParams:
+    """Parameters for streaming package update execution over WebSocket."""
+
+    websocket: WebSocket
+    device_id: int
+    mode: str
+    actor: str
+    ssh: dict[str, Any]
+    optional: dict[str, Any]
+    cmd: str
 
 
 def _get_agent_attr(name: str, default: Any) -> Any:
@@ -131,6 +151,33 @@ async def _resolve_patch_credentials(
     return host_ip, ssh_port, ssh_user, ssh_password, ssh_key, ssh_passphrase, pinned
 
 
+def _ssh_kwargs_for(fn: Any, base: dict[str, Any], **optional: Any) -> dict[str, Any]:
+    """``base`` plus the optional SSH arguments ``fn`` accepts; values that are None are left out.
+
+    Test doubles of the probe and stream functions may take fewer arguments than the real ones.
+    """
+    params = inspect.signature(fn).parameters
+    accepts_any = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    kwargs = dict(base)
+    for name, value in optional.items():
+        if value is not None and (accepts_any or name in params):
+            kwargs[name] = value
+    return kwargs
+
+
+def _format_package_updates(packages_data: list[dict[str, Any]]) -> list[PackageUpdateInfo]:
+    """Convert raw package dictionaries to structured PackageUpdateInfo objects."""
+    return [
+        PackageUpdateInfo(
+            package=p["package"],
+            current_version=p["current_version"],
+            new_version=p["new_version"],
+            repo=p.get("repo"),
+        )
+        for p in packages_data
+    ]
+
+
 @patch_router.post("/patches/{device_id}/query", response_model=DevicePatchesResponse, dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
 async def query_device_patches(
     device_id: int,
@@ -149,43 +196,33 @@ async def query_device_patches(
     )
     tofu = TofuHostKeyPolicy() if pinned is None and not settings.ssh_strict_mode else None
 
-    query_kwargs = dict(
-        host_ip=host_ip,
-        ssh_user=ssh_user,
-        ssh_password=ssh_password,
-        ssh_key=ssh_key,
-        ssh_port=ssh_port,
-        ssh_key_passphrase=ssh_passphrase,
-    )
+    query_kwargs = {
+        "host_ip": host_ip,
+        "ssh_user": ssh_user,
+        "ssh_password": ssh_password,
+        "ssh_key": ssh_key,
+        "ssh_port": ssh_port,
+        "ssh_key_passphrase": ssh_passphrase,
+    }
     list_updates_fn = _get_agent_attr("list_device_updates", list_device_updates)
-    sig = inspect.signature(list_updates_fn)
-    accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
-    if ("pinned_host_key" in sig.parameters or accepts_var_kw) and pinned is not None:
-        query_kwargs["pinned_host_key"] = pinned
-    if ("tofu_policy" in sig.parameters or accepts_var_kw) and tofu is not None:
-        query_kwargs["tofu_policy"] = tofu
+    call_kwargs = _ssh_kwargs_for(
+        list_updates_fn,
+        query_kwargs,
+        pinned_host_key=pinned,
+        tofu_policy=tofu,
+    )
 
-    result = await list_updates_fn(**query_kwargs)
+    result = await list_updates_fn(**call_kwargs)
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
 
     if tofu and tofu.captured:
         await _persist_captured_host_key(db, host_ip, ssh_port, tofu.captured)
 
-    packages = [
-        PackageUpdateInfo(
-            package=p["package"],
-            current_version=p["current_version"],
-            new_version=p["new_version"],
-            repo=p.get("repo"),
-        )
-        for p in result["packages"]
-    ]
-
     return DevicePatchesResponse(
         device_id=device_id,
         patch_manager=result["patch_manager"],
-        packages=packages,
+        packages=_format_package_updates(result["packages"]),
         major_upgrade_available=result.get("major_upgrade_available"),
     )
 
@@ -281,8 +318,8 @@ async def _push_metrics_to_subscribers(device_id: int) -> None:
     for ws in list(_ws_subscribers.get(device_id, ())):
         try:
             await ws.send_json({"type": "metrics", "data": _latest_metrics[device_id]})
-        except Exception:
-            pass
+        except (WebSocketDisconnect, RuntimeError, OSError) as exc:
+            logger.debug("Failed to push patch metrics to subscriber for device %s: %s", device_id, exc)
 
 
 async def _clear_device_patch_state(device_id: int) -> None:
@@ -300,27 +337,14 @@ async def _clear_device_patch_state(device_id: int) -> None:
             last_metric.patch_available = 0
             last_metric.patch_security = 0
             await db.commit()
+    except SQLAlchemyError as exc:
+        logger.error("Failed to update database metrics after patch execution for device %s: %s", device_id, exc)
+        return
 
-            if device_id in _latest_metrics:
-                _latest_metrics[device_id]["patch_available"] = 0
-                _latest_metrics[device_id]["patch_security"] = 0
-                await _push_metrics_to_subscribers(device_id)
-    except Exception as e:
-        logger.error("Failed to update database metrics after patch execution: %s", e)
-
-
-def _ssh_kwargs_for(fn: Any, base: dict[str, Any], **optional: Any) -> dict[str, Any]:
-    """``base`` plus the optional SSH arguments ``fn`` accepts; values that are None are left out.
-
-    Test doubles of the probe and stream functions may take fewer arguments than the real ones.
-    """
-    params = inspect.signature(fn).parameters
-    accepts_any = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
-    kwargs = dict(base)
-    for name, value in optional.items():
-        if value is not None and (accepts_any or name in params):
-            kwargs[name] = value
-    return kwargs
+    if device_id in _latest_metrics:
+        _latest_metrics[device_id]["patch_available"] = 0
+        _latest_metrics[device_id]["patch_security"] = 0
+        await _push_metrics_to_subscribers(device_id)
 
 
 async def _probe_package_manager(
@@ -393,8 +417,8 @@ async def _report_result(websocket: WebSocket, success: bool, msg: str) -> None:
         await _send_ws_text(websocket, f"\r\n[Error] Update failed: {msg}\r\n")
     try:
         await websocket.close()
-    except (RuntimeError, OSError):
-        pass
+    except (RuntimeError, OSError) as exc:
+        logger.debug("WebSocket close failed in _report_result: %s", exc)
 
 
 def _session_ssh_options(session_data: dict) -> tuple[dict, dict]:
@@ -439,26 +463,34 @@ async def _announce_update_command(websocket: WebSocket, pkg_manager: str, mode:
     return cmd
 
 
-async def _stream_update(
-    websocket: WebSocket, device_id: int, mode: str, actor: str, ssh: dict, optional: dict, cmd: str,
-) -> None:
+async def _stream_update(params: PatchStreamParams) -> None:
     """Run the update with live output, audit it, and on success keep a learned host key and clear the patch state."""
-    sink = _ClientSink(websocket, device_id)
+    sink = _ClientSink(params.websocket, params.device_id)
     stream_fn = _get_agent_attr("run_ssh_command_stream", run_ssh_command_stream)
-    success, msg = await stream_fn(**_ssh_kwargs_for(stream_fn, {**ssh, "command": cmd, "output_callback": sink}, **optional))
+    stream_kwargs = _ssh_kwargs_for(
+        stream_fn,
+        {**params.ssh, "command": params.cmd, "output_callback": sink},
+        **params.optional,
+    )
+    success, msg = await stream_fn(**stream_kwargs)
     await audit(
-        websocket, "agent.patches", "ok" if success else "failed",
-        device_id=device_id, target=ssh["host_ip"], detail=mode, actor=actor,
+        params.websocket,
+        "agent.patches",
+        "ok" if success else "failed",
+        device_id=params.device_id,
+        target=params.ssh["host_ip"],
+        detail=params.mode,
+        actor=params.actor,
     )
 
     if success:
-        tofu_policy = optional["tofu_policy"]
+        tofu_policy = params.optional.get("tofu_policy")
         if tofu_policy and tofu_policy.captured:
-            await _remember_host_key(ssh["host_ip"], ssh["ssh_port"], tofu_policy.captured)
+            await _remember_host_key(params.ssh["host_ip"], params.ssh["ssh_port"], tofu_policy.captured)
         clear_fn = _get_agent_attr("_clear_device_patch_state", _clear_device_patch_state)
-        await clear_fn(device_id)
+        await clear_fn(params.device_id)
     if sink.connected:
-        await _report_result(websocket, success, msg)
+        await _report_result(params.websocket, success, msg)
 
 
 @patch_router.websocket("/patches/{device_id}/run-ws")
@@ -498,4 +530,13 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
     cmd = await _announce_update_command(websocket, pkg_manager, mode)
     if cmd is None:
         return
-    await _stream_update(websocket, device_id, mode, actor, ssh, optional, cmd)
+    params = PatchStreamParams(
+        websocket=websocket,
+        device_id=device_id,
+        mode=mode,
+        actor=actor,
+        ssh=ssh,
+        optional=optional,
+        cmd=cmd,
+    )
+    await _stream_update(params)
