@@ -53,9 +53,9 @@ def _resolve_win32(ip: str) -> Optional[str]:
     """Try Win32 GetNameInfoW for fast local resolution."""
     if sys.platform != "win32":
         return None
-    try:
-        import ctypes
+    import ctypes
 
+    try:
         ws2_32 = ctypes.windll.ws2_32
 
         class sockaddr_in(ctypes.Structure):
@@ -84,10 +84,8 @@ def _resolve_win32(ip: str) -> Optional[str]:
         )
         if res == 0 and host.value:
             return host.value
-    except (AttributeError, ValueError, OSError) as e:
+    except (AttributeError, IndexError, TypeError, ValueError, OSError, ctypes.ArgumentError) as e:
         logger.debug("Win32 GetNameInfoW resolution failed for %s: %s", mask_ip(ip), e)
-    except Exception as e:
-        logger.debug("Unexpected error in Win32 resolution for %s: %s", mask_ip(ip), e)
     return None
 
 
@@ -170,28 +168,32 @@ def _resolve_shell(ip: str, dns_server: str | None = None) -> Optional[str]:
     return _resolve_linux_shell(ip, dns_server)
 
 
+def _ptr_answer(ip: str, dns_server: str | None, timeout: float) -> str:
+    """The name one DNS server (None: the system's) holds for an IP, "" when its answer names nothing.
+
+    Raises what dnspython raises: DNSException, OSError or ValueError.
+    """
+    resolver = dns.resolver.Resolver()
+    if dns_server:
+        resolver.nameservers = [dns_server]
+    resolver.timeout = resolver.lifetime = timeout
+    answers = resolver.resolve(dns.reversename.from_address(ip), "PTR")
+    return str(answers[0]).rstrip(".") if answers else ""
+
+
 def _resolve_direct_dns(ip: str, dns_server: str | None, timeout: float) -> Optional[str]:
     """Try uncached direct DNS PTR query via dnspython."""
     if not HAS_DNS_PYTHON:
         return None
     try:
-        resolver = dns.resolver.Resolver()
-        if dns_server:
-            resolver.nameservers = [dns_server]
-        rev_name = dns.reversename.from_address(ip)
-        dns_timeout = max(0.5, timeout - 0.5)
-        resolver.lifetime = dns_timeout
-        resolver.timeout = dns_timeout
-        answers = resolver.resolve(rev_name, "PTR")
-        if answers:
-            resolved_name = str(answers[0]).rstrip(".")
-            logger.info("Custom DNS resolved host to: %s", resolved_name)
-            return resolved_name
+        resolved_name = _ptr_answer(ip, dns_server, max(0.5, timeout - 0.5))
     except (dns.exception.DNSException, OSError, ValueError) as e:
         logger.debug("Direct DNS PTR query failed for %s: %s", mask_ip(ip), e)
-    except Exception as e:
-        logger.debug("Unexpected error during direct DNS PTR query for %s: %s", mask_ip(ip), e)
-    return None
+        return None
+    if not resolved_name:
+        return None
+    logger.info("Custom DNS resolved host to: %s", resolved_name)
+    return resolved_name
 
 
 def _resolve_socket(ip: str) -> Optional[str]:
@@ -202,6 +204,25 @@ def _resolve_socket(ip: str) -> Optional[str]:
             return name
     except (socket.gaierror, socket.herror, OSError) as e:
         logger.debug("Socket getnameinfo failed for %s: %s", mask_ip(ip), e)
+    return None
+
+
+def _lookup_name(ip: str, timeout: float, dns_server: str | None) -> str | None:
+    """The first name the lookups find, cheapest first."""
+    lookups = (
+        lambda: _resolve_win32(ip),
+        lambda: _resolve_direct_dns(ip, dns_server, timeout),
+        lambda: _resolve_socket(ip),
+        lambda: _resolve_shell(ip, dns_server),
+    )
+    for lookup in lookups:
+        try:
+            name = lookup()
+        except Exception:  # each lookup handles its known failures; a bug in one must not cost the ones after it
+            logger.warning("Unexpected error in a hostname lookup for %s", mask_ip(ip), exc_info=True)
+            continue
+        if name:
+            return name
     return None
 
 
@@ -225,21 +246,10 @@ async def resolve_hostname(
 
     loop = asyncio.get_running_loop()
 
-    def _resolve() -> str | None:
-        resolvers = (
-            lambda: _resolve_win32(ip),
-            lambda: _resolve_direct_dns(ip, dns_server, timeout),
-            lambda: _resolve_socket(ip),
-            lambda: _resolve_shell(ip, dns_server),
-        )
-        for resolver in resolvers:
-            name = resolver()
-            if name:
-                return name
-        return None
-
     try:
-        resolved_name = await asyncio.wait_for(loop.run_in_executor(None, _resolve), timeout=timeout + 1.0)
+        resolved_name = await asyncio.wait_for(
+            loop.run_in_executor(None, _lookup_name, ip, timeout, dns_server), timeout=timeout + 1.0
+        )
         # Update Cache
         _dns_cache[ip] = (resolved_name, datetime.now(timezone.utc))
         return resolved_name
@@ -247,7 +257,7 @@ async def resolve_hostname(
         logger.debug("DNS resolution timeout")
         _dns_cache[ip] = (None, datetime.now(timezone.utc))  # Cache failure too
         return None
-    except Exception as e:
+    except RuntimeError as e:  # the executor took no work: shutting down, or out of threads
         logger.debug("DNS resolution error: %s", e)
         _dns_cache[ip] = (None, datetime.now(timezone.utc))
         return None
@@ -276,22 +286,11 @@ def ptr_lookup(ip: str, dns_server: str | None, timeout: float = 2.0) -> tuple[s
     if not HAS_DNS_PYTHON:
         return None, "error"
     try:
-        resolver = dns.resolver.Resolver()
-        if dns_server:
-            resolver.nameservers = [dns_server]
-        resolver.timeout = resolver.lifetime = timeout
-        answers = resolver.resolve(dns.reversename.from_address(ip), "PTR")
-        name = str(answers[0]).rstrip(".") if answers else ""
-        return (name, None) if name else (None, "no_entry")
-    except dns.exception.DNSException as e:
+        name = _ptr_answer(ip, dns_server, timeout)
+    except (dns.exception.DNSException, OSError, ValueError) as e:
         logger.info("PTR query for %s at %s found no name: %s", mask_ip(ip), dns_server or "system DNS", e)
         return None, _ptr_failure(e)
-    except (OSError, ValueError) as e:
-        logger.info("PTR query failed for %s at %s: %s", mask_ip(ip), dns_server or "system DNS", e)
-        return None, "error"
-    except Exception as e:
-        logger.info("PTR query unexpected error for %s at %s: %s", mask_ip(ip), dns_server or "system DNS", e)
-        return None, _ptr_failure(e)
+    return (name, None) if name else (None, "no_entry")
 
 
 def query_ptr(ip: str, dns_server: str | None, timeout: float = 2.0) -> str | None:

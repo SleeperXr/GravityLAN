@@ -46,7 +46,7 @@ def test_query_ptr_asks_the_given_server(monkeypatch):
 
     class Failing(FakeResolver):
         def resolve(self, name, kind):
-            raise RuntimeError("NXDOMAIN")
+            raise hostname.dns.resolver.NXDOMAIN()
 
     monkeypatch.setattr(hostname.dns.resolver, "Resolver", Failing)
     assert hostname.query_ptr("192.0.2.30", None) is None
