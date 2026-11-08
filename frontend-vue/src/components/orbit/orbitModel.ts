@@ -42,6 +42,13 @@ export function portLimitReached(device: Pick<Device, 'id' | 'max_ports'>, links
   return max > 0 && linkCount(device.id, links) >= max;
 }
 
+type WirelessHint = Partial<Pick<Device, 'is_ap' | 'is_wlan'>> | undefined;
+
+/** Default type for a new link: WLAN when either end is an access point or wireless client, else 1GbE. */
+export function inferLinkType(a: WirelessHint, b: WirelessHint): 'WLAN' | '1GbE' {
+  return a?.is_ap || b?.is_ap || a?.is_wlan || b?.is_wlan ? 'WLAN' : '1GbE';
+}
+
 export type BodyKind = 'star' | 'planet' | 'moon';
 /** What the user can pick: a dwarf planet is a small planet (a switch or AP with few devices). */
 export type OrbitRole = 'star' | 'planet' | 'dwarf' | 'moon';

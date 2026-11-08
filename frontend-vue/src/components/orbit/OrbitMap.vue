@@ -16,6 +16,7 @@ import {
   findDropTargetBody,
   freeOrbitSlot,
   getDescendantIds,
+  inferLinkType,
   linkCount,
   moveWithDescendants,
   portLimitReached,
@@ -399,6 +400,20 @@ function startBeamConnect(body: OrbitBody, e: PointerEvent) {
   connectingCursor.value = posOf(body.id);
 }
 
+/** Move the dragged body to `candidate`: a moon snaps onto a sibling's ring, a planet or star takes its system along. */
+function applyDragPosition(id: number, candidate: Point, startPos: Point) {
+  const body = bodies.value.get(id);
+  if (!body) return;
+  const ringSnap = (): Point => snapToOrbitRing(id, candidate, bodies.value, dragStartPositions.value);
+  if (body.kind === 'moon') {
+    const snapped = dropTarget.value ? candidate : ringSnap();
+    localPositions.value = new Map(localPositions.value).set(id, snapped);
+    return;
+  }
+  const snapped = body.kind === 'planet' && !dropTarget.value ? ringSnap() : candidate;
+  localPositions.value = moveWithDescendants(id, { x: snapped.x - startPos.x, y: snapped.y - startPos.y }, bodies.value, dragStartPositions.value);
+}
+
 function onWindowPointerMove(e: PointerEvent) {
   if (view.pointerMove(e)) return;
   if (connectingFromId.value != null) {
@@ -416,51 +431,18 @@ function onWindowPointerMove(e: PointerEvent) {
   // Hovering another planet or star offers to orbit it instead
   const target = findDropTargetBody(id, candidate, bodies.value, dragStartPositions.value);
   dropTarget.value = target && target.id !== bodies.value.get(id)?.parentId ? target : null;
-  const body = bodies.value.get(id);
-  if (!body) return;
-  if (body.kind === 'moon') {
-    // A moon snaps onto a sibling's ring
-    const snapped = dropTarget.value ? candidate : snapToOrbitRing(id, candidate, bodies.value, dragStartPositions.value);
-    localPositions.value = new Map(localPositions.value).set(id, snapped);
-  } else {
-    // A planet or star takes its whole system along; a planet also snaps onto its tier ring
-    const snapped = body.kind === 'planet' && !dropTarget.value ? snapToOrbitRing(id, candidate, bodies.value, dragStartPositions.value) : candidate;
-    localPositions.value = moveWithDescendants(id, { x: snapped.x - startPos.x, y: snapped.y - startPos.y }, bodies.value, dragStartPositions.value);
-  }
+  applyDragPosition(id, candidate, startPos);
 }
 
-async function onWindowPointerUp(e: PointerEvent) {
-  if (tapStart) {
-    const start = tapStart;
-    tapStart = null;
-    // A cancelled pointer is a swipe the page took over for scrolling
-    if (e.type === 'pointerup' && Math.hypot(e.clientX - start.x, e.clientY - start.y) < TAP_SLOP_PX) touchActive.value = true;
-    return;
-  }
-  if (view.pointerUp(e)) return;
-  if (connectingFromId.value != null) {
-    const fromId = connectingFromId.value;
-    connectingFromId.value = null;
-    const world = view.screenToWorld(e.clientX, e.clientY);
-    const hit = bodyList.value.find((b) => b.id !== fromId && Math.hypot(world.x - posOf(b.id).x, world.y - posOf(b.id).y) <= radiusOf(b) + 18);
-    if (hit) await createBeamBetween(fromId, hit.id);
-    return;
-  }
-  if (draggingBodyId.value == null) return;
-  const id = draggingBodyId.value;
-  const moved = dragMoved.value;
-  const target = dropTarget.value;
-  draggingBodyId.value = null;
-  dropTarget.value = null;
-  if (!moved) {
-    selectedDeviceId.value = id;
-    selectedLinkId.value = null;
-    return;
-  }
-  if (target) {
-    await assignOrbitToTarget(id, target);
-    return;
-  }
+/** Releasing a beam drag over another body links the two. */
+async function finishBeamConnect(fromId: number, e: PointerEvent) {
+  const world = view.screenToWorld(e.clientX, e.clientY);
+  const hit = bodyList.value.find((b) => b.id !== fromId && Math.hypot(world.x - posOf(b.id).x, world.y - posOf(b.id).y) <= radiusOf(b) + 18);
+  if (hit) await createBeamBetween(fromId, hit.id);
+}
+
+/** Save the dropped body (and its system) where it now sits. */
+async function persistDroppedPositions(id: number) {
   const body = bodies.value.get(id);
   const ids = body && body.kind !== 'moon' ? [id, ...getDescendantIds(id, bodies.value)] : [id];
   const dropped = new Map(ids.map((i) => [i, posOf(i)]));
@@ -475,6 +457,39 @@ async function onWindowPointerUp(e: PointerEvent) {
   } catch (err) {
     showToast('error', t('notifications.save_failed'), (err as Error).message);
   }
+}
+
+/** Ends a drag: a click selects, a drop on a body relinks, anything else saves the new positions. */
+async function finishBodyDrag(id: number) {
+  const moved = dragMoved.value;
+  const target = dropTarget.value;
+  draggingBodyId.value = null;
+  dropTarget.value = null;
+  if (!moved) {
+    selectedDeviceId.value = id;
+    selectedLinkId.value = null;
+    return;
+  }
+  if (target) await assignOrbitToTarget(id, target);
+  else await persistDroppedPositions(id);
+}
+
+async function onWindowPointerUp(e: PointerEvent) {
+  if (tapStart) {
+    const start = tapStart;
+    tapStart = null;
+    // A cancelled pointer is a swipe the page took over for scrolling
+    if (e.type === 'pointerup' && Math.hypot(e.clientX - start.x, e.clientY - start.y) < TAP_SLOP_PX) touchActive.value = true;
+    return;
+  }
+  if (view.pointerUp(e)) return;
+  if (connectingFromId.value != null) {
+    const fromId = connectingFromId.value;
+    connectingFromId.value = null;
+    await finishBeamConnect(fromId, e);
+    return;
+  }
+  if (draggingBodyId.value != null) await finishBodyDrag(draggingBodyId.value);
 }
 
 /** Take a device off the orbit map (or put it back); the toast can undo hiding it. */
@@ -509,26 +524,36 @@ async function assignOrbitToTarget(childId: number, target: OrbitBody) {
   const child = bodies.value.get(childId);
   if (!child || child.id === target.id) return;
   if (target.id !== child.parentId && warnPortLimit(target.device)) return;
-  // The free spot on the target's moon ring, furthest from the moons already there
-  const siblings = bodyList.value.filter((b) => b.parentId === target.id && b.kind === 'moon').map((b) => posOf(b.id));
-  const newPos = freeOrbitSlot(posOf(target.id), siblings, target.kind === 'star' ? 140 : 90);
+  const newPos = freeMoonSlot(target);
   try {
     await ensureCustom();
     localPositions.value = new Map(localPositions.value).set(childId, newPos);
     store.patchDevice(childId, { topology_x: newPos.x, topology_y: newPos.y });
     await api.updateDevice(childId, { topology_x: newPos.x, topology_y: newPos.y });
-    if (child.parentLinkId != null) {
-      await api.deleteTopologyLink(child.parentLinkId).catch(() => {});
-      links.value = links.value.filter((l) => l.id !== child.parentLinkId);
-    }
-    const type = child.device.is_ap || target.device.is_ap || child.device.is_wlan ? 'WLAN' : '1GbE';
-    const created = (await api.createTopologyLink({ source_id: target.id, target_id: childId, link_type: type })) as OrbitLink;
-    links.value = [...links.value, created];
+    await relinkChild(child, target);
     showToast('success', t('gv.plan.assigned_to', { parent: deviceLabel(target.device) }), '');
   } catch (err) {
     showToast('error', t('notifications.save_failed'), (err as Error).message);
     void load();
   }
+}
+
+/** The free spot on the target's moon ring, furthest from the moons already there. */
+function freeMoonSlot(target: OrbitBody): Point {
+  const siblings = bodyList.value.filter((b) => b.parentId === target.id && b.kind === 'moon').map((b) => posOf(b.id));
+  return freeOrbitSlot(posOf(target.id), siblings, target.kind === 'star' ? 140 : 90);
+}
+
+/** Drop the child's old parent link (if any) and link it to `target`. */
+async function relinkChild(child: OrbitBody, target: OrbitBody) {
+  if (child.parentLinkId != null) {
+    await api.deleteTopologyLink(child.parentLinkId).catch(() => {});
+    links.value = links.value.filter((l) => l.id !== child.parentLinkId);
+  }
+  // Only the child's wireless flag counts here (not the target's), as before
+  const type = inferLinkType(child.device, { is_ap: target.device.is_ap });
+  const created = (await api.createTopologyLink({ source_id: target.id, target_id: child.id, link_type: type })) as OrbitLink;
+  links.value = [...links.value, created];
 }
 
 /** Toasts and returns true when `device` has no free port left for one more link (React parity). */
@@ -549,9 +574,13 @@ async function setMaxPorts(device: Device, value: number) {
   }
 }
 
+function linkExists(a: number, b: number): boolean {
+  return links.value.some((l) => (l.source_id === a && l.target_id === b) || (l.source_id === b && l.target_id === a));
+}
+
 async function createBeamBetween(source: number, target: number) {
   if (source === target) return;
-  if (links.value.some((l) => (l.source_id === source && l.target_id === target) || (l.source_id === target && l.target_id === source))) {
+  if (linkExists(source, target)) {
     showToast('info', t('gv.plan.link_exists'), '');
     return;
   }
@@ -560,8 +589,7 @@ async function createBeamBetween(source: number, target: number) {
   if (warnPortLimit(a) || warnPortLimit(b)) return;
   freezeLayout();
   try {
-    const type = a?.is_ap || b?.is_ap || a?.is_wlan || b?.is_wlan ? 'WLAN' : '1GbE';
-    const created = (await api.createTopologyLink({ source_id: source, target_id: target, link_type: type })) as OrbitLink;
+    const created = (await api.createTopologyLink({ source_id: source, target_id: target, link_type: inferLinkType(a, b) })) as OrbitLink;
     links.value = [...links.value, created];
     selectedLinkId.value = created.id;
   } catch (err) {
@@ -745,13 +773,18 @@ function onWindowKeyDown(e: KeyboardEvent) {
   } else if (touchActive.value) touchActive.value = false;
 }
 
+type Spotlight = { set: FocusSet; strong: boolean };
+
+/** The trace lights its path (or just the start body while no end is picked). */
+function traceSpotlight(fromId: number): Spotlight {
+  const path = tracedPath.value;
+  return { set: { bodyIds: new Set(path ? path.bodyIds : [fromId]), beamIds: new Set(path ? path.beamIds : []) }, strong: true };
+}
+
 /** What stays lit: focus, search and tracing dim the rest hard, hover only softly. */
-const spotlight = computed<{ set: FocusSet; strong: boolean } | null>(() => {
+const spotlight = computed<Spotlight | null>(() => {
   if (editing.value) return null;
-  if (traceFromId.value != null) {
-    const path = tracedPath.value;
-    return { set: { bodyIds: new Set(path ? path.bodyIds : [traceFromId.value]), beamIds: new Set(path ? path.beamIds : []) }, strong: true };
-  }
+  if (traceFromId.value != null) return traceSpotlight(traceFromId.value);
   if (searchQuery.value.trim()) return { set: focusSetFromIds(searchHits.value.map((b) => b.id), lightBeams.value), strong: true };
   if (focusedId.value != null) return { set: computeFocusSet(focusedId.value, bodies.value, lightBeams.value), strong: true };
   if (resilienceMode.value) return { set: focusSetFromIds(resilience.value.singlePoints.map((p) => p.id), lightBeams.value), strong: true };
