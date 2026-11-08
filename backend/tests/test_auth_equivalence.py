@@ -1,27 +1,29 @@
 """Authentication and token scopes give the same answer as before the auth.py refactor.
 
 Frozen copies of _required_scope_for, _enforce_token_scopes, _resolve_admin and
-_authenticate_websocket_impl as of 0.7.0-rc.7 are run next to the live functions over every
-app route and a grid of cookies, headers, query tokens, setup states and token scopes.
-Results, HTTP errors and WebSocket close codes must match exactly.
+_authenticate_websocket_impl as of 0.7.0-rc.7, and of login, change_password and
+_admin_password_matches as of 0.7.0, are run next to the live functions over every app route
+and a grid of cookies, headers, query tokens, setup states, token scopes and stored passwords.
+Results, HTTP errors, WebSocket close codes, stored rows and audit entries must match exactly.
 """
 
 import hashlib
 import itertools
 import logging
 import re
+import time
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
-from sqlalchemy import select
+from fastapi import HTTPException, Response
+from sqlalchemy import delete, select
 
 import app.api.auth as auth
 from app.models.agent import AgentToken
 from app.models.api_token import ApiToken
 from app.models.device import Device
 from app.models.setting import Setting
-from app.services.agent_tokens import hash_agent_token
+from app.services.agent_tokens import hash_agent_token, verify_agent_token
 from app.services.auth_service import secure_compare
 from app.services.session_service import session_store
 
@@ -151,6 +153,22 @@ async def _old_resolve_admin(conn, authorization, token, db) -> str:
     raise HTTPException(status_code=401, detail="Missing authentication token")
 
 
+async def _old_auth_query_by_endpoint(db, endpoint_type, query_token, device_id, websocket):
+    if endpoint_type not in ("logs", "agent", "scanner"):
+        return None
+    master_token = await auth._load_master_token(db)
+    if master_token and secure_compare(query_token, master_token):
+        return {"authenticated": True, "auth_type": "master", "identity": query_token}
+    if endpoint_type == "agent" and device_id is not None:
+        agent_token = (
+            await db.execute(select(AgentToken).where(AgentToken.device_id == device_id, AgentToken.is_active.is_(True)))
+        ).scalar_one_or_none()
+        if agent_token and await verify_agent_token(db, agent_token, query_token):
+            return {"authenticated": True, "auth_type": "agent", "identity": query_token}
+    await websocket.close(code=4003, reason="Unauthorized")
+    return {"authenticated": False}
+
+
 async def _old_authenticate_websocket_impl(websocket, endpoint_type, device_id, db) -> dict:
     setup_res = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
     setup_setting = setup_res.scalar_one_or_none()
@@ -194,7 +212,7 @@ async def _old_authenticate_websocket_impl(websocket, endpoint_type, device_id, 
             await auth._touch_api_token(db, db_token)
             return {"authenticated": True, "auth_type": "api_token", "identity": f"api_token:{db_token.name}"}
 
-        channel_auth = await auth._auth_query_by_endpoint(db, endpoint_type, query_token, device_id, websocket)
+        channel_auth = await _old_auth_query_by_endpoint(db, endpoint_type, query_token, device_id, websocket)
         if channel_auth is not None:
             return channel_auth
         await websocket.close(code=4003, reason="Unauthorized")
@@ -207,6 +225,97 @@ async def _old_authenticate_websocket_impl(websocket, endpoint_type, device_id, 
 
     await websocket.close(code=4001, reason="Missing authentication token")
     return {"authenticated": False}
+
+
+async def _old_login(request, response, password, db):
+    client_ip = auth._client_ip(request)
+    retry_after = auth._reserve_login_attempt(client_ip)
+    if retry_after is not None:
+        await auth.audit(request, "auth.login", "denied", detail="too many failed attempts", actor="anonymous")
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed login attempts. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
+    master_setting = res_token.scalar_one_or_none()
+    if not master_setting:
+        raise HTTPException(status_code=500, detail="System not initialized. Run setup first.")
+
+    res_pass = await db.execute(select(Setting).where(Setting.key == "api.admin_password"))
+    admin_pass_setting = res_pass.scalar_one_or_none()
+    required_pass = admin_pass_setting.value if admin_pass_setting else master_setting.value
+
+    is_valid = False
+    needs_migration = False
+    if auth.looks_hashed(required_pass):
+        is_valid = auth.verify_password(password, required_pass)
+    else:
+        is_valid = secure_compare(password, required_pass)
+        if is_valid:
+            needs_migration = True
+
+    if is_valid:
+        auth._login_attempts.pop(client_ip, None)
+        if needs_migration:
+            hashed = auth.hash_password(password)
+            if admin_pass_setting:
+                admin_pass_setting.value = hashed
+            else:
+                db.add(Setting(key="api.admin_password", value=hashed, category="system"))
+            await db.commit()
+        auth.issue_session_cookie(response, request.headers.get("user-agent"))
+        await auth.audit(request, "auth.login", actor="session")
+        return {"status": "ok", "message": "Login successful"}
+
+    await auth.audit(request, "auth.login", "failed", detail="wrong password", actor="anonymous")
+    raise HTTPException(status_code=401, detail="Invalid password")
+
+
+async def _old_change_password(req, request, token, db):
+    if not (token.startswith("session_") and session_store.get_session(token)):
+        await auth.audit(request, "auth.password", "denied", detail="not a browser session")
+        raise HTTPException(status_code=403, detail="Only a logged-in browser session can change the password.")
+
+    master_setting = (await db.execute(select(Setting).where(Setting.key == "api.master_token"))).scalar_one_or_none()
+    admin_setting = (await db.execute(select(Setting).where(Setting.key == "api.admin_password"))).scalar_one_or_none()
+    required = admin_setting.value if admin_setting else (master_setting.value if master_setting else "")
+    if not required:
+        raise HTTPException(status_code=500, detail="System not initialized. Run setup first.")
+
+    current_ok = (
+        auth.verify_password(req.current_password, required) if auth.looks_hashed(required)
+        else secure_compare(req.current_password, required)
+    )
+    if not current_ok:
+        await auth.audit(request, "auth.password", "failed", detail="current password wrong")
+        raise HTTPException(status_code=400, detail="The current password is wrong.")
+    if req.new_password == req.current_password:
+        raise HTTPException(status_code=400, detail="Choose a password that differs from the current one.")
+    if not req.new_password.strip():
+        raise HTTPException(status_code=400, detail="The new password must not be blank.")
+
+    hashed = auth.hash_password(req.new_password)
+    if admin_setting:
+        admin_setting.value = hashed
+    else:
+        db.add(Setting(key="api.admin_password", value=hashed, category="system",
+                       description="Administrator password for dashboard login"))
+    await db.commit()
+
+    ended = session_store.delete_all_except(token)
+    await auth.audit(request, "auth.password", detail=f"{ended} other session(s) logged out")
+    return {"status": "ok", "other_sessions_ended": ended}
+
+
+async def _old_admin_password_matches(db, password) -> bool:
+    master_setting = (await db.execute(select(Setting).where(Setting.key == "api.master_token"))).scalar_one_or_none()
+    admin_setting = (await db.execute(select(Setting).where(Setting.key == "api.admin_password"))).scalar_one_or_none()
+    required = admin_setting.value if admin_setting else (master_setting.value if master_setting else "")
+    if not required:
+        return False
+    return auth.verify_password(password, required) if auth.looks_hashed(required) else secure_compare(password, required)
 
 
 # --- inputs -----------------------------------------------------------------------
@@ -266,7 +375,7 @@ async def _outcome(coro):
     try:
         return ("ok", await coro)
     except HTTPException as exc:
-        return ("http", exc.status_code, exc.detail)
+        return ("http", exc.status_code, exc.detail, exc.headers)
 
 
 def _sync_outcome(fn, *args):
@@ -370,3 +479,123 @@ async def test_websocket_auth_matches_for_every_credential_combination(db, crede
 async def auth_outcome(coro, ws):
     result = await coro
     return result, ws.closed
+
+
+# --- stored passwords: login, change, step-up ---------------------------------------
+
+FAKE_HASH = "$argon2$fake$"
+PASSWORD_KEYS = ("api.master_token", "api.admin_password")
+STORED_MASTERS = (None, "", "master-plain", f"{FAKE_HASH}hashed-pw")
+STORED_ADMINS = (None, "", "admin-plain", f"{FAKE_HASH}hashed-pw")
+CLIENT_IP = "192.0.2.9"
+
+
+def _fake_hash(password: str) -> str:
+    return f"{FAKE_HASH}{password}"
+
+
+def _fake_verify(password: str, stored: str) -> bool:
+    return stored == _fake_hash(password)
+
+
+def _password_request():
+    return SimpleNamespace(client=SimpleNamespace(host=CLIENT_IP), headers={"user-agent": "UA1"})
+
+
+@pytest.fixture
+def audits(monkeypatch):
+    """Repeatable hashing and a recorded audit trail, shared by the old and the new code."""
+    entries = []
+
+    async def record(_request, *args, **kwargs):
+        entries.append((args, kwargs))
+
+    monkeypatch.setattr(auth, "hash_password", _fake_hash)
+    monkeypatch.setattr(auth, "verify_password", _fake_verify)
+    monkeypatch.setattr(auth, "audit", record)
+    return entries
+
+
+async def _seed_passwords(db, master, admin):
+    await db.execute(delete(Setting).where(Setting.key.in_(PASSWORD_KEYS)))
+    for key, value in zip(PASSWORD_KEYS, (master, admin)):
+        if value is not None:
+            db.add(Setting(key=key, value=value))
+    await db.commit()
+
+
+async def _password_rows(db):
+    rows = (await db.execute(select(Setting).where(Setting.key.in_(PASSWORD_KEYS)).order_by(Setting.key))).scalars().all()
+    return [(row.key, row.value, row.category, row.description) for row in rows]
+
+
+async def _login_outcome(fn, db, audits, master, admin, password, rate_limited):
+    await _seed_passwords(db, master, admin)
+    auth.reset_login_rate_limit()
+    if rate_limited:
+        auth._login_attempts[CLIENT_IP] = [time.monotonic()] * auth.LOGIN_MAX_FAILURES
+    audits.clear()
+    response = Response()
+    result = await _outcome(fn(_password_request(), response, password, db))
+    cookie = re.sub(r"session_[0-9a-f]+", "session_X", response.headers.get("set-cookie", ""))
+    attempts = {ip: len(times) for ip, times in auth._login_attempts.items()}
+    return result, cookie, await _password_rows(db), list(audits), attempts
+
+
+@pytest.mark.asyncio
+async def test_login_matches_for_every_stored_password_combination(db, audits):
+    passwords = ("master-plain", "admin-plain", "hashed-pw", "wrong", "")
+    cases = list(itertools.product(STORED_MASTERS, STORED_ADMINS, passwords, (False, True)))
+    assert len(cases) == 160
+
+    diffs = []
+    for case in cases:
+        before = await _login_outcome(_old_login, db, audits, *case)
+        now = await _login_outcome(auth.login, db, audits, *case)
+        if before != now:
+            diffs.append((case, before, now))
+    assert diffs[:3] == []
+
+
+async def _change_outcome(fn, db, audits, master, admin, token_kind, current, new):
+    await _seed_passwords(db, master, admin)
+    session_store.delete_all_except(None)
+    session = session_store.create_session(user_agent="UA1")
+    session_store.create_session(user_agent="UA2")
+    token = {"session": session, "bogus": "session_bogus", "master": "master-plain"}[token_kind]
+    audits.clear()
+    req = auth.PasswordChange(current_password=current, new_password=new)
+    result = await _outcome(fn(req, _password_request(), token, db))
+    return result, await _password_rows(db), list(audits), len(session_store._sessions)
+
+
+@pytest.mark.asyncio
+async def test_password_change_matches_for_every_stored_password_combination(db, audits):
+    diffs, count = [], 0
+    currents = ("master-plain", "admin-plain", "hashed-pw", "wrong-password")
+    for master, admin, token_kind, current in itertools.product(
+        STORED_MASTERS, STORED_ADMINS, ("session", "bogus", "master"), currents
+    ):
+        for new in ("        ", "new-password-1", current):
+            case = (master, admin, token_kind, current, new)
+            before = await _change_outcome(_old_change_password, db, audits, *case)
+            now = await _change_outcome(auth.change_password, db, audits, *case)
+            count += 1
+            if before != now:
+                diffs.append((case, before, now))
+    session_store.delete_all_except(None)
+    assert count == 576
+    assert diffs[:3] == []
+
+
+@pytest.mark.asyncio
+async def test_step_up_password_check_matches_for_every_stored_password_combination(db, audits):
+    diffs = []
+    passwords = ("master-plain", "admin-plain", "hashed-pw", "wrong", "")
+    for master, admin, password in itertools.product(STORED_MASTERS, STORED_ADMINS, passwords):
+        await _seed_passwords(db, master, admin)
+        before = await _old_admin_password_matches(db, password)
+        now = await auth._admin_password_matches(db, password)
+        if before != now:
+            diffs.append((master, admin, password, before, now))
+    assert diffs[:3] == []

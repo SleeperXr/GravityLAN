@@ -2,6 +2,7 @@ import hashlib
 import math
 import secrets
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Body, Response, Request, Header, WebSocket, Query
@@ -9,6 +10,7 @@ from fastapi.requests import HTTPConnection
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from app.services.audit import record as audit, remember_actor
 from app.services import stepup
 from app.services.stepup import require_step_up
@@ -124,6 +126,21 @@ def _token_scopes(db_token) -> set[str]:
     return _READONLY_DEFAULT_SCOPES
 
 
+def _is_scope_exempt(path: str) -> bool:
+    return path in _SCOPE_EXEMPT_PATHS or path.startswith(_SCOPE_EXEMPT_PREFIXES)
+
+
+def _is_forbidden_for_tokens(path: str) -> bool:
+    return path in _READONLY_FORBIDDEN_PATHS or path.startswith(_TOKEN_FORBIDDEN_PREFIXES)
+
+
+def _missing_scope_error(required_scope: str, method: str) -> HTTPException:
+    detail = f"Token is missing the required scope '{required_scope}'."
+    if method not in _READ_METHODS:
+        detail = f"Read-only token cannot perform state-modifying actions. {detail}"
+    return HTTPException(status_code=403, detail=detail)
+
+
 def _enforce_token_scopes(db_token, conn: HTTPConnection) -> None:
     """Enforce scope rules for a read-only API token on HTTP requests."""
     if conn.scope.get("type") != "http":
@@ -131,22 +148,18 @@ def _enforce_token_scopes(db_token, conn: HTTPConnection) -> None:
 
     method = conn.method
     path = conn.url.path
-    if path in _SCOPE_EXEMPT_PATHS or path.startswith(_SCOPE_EXEMPT_PREFIXES):
+    if _is_scope_exempt(path):
         return
 
-    if path in _READONLY_FORBIDDEN_PATHS or path.startswith(_TOKEN_FORBIDDEN_PREFIXES):
+    if _is_forbidden_for_tokens(path):
         raise HTTPException(
             status_code=403,
             detail="Read-only token is not authorized for this administrative action. Token is not authorized for sensitive administrative actions."
         )
 
     required_scope = _required_scope_for(path, method)
-    if not required_scope or required_scope in _token_scopes(db_token):
-        return
-    detail = f"Token is missing the required scope '{required_scope}'."
-    if method not in _READ_METHODS:
-        detail = f"Read-only token cannot perform state-modifying actions. {detail}"
-    raise HTTPException(status_code=403, detail=detail)
+    if required_scope and required_scope not in _token_scopes(db_token):
+        raise _missing_scope_error(required_scope, method)
 
 
 async def _authenticate_query_param(db: AsyncSession, token: str, conn: HTTPConnection) -> str:
@@ -346,7 +359,8 @@ async def _touch_api_token(db: AsyncSession, db_token) -> None:
         if not last_used or (now - last_used).total_seconds() > 60:
             db_token.last_used_at = now
             await db.commit()
-    except Exception as e:
+    except SQLAlchemyError as e:
+        # Bookkeeping only: a busy database must not refuse a valid token
         logger.error(f"Failed to update API token last_used_at: {e}")
         await db.rollback()
 
@@ -372,64 +386,69 @@ async def _auth_reject(websocket: WebSocket, reason: str = "Unauthorized") -> di
     return {"authenticated": False}
 
 
-async def _auth_logs_query(db: AsyncSession, query_token: str, websocket: WebSocket) -> dict | None:
+@dataclass(frozen=True)
+class _WsHandshake:
+    """A WebSocket being authenticated: the socket, the channel it asks for and the database."""
+
+    db: AsyncSession
+    websocket: WebSocket
+    endpoint_type: str
+    device_id: int | None
+
+
+async def _auth_logs_query(handshake: _WsHandshake, query_token: str) -> dict | None:
     """Query-token auth for the logs channel (Master-Token only)."""
-    master_token = await _load_master_token(db)
+    master_token = await _load_master_token(handshake.db)
     if master_token and secure_compare(query_token, master_token):
         return _auth_result("master", query_token)
-    return await _auth_reject(websocket, "Invalid master token in query params for logs route.")
+    return await _auth_reject(handshake.websocket, "Invalid master token in query params for logs route.")
 
 
-async def _auth_agent_query(db: AsyncSession, query_token: str, device_id: int | None, websocket: WebSocket) -> dict | None:
+async def _auth_agent_query(handshake: _WsHandshake, query_token: str) -> dict | None:
     """Query-token auth for the agent channel (Master-Token or device Agent-Token)."""
     from app.models.agent import AgentToken
     from app.services.agent_tokens import verify_agent_token
 
+    db = handshake.db
     master_token = await _load_master_token(db)
     if master_token and secure_compare(query_token, master_token):
         return _auth_result("master", query_token)
 
-    if device_id is not None:
+    if handshake.device_id is not None:
         agent_res = await db.execute(
             select(AgentToken).where(
-                AgentToken.device_id == device_id,
+                AgentToken.device_id == handshake.device_id,
                 AgentToken.is_active.is_(True)
             )
         )
         agent_token_obj = agent_res.scalar_one_or_none()
         if agent_token_obj and await verify_agent_token(db, agent_token_obj, query_token):
             return _auth_result("agent", query_token)
-    return await _auth_reject(websocket, "Invalid agent/master token or device mismatch in query params.")
+    return await _auth_reject(handshake.websocket, "Invalid agent/master token or device mismatch in query params.")
 
 
-async def _auth_scanner_query(db: AsyncSession, query_token: str, websocket: WebSocket) -> dict | None:
+async def _auth_scanner_query(handshake: _WsHandshake, query_token: str) -> dict | None:
     """Query-token auth for the scanner channel (Master-Token only)."""
-    master_token = await _load_master_token(db)
+    master_token = await _load_master_token(handshake.db)
     if master_token and secure_compare(query_token, master_token):
         return _auth_result("master", query_token)
-    return await _auth_reject(websocket, "Invalid master token in query params for scanner route.")
+    return await _auth_reject(handshake.websocket, "Invalid master token in query params for scanner route.")
 
 
-async def _auth_query_by_endpoint(
-    db: AsyncSession,
-    endpoint_type: str,
-    query_token: str,
-    device_id: int | None,
-    websocket: WebSocket,
-) -> dict | None:
+async def _auth_query_by_endpoint(handshake: _WsHandshake, query_token: str) -> dict | None:
     """Channel-policy query-token auth for logs/agent/scanner; returns auth dict or None on failure."""
-    if endpoint_type == "logs":
-        return await _auth_logs_query(db, query_token, websocket)
-    if endpoint_type == "agent":
-        return await _auth_agent_query(db, query_token, device_id, websocket)
-    if endpoint_type == "scanner":
-        return await _auth_scanner_query(db, query_token, websocket)
+    if handshake.endpoint_type == "logs":
+        return await _auth_logs_query(handshake, query_token)
+    if handshake.endpoint_type == "agent":
+        return await _auth_agent_query(handshake, query_token)
+    if handshake.endpoint_type == "scanner":
+        return await _auth_scanner_query(handshake, query_token)
     return None
 
 
-async def _ws_close(websocket: WebSocket, code: int, reason: str, log_message: str, *args) -> dict:
+async def _ws_close(websocket: WebSocket, code: int, reason: str, log_message: str) -> dict:
     """Log why a WebSocket is refused, close it and return a failed auth dict."""
-    logger.warning(log_message, *args)
+    logger.warning(log_message)
     await websocket.close(code=code, reason=reason)
     return {"authenticated": False}
 
@@ -449,35 +468,59 @@ async def _ws_session_cookie(websocket: WebSocket, cookie_token: str) -> dict:
     return _auth_result("session", cookie_token)
 
 
-async def _ws_api_token(db: AsyncSession, websocket: WebSocket, endpoint_type: str, db_token) -> dict:
-    required_scope = _WS_TOKEN_SCOPES.get(endpoint_type)
+async def _ws_api_token(handshake: _WsHandshake, db_token) -> dict:
+    required_scope = _WS_TOKEN_SCOPES.get(handshake.endpoint_type)
     if required_scope and required_scope not in _token_scopes(db_token):
         return await _ws_close(
-            websocket, 4003, "Insufficient token scopes",
-            "WebSocket API token '%s' rejected: missing required scope '%s'", db_token.name, required_scope,
+            handshake.websocket, 4003, "Insufficient token scopes",
+            f"WebSocket API token '{db_token.name}' rejected: missing required scope '{required_scope}'",
         )
-    await _touch_api_token(db, db_token)
+    await _touch_api_token(handshake.db, db_token)
     return _auth_result("api_token", f"api_token:{db_token.name}")
 
 
-async def _ws_query_token(
-    db: AsyncSession, websocket: WebSocket, endpoint_type: str, query_token: str, device_id: int | None
-) -> dict:
+async def _ws_query_token(handshake: _WsHandshake, query_token: str) -> dict:
     """``?token=``: an API token, else the master or agent token the channel allows."""
     from app.models.api_token import ApiToken
 
     h = hashlib.sha256(query_token.encode()).hexdigest()
     db_token = (
-        await db.execute(select(ApiToken).where(ApiToken.token_hash == h, ApiToken.is_active == True))
+        await handshake.db.execute(select(ApiToken).where(ApiToken.token_hash == h, ApiToken.is_active == True))
     ).scalar_one_or_none()
     if db_token:
-        return await _ws_api_token(db, websocket, endpoint_type, db_token)
+        return await _ws_api_token(handshake, db_token)
 
-    channel_auth = await _auth_query_by_endpoint(db, endpoint_type, query_token, device_id, websocket)
+    channel_auth = await _auth_query_by_endpoint(handshake, query_token)
     if channel_auth is not None:
         return channel_auth
     # An invalid query token must not fall through to other channels: reject it.
-    return await _ws_close(websocket, 4003, "Unauthorized", "WebSocket connection rejected: Invalid query token.")
+    return await _ws_close(handshake.websocket, 4003, "Unauthorized", "WebSocket connection rejected: Invalid query token.")
+
+
+async def _ws_before_setup(handshake: _WsHandshake) -> dict:
+    """Before setup only the scanner channel is open, so the wizard can show the first scans."""
+    if handshake.endpoint_type == "scanner":
+        return _auth_result("setup_bypass", "anonymous")
+    return await _ws_close(
+        handshake.websocket, 4003, "Setup incomplete",
+        f"WebSocket connection rejected: Setup bypass requested on non-scanner route '{handshake.endpoint_type}'.",
+    )
+
+
+async def _ws_legacy_cookie(handshake: _WsHandshake, cookie_token: str | None) -> dict:
+    """Deprecated: the master token in the cookie. Anything else counts as missing credentials."""
+    if cookie_token:
+        master_token = await _load_master_token(handshake.db)
+        if master_token and secure_compare(cookie_token, master_token):
+            logger.warning(
+                "DEPRECATION WARNING: Master-Token used in browser cookie for WebSocket auth. "
+                "This legacy path is deprecated and will be removed in a future release."
+            )
+            return _auth_result("master_legacy", cookie_token)
+
+    return await _ws_close(
+        handshake.websocket, 4001, "Missing authentication token", "WebSocket connection rejected: Missing authentication token."
+    )
 
 
 async def _authenticate_websocket_impl(
@@ -486,14 +529,11 @@ async def _authenticate_websocket_impl(
     device_id: int | None,
     db: AsyncSession
 ) -> dict:
-    # 1. Before setup only the scanner channel is open, so the wizard can show the first scans
+    handshake = _WsHandshake(db, websocket, endpoint_type, device_id)
+
+    # 1. Setup gate
     if not await _setup_completed(db):
-        if endpoint_type == "scanner":
-            return _auth_result("setup_bypass", "anonymous")
-        return await _ws_close(
-            websocket, 4003, "Setup incomplete",
-            "WebSocket connection rejected: Setup bypass requested on non-scanner route '%s'.", endpoint_type,
-        )
+        return await _ws_before_setup(handshake)
 
     cookie_token = websocket.cookies.get("gravitylan_token")
     query_token = websocket.query_params.get("token")
@@ -511,22 +551,10 @@ async def _authenticate_websocket_impl(
 
     # 3. Query token per channel policy
     if query_token:
-        return await _ws_query_token(db, websocket, endpoint_type, query_token, device_id)
+        return await _ws_query_token(handshake, query_token)
 
-    # 4. Deprecated legacy cookie fallback (master token in the cookie)
-    if cookie_token:
-        master_token = await _load_master_token(db)
-        if master_token and secure_compare(cookie_token, master_token):
-            logger.warning(
-                "DEPRECATION WARNING: Master-Token used in browser cookie for WebSocket auth. "
-                "This legacy path is deprecated and will be removed in a future release."
-            )
-            return _auth_result("master_legacy", cookie_token)
-
-    # 5. Missing credentials
-    return await _ws_close(
-        websocket, 4001, "Missing authentication token", "WebSocket connection rejected: Missing authentication token."
-    )
+    # 4. Deprecated legacy cookie fallback, else missing credentials
+    return await _ws_legacy_cookie(handshake, cookie_token)
 
 # Brute-force guard for /login: at most LOGIN_MAX_FAILURES attempts per client IP
 # within the sliding window. In memory, which fits the single uvicorn worker.
@@ -583,6 +611,37 @@ def issue_session_cookie(response: Response, user_agent: str | None) -> None:
     )
 
 
+async def _password_settings(db: AsyncSession) -> tuple[Setting | None, Setting | None]:
+    """The master-token row and the admin-password row; either may not exist yet."""
+    master_setting = (await db.execute(select(Setting).where(Setting.key == "api.master_token"))).scalar_one_or_none()
+    admin_setting = (await db.execute(select(Setting).where(Setting.key == "api.admin_password"))).scalar_one_or_none()
+    return master_setting, admin_setting
+
+
+def _stored_password(master_setting: Setting | None, admin_setting: Setting | None) -> str:
+    """The value a password is checked against: the master token counts until a password is set."""
+    if admin_setting:
+        return admin_setting.value
+    return master_setting.value if master_setting else ""
+
+
+def _password_matches(password: str, stored: str) -> bool:
+    """Check against a hash, or against a legacy plaintext value that is not migrated yet."""
+    return verify_password(password, stored) if looks_hashed(stored) else secure_compare(password, stored)
+
+
+async def _save_admin_password(
+    db: AsyncSession, admin_setting: Setting | None, password: str, description: str | None = None
+) -> None:
+    """Hash and store the admin password, creating its row when only the master token exists so far."""
+    hashed = hash_password(password)
+    if admin_setting:
+        admin_setting.value = hashed
+    else:
+        db.add(Setting(key="api.admin_password", value=hashed, category="system", description=description))
+    await db.commit()
+
+
 @router.post("/login")
 async def login(
     request: Request,
@@ -602,52 +661,27 @@ async def login(
             headers={"Retry-After": str(retry_after)},
         )
 
-    res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-    master_setting = res_token.scalar_one_or_none()
-    
+    master_setting, admin_setting = await _password_settings(db)
     if not master_setting:
         raise HTTPException(status_code=500, detail="System not initialized. Run setup first.")
-    
-    res_pass = await db.execute(select(Setting).where(Setting.key == "api.admin_password"))
-    admin_pass_setting = res_pass.scalar_one_or_none()
-    
-    required_pass = admin_pass_setting.value if admin_pass_setting else master_setting.value
-    
-    is_valid = False
-    needs_migration = False
 
-    if looks_hashed(required_pass):
-        is_valid = verify_password(password, required_pass)
-    else:
-        # Legacy plaintext comparison
-        is_valid = secure_compare(password, required_pass)
-        if is_valid:
-            needs_migration = True
-    
-    if is_valid:
-        logger.info("Login successful, generating lock-free in-memory session")
-        _login_attempts.pop(client_ip, None)
+    required = _stored_password(master_setting, admin_setting)
+    if not _password_matches(password, required):
+        logger.warning("Login failed: invalid password provided")
+        await audit(request, "auth.login", "failed", detail="wrong password", actor="anonymous")
+        raise HTTPException(status_code=401, detail="Invalid password")
 
-        # Auto-migrate to hashed password if it was plaintext
-        if needs_migration:
-            logger.info("Migrating legacy plaintext password to hash")
-            hashed = hash_password(password)
-            if admin_pass_setting:
-                admin_pass_setting.value = hashed
-            else:
-                db.add(Setting(key="api.admin_password", value=hashed, category="system"))
-            await db.commit()
+    logger.info("Login successful, generating lock-free in-memory session")
+    _login_attempts.pop(client_ip, None)
 
-        issue_session_cookie(response, request.headers.get("user-agent"))
-        await audit(request, "auth.login", actor="session")
-        return {
-            "status": "ok", 
-            "message": "Login successful"
-        }
-    
-    logger.warning("Login failed: invalid password provided")
-    await audit(request, "auth.login", "failed", detail="wrong password", actor="anonymous")
-    raise HTTPException(status_code=401, detail="Invalid password")
+    # Auto-migrate to hashed password if it was plaintext
+    if not looks_hashed(required):
+        logger.info("Migrating legacy plaintext password to hash")
+        await _save_admin_password(db, admin_setting, password)
+
+    issue_session_cookie(response, request.headers.get("user-agent"))
+    await audit(request, "auth.login", actor="session")
+    return {"status": "ok", "message": "Login successful"}
 
 @router.post("/logout")
 async def logout(request: Request, response: Response):
@@ -683,17 +717,12 @@ async def change_password(
         await audit(request, "auth.password", "denied", detail="not a browser session")
         raise HTTPException(status_code=403, detail="Only a logged-in browser session can change the password.")
 
-    master_setting = (await db.execute(select(Setting).where(Setting.key == "api.master_token"))).scalar_one_or_none()
-    admin_setting = (await db.execute(select(Setting).where(Setting.key == "api.admin_password"))).scalar_one_or_none()
-    required = admin_setting.value if admin_setting else (master_setting.value if master_setting else "")
+    master_setting, admin_setting = await _password_settings(db)
+    required = _stored_password(master_setting, admin_setting)
     if not required:
         raise HTTPException(status_code=500, detail="System not initialized. Run setup first.")
 
-    current_ok = (
-        verify_password(req.current_password, required) if looks_hashed(required)
-        else secure_compare(req.current_password, required)
-    )
-    if not current_ok:
+    if not _password_matches(req.current_password, required):
         logger.warning("Password change rejected: current password is wrong")
         await audit(request, "auth.password", "failed", detail="current password wrong")
         raise HTTPException(status_code=400, detail="The current password is wrong.")
@@ -702,13 +731,9 @@ async def change_password(
     if not req.new_password.strip():
         raise HTTPException(status_code=400, detail="The new password must not be blank.")
 
-    hashed = hash_password(req.new_password)
-    if admin_setting:
-        admin_setting.value = hashed
-    else:
-        db.add(Setting(key="api.admin_password", value=hashed, category="system",
-                       description="Administrator password for dashboard login"))
-    await db.commit()
+    await _save_admin_password(
+        db, admin_setting, req.new_password, description="Administrator password for dashboard login"
+    )
 
     ended = session_store.delete_all_except(token)
     logger.info("Admin password changed; %d other session(s) logged out", ended)
@@ -722,12 +747,11 @@ class StepUpRequest(BaseModel):
 
 
 async def _admin_password_matches(db: AsyncSession, password: str) -> bool:
-    master_setting = (await db.execute(select(Setting).where(Setting.key == "api.master_token"))).scalar_one_or_none()
-    admin_setting = (await db.execute(select(Setting).where(Setting.key == "api.admin_password"))).scalar_one_or_none()
-    required = admin_setting.value if admin_setting else (master_setting.value if master_setting else "")
+    master_setting, admin_setting = await _password_settings(db)
+    required = _stored_password(master_setting, admin_setting)
     if not required:
         return False
-    return verify_password(password, required) if looks_hashed(required) else secure_compare(password, required)
+    return _password_matches(password, required)
 
 
 @router.post("/step-up")
