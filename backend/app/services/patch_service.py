@@ -14,6 +14,7 @@ import re
 import shlex
 import time
 import paramiko
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 from app.config import settings
@@ -30,6 +31,36 @@ logger = logging.getLogger(__name__)
 
 # Fixed sudo prompt (sudo -p) so it can be recognised regardless of the host's language
 _SUDO_PROMPT = "SUDOPROMPT:"
+
+
+@dataclass(frozen=True)
+class _SshLogin:
+    """Where and as whom to log in; the secrets stay out of the repr so a logged login cannot leak them."""
+
+    host_ip: str
+    ssh_user: str
+    ssh_port: int = 22
+    ssh_password: str | None = field(default=None, repr=False)
+    ssh_key: str | None = field(default=None, repr=False)
+    ssh_key_passphrase: str | None = field(default=None, repr=False)
+
+    @property
+    def needs_sudo(self) -> bool:
+        return self.ssh_user != "root"
+
+    @property
+    def sudo_password(self) -> str | None:
+        """The password that answers sudo's prompt; root never goes through sudo."""
+        return self.ssh_password if self.needs_sudo else None
+
+
+@dataclass(frozen=True)
+class _AptRefresh:
+    """How ``apt-get update`` ended; ``exit_code`` is None after a timeout or a rejected password."""
+
+    output: str
+    sudo_rejected: bool
+    exit_code: int | None
 
 
 def _build_client(
@@ -50,28 +81,21 @@ def _build_client(
     return client
 
 
-def _build_connect_kwargs(
-    host_ip: str,
-    ssh_user: str,
-    ssh_port: int,
-    ssh_password: str | None = None,
-    ssh_key: str | None = None,
-    ssh_key_passphrase: str | None = None,
-) -> tuple[dict | None, str | None]:
+def _build_connect_kwargs(login: _SshLogin) -> tuple[dict | None, str | None]:
     """Build paramiko connect kwargs; returns (kwargs, error_message)."""
     connect_kwargs: dict = {
-        "hostname": host_ip,
-        "port": ssh_port,
-        "username": ssh_user,
+        "hostname": login.host_ip,
+        "port": login.ssh_port,
+        "username": login.ssh_user,
         "timeout": 15,
     }
-    if ssh_key:
+    if login.ssh_key:
         try:
-            connect_kwargs["pkey"] = _load_ssh_key(ssh_key, ssh_key_passphrase)
+            connect_kwargs["pkey"] = _load_ssh_key(login.ssh_key, login.ssh_key_passphrase)
         except Exception as e:
             return None, f"Invalid SSH key format: {e}"
-    elif ssh_password:
-        connect_kwargs["password"] = ssh_password
+    elif login.ssh_password:
+        connect_kwargs["password"] = login.ssh_password
     else:
         return None, "Neither password nor SSH key provided."
     return connect_kwargs, None
@@ -112,11 +136,14 @@ def _open_command_channel(
     return channel
 
 
-async def _answer_sudo_prompt(channel, chunk: str, password: str, password_sent: bool) -> tuple[str, bool, bool]:
+async def _answer_sudo_prompt(channel, chunk: str, password: str | None, password_sent: bool) -> tuple[str, bool, bool]:
     """Send the password on the first prompt; a further prompt means sudo rejected it.
 
     Returns the chunk without prompt markers, whether the password is out, and whether it was rejected.
+    Without a password or a prompt in ``chunk`` there is nothing to answer.
     """
+    if not password or _SUDO_PROMPT not in chunk:
+        return chunk, password_sent, False
     if not password_sent:
         await asyncio.sleep(0.05)
         channel.send(f"{password}\n")
@@ -129,6 +156,9 @@ async def _answer_sudo_prompt(channel, chunk: str, password: str, password_sent:
 
 
 async def _emit(output_callback: Callable[[str], Awaitable[None] | None], chunk: str) -> None:
+    # A chunk that was only prompt markers has nothing left to show
+    if not chunk:
+        return
     # An async callback is awaited before the next read: output keeps its order and no
     # fire-and-forget send task outlives the session
     result = output_callback(chunk)
@@ -148,11 +178,8 @@ async def _pump_output(channel, sudo_password: str | None, output_callback) -> b
             chunk = channel.recv(4096).decode("utf-8", errors="replace")
             if not chunk:
                 return False
-            rejected = False
-            if sudo_password and _SUDO_PROMPT in chunk:
-                chunk, password_sent, rejected = await _answer_sudo_prompt(channel, chunk, sudo_password, password_sent)
-            if chunk:
-                await _emit(output_callback, chunk)
+            chunk, password_sent, rejected = await _answer_sudo_prompt(channel, chunk, sudo_password, password_sent)
+            await _emit(output_callback, chunk)
             if rejected:
                 channel.close()
                 return True
@@ -180,23 +207,23 @@ async def run_ssh_command_stream(
     because it only reads what recv_ready() reports as already buffered.
     """
     client = _build_client(pinned_host_key=pinned_host_key, tofu_policy=tofu_policy)
+    login = _SshLogin(host_ip, ssh_user, ssh_port, ssh_password, ssh_key, ssh_key_passphrase)
 
     try:
-        connect_kwargs, err = _build_connect_kwargs(host_ip, ssh_user, ssh_port, ssh_password, ssh_key, ssh_key_passphrase)
+        connect_kwargs, err = _build_connect_kwargs(login)
         if err:
             return False, err
 
-        needs_sudo = ssh_user != "root"
         # As non-root the whole command runs as root in one shell (a plain "sudo <cmd>" left
         # env assignments and $(...) of the update command outside sudo). Without a password
         # it fails fast (passwordless sudo only) instead of waiting for input.
-        run_cmd = _with_sudo(f"sh -c {shlex.quote(command)}", ssh_password) if needs_sudo else command
+        run_cmd = _with_sudo(f"sh -c {shlex.quote(command)}", ssh_password) if login.needs_sudo else command
 
         channel = await asyncio.to_thread(_open_command_channel, client, connect_kwargs, host_ip, run_cmd)
         if channel is None:
             return False, "Failed to get SSH transport channel."
 
-        if await _pump_output(channel, ssh_password if needs_sudo else None, output_callback):
+        if await _pump_output(channel, login.sudo_password, output_callback):
             return False, f"Sudo password rejected on {host_ip} for user '{ssh_user}'. Please check your SSH/sudo password."
 
         # paramiko has no Channel.get_exit_status(). After an EOF break recv_exit_status()
@@ -255,11 +282,10 @@ def _list_device_updates_blocking(
 ) -> dict[str, Any]:
     """Blocking body of :func:`list_device_updates`; only call it via ``asyncio.to_thread``."""
     client = _build_client(pinned_host_key=pinned_host_key, tofu_policy=tofu_policy)
+    login = _SshLogin(host_ip, ssh_user, ssh_port, ssh_password, ssh_key, ssh_key_passphrase)
 
     try:
-        connect_kwargs, err = _build_connect_kwargs(
-            host_ip, ssh_user, ssh_port, ssh_password, ssh_key, ssh_key_passphrase
-        )
+        connect_kwargs, err = _build_connect_kwargs(login)
         if err:
             return {"patch_manager": None, "packages": [], "major_upgrade_available": None, "error": err}
 
@@ -289,7 +315,7 @@ def _list_device_updates_blocking(
 
         if "apt-get" in pkg_manager_path:
             result["patch_manager"] = "apt"
-            _query_apt_updates(client, result, host_ip, ssh_user, ssh_password)
+            _query_apt_updates(client, result, login)
 
         elif "dnf" in pkg_manager_path:
             result["patch_manager"] = "dnf"
@@ -327,6 +353,20 @@ def _drain(chan) -> str:
     return output
 
 
+def _answer_first_apt_prompt(chan, chunk: str, password: str | None, password_sent: bool) -> tuple[str, bool]:
+    """Send the password the first time sudo asks; returns the chunk without that prompt and whether it is out."""
+    if password_sent or not password or _SUDO_PROMPT not in chunk:
+        return chunk, password_sent
+    time.sleep(0.05)
+    chan.send(f"{password}\n")
+    return chunk.replace(_SUDO_PROMPT, "", 1), True
+
+
+def _sudo_asked_again(chunk: str, output: str) -> bool:
+    """With the password out, one more prompt means a rejection, even if it arrived split over two reads."""
+    return _SUDO_PROMPT in chunk or output.count(_SUDO_PROMPT) >= 2
+
+
 def _read_apt_update(chan, sudo_password: str | None) -> tuple[str, bool]:
     """Read ``apt-get update`` until it ends or 90 s pass; returns (output, sudo rejected the password).
 
@@ -340,16 +380,8 @@ def _read_apt_update(chan, sudo_password: str | None) -> tuple[str, bool]:
         if chan.recv_ready():
             chunk = chan.recv(4096).decode("utf-8", errors="replace")
             output += chunk
-            if sudo_password and _SUDO_PROMPT in chunk:
-                if not password_sent:
-                    time.sleep(0.05)
-                    chan.send(f"{sudo_password}\n")
-                    password_sent = True
-                    chunk = chunk.replace(_SUDO_PROMPT, "", 1)
-                if _SUDO_PROMPT in chunk or output.count(_SUDO_PROMPT) >= 2:
-                    chan.close()
-                    return output, True
-            elif password_sent and output.count(_SUDO_PROMPT) >= 2:
+            chunk, password_sent = _answer_first_apt_prompt(chan, chunk, sudo_password, password_sent)
+            if password_sent and _sudo_asked_again(chunk, output):
                 chan.close()
                 return output, True
         elif chan.exit_status_ready():
@@ -358,23 +390,24 @@ def _read_apt_update(chan, sudo_password: str | None) -> tuple[str, bool]:
     return output, False
 
 
-def _record_apt_update_failure(
-    result: dict[str, Any], host_ip: str, ssh_user: str, needs_sudo: bool, ssh_password: str | None,
-    output: str, sudo_rejected: bool, exit_code: int | None,
-) -> None:
+def _record_apt_update_failure(result: dict[str, Any], login: _SshLogin, refresh: _AptRefresh) -> None:
     """Note a rejected sudo password or a failed refresh in ``result`` (the package list is still read)."""
-    if sudo_rejected:
-        logger.warning("apt-get update on %s aborted: sudo rejected password for user '%s'", host_ip, ssh_user)
+    if refresh.sudo_rejected:
+        logger.warning("apt-get update on %s aborted: sudo rejected password for user '%s'", login.host_ip, login.ssh_user)
         result["sudo_rejected"] = True
         result["error"] = (
-            f"Sudo password rejected on {host_ip} for user '{ssh_user}'. "
+            f"Sudo password rejected on {login.host_ip} for user '{login.ssh_user}'. "
             "Please check your SSH/sudo password or enable passwordless sudo."
         )
-    elif exit_code != 0:
-        logger.warning("apt-get update on %s failed (exit %s): %s", host_ip, exit_code, output.strip()[-500:])
+    elif refresh.exit_code != 0:
+        logger.warning(
+            "apt-get update on %s failed (exit %s): %s", login.host_ip, refresh.exit_code, refresh.output.strip()[-500:]
+        )
         # Only without a password can sudo be the reason; otherwise it is the repositories or the network
-        hint = " Set an SSH password or enable passwordless sudo to refresh package lists." if needs_sudo and not ssh_password else ""
-        result["error"] = "apt-get update failed (exit %s).%s" % (exit_code if exit_code is not None else "timeout", hint)
+        sudo_may_be_why = login.needs_sudo and not login.ssh_password
+        hint = " Set an SSH password or enable passwordless sudo to refresh package lists." if sudo_may_be_why else ""
+        ended = refresh.exit_code if refresh.exit_code is not None else "timeout"
+        result["error"] = "apt-get update failed (exit %s).%s" % (ended, hint)
 
 
 # package/suite version arch [upgradable from: old_version], e.g.
@@ -403,20 +436,19 @@ def _parse_release_upgrade(output: str) -> str | None:
     return release
 
 
-def _query_apt_updates(client, result: dict[str, Any], host_ip: str, ssh_user: str, ssh_password: str | None) -> None:
+def _query_apt_updates(client, result: dict[str, Any], login: _SshLogin) -> None:
     """Populate apt upgrade results (refresh cache + parse 'apt list --upgradable').
 
     Blocking; runs inside :func:`_list_device_updates_blocking`'s worker thread.
     """
     # Refresh the package cache first (needs root)
-    needs_sudo = ssh_user != "root"
     chan = client.get_transport().open_session()
     chan.set_combine_stderr(True)
-    chan.exec_command(_with_sudo("apt-get update", ssh_password) if needs_sudo else "apt-get update")
+    chan.exec_command(_with_sudo("apt-get update", login.ssh_password) if login.needs_sudo else "apt-get update")
 
-    output, sudo_rejected = _read_apt_update(chan, ssh_password if needs_sudo else None)
+    output, sudo_rejected = _read_apt_update(chan, login.sudo_password)
     exit_code = None if sudo_rejected else (chan.recv_exit_status() if chan.exit_status_ready() else None)
-    _record_apt_update_failure(result, host_ip, ssh_user, needs_sudo, ssh_password, output, sudo_rejected, exit_code)
+    _record_apt_update_failure(result, login, _AptRefresh(output, sudo_rejected, exit_code))
 
     _, stdout, _ = client.exec_command("apt list --upgradable 2>/dev/null", timeout=15)
     result["packages"].extend(_parse_apt_upgradable(stdout.read().decode("utf-8")))

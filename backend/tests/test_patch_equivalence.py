@@ -2,7 +2,7 @@
 
 Frozen copies of _query_apt_updates, the dnf/yum parsers and run_ssh_command_stream as of
 0.7.0-rc.7 run next to the live functions against scripted SSH channels: output chunks, sudo
-prompts (late, repeated, doubled in one chunk), idle ticks, data after exit, hangs until the
+prompts (late, repeated, doubled in one chunk, split over two), idle ticks, data after exit, hangs until the
 deadline and failing exit codes. Results, what was sent to the host and the streamed output
 must match exactly.
 """
@@ -330,17 +330,68 @@ def _run_apt(fn, script, user, password, outputs):
     return result, chan.cmd, chan.sent, chan.closed, client.commands
 
 
+def _live_query_apt_updates(client, result, host_ip, ssh_user, ssh_password):
+    ps._query_apt_updates(client, result, ps._SshLogin(host_ip, ssh_user, ssh_password=ssh_password))
+
+
 def test_apt_query_matches_for_every_update_run_listing_and_release_check():
     diffs, count = [], 0
     for script, (user, password), listing, (which, release_check) in itertools.product(UPDATE_SCRIPTS, USERS, UPGRADABLE, RELEASE):
         outputs = _apt_outputs(listing, which, release_check)
         before = _run_apt(_old_query_apt_updates, script, user, password, outputs)
-        now = _run_apt(ps._query_apt_updates, script, user, password, outputs)
+        now = _run_apt(_live_query_apt_updates, script, user, password, outputs)
         count += 1
         if before != now:
             diffs.append((script, user, password, before, now))
     assert count == len(UPDATE_SCRIPTS) * len(USERS) * len(UPGRADABLE) * len(RELEASE)
     assert diffs[:2] == []
+
+
+# Every way a prompt can land on the wire: whole, doubled, split over two reads, nested so
+# that removing it leaves another one, plus empty reads, idle ticks and data after exit.
+PROMPT_STEPS = [
+    b"SUDOPROMPT:", b"SUDOPROMPT:SUDOPROMPT:", b"SUDO", b"PROMPT:", b"SUDOSUDOPROMPT:PROMPT:",
+    b"", b"text\n", "idle", "exit",
+]
+
+
+def _prompt_scripts(longest):
+    for length in range(longest + 1):
+        yield from itertools.product(PROMPT_STEPS, repeat=length)
+
+
+def test_apt_query_matches_for_every_way_a_prompt_can_arrive():
+    outputs = _apt_outputs("", "", "")
+    diffs = []
+    for steps, (user, password) in itertools.product(_prompt_scripts(4), USERS):
+        script = (list(steps), 1, True)
+        before = _run_apt(_old_query_apt_updates, script, user, password, outputs)
+        now = _run_apt(_live_query_apt_updates, script, user, password, outputs)
+        if before != now:
+            diffs.append((steps, user, password, before, now))
+    assert diffs[:2] == []
+
+
+def test_a_second_prompt_split_across_two_reads_is_a_rejection():
+    chan = FakeChannel([b"SUDOPROMPT:", b"Sorry\nSUDO", b"PROMPT:", b"never read\n"])
+    assert ps._read_apt_update(chan, "pw") == ("SUDOPROMPT:Sorry\nSUDOPROMPT:", True)
+    assert chan.sent == ["pw\n"]
+    assert chan.closed
+    assert chan.steps == [b"never read\n"]
+
+
+def test_a_first_prompt_split_across_two_reads_goes_unanswered():
+    chan = FakeChannel([b"SUDO", b"PROMPT:", b"Done\n"])
+    assert ps._read_apt_update(chan, "pw") == ("SUDOPROMPT:Done\n", False)
+    assert chan.sent == []
+    assert not chan.closed
+
+
+def test_without_a_password_a_prompt_is_only_text():
+    chan = FakeChannel([b"SUDOPROMPT:", b"SUDOPROMPT:"])
+    assert ps._read_apt_update(chan, None) == ("SUDOPROMPT:SUDOPROMPT:", False)
+    assert chan.sent == []
+    assert not chan.closed
 
 
 CHECK_UPDATE = [
@@ -420,6 +471,18 @@ async def test_update_stream_matches_for_every_script_user_and_callback(monkeypa
         now = await _run_stream(ps.run_ssh_command_stream, monkeypatch, script, user, password, async_cb)
         if before != now:
             diffs.append((script, user, password, async_cb, before, now))
+    assert diffs[:2] == []
+
+
+@pytest.mark.asyncio
+async def test_update_stream_matches_for_every_way_a_prompt_can_arrive(monkeypatch):
+    diffs = []
+    for steps, (user, password) in itertools.product(_prompt_scripts(3), USERS):
+        script = (list(steps), 1)
+        before = await _run_stream(_old_run_ssh_command_stream, monkeypatch, script, user, password, False)
+        now = await _run_stream(ps.run_ssh_command_stream, monkeypatch, script, user, password, False)
+        if before != now:
+            diffs.append((steps, user, password, before, now))
     assert diffs[:2] == []
 
 
