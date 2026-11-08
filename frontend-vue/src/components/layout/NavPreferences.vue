@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { ArrowLeftRight, LogOut, Monitor, Moon, Sun } from 'lucide-vue-next';
+import { LogOut, Monitor, Moon, Sun } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import { useTheme, type ThemePreference } from '@/composables/useTheme';
 import { locale, setLocale, t, type Locale } from '@/i18n';
@@ -57,25 +57,13 @@ async function logout() {
         </button>
       </div>
     </div>
-    <div class="flex gap-2">
-      <a
-        href="/?ui=react"
-        :title="t('gv.legacy.switch_hint')"
-        class="flex h-9 flex-1 items-center gap-2 rounded-md border border-line bg-control px-3 text-xs font-medium text-fg-muted transition-colors hover:border-line-strong hover:text-fg"
-      >
-        <ArrowLeftRight class="size-3.5 text-accent-text" aria-hidden="true" />
-        <span class="flex-1 truncate">{{ t('gv.legacy.switch') }}</span>
-        <span class="rounded-sm border border-line px-1 font-mono text-micro text-fg-subtle">{{ t('gv.legacy.badge') }}</span>
-      </a>
-      <button
-        type="button"
-        :aria-label="t('gv.logout')"
-        :title="t('gv.logout')"
-        class="flex size-9 items-center justify-center rounded-md border border-line bg-control text-fg-subtle transition-colors hover:border-danger/40 hover:text-danger-text"
-        @click="logout"
-      >
-        <LogOut class="size-4" aria-hidden="true" />
-      </button>
-    </div>
+    <button
+      type="button"
+      class="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-line bg-control text-xs font-medium text-fg-subtle transition-colors hover:border-danger/40 hover:text-danger-text"
+      @click="logout"
+    >
+      <LogOut class="size-4" aria-hidden="true" />
+      {{ t('gv.logout') }}
+    </button>
   </div>
 </template>

@@ -12,8 +12,8 @@ def sync_version():
     version = version_file.read_text().strip()
     print(f"Syncing version {version}...")
 
-    # 1. Update frontend/package.json
-    package_json_path = root_dir / "frontend" / "package.json"
+    # 1. Update frontend-vue/package.json
+    package_json_path = root_dir / "frontend-vue" / "package.json"
     if package_json_path.exists():
         data = json.loads(package_json_path.read_text())
         if data.get("version") != version:

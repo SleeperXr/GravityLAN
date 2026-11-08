@@ -1,14 +1,5 @@
 # HomeLan Docker Image — Multi-Stage Build
-# Stage 1: Build React Frontend
-FROM node:20-alpine AS frontend-build
-
-WORKDIR /build/frontend
-COPY frontend/package*.json ./
-RUN npm ci --no-audit
-COPY frontend/ ./
-RUN npm run build
-
-# Stage 1b: Build GravityUI (Vue 3 + shadcn-vue) Frontend
+# Stage 1: Build GravityUI (Vue 3 + shadcn-vue)
 FROM node:20-alpine AS frontend-vue-build
 WORKDIR /build/frontend-vue
 COPY frontend-vue/package*.json ./
@@ -65,8 +56,7 @@ COPY VERSION .
 COPY agent ./agent
 COPY backend/ .
 
-# Copy frontend build to static directory
-COPY --from=frontend-build /build/frontend/dist ./static
+# Copy the GravityUI build
 COPY --from=frontend-vue-build /build/frontend-vue/dist ./static-vue
 
 # Create data directory and user

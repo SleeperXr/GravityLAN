@@ -57,8 +57,8 @@ without agent changes never raises it, since every agent version asks every inst
 ## Steps
 
 1. **Prepare** on a branch, merged through a PR:
-   - `VERSION`, then `python scripts/sync_version.py` (`frontend/package.json`, `backend/pyproject.toml`).
-   - `frontend-vue/package.json` and the root version in both `package-lock.json` files (two lines each).
+   - `VERSION`, then `python scripts/sync_version.py` (`frontend-vue/package.json`, `backend/pyproject.toml`).
+   - The root version in `frontend-vue/package-lock.json` (two lines).
    - README release badge, `templates/gravitylan.xml` `<Changes>`.
    - Close `[Unreleased]` in `CHANGELOG.md` with the date of the release candidate.
    - Commit `chore(release): X.Y.Z`.
@@ -77,7 +77,7 @@ A patch without a migration skips steps 2–3: tag `vX.Y.Z` directly after the c
 
 Tick it in the release candidate's GitHub pre-release (or the release, for a patch).
 
-- [ ] **Fresh install:** empty data directory, setup wizard, first scan, GravityUI and the classic UI open.
+- [ ] **Fresh install:** empty data directory, setup wizard, first scan, GravityUI opens.
 - [ ] **Upgrade with real data:** a copy of a real data directory from the previous release starts, migrates and shows
       the same devices, racks, topology and agents.
 - [ ] **Backup and restore on a fresh host:** export a backup, import it into a new instance, and check devices,

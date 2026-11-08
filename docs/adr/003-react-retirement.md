@@ -1,6 +1,6 @@
 # ADR-003: Retire the React Frontend in Favour of GravityUI (Vue)
 
-**Status:** Accepted
+**Status:** Implemented (2026-11-08)
 **Date:** 2026-10-27
 **Deciders:** Project owner
 
@@ -30,3 +30,10 @@ project wants to go.
 - Code-health findings in React components (for example `HealthDetailDrawer`, `HealthView`, `RouterImportPanel`) are
   accepted and not refactored.
 - The Docker image gets smaller and the build faster once the React stage is removed.
+
+## Outcome (2026-11-08)
+
+The fallback period was cut short: 0.7.0 is the last release with the classic view, and `main` removed `frontend/`,
+its Docker stage and CI job right after it. GravityUI had already moved off the `@shared` imports. `/` and any old
+classic-view address redirect to `/frontend-vue/`; the `?ui=` switch, the `gl_ui` cookie and the
+`ui.default_frontend` setting no longer have an effect (a stored value is ignored, and `POST /api/settings` drops it).

@@ -1,6 +1,6 @@
 """GravityLAN FastAPI Application — Main entry point.
 
-Serves both the API backend and the React frontend (static files).
+Serves the API backend and GravityUI, the web interface (static files under /frontend-vue/).
 """
 import sys
 import asyncio
@@ -24,7 +24,6 @@ import asyncio
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
@@ -32,8 +31,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from app.config import settings
 from app.version import VERSION
-from app.database import get_db, init_db
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import init_db
 from app.exceptions import GravityLANError
 
 logger = logging.getLogger(__name__)
@@ -65,10 +63,6 @@ class PollingFilter(logging.Filter):
         if status_code is None and any(marker in msg for marker in _ERROR_MARKERS):
             return True
         return not any(path in msg for path in _POLLED_PATHS)
-
-# Detection: Use /app/static in Docker, fallback to local dist for development
-FRONTEND_DIR = Path("/app/static") if Path("/app/static").exists() else Path(__file__).parent.parent / "frontend" / "dist"
-
 
 def _resolve_frontend_vue_dir() -> Path:
     """Resolve the GravityUI (Vue) build directory for Docker and local layouts."""
@@ -457,58 +451,29 @@ async def logs_websocket(websocket: WebSocket):
         log_handler.unsubscribe(websocket)
 
 
-# --- Serve React Frontend (production) ---
+# --- Serve GravityUI (production) ---
 # index.html must be revalidated on every load: it names the hashed JS bundles,
 # and a heuristically cached copy keeps serving the previous release's UI after
 # an update (the version label still looks new because it comes from the API).
 INDEX_HEADERS = {"Cache-Control": "no-cache"}
-
-
-FRONTENDS = ("react", "vue")
-DEFAULT_FRONTEND_KEY = "ui.default_frontend"
-FRONTEND_COOKIE = "gl_ui"
-
-
-async def _default_frontend(db) -> str:
-    """The interface `/` opens when the browser made no choice: setting ``ui.default_frontend``, else GravityUI."""
-    try:
-        from app.models.setting import Setting
-        from sqlalchemy import select
-
-        row = (await db.execute(select(Setting).where(Setting.key == DEFAULT_FRONTEND_KEY))).scalar_one_or_none()
-        return row.value if row and row.value in FRONTENDS else "vue"
-    except Exception:
-        return "vue"
+GRAVITYUI_PATH = "/frontend-vue/"
 
 
 @app.get("/")
-async def root(request: Request, db: AsyncSession = Depends(get_db)):
-    """Root endpoint: the chosen frontend, else status JSON.
+async def root():
+    """Root endpoint: GravityUI, else status JSON.
 
-    `/?ui=react` or `/?ui=vue` (the "switch interface" links) picks one for this browser and
-    remembers it in a cookie; without one the server setting decides. GravityUI is built for
-    /frontend-vue/, so it is reached by a redirect rather than served here.
+    GravityUI is built for /frontend-vue/, so it is reached by a redirect rather than served here.
+    The `?ui=` switch and the `gl_ui` cookie of the former classic view no longer matter.
     """
-    asked = request.query_params.get("ui")
-    choice = asked if asked in FRONTENDS else request.cookies.get(FRONTEND_COOKIE)
-    if choice not in FRONTENDS:
-        choice = await _default_frontend(db)
-
-    if choice == "vue" and (_resolve_frontend_vue_dir() / "index.html").exists():
-        response = RedirectResponse("/frontend-vue/", status_code=307)
-    else:
-        index_file = FRONTEND_DIR / "index.html"
-        response = FileResponse(str(index_file), headers=INDEX_HEADERS) if index_file.exists() else None
-    if response is not None:
-        if asked in FRONTENDS:
-            response.set_cookie(FRONTEND_COOKIE, asked, max_age=365 * 24 * 3600, samesite="lax", path="/")
-        return response
+    if (_resolve_frontend_vue_dir() / "index.html").exists():
+        return RedirectResponse(GRAVITYUI_PATH, status_code=307)
     return {
         "app": "GravityLAN",
         "version": VERSION,
         "status": "online",
         "api_docs": "/docs",
-        "message": "Backend is running. Frontend build missing in /app/static."
+        "message": "Backend is running. GravityUI build missing in /app/static-vue."
     }
 
 
@@ -542,20 +507,6 @@ def _build_file_response(path: str) -> FileResponse:
     return FileResponse(path, headers=headers)
 
 
-async def serve_spa(full_path: str):
-    """Serve a file from the frontend build, or index.html for client-side routes."""
-    _reject_unsafe_path(full_path)
-    # Exclude API calls from the catch-all
-    if full_path.startswith("api/"):
-        raise HTTPException(status_code=404, detail="API endpoint not found")
-
-    base_dir, file_path = _file_in_build(FRONTEND_DIR, full_path)
-    if file_path:
-        return _build_file_response(file_path)
-    # Fallback to index.html for SPA routing
-    return FileResponse(os.path.realpath(os.path.join(base_dir, "index.html")), headers=INDEX_HEADERS)
-
-
 @app.get("/frontend-vue")
 @app.get("/frontend-vue/")
 async def serve_vue_root():
@@ -584,15 +535,15 @@ async def serve_vue_spa(full_path: str):
     raise HTTPException(status_code=404, detail="GravityUI index.html not found")
 
 
-if FRONTEND_DIR.exists():
-    # Only mount if the directories actually exist to prevent startup crashes
-    assets_dir = FRONTEND_DIR / "assets"
-    if assets_dir.exists() and assets_dir.is_dir():
-        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
-    
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+async def redirect_to_gravityui(full_path: str):
+    """Old addresses of the classic view (bookmarks such as /devices) open GravityUI; unknown API paths stay 404."""
+    _reject_unsafe_path(full_path)
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    return RedirectResponse(GRAVITYUI_PATH, status_code=307)
 
-    app.get("/{full_path:path}")(serve_spa)
 
-    logger.info("Serving SPA frontend from: %s", FRONTEND_DIR)
-
+if _resolve_frontend_vue_dir().exists():
+    # Registered last, so every API route, /docs and the GravityUI routes above win
+    app.get("/{full_path:path}")(redirect_to_gravityui)
+    logger.info("Serving GravityUI from: %s", _resolve_frontend_vue_dir())

@@ -11,11 +11,6 @@
       "light": "Hell",
       "dark": "Dunkel"
     },
-    "legacy": {
-      "switch": "Klassische Ansicht",
-      "switch_hint": "Zur gewohnten GravityLAN-Oberfläche wechseln",
-      "badge": "React"
-    },
     "state": {
       "load_failed": "Daten konnten nicht geladen werden",
       "checking_session": "Anmeldung wird geprüft..."

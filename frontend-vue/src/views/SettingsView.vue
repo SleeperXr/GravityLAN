@@ -22,7 +22,7 @@ import LinkTypeColorsSection from '@/components/settings/LinkTypeColorsSection.v
 import { useTheme, type ThemePreference } from '@/composables/useTheme';
 import { locale, setLocale, t, type Locale } from '@/i18n';
 
-/** Settings saved together through the save bar, keyed as the backend stores them (React useSettingsForm). */
+/** Settings saved together through the save bar, keyed as the backend stores them. */
 const DEFAULT_FORM = {
   scan_interval: '0',
   quick_scan_interval: '300',
@@ -34,7 +34,6 @@ const DEFAULT_FORM = {
   server_url_override: '',
   'system.log_level': 'info',
   'ui.start_page': '/',
-  'ui.default_frontend': 'vue',
   'ui.health_resilience': 'auto',
   'security.stepup_minutes': '10',
 };
@@ -177,9 +176,6 @@ const languages: { value: Locale; key: string }[] = [
                   { value: 'off', label: t('gv.health.resilience_off') },
                 ]"
               />
-            </Field>
-            <Field v-slot="{ id, describedBy }" :label="t('settings.default_frontend_label')" :hint="t('settings.default_frontend_hint')">
-              <Select :id="id" v-model="form['ui.default_frontend']" :aria-describedby="describedBy" :options="[{ value: 'react', label: t('settings.default_frontend_react') }, { value: 'vue', label: t('settings.default_frontend_vue') }]" />
             </Field>
           </div>
           <Field v-slot="{ id, describedBy }" :label="t('settings.server_url_override')" :hint="t('settings.server_url_override_hint')">

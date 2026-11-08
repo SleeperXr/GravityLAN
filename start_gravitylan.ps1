@@ -11,8 +11,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 Set-Location ..
 
-# 2. Install Frontend Requirements
-Set-Location frontend
+# 2. Install GravityUI Requirements
+Set-Location frontend-vue
 if (!(Test-Path "node_modules")) {
     Write-Host "Installing Node.js requirements (npm install)..." -ForegroundColor Gray
     npm install
@@ -24,12 +24,9 @@ Write-Host "Starting GravityLAN Development Stack..." -ForegroundColor Cyan
 # 3. Start Backend
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location backend; python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000" -WorkingDirectory $PSScriptRoot -WindowStyle Normal
 
-# 4. Start Frontend
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location frontend; npm run dev" -WorkingDirectory $PSScriptRoot -WindowStyle Normal
-if (Test-Path "frontend-vue/package.json") {
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location frontend-vue; if (!(Test-Path 'node_modules')) { npm install }; npm run dev" -WorkingDirectory $PSScriptRoot -WindowStyle Normal
-}
+# 4. Start GravityUI
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location frontend-vue; npm run dev" -WorkingDirectory $PSScriptRoot -WindowStyle Normal
 
 Write-Host "Backend: http://localhost:8000"
-Write-Host "Frontend: http://127.0.0.1:5173"
+Write-Host "GravityUI: http://127.0.0.1:5174/frontend-vue/"
 Write-Host "GravityLAN is running!" -ForegroundColor Green

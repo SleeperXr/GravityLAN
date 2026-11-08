@@ -17,7 +17,7 @@
 - Topology map, racks and an IP map of every subnet.[br]
 - Optional Linux agent: CPU, RAM, disks, temperature, package updates over SSH, and a browser SSH terminal with an encrypted key store.[br]
 - Read-only API tokens, Swagger UI at /docs and a Python client; a read-only token suits AI assistants and agents (it never gets SSH, agent configuration or admin endpoints).[br]
-- Two web interfaces: the classic React view and GravityUI, a preview of the new interface (in development), switchable in the sidebar or under Settings → Default interface.[br][br]
+- GravityUI, the web interface, with dashboard, orbit map, racks, IP map, health and settings.[br][br]
 [b]Unraid defaults[/b][br]
 PUID 99 and PGID 100 (nobody:users): on start the container makes the appdata directory writable for that user. No privileged mode needed.[br][br]
 [b]Which network type?[/b][br]
