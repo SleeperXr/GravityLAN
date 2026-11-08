@@ -1,12 +1,12 @@
 """Pydantic schemas for device-related API requests and responses."""
 
-import json
 import re
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.dns_answers import stored_dns_answers
 from app.schemas.interface import DeviceInterfaceResponse
 
 # Schemes a service link may use (#42). Both dashboards navigate to the link on click, so
@@ -185,10 +185,7 @@ class DeviceResponse(BaseModel):
     def _parse_dns_names(cls, value):
         """The column holds JSON; anything unreadable counts as "not asked yet"."""
         if isinstance(value, str):
-            try:
-                value = json.loads(value)
-            except ValueError:
-                return None
+            value = stored_dns_answers(value)
         # The reasons stored next to the names go out as dns_errors; a name that is not text
         # (a hand-edited backup) counts as no answer instead of failing the whole device list
         if not isinstance(value, dict):

@@ -1,6 +1,5 @@
 """SQLAlchemy ORM models for devices, groups, and services."""
 
-import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -19,6 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 
 from app.database import TELEMETRY_SCHEMA, Base
+from app.dns_answers import stored_dns_answers
 
 if TYPE_CHECKING:
     from app.models.network import Subnet
@@ -124,13 +124,8 @@ class Device(Base):
     @property
     def dns_errors(self) -> dict[str, str] | None:
         """Why DNS 1 or DNS 2 gave no name ({"2": "no_entry"}), kept in dns_names as "<n>_reason"."""
-        if not self.dns_names:
-            return None
-        try:
-            stored = json.loads(self.dns_names)
-        except ValueError:
-            return None
-        if not isinstance(stored, dict):
+        stored = stored_dns_answers(self.dns_names)
+        if stored is None:
             return None
         return {n: stored[f"{n}_reason"] for n in ("1", "2") if isinstance(stored.get(f"{n}_reason"), str)}
 
