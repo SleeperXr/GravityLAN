@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+import importlib.util
 import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -211,7 +212,8 @@ async def test_shell_tools_when_the_os_only_echoes_the_ip(chain):
 
 @pytest.mark.asyncio
 async def test_no_name_anywhere_is_remembered_as_a_miss(chain):
-    chain.setattr(hostname, "socket", SimpleNamespace(getnameinfo=lambda addr, flags: (_ for _ in ()).throw(OSError())))
+    fake_socket = SimpleNamespace(getnameinfo=lambda addr, flags: (_ for _ in ()).throw(OSError()), gaierror=OSError, herror=OSError)
+    chain.setattr(hostname, "socket", fake_socket)
 
     assert await hostname.resolve_hostname("192.0.2.5") is None
     assert hostname._dns_cache["192.0.2.5"][0] is None
@@ -399,3 +401,152 @@ async def test_resolve_hostnames_gather_exception_handled(monkeypatch):
     hosts = [{"ip": "10.0.0.1"}]
     res = await hostname.resolve_hostnames(hosts)
     assert res == [{"ip": "10.0.0.1"}]
+
+
+@pytest.mark.asyncio
+async def test_resolve_hostnames_rechecks_cancel_after_waiting_for_a_slot(monkeypatch):
+    cancel = asyncio.Event()
+    looked_up = []
+
+    async def cancel_during_first_lookup(ip, timeout, dns_server):
+        looked_up.append(ip)
+        await asyncio.sleep(0)
+        cancel.set()
+        return "first.lan"
+
+    monkeypatch.setattr(hostname, "resolve_hostname", cancel_during_first_lookup)
+    hosts = [{"ip": "192.0.2.1"}, {"ip": "192.0.2.2"}]
+
+    await hostname.resolve_hostnames(hosts, max_concurrent=1, cancel_event=cancel)
+    assert looked_up == ["192.0.2.1"]
+    assert hosts == [{"ip": "192.0.2.1", "hostname": "first.lan"}, {"ip": "192.0.2.2"}]
+
+
+def test_module_loads_without_dnspython(monkeypatch):
+    """A private copy of the module, so the real one keeps its dnspython imports."""
+    monkeypatch.setitem(sys.modules, "dns.resolver", None)
+    spec = importlib.util.spec_from_file_location("hostname_without_dnspython", hostname.__file__)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.HAS_DNS_PYTHON is False
+    assert module.ptr_lookup("192.0.2.1", None) == (None, "error")
+
+
+# --- one PTR query, two callers ------------------------------------------------
+
+def test_ptr_lookup_asks_the_given_server_within_the_timeout(chain):
+    _FakeResolver.answer = ["nas.lan."]
+
+    assert hostname.ptr_lookup("192.0.2.5", "192.0.2.53", timeout=1.5) == ("nas.lan", None)
+    asked = _FakeResolver.instances[0]
+    assert (asked.nameservers, asked.timeout, asked.lifetime) == (["192.0.2.53"], 1.5, 1.5)
+
+
+def test_ptr_lookup_without_a_server_keeps_the_system_ones(chain):
+    _FakeResolver.answer = ["nas.lan."]
+
+    assert hostname.ptr_lookup("192.0.2.5", None) == ("nas.lan", None)
+    assert _FakeResolver.instances[0].nameservers == ["system"]
+
+
+@pytest.mark.parametrize("answer", [[], ["."]])
+def test_ptr_lookup_an_empty_answer_is_no_entry(chain, answer):
+    _FakeResolver.answer = answer
+
+    assert hostname.ptr_lookup("192.0.2.5", "192.0.2.53") == (None, "no_entry")
+
+
+@pytest.mark.parametrize("ip, error", [("192.0.2.5", ValueError("bad server")), ("192.0.2.5", OSError("unreachable")), ("not-an-ip", None)])
+def test_ptr_lookup_a_failed_query_is_an_error(chain, ip, error):
+    _FakeResolver.answer = error or ["nas.lan."]
+
+    assert hostname.ptr_lookup(ip, "192.0.2.53") == (None, "error")
+
+
+@pytest.mark.parametrize("timeout, expected", [(3.0, 2.5), (0.6, 0.5)])
+def test_direct_dns_leaves_time_for_the_fallbacks(chain, timeout, expected):
+    _FakeResolver.answer = ["nas.lan."]
+
+    assert hostname._resolve_direct_dns("192.0.2.5", None, timeout) == "nas.lan"
+    asked = _FakeResolver.instances[0]
+    assert (asked.nameservers, asked.timeout, asked.lifetime) == (["system"], expected, expected)
+
+
+@pytest.mark.parametrize("answer", [[], ["."]])
+def test_direct_dns_an_empty_answer_is_no_name(chain, answer):
+    _FakeResolver.answer = answer
+
+    assert not hostname._resolve_direct_dns("192.0.2.5", "192.0.2.53", 2.0)
+
+
+def test_ptr_lookup_does_not_hide_a_bug(chain):
+    _FakeResolver.answer = RuntimeError("a bug, not a DNS failure")
+
+    with pytest.raises(RuntimeError):
+        hostname.ptr_lookup("192.0.2.5", "192.0.2.53")
+
+
+@pytest.mark.asyncio
+async def test_a_broken_lookup_does_not_cost_the_next_one(chain, caplog):
+    def broken(_ip):
+        raise RuntimeError("a bug in this lookup")
+
+    chain.setattr(hostname, "_resolve_win32", broken)
+    chain.setattr(hostname, "socket", SimpleNamespace(getnameinfo=lambda addr, flags: ("pc.lan", "0")))
+
+    with caplog.at_level("WARNING", logger=hostname.logger.name):
+        assert await hostname.resolve_hostname("192.0.2.5") == "pc.lan"
+    assert "192.0.x.x" in caplog.text
+    assert "192.0.2.5" not in caplog.messages[0]
+
+
+# --- _resolve_win32 on every platform, with a stand-in for ws2_32 ---------------
+
+@pytest.fixture
+def ws2_32(monkeypatch):
+    """Pretend to be on Windows; returns a function that installs GetNameInfoW."""
+    import ctypes
+
+    monkeypatch.setattr(hostname.sys, "platform", "win32")
+
+    def install(get_name_info):
+        monkeypatch.setattr(ctypes, "windll", SimpleNamespace(ws2_32=SimpleNamespace(GetNameInfoW=get_name_info)), raising=False)
+
+    return install
+
+
+def test_resolve_win32_reads_the_name(ws2_32):
+    def answers(_sa, _size, host, *_rest):
+        host.value = "desktop.lan"
+        return 0
+
+    ws2_32(answers)
+    assert hostname._resolve_win32("192.0.2.5") == "desktop.lan"
+
+
+def test_resolve_win32_without_an_answer(ws2_32):
+    ws2_32(lambda *_args: 11001)  # WSAHOST_NOT_FOUND
+    assert hostname._resolve_win32("192.0.2.5") is None
+
+
+@pytest.mark.parametrize("ip", ["192.0.2.5.7", "not.an.ip.here"])
+def test_resolve_win32_rejects_a_malformed_ip(ws2_32, ip):
+    def must_not_run(*_args):
+        raise AssertionError("asked Windows about a malformed IP")
+
+    ws2_32(must_not_run)
+    assert hostname._resolve_win32(ip) is None
+
+
+@pytest.mark.parametrize("error", [OSError("failed"), TypeError("bad call"), "argument_error"])
+def test_resolve_win32_when_the_call_fails(ws2_32, error):
+    import ctypes
+
+    raised = ctypes.ArgumentError("bad argument") if error == "argument_error" else error
+
+    def fails(*_args):
+        raise raised
+
+    ws2_32(fails)
+    assert hostname._resolve_win32("192.0.2.5") is None
