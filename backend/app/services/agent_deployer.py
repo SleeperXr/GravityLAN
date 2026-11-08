@@ -490,6 +490,76 @@ def _client_for(pinned_host_key: PinnedHostKey | None, tofu_policy: TofuHostKeyP
     return client
 
 
+def _stage_verified_agent(client, runner: RemoteRunner, device_id: int) -> str | None:
+    """Upload the agent script to a temp path and check its SHA-256; None (temp file removed) on a mismatch."""
+    with open(AGENT_SCRIPT_PATH, "r", encoding="utf-8") as f:
+        agent_content = f.read()
+
+    tmp_agent = f"/tmp/gravitylan_agent_{device_id}.py"
+    _stage_file(client, tmp_agent, agent_content)
+    if not _verify_remote_sha256(client, tmp_agent, _staged_content_sha256(agent_content)):
+        runner.run(f"rm -f {tmp_agent} || true")
+        return None
+    return tmp_agent
+
+
+def _install_agent_files(
+    client, runner: RemoteRunner, host_ip: str, tmp_agent: str, base_dir: str, server_url: str, token: str, device_id: int,
+) -> tuple[bool, bool]:
+    """Remove a previous agent, move the verified script into place and write its config; returns the platform."""
+    # Pre-install cleanup
+    has_systemd, has_syno_rc = _probe_platform(client, host_ip)
+    cleanup_cmds = _build_cleanup_script(has_systemd, has_syno_rc)
+    runner.run_sudo_batch(cleanup_cmds)
+
+    # Ensure base directory
+    runner.run(f"mkdir -p {base_dir}")
+
+    runner.run(f"mv {tmp_agent} {REMOTE_AGENT_PATH} && chmod 755 {REMOTE_AGENT_PATH}")
+    logger.info("Agent script deployed to %s", REMOTE_AGENT_PATH)
+
+    # Deploy config
+    config_json = _build_agent_config(server_url, token, device_id)
+    tmp_config = f"/tmp/gravitylan_config_{device_id}.json"
+    _stage_file(client, tmp_config, config_json)
+    # The config holds the agent token: owner-only (the agent runs as root or as its owner)
+    runner.run(f"cp {tmp_config} {REMOTE_CONFIG_PATH} && rm -f {tmp_config} && chmod 600 {REMOTE_CONFIG_PATH}")
+    logger.info("Agent config deployed to %s", REMOTE_CONFIG_PATH)
+    return has_systemd, has_syno_rc
+
+
+def _install_service(
+    runner: RemoteRunner, client, device_id: int, python_path: str, base_dir: str, has_systemd: bool, has_syno_rc: bool,
+) -> None:
+    """Register the agent with systemd, or with the Synology rc.d scripts; neither on other hosts."""
+    if has_systemd:
+        _install_systemd_service(runner, client, device_id, python_path, REMOTE_AGENT_PATH, base_dir)
+    elif has_syno_rc:
+        _install_syno_rc(runner, client, device_id, python_path, REMOTE_AGENT_PATH)
+
+
+def _start_and_verify(
+    client, runner: RemoteRunner, host_ip: str, base_dir: str, python_path: str, server_url: str, token: str,
+    device_id: int, cleanup_msg: str,
+) -> tuple[bool, str, str]:
+    """Check that the agent runs, else start it with nohup (and keep it across reboots on Unraid)."""
+    # Verification
+    time.sleep(2)
+
+    if _is_agent_running(client, REMOTE_AGENT_PATH):
+        return True, f"Agent started successfully{cleanup_msg} (Directory: {base_dir}, URL: {server_url})", token
+
+    # Nohup fallback (hosts without systemd/rc.d, e.g. Unraid). It reports (ok, message);
+    # returning that pair as-is crashed the deploy endpoint and the new token was never stored.
+    ok, message = _nohup_fallback(client, host_ip, base_dir, python_path, REMOTE_AGENT_PATH, server_url, token)
+    if not ok:
+        return False, message, ""
+    if _is_unraid(client):
+        _install_unraid_boot_hook(runner, client, device_id)
+        message += "; Unraid: kept on the flash drive, starts again from /boot/config/go after a reboot"
+    return True, message, token
+
+
 def _deploy_agent_blocking(
     *,
     host_ip: str,
@@ -523,59 +593,19 @@ def _deploy_agent_blocking(
         runner = RemoteRunner(client, has_sudo, ssh_user, ssh_password)
 
         # Stage and verify agent script before stopping or removing any existing agent
-        with open(AGENT_SCRIPT_PATH, "r", encoding="utf-8") as f:
-            agent_content = f.read()
-
-        tmp_agent = f"/tmp/gravitylan_agent_{device_id}.py"
-        _stage_file(client, tmp_agent, agent_content)
-        if not _verify_remote_sha256(client, tmp_agent, _staged_content_sha256(agent_content)):
-            runner.run(f"rm -f {tmp_agent} || true")
+        tmp_agent = _stage_verified_agent(client, runner, device_id)
+        if tmp_agent is None:
             return False, "Agent deployment aborted: SHA-256 checksum mismatch on remote host.", ""
 
-        # Pre-install cleanup
-        has_systemd, has_syno_rc = _probe_platform(client, host_ip)
-        cleanup_cmds = _build_cleanup_script(has_systemd, has_syno_rc)
-        runner.run_sudo_batch(cleanup_cmds)
-
-        # Ensure base directory
-        runner.run(f"mkdir -p {base_dir}")
-
-        runner.run(f"mv {tmp_agent} {REMOTE_AGENT_PATH} && chmod 755 {REMOTE_AGENT_PATH}")
-        logger.info("Agent script deployed to %s", REMOTE_AGENT_PATH)
-
-        # Deploy config
-        config_json = _build_agent_config(server_url, token, device_id)
-        tmp_config = f"/tmp/gravitylan_config_{device_id}.json"
-        _stage_file(client, tmp_config, config_json)
-        # The config holds the agent token: owner-only (the agent runs as root or as its owner)
-        runner.run(f"cp {tmp_config} {REMOTE_CONFIG_PATH} && rm -f {tmp_config} && chmod 600 {REMOTE_CONFIG_PATH}")
-        logger.info("Agent config deployed to %s", REMOTE_CONFIG_PATH)
+        has_systemd, has_syno_rc = _install_agent_files(
+            client, runner, host_ip, tmp_agent, base_dir, server_url, token, device_id,
+        )
 
         # Install service
         python_path = _probe_python(client)
+        _install_service(runner, client, device_id, python_path, base_dir, has_systemd, has_syno_rc)
 
-        if has_systemd:
-            success = _install_systemd_service(runner, client, device_id, python_path, REMOTE_AGENT_PATH, base_dir)
-            if not success:
-                has_systemd = False
-        elif has_syno_rc:
-            _install_syno_rc(runner, client, device_id, python_path, REMOTE_AGENT_PATH)
-
-        # Verification
-        time.sleep(2)
-
-        if _is_agent_running(client, REMOTE_AGENT_PATH):
-            return True, f"Agent started successfully{cleanup_msg} (Directory: {base_dir}, URL: {server_url})", token
-
-        # Nohup fallback (hosts without systemd/rc.d, e.g. Unraid). It reports (ok, message);
-        # returning that pair as-is crashed the deploy endpoint and the new token was never stored.
-        ok, message = _nohup_fallback(client, host_ip, base_dir, python_path, REMOTE_AGENT_PATH, server_url, token)
-        if not ok:
-            return False, message, ""
-        if _is_unraid(client):
-            _install_unraid_boot_hook(runner, client, device_id)
-            message += "; Unraid: kept on the flash drive, starts again from /boot/config/go after a reboot"
-        return True, message, token
+        return _start_and_verify(client, runner, host_ip, base_dir, python_path, server_url, token, device_id, cleanup_msg)
 
     except Exception as exc:
         mapped = _map_ssh_error(exc, host_ip)
