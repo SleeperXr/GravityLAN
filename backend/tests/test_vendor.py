@@ -1,8 +1,10 @@
 """Tests for the vendor OUI lookup (app/scanner/vendor.py)."""
 
 import json
+import logging
+import urllib.error
 
-import app.scanner.vendor as vendor
+from app.scanner import vendor
 
 
 def test_get_vendor_invalid_inputs():
@@ -84,6 +86,42 @@ def test_load_cache_invalid_json(monkeypatch, tmp_path):
     assert vendor._cache_loaded is True
 
 
+def test_load_cache_os_error(monkeypatch, tmp_path):
+    cache_file = tmp_path / "mac_cache.json"
+    cache_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(vendor, "CACHE_FILE", str(cache_file))
+    monkeypatch.setattr(vendor, "_cache_loaded", False)
+    monkeypatch.setattr(vendor, "_vendor_cache", {})
+
+    def raise_os_error(*args, **kwargs):
+        raise OSError("Disk unreadable")
+
+    monkeypatch.setattr("builtins.open", raise_os_error)
+    vendor._load_cache()
+    assert vendor._vendor_cache == {}
+    assert vendor._cache_loaded is True
+
+
+def test_load_cache_double_check(monkeypatch):
+    """Test the double-check condition inside _cache_lock."""
+    monkeypatch.setattr(vendor, "_cache_loaded", False)
+
+    orig_lock = vendor._cache_lock
+
+    class DummyLock:
+        def __enter__(self):
+            # Simulate another thread completing load right as lock is acquired
+            vendor._cache_loaded = True
+            return orig_lock.__enter__()
+
+        def __exit__(self, *args):
+            return orig_lock.__exit__(*args)
+
+    monkeypatch.setattr(vendor, "_cache_lock", DummyLock())
+    vendor._load_cache()
+    assert vendor._cache_loaded is True
+
+
 def test_save_cache_writes_file(monkeypatch, tmp_path):
     data_dir = tmp_path / "cache"
     cache_file = data_dir / "mac_cache.json"
@@ -96,14 +134,43 @@ def test_save_cache_writes_file(monkeypatch, tmp_path):
     assert loaded == {"AA:BB:CC": "Vendor X"}
 
 
+def test_save_cache_os_error(monkeypatch, caplog):
+    """Verify that non-permission OSError during cache persistence is logged."""
+    def raise_os_error(*args, **kwargs):
+        raise OSError("Disk full")
+
+    monkeypatch.setattr("builtins.open", raise_os_error)
+    monkeypatch.setattr(vendor, "_vendor_cache", {"00:11:22": "Test"})
+
+    with caplog.at_level(logging.WARNING, logger=vendor.__name__):
+        vendor._save_cache()
+
+    assert "Failed to persist vendor cache" in caplog.text
+
+
 def test_api_lookup_rate_limit_cooldown(monkeypatch):
     monkeypatch.setattr(vendor, "_last_429_time", 1e18)  # far in the future
     assert vendor._api_lookup("AA:BB:CC:DD:EE:FF") == ""
 
 
+def test_api_lookup_rate_limit_sleep(monkeypatch):
+    """Verify time.sleep is invoked when requests are too close together."""
+    monkeypatch.setattr(vendor, "_last_429_time", -1000.0)
+    monkeypatch.setattr(vendor, "_last_api_request_time", 100.0)
+
+    slept_duration = []
+    monkeypatch.setattr(vendor.time, "time", lambda: 100.2)
+    monkeypatch.setattr(vendor.time, "sleep", lambda s: slept_duration.append(s))
+    monkeypatch.setattr(vendor, "_fetch_vendor_from_api", lambda mac_query: "Test Vendor")
+
+    result = vendor._api_lookup("AA:BB:CC:DD:EE:FF")
+    assert result == "Test Vendor"
+    assert len(slept_duration) == 1
+    assert abs(slept_duration[0] - (vendor._MIN_API_INTERVAL - 0.2)) < 0.01
+
+
 def test_api_lookup_http_429(monkeypatch):
     monkeypatch.setattr(vendor, "_last_429_time", 0.0)
-    import urllib.error
 
     def fake_urlopen(req, timeout=5):
         raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, None)
@@ -114,9 +181,42 @@ def test_api_lookup_http_429(monkeypatch):
     assert vendor._last_429_time > 0
 
 
+def test_api_lookup_status_429_direct(monkeypatch):
+    monkeypatch.setattr(vendor, "_last_429_time", 0.0)
+
+    class Fake429Response:
+        status = 429
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b""
+
+    monkeypatch.setattr(vendor.urllib.request, "urlopen", lambda req, timeout=5: Fake429Response())
+    result = vendor._api_lookup("AA:BB:CC:DD:EE:FF")
+    assert result == ""
+    assert vendor._last_429_time > 0
+
+
+def test_api_lookup_http_500(monkeypatch, caplog):
+    monkeypatch.setattr(vendor, "_last_429_time", 0.0)
+
+    def fake_urlopen(req, timeout=5):
+        raise urllib.error.HTTPError(req.full_url, 500, "Internal Server Error", {}, None)
+
+    monkeypatch.setattr(vendor.urllib.request, "urlopen", fake_urlopen)
+    with caplog.at_level(logging.DEBUG, logger=vendor.__name__):
+        result = vendor._api_lookup("AA:BB:CC:DD:EE:FF")
+    assert result == ""
+    assert "500" in caplog.text
+
+
 def test_api_lookup_http_404_quiet(monkeypatch):
     monkeypatch.setattr(vendor, "_last_429_time", 0.0)
-    import urllib.error
 
     def fake_urlopen(req, timeout=5):
         raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
@@ -158,6 +258,26 @@ def test_api_lookup_success(monkeypatch):
     assert vendor._api_lookup("00:11:32:AA:BB:CC") == "Synology Inc."
 
 
+def test_api_lookup_not_found_body(monkeypatch):
+    """Verify that 200 OK with 'not found' or 'errors' in body returns empty string."""
+    monkeypatch.setattr(vendor, "_last_429_time", 0.0)
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"Vendor not found"
+
+    monkeypatch.setattr(vendor.urllib.request, "urlopen", lambda req, timeout=5: FakeResponse())
+    assert vendor._api_lookup("00:11:32:AA:BB:CC") == ""
+
+
 def test_get_vendor_negative_caching(monkeypatch):
     """Verify that unresolvable OUIs are negatively cached as empty string and not re-queried."""
     lookup_count = 0
@@ -184,8 +304,6 @@ def test_get_vendor_negative_caching(monkeypatch):
 
 def test_save_cache_permission_error(monkeypatch, caplog):
     """Verify that PermissionError during cache persistence is caught cleanly with an actionable warning."""
-    import logging
-
     def raise_perm_error(*args, **kwargs):
         raise PermissionError(13, "Permission denied", "mac_cache.json")
 
@@ -195,10 +313,10 @@ def test_save_cache_permission_error(monkeypatch, caplog):
     # The hint names the IDs the process really runs as (Unraid: 99:100)
     monkeypatch.setattr(vendor, "process_ids", lambda: (99, 100))
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING, logger=vendor.__name__):
         vendor._save_cache()
 
-    assert any("chown -R 99:100" in record.message for record in caplog.records)
+    assert "chown -R 99:100" in caplog.text
 
 
 def test_is_locally_administered_mac():
@@ -216,4 +334,3 @@ def test_is_locally_administered_mac():
     # Invalid / short inputs
     assert vendor.is_locally_administered_mac("") is False
     assert vendor.is_locally_administered_mac("invalid") is False
-
