@@ -96,21 +96,244 @@ def _metrics_sample(profile: tuple, t: float) -> dict:
     }
 
 
+SAMPLES_PER_DAY = 288  # one every 5 minutes
+
+
+def _sample_time(now: datetime, step: int) -> datetime:
+    """Time of history sample ``step`` (0 = 24 h ago)."""
+    return now - timedelta(minutes=5 * (SAMPLES_PER_DAY - step))
+
+
+async def _reissue_agent_tokens(db, scenario: Scenario) -> dict[str, tuple[int, str, tuple]]:
+    """An already seeded database: only the hash of an agent token is stored, so the simulated agents get fresh tokens."""
+    from sqlalchemy import select
+
+    from app.models.agent import AgentToken
+    from app.models.device import Device
+    from app.services.agent_tokens import hash_agent_token
+
+    rows = (await db.execute(select(AgentToken, Device).join(Device, AgentToken.device_id == Device.id))).all()
+    profiles = {d[0]: d[6] for d in scenario.devices if d[6]}
+    agents = {}
+    for tok, dev in rows:
+        if dev.display_name in profiles:
+            raw = secrets.token_hex(32)
+            tok.token = hash_agent_token(raw)
+            agents[dev.display_name] = (dev.id, raw, profiles[dev.display_name])
+    await db.commit()
+    return agents
+
+
+def _seed_settings(db, scenario: Scenario) -> None:
+    from app.models.setting import Setting
+    from app.services.auth_service import hash_password
+
+    for key, value in {
+        "setup.complete": "true",
+        "api.admin_password": hash_password(DEMO_PASSWORD),
+        "api.master_token": secrets.token_hex(32),
+        "scan_interval": "0",
+        "quick_scan_interval": "0",
+        "server.url": f"http://{HOST}:{PORT}",
+        "ui.link_type_colors": json.dumps(scenario.link_colors),
+    }.items():
+        db.add(Setting(key=key, value=value, category="system"))
+
+
+async def _seed_layout(db, scenario: Scenario) -> tuple[dict[str, int], dict, dict]:
+    """Groups (the defaults plus the scenario's), subnets and racks: {group: id}, {key: Subnet}, {name: Rack}."""
+    from app.models.device import DeviceGroup
+    from app.models.network import Subnet
+    from app.models.topology import Rack
+    from app.scanner.utils import ensure_default_groups
+
+    groups = await ensure_default_groups(db, commit=False)
+    for name, icon, order in scenario.extra_groups:
+        group = DeviceGroup(name=name, icon=icon, sort_order=order)
+        db.add(group)
+        await db.flush()
+        groups[name] = group.id
+
+    subnets = {key: Subnet(cidr=cidr, name=name, vlan_id=vlan, gateway_ip=gateway) for key, cidr, name, vlan, gateway in scenario.subnets}
+    db.add_all(subnets.values())
+    racks = {name: Rack(name=name, units=units) for name, units in scenario.racks}
+    db.add_all(racks.values())
+    await db.flush()
+    return groups, subnets, racks
+
+
+def _new_device(scenario: Scenario, index: int, entry: tuple, group_id: int, now: datetime):
+    """The Device row of one scenario entry, before parent, grid and rack place are set."""
+    from app.models.device import Device
+
+    name, ip, dtype, _group, flags, _services, profile = entry
+    offline = flags.get("offline", False)
+    device = Device(
+        ip=ip, display_name=name, hostname=name.lower().replace(" ", "-") + "." + scenario.domain, device_type=dtype,
+        device_subtype=flags.get("subtype", "Unknown"), vendor=flags.get("vendor"), mac=flags.get("mac"),
+        group_id=group_id, is_online=not offline, is_host=flags.get("is_host", False),
+        is_ap=flags.get("is_ap", False), is_wlan=flags.get("is_wlan", False),
+        virtual_type=flags.get("virtual_type"), sort_order=index, has_agent=profile is not None,
+        old_ip=flags.get("old_ip"), ip_changed_at=now - timedelta(hours=3) if flags.get("old_ip") else None,
+        last_seen=now - timedelta(hours=2) if offline else now, status_changed_at=now - timedelta(hours=2),
+    )
+    if "max_ports" in flags:
+        device.max_ports = flags["max_ports"]
+    return device
+
+
+def _place_device(device, scenario: Scenario, flags: dict, by_name: dict, racks: dict) -> None:
+    """Parent host, topology grid position and rack place of a device, where the scenario gives them."""
+    name = device.display_name
+    if flags.get("parent"):
+        device.parent_id = by_name[flags["parent"]].id
+    if name in scenario.grid:
+        col, row = scenario.grid[name]
+        device.topology_x, device.topology_y = int(col * GRID_X), int(row * GRID_Y)
+    if name in scenario.rack_slots:
+        rack, unit, height = scenario.rack_slots[name]
+        device.rack_id, device.rack_unit, device.rack_height = racks[rack].id, unit, height
+
+
+def _seed_agent(db, scenario: Scenario, device, profile: tuple, now: datetime) -> str:
+    """Agent token and config of a device, plus 24 h of metrics (one sample every 5 minutes). Returns the raw token."""
+    from app.models.agent import AgentConfig, AgentToken, DeviceMetrics
+    from app.services.agent_tokens import hash_agent_token
+
+    name = device.display_name
+    available, security = scenario.patches.get(name, (0, 0))
+    token = secrets.token_hex(32)
+    db.add(AgentToken(device_id=device.id, token=hash_agent_token(token), agent_version=profile[3], last_seen=now,
+                      os_pretty=profile[0], os_arch="x86_64"))
+    db.add(AgentConfig(device_id=device.id))
+    for step in range(288):
+        ts = now - timedelta(minutes=5 * (288 - step))
+        sample = _metrics_sample(profile, ts.timestamp())
+        db.add(DeviceMetrics(
+            device_id=device.id, cpu_percent=sample["cpu_percent"], ram_used_mb=sample["ram"]["used_mb"],
+            ram_total_mb=sample["ram"]["total_mb"], ram_percent=sample["ram"]["percent"],
+            disk_json=json.dumps(sample["disk"]), temperature=sample["temperature"],
+            net_json=json.dumps(sample["network"]), timestamp=ts,
+            patch_available=available, patch_security=security,
+            patch_manager="apt", reboot_required=name in scenario.reboot_required,
+        ))
+    return token
+
+
+async def _seed_devices(db, scenario: Scenario, groups: dict, racks: dict, now: datetime) -> tuple[dict, dict]:
+    """Devices with their services, discovery entries and agents: ({name: Device}, {name: (id, token, profile)})."""
+    from app.models.device import DeviceHistory, DiscoveredHost, Service
+
+    by_name: dict = {}
+    agents: dict[str, tuple[int, str, tuple]] = {}
+    for index, entry in enumerate(scenario.devices):
+        name, ip, _dtype, group, flags, services, profile = entry
+        offline = flags.get("offline", False)
+        device = _new_device(scenario, index, entry, groups[group], now)
+        _place_device(device, scenario, flags, by_name, racks)
+        db.add(device)
+        await db.flush()
+        by_name[name] = device
+
+        for order, (sname, proto, port, up) in enumerate(services):
+            db.add(Service(device_id=device.id, name=sname, protocol=proto, port=port, is_up=up and not offline, sort_order=order))
+        db.add(DiscoveredHost(ip=ip, hostname=device.hostname, mac=device.mac, vendor=device.vendor, is_online=not offline, is_monitored=True))
+        if offline:
+            db.add(DeviceHistory(device_id=device.id, status="offline", message="Device went offline", timestamp=now - timedelta(hours=2)))
+        if profile:
+            agents[name] = (device.id, _seed_agent(db, scenario, device, profile, now), profile)
+    return by_name, agents
+
+
+def _seed_health(db, scenario: Scenario, by_name: dict, now: datetime) -> None:
+    """24 h of health probes, one every 5 minutes, so uptime bars and latency charts have a history:
+    wired gear answers in a few ms, WLAN clients slower; offline devices dropped 2 h ago and the
+    scenario's outages show up as gaps."""
+    from app.models.device import DeviceHealthSample, DeviceHistory
+
+    for name, _ip, _dtype, _group, flags, services, _profile in scenario.devices:
+        device = by_name[name]
+        down = {step for r in scenario.outages.get(name, []) for step in r}
+        base = random.uniform(8, 28) if flags.get("is_wlan") else random.uniform(0.4, 3.5)
+        for step in range(288):
+            ts = now - timedelta(minutes=5 * (288 - step))
+            online = not (flags.get("offline") and step >= 264) and step not in down
+            db.add(DeviceHealthSample(
+                device_id=device.id, timestamp=ts, is_online=online,
+                latency_ms=round(base + random.uniform(-0.3, 0.3) * base, 2) if online else None,
+                probe_type="icmp" if online else None,
+                ports_up=sum(1 for s in services if s[3]) if online else 0, ports_total=len(services),
+            ))
+    for name, ranges in scenario.outages.items():
+        for r in ranges:
+            db.add(DeviceHistory(device_id=by_name[name].id, status="offline", message="Device went offline",
+                                 timestamp=now - timedelta(minutes=5 * (288 - r.start))))
+            db.add(DeviceHistory(device_id=by_name[name].id, status="online", message="Device is back online",
+                                 timestamp=now - timedelta(minutes=5 * (288 - r.stop))))
+
+
+def _seed_network(db, scenario: Scenario, by_name: dict, subnets: dict, now: datetime) -> None:
+    """Unknown hosts, the router's VLAN addresses, further NICs, topology links and down events."""
+    from app.models.device import DeviceHistory, DeviceInterface, DiscoveredHost
+    from app.models.topology import TopologyLink
+
+    for ip, vendor in scenario.unknown_hosts:
+        db.add(DiscoveredHost(ip=ip, vendor=vendor, is_online=True))
+
+    # The gateway of every VLAN is one box: its other addresses are attached interfaces, and the
+    # pending ones (same MAC) wait as merge suggestions
+    router = by_name[scenario.router]
+    router.mac = scenario.router_mac
+    for ip, key, vlan in scenario.router_interfaces:
+        db.add(DeviceInterface(device_id=router.id, ip=ip, mac=scenario.router_mac, subnet_id=subnets[key].id,
+                               vlan_id=vlan, is_online=True, last_seen=now))
+        db.add(DiscoveredHost(ip=ip, mac=scenario.router_mac, is_online=True, is_monitored=True))
+    for ip in scenario.pending_router_ips:
+        db.add(DiscoveredHost(ip=ip, mac=scenario.router_mac, hostname=router.hostname, is_online=True))
+    # Further NICs of multi-homed hosts (cluster and backup networks)
+    for name, ip, key, vlan, label in scenario.interfaces:
+        db.add(DeviceInterface(device_id=by_name[name].id, ip=ip, mac=by_name[name].mac, subnet_id=subnets[key].id,
+                               vlan_id=vlan, label=label, is_online=True, last_seen=now))
+        db.add(DiscoveredHost(ip=ip, mac=by_name[name].mac, is_online=True, is_monitored=True))
+    for source, target, link_type, *role in scenario.links:
+        db.add(TopologyLink(source_id=by_name[source].id, target_id=by_name[target].id, link_type=link_type,
+                            role=role[0] if role else "primary"))
+    for name, message, minutes in scenario.down_events:
+        db.add(DeviceHistory(device_id=by_name[name].id, status="down", message=message, timestamp=now - timedelta(minutes=minutes)))
+
+
+async def _seed_rack_cabling(db, scenario: Scenario, by_name: dict, racks: dict) -> None:
+    """Rack equipment with its ports, port counts of devices, and the cables between ports."""
+    from app.models.rack_cabling import RackCable, RackItem, RackPort
+
+    ports: dict[tuple[str, int], RackPort] = {}
+    for name, rack, kind, unit, height, port_count, port_kind in scenario.rack_items:
+        item = RackItem(rack_id=racks[rack].id, name=name, kind=kind, rack_unit=unit, rack_height=height)
+        db.add(item)
+        await db.flush()
+        for number in range(1, port_count + 1):
+            port = RackPort(rack_item_id=item.id, number=number, kind=port_kind)
+            db.add(port)
+            ports[(name, number)] = port
+    for name, (count, kind) in scenario.port_counts.items():
+        for number in range(1, count + 1):
+            side = "rear" if name.startswith(("pve", "TrueNAS")) else "front"
+            port = RackPort(device_id=by_name[name].id, number=number, kind=kind, side=side)
+            db.add(port)
+            ports[(name, number)] = port
+    await db.flush()
+    for owner_a, number_a, owner_b, number_b, cable in scenario.cables:
+        db.add(RackCable(a_port_id=ports[(owner_a, number_a)].id, b_port_id=ports[(owner_b, number_b)].id, cable=cable,
+                         color=CABLE_COLOURS.get(cable)))
+
+
 async def _seed(scenario: Scenario) -> dict[str, tuple[int, str, tuple]]:
     """Fill an empty demo database. Returns {device name: (id, agent token, profile)} for agents."""
     from sqlalchemy import select
 
     from app.database import async_session, init_db
-    from app.models.agent import AgentConfig, AgentToken, DeviceMetrics
-    from app.models.device import Device, DeviceGroup, DeviceHealthSample, DeviceHistory, DeviceInterface, DiscoveredHost, Service
-    from app.models.network import Subnet
-    from app.models.setting import Setting
-    from app.models.topology import Rack, TopologyLink
-    from app.scanner.utils import ensure_default_groups
-    from app.services.agent_tokens import hash_agent_token
-    from app.services.auth_service import hash_password
-
     from app.database.migrations import run_migrations
+    from app.models.device import Device
 
     await init_db()
     # Existing demo databases need new columns before the first ORM query
@@ -118,166 +341,15 @@ async def _seed(scenario: Scenario) -> dict[str, tuple[int, str, tuple]]:
         await run_migrations(db)
     async with async_session() as db:
         if (await db.execute(select(Device).limit(1))).scalar_one_or_none():
-            rows = (await db.execute(select(AgentToken, Device).join(Device, AgentToken.device_id == Device.id))).all()
-            profiles = {d[0]: d[6] for d in scenario.devices if d[6]}
-            # Only the hash of an agent token is stored, so the simulated agents get fresh tokens
-            agents = {}
-            for tok, dev in rows:
-                if dev.display_name in profiles:
-                    raw = secrets.token_hex(32)
-                    tok.token = hash_agent_token(raw)
-                    agents[dev.display_name] = (dev.id, raw, profiles[dev.display_name])
-            await db.commit()
-            return agents
+            return await _reissue_agent_tokens(db, scenario)
 
         now = _utcnow()
-        for key, value in {
-            "setup.complete": "true",
-            "api.admin_password": hash_password(DEMO_PASSWORD),
-            "api.master_token": secrets.token_hex(32),
-            "scan_interval": "0",
-            "quick_scan_interval": "0",
-            "server.url": f"http://{HOST}:{PORT}",
-            "ui.link_type_colors": json.dumps(scenario.link_colors),
-        }.items():
-            db.add(Setting(key=key, value=value, category="system"))
-
-        groups = await ensure_default_groups(db, commit=False)
-        for name, icon, order in scenario.extra_groups:
-            group = DeviceGroup(name=name, icon=icon, sort_order=order)
-            db.add(group)
-            await db.flush()
-            groups[name] = group.id
-
-        subnets = {key: Subnet(cidr=cidr, name=name, vlan_id=vlan, gateway_ip=gateway) for key, cidr, name, vlan, gateway in scenario.subnets}
-        db.add_all(subnets.values())
-        racks = {name: Rack(name=name, units=units) for name, units in scenario.racks}
-        db.add_all(racks.values())
-        await db.flush()
-
-        by_name: dict[str, Device] = {}
-        agents: dict[str, tuple[int, str, tuple]] = {}
-        for index, (name, ip, dtype, group, flags, services, profile) in enumerate(scenario.devices):
-            offline = flags.get("offline", False)
-            device = Device(
-                ip=ip, display_name=name, hostname=name.lower().replace(" ", "-") + "." + scenario.domain, device_type=dtype,
-                device_subtype=flags.get("subtype", "Unknown"), vendor=flags.get("vendor"), mac=flags.get("mac"),
-                group_id=groups[group], is_online=not offline, is_host=flags.get("is_host", False),
-                is_ap=flags.get("is_ap", False), is_wlan=flags.get("is_wlan", False),
-                virtual_type=flags.get("virtual_type"), sort_order=index, has_agent=profile is not None,
-                old_ip=flags.get("old_ip"), ip_changed_at=now - timedelta(hours=3) if flags.get("old_ip") else None,
-                last_seen=now - timedelta(hours=2) if offline else now, status_changed_at=now - timedelta(hours=2),
-            )
-            if "max_ports" in flags:
-                device.max_ports = flags["max_ports"]
-            if flags.get("parent"):
-                device.parent_id = by_name[flags["parent"]].id
-            if name in scenario.grid:
-                col, row = scenario.grid[name]
-                device.topology_x, device.topology_y = int(col * GRID_X), int(row * GRID_Y)
-            if name in scenario.rack_slots:
-                rack, unit, height = scenario.rack_slots[name]
-                device.rack_id, device.rack_unit, device.rack_height = racks[rack].id, unit, height
-            db.add(device)
-            await db.flush()
-            by_name[name] = device
-
-            for order, (sname, proto, port, up) in enumerate(services):
-                db.add(Service(device_id=device.id, name=sname, protocol=proto, port=port, is_up=up and not offline, sort_order=order))
-            db.add(DiscoveredHost(ip=ip, hostname=device.hostname, mac=device.mac, vendor=device.vendor, is_online=not offline, is_monitored=True))
-            if offline:
-                db.add(DeviceHistory(device_id=device.id, status="offline", message="Device went offline", timestamp=now - timedelta(hours=2)))
-
-            if profile:
-                available, security = scenario.patches.get(name, (0, 0))
-                token = secrets.token_hex(32)
-                db.add(AgentToken(device_id=device.id, token=hash_agent_token(token), agent_version=profile[3], last_seen=now,
-                                  os_pretty=profile[0], os_arch="x86_64"))
-                db.add(AgentConfig(device_id=device.id))
-                agents[name] = (device.id, token, profile)
-                # 24 h of history, one sample every 5 minutes
-                for step in range(288):
-                    ts = now - timedelta(minutes=5 * (288 - step))
-                    sample = _metrics_sample(profile, ts.timestamp())
-                    db.add(DeviceMetrics(
-                        device_id=device.id, cpu_percent=sample["cpu_percent"], ram_used_mb=sample["ram"]["used_mb"],
-                        ram_total_mb=sample["ram"]["total_mb"], ram_percent=sample["ram"]["percent"],
-                        disk_json=json.dumps(sample["disk"]), temperature=sample["temperature"],
-                        net_json=json.dumps(sample["network"]), timestamp=ts,
-                        patch_available=available, patch_security=security,
-                        patch_manager="apt", reboot_required=name in scenario.reboot_required,
-                    ))
-
-        # 24 h of health probes, one every 5 minutes, so uptime bars and latency charts have a history:
-        # wired gear answers in a few ms, WLAN clients slower; offline devices dropped 2 h ago and the
-        # scenario's outages show up as gaps.
-        for name, ip, _dtype, _group, flags, services, _profile in scenario.devices:
-            device = by_name[name]
-            down = {step for r in scenario.outages.get(name, []) for step in r}
-            base = random.uniform(8, 28) if flags.get("is_wlan") else random.uniform(0.4, 3.5)
-            for step in range(288):
-                ts = now - timedelta(minutes=5 * (288 - step))
-                online = not (flags.get("offline") and step >= 264) and step not in down
-                db.add(DeviceHealthSample(
-                    device_id=device.id, timestamp=ts, is_online=online,
-                    latency_ms=round(base + random.uniform(-0.3, 0.3) * base, 2) if online else None,
-                    probe_type="icmp" if online else None,
-                    ports_up=sum(1 for s in services if s[3]) if online else 0, ports_total=len(services),
-                ))
-        for name, ranges in scenario.outages.items():
-            for r in ranges:
-                db.add(DeviceHistory(device_id=by_name[name].id, status="offline", message="Device went offline",
-                                     timestamp=now - timedelta(minutes=5 * (288 - r.start))))
-                db.add(DeviceHistory(device_id=by_name[name].id, status="online", message="Device is back online",
-                                     timestamp=now - timedelta(minutes=5 * (288 - r.stop))))
-
-        for ip, vendor in scenario.unknown_hosts:
-            db.add(DiscoveredHost(ip=ip, vendor=vendor, is_online=True))
-
-        # The gateway of every VLAN is one box: its other addresses are attached interfaces, and the
-        # pending ones (same MAC) wait as merge suggestions
-        router = by_name[scenario.router]
-        router.mac = scenario.router_mac
-        for ip, key, vlan in scenario.router_interfaces:
-            db.add(DeviceInterface(device_id=router.id, ip=ip, mac=scenario.router_mac, subnet_id=subnets[key].id,
-                                   vlan_id=vlan, is_online=True, last_seen=now))
-            db.add(DiscoveredHost(ip=ip, mac=scenario.router_mac, is_online=True, is_monitored=True))
-        for ip in scenario.pending_router_ips:
-            db.add(DiscoveredHost(ip=ip, mac=scenario.router_mac, hostname=router.hostname, is_online=True))
-        # Further NICs of multi-homed hosts (cluster and backup networks)
-        for name, ip, key, vlan, label in scenario.interfaces:
-            db.add(DeviceInterface(device_id=by_name[name].id, ip=ip, mac=by_name[name].mac, subnet_id=subnets[key].id,
-                                   vlan_id=vlan, label=label, is_online=True, last_seen=now))
-            db.add(DiscoveredHost(ip=ip, mac=by_name[name].mac, is_online=True, is_monitored=True))
-        for source, target, link_type, *role in scenario.links:
-            db.add(TopologyLink(source_id=by_name[source].id, target_id=by_name[target].id, link_type=link_type,
-                                role=role[0] if role else "primary"))
-        for name, message, minutes in scenario.down_events:
-            db.add(DeviceHistory(device_id=by_name[name].id, status="down", message=message, timestamp=now - timedelta(minutes=minutes)))
-        # Rack equipment with its ports, port counts of devices, and the cables between ports
-        from app.models.rack_cabling import RackCable, RackItem, RackPort
-
-        items: dict[str, RackItem] = {}
-        ports: dict[tuple[str, int], RackPort] = {}
-        for name, rack, kind, unit, height, port_count, port_kind in scenario.rack_items:
-            item = RackItem(rack_id=racks[rack].id, name=name, kind=kind, rack_unit=unit, rack_height=height)
-            db.add(item)
-            await db.flush()
-            items[name] = item
-            for number in range(1, port_count + 1):
-                port = RackPort(rack_item_id=item.id, number=number, kind=port_kind)
-                db.add(port)
-                ports[(name, number)] = port
-        for name, (count, kind) in scenario.port_counts.items():
-            for number in range(1, count + 1):
-                side = "rear" if name.startswith(("pve", "TrueNAS")) else "front"
-                port = RackPort(device_id=by_name[name].id, number=number, kind=kind, side=side)
-                db.add(port)
-                ports[(name, number)] = port
-        await db.flush()
-        for owner_a, number_a, owner_b, number_b, cable in scenario.cables:
-            db.add(RackCable(a_port_id=ports[(owner_a, number_a)].id, b_port_id=ports[(owner_b, number_b)].id, cable=cable,
-                             color=CABLE_COLOURS.get(cable)))
+        _seed_settings(db, scenario)
+        groups, subnets, racks = await _seed_layout(db, scenario)
+        by_name, agents = await _seed_devices(db, scenario, groups, racks, now)
+        _seed_health(db, scenario, by_name, now)
+        _seed_network(db, scenario, by_name, subnets, now)
+        await _seed_rack_cabling(db, scenario, by_name, racks)
         await db.commit()
         return agents
 
