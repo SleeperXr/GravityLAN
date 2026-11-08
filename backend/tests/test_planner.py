@@ -396,3 +396,62 @@ async def test_network_subnets_l2_l3_enrichment(client, db, admin_token, monkeyp
     vlan = next(s for s in data if s["cidr"] == "10.50.0.0/24")
     assert vlan["is_direct_l2"] is False
     assert vlan["interface_name"] is None
+
+
+
+# --- Docker sync, DNS servers batching and stale ARP tests -------------------
+
+async def test_sync_local_docker_containers_success(monkeypatch):
+    docker_mock = MagicMock()
+    docker_mock.is_available.return_value = True
+    docker_mock.get_local_containers.return_value = [{"id": "c1", "name": "web"}]
+    monkeypatch.setattr("app.services.docker_service.docker_service", docker_mock)
+    sync_mock = AsyncMock()
+    monkeypatch.setattr("app.scanner.sync.sync_docker_containers", sync_mock)
+
+    await planner._sync_local_docker_containers()
+    sync_mock.assert_awaited_once_with([{"id": "c1", "name": "web"}])
+
+
+async def test_sync_local_docker_containers_handles_error(monkeypatch):
+    from docker.errors import DockerException
+    docker_mock = MagicMock()
+    docker_mock.is_available.return_value = True
+    docker_mock.get_local_containers.side_effect = DockerException("Socket failure")
+    monkeypatch.setattr("app.services.docker_service.docker_service", docker_mock)
+
+    # Must not raise
+    await planner._sync_local_docker_containers()
+
+
+async def test_get_subnet_dns_servers_and_server(monkeypatch, patch_async_session, db):
+    assert await planner._get_subnet_dns_servers([]) == {}
+
+    db.add(Subnet(cidr="192.168.1.0/24", name="LAN", dns_server="192.168.1.1"))
+    db.add(Subnet(cidr="10.0.0.0/24", name="IoT", dns_server=None))
+    await db.commit()
+
+    servers = await planner._get_subnet_dns_servers(["192.168.1.0/24", "10.0.0.0/24"])
+    assert servers == {"192.168.1.0/24": "192.168.1.1"}
+
+    assert await planner._get_subnet_dns_server("192.168.1.0/24") == "192.168.1.1"
+    assert await planner._get_subnet_dns_server("10.0.0.0/24") is None
+
+
+async def test_run_arp_only_scan_prunes_stale_ips(monkeypatch, patch_async_session, db):
+    db.add(Subnet(cidr="192.168.1.0/24", name="LAN"))
+    await db.commit()
+
+    arp_table = {
+        "192.168.1.10": "aa:bb:cc:dd:ee:01",
+        "192.168.1.99": "aa:bb:cc:dd:ee:99",
+    }
+    monkeypatch.setattr(planner, "get_local_arp_table", lambda: arp_table)
+    monkeypatch.setattr(planner, "get_linux_stale_ips", lambda: ["192.168.1.99"])
+    sync_mock = AsyncMock()
+    monkeypatch.setattr("app.scanner.sync.sync_hosts_batch", sync_mock)
+
+    total = await planner.run_arp_only_scan()
+    assert total == 1
+    synced_ips = [h["ip"] for h in sync_mock.await_args.args[0]]
+    assert synced_ips == ["192.168.1.10"]

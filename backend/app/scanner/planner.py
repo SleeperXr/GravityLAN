@@ -3,7 +3,9 @@
 import logging
 import ipaddress
 from datetime import datetime, timezone
+from docker.errors import DockerException
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from app.database import async_session
 from app.models.device import DiscoveredHost, Device
 from app.models.network import Subnet
@@ -81,20 +83,33 @@ async def _sync_local_docker_containers():
         if local_c:
             logger.info(f"Planner: Syncing {len(local_c)} local Docker containers...")
             await sync_docker_containers(local_c)
-    except Exception as e:
-        logger.warning(f"Planner: Docker container sync failed: {e}")
+    except (DockerException, SQLAlchemyError, OSError) as e:
+        logger.warning(f"Planner: Docker container sync failed: {e}", exc_info=True)
+
+
+async def _get_subnet_dns_servers(subnets: list[str]) -> dict[str, str]:
+    """Batch-load configured DNS servers for given subnets in a single DB session."""
+    if not subnets:
+        return {}
+    dns_map: dict[str, str] = {}
+    async with async_session() as db:
+        res = await db.execute(
+            select(Subnet.cidr, Subnet.dns_server).where(
+                Subnet.cidr.in_(subnets),
+                Subnet.dns_server.isnot(None),
+            )
+        )
+        for cidr, dns_server in res.all():
+            if dns_server:
+                dns_map[cidr] = dns_server
+                logger.info(f"Planner: Using custom DNS {dns_server} for subnet {cidr}")
+    return dns_map
 
 
 async def _get_subnet_dns_server(subnet: str):
     """Return the configured DNS server for a subnet, if any."""
-    dns_server = None
-    async with async_session() as db:
-        res_sub = await db.execute(select(Subnet).where(Subnet.cidr == subnet))
-        sub_obj = res_sub.scalar_one_or_none()
-        if sub_obj and sub_obj.dns_server:
-            dns_server = sub_obj.dns_server
-            logger.info(f"Planner: Using custom DNS {dns_server} for subnet {subnet}")
-    return dns_server
+    servers = await _get_subnet_dns_servers([subnet])
+    return servers.get(subnet)
 
 
 async def _scan_subnet_alive_hosts(subnet: str, dns_server):
@@ -208,6 +223,65 @@ def _target_count(subnet: str) -> int:
         return 0
 
 
+async def _scan_and_resolve_subnet(
+    subnet: str, dns_server: str | None, progress_callback=None
+) -> list[dict]:
+    """Fast discovery (ARP+Ping), MAC resolution, and DNS hostname resolution for one subnet."""
+    if progress_callback:
+        await progress_callback(f"Scanner: Scanning {subnet} (ARP + Ping)...")
+
+    # 1. Fast Discovery (Nmap -sn -PR -PE)
+    alive_hosts = await _scan_subnet_alive_hosts(subnet, dns_server)
+
+    if progress_callback:
+        await progress_callback(f"Scanner: Found {len(alive_hosts)} active hosts. Resolving MACs...")
+
+    # 2. MAC Resolution & Batch Sync (scoped to this subnet's target IPs)
+    try:
+        subnet_target_ips = scan_target_ips(subnet)
+    except ValueError:
+        subnet_target_ips = None
+    resolved_hosts = await resolve_mac_addresses(alive_hosts, all_target_ips=subnet_target_ips)
+
+    # 2b. Names nmap's reverse DNS missed: NetBIOS, mDNS, OS resolver, ping -a
+    nameless = [h for h in resolved_hosts if is_ip_like(h.get("hostname"))]
+    if nameless:
+        if progress_callback:
+            await progress_callback(f"Scanner: Resolving names of {len(nameless)} hosts...")
+        await resolve_hostnames(nameless, dns_server=dns_server, max_concurrent=10)
+
+    return resolved_hosts
+
+
+async def _post_scan_cleanup(subnets: list[str], all_alive_ips: set) -> None:
+    """Offline cleanup, mark initial scan done, and invalidate caches."""
+    async with async_session() as db:
+        offline_threshold = await get_offline_threshold(db)
+        await _cleanup_planner_offline(db, subnets, all_alive_ips, offline_threshold)
+        from app.models.setting import Setting
+        res_done = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
+        if res_done.scalar_one_or_none() is None:
+            db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
+        await db.commit()
+        # Consolidated cache invalidation
+        discovery_cache.invalidate()
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()
+
+
+async def _announce_scan_complete(total_found: int) -> None:
+    """Send scan.complete webhook event."""
+    from app.services.webhook_service import trigger_webhooks
+    await trigger_webhooks(
+        event_type="scan.complete",
+        data={
+            "scan_type": "planner",
+            "hosts_found": total_found,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    )
+
+
 async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_callback=None, announce: bool = True):
     """
     Executes a lightweight discovery scan for the Network Planner.
@@ -227,9 +301,12 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
     all_alive_ips = set()
     from app.scanner.sync import sync_hosts_batch
 
-    targets = {s: _target_count(s) for s in subnets if not s.startswith("169.254.")}
+    valid_subnets = [s for s in subnets if not s.startswith("169.254.")]
+    targets = {s: _target_count(s) for s in valid_subnets}
     hosts_total = sum(targets.values())
     hosts_scanned = 0
+
+    dns_servers = await _get_subnet_dns_servers(valid_subnets)
 
     for subnet in subnets:
         if subnet.startswith("169.254."):
@@ -238,32 +315,8 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
         if hosts_callback:
             await hosts_callback(subnet, hosts_scanned, hosts_total)
 
-        dns_server = await _get_subnet_dns_server(subnet)
-
-        if progress_callback:
-            await progress_callback(f"Scanner: Scanning {subnet} (ARP + Ping)...")
-
-        # 1. Fast Discovery (Nmap -sn -PR -PE)
-        alive_hosts = await _scan_subnet_alive_hosts(subnet, dns_server)
-
-        if progress_callback:
-            await progress_callback(f"Scanner: Found {len(alive_hosts)} active hosts. Resolving MACs...")
-
-        # 2. MAC Resolution & Batch Sync (scoped to this subnet's target IPs)
-        try:
-            subnet_target_ips = scan_target_ips(subnet)
-        except ValueError:
-            subnet_target_ips = None
-        resolved_hosts = await resolve_mac_addresses(alive_hosts, all_target_ips=subnet_target_ips)
-
-        # 2b. Names nmap's reverse DNS missed: the same lookups as Info-Refresh (NetBIOS, mDNS,
-        # OS resolver, ping -a). Without them a TV or phone known only by mDNS stayed "Unknown"
-        # until the user refreshed it by hand.
-        nameless = [h for h in resolved_hosts if is_ip_like(h.get("hostname"))]
-        if nameless:
-            if progress_callback:
-                await progress_callback(f"Scanner: Resolving names of {len(nameless)} hosts...")
-            await resolve_hostnames(nameless, dns_server=dns_server, max_concurrent=10)
+        dns_server = dns_servers.get(subnet)
+        resolved_hosts = await _scan_and_resolve_subnet(subnet, dns_server, progress_callback)
 
         if resolved_hosts:
             await sync_hosts_batch(resolved_hosts, is_planner_scan=True)
@@ -278,32 +331,12 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
         if hosts_callback:
             await hosts_callback(subnet, hosts_scanned, hosts_total)
 
-    # 4. Offline Cleanup (Exclusive to Planner)
-    # Delete hosts in scanned subnets that were not found
-    async with async_session() as db:
-        offline_threshold = await get_offline_threshold(db)
-        await _cleanup_planner_offline(db, subnets, all_alive_ips, offline_threshold)
-        from app.models.setting import Setting
-        res_done = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
-        if res_done.scalar_one_or_none() is None:
-            db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
-        await db.commit()
-        # Consolidated cache invalidation
-        discovery_cache.invalidate()
-        dashboard_cache.invalidate_all()
-        topology_cache.invalidate()
+    # Offline Cleanup & Cache Invalidation (Exclusive to Planner)
+    await _post_scan_cleanup(subnets, all_alive_ips)
 
     logger.info(f"Planner: Scan complete. Found {total_found} hosts.")
 
     if announce:
-        from app.services.webhook_service import trigger_webhooks
-        await trigger_webhooks(
-            event_type="scan.complete",
-            data={
-                "scan_type": "planner",
-                "hosts_found": total_found,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-        )
+        await _announce_scan_complete(total_found)
 
     return total_found
