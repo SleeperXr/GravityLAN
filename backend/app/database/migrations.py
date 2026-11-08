@@ -2,7 +2,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from sqlalchemy import inspect, select, or_, text, update
+from sqlalchemy import UniqueConstraint, inspect, select, or_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -247,29 +247,36 @@ async def _apply_table_migrations(raw_conn, table: str, cols: list):
             logger.info(f"Migration: Column '{column}' added successfully to '{table}'.")
 
 
+def _column_names(constraint) -> tuple[str, ...]:
+    return tuple(c.name for c in constraint.columns)
+
+
+def _name_then_columns(constraint) -> tuple:
+    """Sort key: Table.constraints and Table.indexes are unordered sets."""
+    return constraint.name or "", _column_names(constraint)
+
+
+def _declared_unique_sets(model) -> list[tuple[str, ...]]:
+    """Unique column sets of a table in a fixed order: constraints, unique columns, unique indexes."""
+    constraints = [con for con in model.constraints if isinstance(con, UniqueConstraint)]
+    indexes = [idx for idx in model.indexes if idx.unique]
+    return [
+        *[_column_names(con) for con in sorted(constraints, key=_name_then_columns)],
+        *[(c.name,) for c in sorted(model.columns, key=lambda c: c.name) if c.unique],
+        *[_column_names(idx) for idx in sorted(indexes, key=_name_then_columns)],
+    ]
+
+
 def unique_column_sets(table: str) -> list[tuple[str, ...]]:
     """The column sets a table keeps unique (besides its id), read from the models."""
     import app.models  # noqa: F401 - registers the models
     import app.models.rack_cabling  # noqa: F401
-    from sqlalchemy import UniqueConstraint
     from app.database import Base
 
     model = Base.metadata.tables.get(table)
     if model is None:
         return []
-    # Table.constraints and Table.indexes are unordered sets; sort deterministically
-    constraints = sorted(
-        [con for con in model.constraints if isinstance(con, UniqueConstraint)],
-        key=lambda con: (con.name or "", tuple(c.name for c in con.columns))
-    )
-    sets = [tuple(c.name for c in con.columns) for con in constraints]
-    sets += [(c.name,) for c in sorted(model.columns, key=lambda c: c.name) if c.unique]
-    indexes = sorted(
-        [idx for idx in model.indexes if idx.unique],
-        key=lambda idx: (idx.name or "", tuple(c.name for c in idx.columns))
-    )
-    sets += [tuple(c.name for c in idx.columns) for idx in indexes]
-    return [s for s in dict.fromkeys(sets) if s and s != ("id",)]
+    return [s for s in dict.fromkeys(_declared_unique_sets(model)) if s and s != ("id",)]
 
 
 def _inventory_tables() -> list[str]:
@@ -347,6 +354,25 @@ async def _deduplicate_and_index(db: AsyncSession, table: str, cols: tuple[str, 
     return result.rowcount or 0
 
 
+async def _run_step(db: AsyncSession, what: str, step, *args) -> None:
+    """Run one step on its own: whatever goes wrong is rolled back and logged, and the start goes on.
+
+    Catches everything on purpose. A step can also fail outside the database (a full disk while copying
+    raises OSError), and no single repair is worth a server that does not start. The next start tries again.
+    """
+    try:
+        await step(db, *args)
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Migration error while {what}: {e}")
+
+
+async def _add_unique_index(db: AsyncSession, table: str, cols: tuple[str, ...]) -> None:
+    removed = await _deduplicate_and_index(db, table, cols)
+    await db.commit()
+    logger.info(f"Migration: Unique index on {table}({', '.join(cols)}) added, {removed} duplicate row(s) removed")
+
+
 async def _add_missing_unique_indexes(db: AsyncSession) -> None:
     """Give old databases the unique keys of the models.
 
@@ -360,22 +386,13 @@ async def _add_missing_unique_indexes(db: AsyncSession) -> None:
         if live is None:
             continue
         for cols in _missing_unique_sets(*live, table):
-            try:
-                removed = await _deduplicate_and_index(db, table, cols)
-                await db.commit()
-            except Exception as e:
-                await db.rollback()
-                logger.error(f"Migration error while adding unique index on {table}({', '.join(cols)}): {e}")
-                continue
-            logger.info(f"Migration: Unique index on {table}({', '.join(cols)}) added, {removed} duplicate row(s) removed")
+            await _run_step(db, f"adding unique index on {table}({', '.join(cols)})", _add_unique_index, table, cols)
 
 
-async def run_migrations(db: AsyncSession):
-    """Run schema migrations for SQLite or any alternative database.
+async def _add_missing_columns(db: AsyncSession) -> None:
+    """Add the columns of MIGRATIONS that an older database lacks.
 
-    This handles adding missing columns to existing tables without breaking
-    compatibility for users with older database versions. Uses a dialect-agnostic
-    SQLAlchemy Inspector approach.
+    A failing table is only logged: all tables share one transaction, so a rollback would undo the others.
     """
     raw_conn = await db.connection()
 
@@ -385,52 +402,37 @@ async def run_migrations(db: AsyncSession):
         except Exception as e:
             logger.error(f"Migration error on table '{table}': {e}")
 
+
+def _repair_steps() -> list[tuple]:
+    """What runs after the columns, in this order, with the words the error log uses for it."""
+    from app.services.agent_tokens import normalize_agent_tokens
+
+    return [
+        # Tag stored agent token hashes (sha256:) and hash leftover plaintext tokens
+        (normalize_agent_tokens, "upgrading agent tokens"),
+        (_clear_unsafe_service_links, "clearing unsafe service links"),
+        (_retire_phone_system_items, "retiring phone system rack items"),
+        (_add_missing_unique_indexes, "adding unique indexes"),
+        (_drop_outbox_token_copies, "removing token copies from the notification outbox"),
+        (_deduplicate_generic_port_services, "deduplicating generic port services"),
+        (_repair_infra_alert_offline, "repairing infrastructure alert_offline flags"),
+    ]
+
+
+async def run_migrations(db: AsyncSession):
+    """Run schema migrations for SQLite or any alternative database.
+
+    This handles adding missing columns to existing tables without breaking
+    compatibility for users with older database versions. Uses a dialect-agnostic
+    SQLAlchemy Inspector approach.
+    """
+    await _add_missing_columns(db)
+
     await _clean_corrupted_ip_placeholders(db)
     await db.commit()
 
-    # Tag stored agent token hashes (sha256:) and hash leftover plaintext tokens
-    from app.services.agent_tokens import normalize_agent_tokens
-    try:
-        await normalize_agent_tokens(db)
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Migration error while upgrading agent tokens: {e}")
-
-    try:
-        await _clear_unsafe_service_links(db)
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Migration error while clearing unsafe service links: {e}")
-
-    try:
-        await _retire_phone_system_items(db)
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Migration error while retiring phone system rack items: {e}")
-
-    try:
-        await _add_missing_unique_indexes(db)
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Migration error while adding unique indexes: {e}")
-
-    try:
-        await _drop_outbox_token_copies(db)
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Migration error while removing token copies from the notification outbox: {e}")
-
-    try:
-        await _deduplicate_generic_port_services(db)
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Migration error while deduplicating generic port services: {e}")
-
-    try:
-        await _repair_infra_alert_offline(db)
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Migration error while repairing infrastructure alert_offline flags: {e}")
+    for step, what in _repair_steps():
+        await _run_step(db, what, step)
 
     logger.info("Schema migration complete.")
 
@@ -467,6 +469,32 @@ async def _deduplicate_generic_port_services(db: AsyncSession):
     await db.commit()
 
 
+_CLIENT_DEVICE_TYPES = ("client", "desktop", "tv", "phone", "printer")
+
+
+def _is_explicit_client(dev) -> bool:
+    """Whether its type or name marks a device as a client, which may be switched off without an alert."""
+    from app.scanner.classifier import is_client_hostname
+
+    name = dev.hostname or dev.display_name or ""
+    return (
+        (dev.device_type or "").lower() in _CLIENT_DEVICE_TYPES
+        or is_client_hostname(name)
+        or "tv" in name.lower()
+        or "pc" in name.lower()
+    )
+
+
+def _reenable_infra_alerts(devices) -> int:
+    """Turn alert_offline back on for agents and everything that is no client. Returns how many."""
+    repaired = 0
+    for dev in devices:
+        if dev.has_agent or not _is_explicit_client(dev):
+            dev.alert_offline = True
+            repaired += 1
+    return repaired
+
+
 async def _repair_infra_alert_offline(db: AsyncSession):
     """Repair what restoring an old backup left behind: alert_offline=False on every device at once.
 
@@ -475,7 +503,6 @@ async def _repair_infra_alert_offline(db: AsyncSession):
     """
     from app.models.device import Device
     from app.models.setting import Setting
-    from app.scanner.classifier import is_client_hostname
 
     marker_key = "migration.rc4_infra_alert_offline_repaired"
     existing = (await db.execute(select(Setting).where(Setting.key == marker_key))).scalar_one_or_none()
@@ -486,19 +513,7 @@ async def _repair_infra_alert_offline(db: AsyncSession):
     if not devices or any(dev.alert_offline for dev in devices):
         return
 
-    repaired = 0
-    for dev in devices:
-        name_check = dev.hostname or dev.display_name or ""
-        is_explicit_client = (
-            (dev.device_type or "").lower() in ("client", "desktop", "tv", "phone", "printer")
-            or is_client_hostname(name_check)
-            or "tv" in name_check.lower()
-            or "pc" in name_check.lower()
-        )
-        if dev.has_agent or not is_explicit_client:
-            dev.alert_offline = True
-            repaired += 1
-
+    repaired = _reenable_infra_alerts(devices)
     if repaired:
         db.add(Setting(key=marker_key, value="true", category="system"))
         await db.commit()
