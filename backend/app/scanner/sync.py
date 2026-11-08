@@ -350,7 +350,13 @@ async def _match_discovered_host(db, hit: ScanHit, ctx: SyncContext | None = Non
     if disc:
         return disc
     by_name = await _match_by_name(db, DiscoveredHost, hit.hostname, (DiscoveredHost.hostname, DiscoveredHost.custom_name))
-    return _unless_live_elsewhere(by_name, hit.ip, ctx)
+    disc = _unless_live_elsewhere(by_name, hit.ip, ctx)
+    if disc:
+        return disc
+    # Every fallback was turned down, e.g. the MAC owner is still online in another VLAN.
+    # An address holds one record: a new row here would break the unique IP and lose the
+    # whole scan batch, so the record at this address stands, as for any other IP match.
+    return await _query_by_ip(db, DiscoveredHost, hit.ip)
 
 
 def _unless_live_elsewhere(record, ip: str, ctx: SyncContext | None):

@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Agent 0.3.12: the agent's readers for containers, cgroup limits, package updates, subnets and neighbours are split into smaller parts. What it reports is unchanged; GravityLAN offers the update so the new version can be rolled out and tested.
 
 ### Fixed
+- Network scan: a scan no longer loses all its results when a router that is online in one VLAN answers on an address in another VLAN that an older discovered host still holds. Before, the scan stopped saving with a database error; now the existing entry at that address is kept and marked online.
 - Agent settings: saving the agent configuration of a device whose configuration had never been opened before no longer fails with a server error (500).
 - Agent Update Center: with "use saved SSH connections", a device whose connection logs in as a user other than root no longer fails on sudo. The password typed in the dialog now goes along as the sudo password (it is not stored). A failed update also says why (sudo needs a password, sudo refused the password, a command did not finish in time, the host is not reachable on its SSH port) instead of "Deployment failed due to an unexpected internal error".
 - GravityUI: closing a notification (its ×) no longer closes the device editor or the dialog it sits on. Before, a click on a notification counted as a click outside the panel.
