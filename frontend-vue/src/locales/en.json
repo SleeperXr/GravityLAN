@@ -11,11 +11,6 @@
       "light": "Light",
       "dark": "Dark"
     },
-    "legacy": {
-      "switch": "Classic view",
-      "switch_hint": "Switch to the familiar GravityLAN interface",
-      "badge": "React"
-    },
     "state": {
       "load_failed": "Could not load data",
       "checking_session": "Checking sign-in..."

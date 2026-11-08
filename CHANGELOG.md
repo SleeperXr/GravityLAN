@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Removed
+- The classic React interface. GravityUI is the only web interface now: the start address `/` and old bookmarks of the classic view (such as `/devices`) open GravityUI at `/frontend-vue/`. The interface switch in the sidebar and on the login page, the link on the About page and Settings → System → Default interface are gone; `/?ui=react` and a stored choice no longer change anything, and `ui.default_frontend` is ignored by `POST /api/settings` (an old tab saving its settings form still works). The image is smaller and builds faster without the React stage.
+
 ### Added
 - Second DNS server (Settings → Scan), e.g. the router next to Pi-hole. "Refresh info" (for one device or all) then asks both and shows in the device editor what DNS 1 and DNS 2 call the device. Pick "From DNS 1", "From DNS 2" or "Automatic" there: the hostname follows the pick right away and later refreshes keep it. Automatic works as before and takes DNS 2's name when the usual lookup finds none. Without a second DNS server nothing changes. A server that gives no name says why: "no entry" (it answered but knows no name for the IP, typical for a router and a fixed IP), "timeout", "refused" or "server error", with an explanation on hover.
 - GravityUI orbit map, "Arrange automatically" opens an assistant: say what each device is (router/firewall, switch, access point, host, client), which switch, AP or host each one hangs on, and tick several clients to hang them on a hub in one go. GravityLAN saves the roles, creates the missing links (WLAN behind an access point), removes the old uplink of a moved switch or AP (its own devices and backup links stay) and then lays the map out. "Only arrange" keeps the old one-click layout.

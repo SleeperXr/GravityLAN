@@ -29,11 +29,11 @@ To run the backend test suite, follow these steps:
 
 ## Running Frontend Verification
 
-To verify that the frontend builds and compiles without TypeScript errors:
+To verify that GravityUI builds and compiles without TypeScript errors:
 
-1. Navigate to the frontend directory:
+1. Navigate to the GravityUI directory:
    ```bash
-   cd frontend
+   cd frontend-vue
    ```
 2. Install dependencies:
    ```bash
@@ -41,5 +41,5 @@ To verify that the frontend builds and compiles without TypeScript errors:
    ```
 3. Run the TypeScript type check compiler:
    ```bash
-   npx tsc --noEmit
+   npm run typecheck
    ```

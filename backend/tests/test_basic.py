@@ -4,7 +4,6 @@ import pytest
 async def test_health_check(client, monkeypatch, tmp_path):
     """Verify that the backend is alive: without a frontend build, / answers with its status."""
     import app.main as main
-    monkeypatch.setattr(main, "FRONTEND_DIR", tmp_path)
     monkeypatch.setattr(main, "_resolve_frontend_vue_dir", lambda: tmp_path)
     response = await client.get("/")
     assert response.status_code == 200

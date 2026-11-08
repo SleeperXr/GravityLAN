@@ -34,7 +34,7 @@ GravityLAN is a self-hosted dashboard for the network at home or in the lab. It 
 
 You work with it in **GravityUI**, a web interface built on Vue 3 that shows the state of the network first: which device is down, which service fails, which switch would take others with it. It draws the network as an orbit map and your racks as hardware you mount and cable, and it works on a phone as well as on a wall monitor, in English and German, dark or light.
 
-Everything runs in **one container** on **SQLite**: a FastAPI backend, the inventory in `gravitylan.db` and measurement data in a separate `telemetry.db`. It is built for a **trusted home network**, not for direct exposure to the internet. The original React interface still ships alongside as a fallback (see [Classic interface](#classic-interface-react)).
+Everything runs in **one container** on **SQLite**: a FastAPI backend, the inventory in `gravitylan.db` and measurement data in a separate `telemetry.db`. It is built for a **trusted home network**, not for direct exposure to the internet.
 
 ## GravityUI at a glance
 
@@ -131,16 +131,11 @@ Open `http://<your-host>:8000` and go through the setup wizard: it detects your 
 
 **Unraid.** The template in [`templates/gravitylan.xml`](templates/gravitylan.xml) sets `PUID=99` and `PGID=100` (Unraid's `nobody:users`), keeps appdata under `/mnt/user/appdata/gravitylan` and needs no privileged mode: `NET_RAW` and `NET_ADMIN` are enough for scanning. It explains which network type to pick (host, or a custom `br0` network with its own address). More: [docs/unraid-template.md](docs/unraid-template.md).
 
-The image is multi-stage (Vite builds of both interfaces, then a slim Python runtime) and the server runs as a non-root user; Nmap gets only the capabilities it needs. To build it yourself: `docker build -t gravitylan:local .`
+The image is multi-stage (Vite build of GravityUI, then a slim Python runtime) and the server runs as a non-root user; Nmap gets only the capabilities it needs. To build it yourself: `docker build -t gravitylan:local .`
 
 ## Classic interface (React)
 
-GravityLAN started with a React interface. GravityUI is the default now: the start address `/` opens it unless you choose otherwise. The image still ships the classic view for one more release as a fallback; it gets bug fixes only and is removed with the release after this one ([ADR-003](docs/adr/003-react-retirement.md)). To keep using it until then:
-
-- **for everyone**: Settings → System → Default interface → Classic view (an installation that chose it there keeps it);
-- **for this browser**: the switch at the bottom of the sidebar, or `/?ui=react` and `/?ui=vue`. The choice is kept in this browser, whatever the server default is.
-
-GravityUI itself lives at `/frontend-vue/`.
+GravityLAN started with a React interface. GravityUI replaced it and the classic view is gone ([ADR-003](docs/adr/003-react-retirement.md)): the start address `/` opens GravityUI at `/frontend-vue/`, and old bookmarks of the classic view lead there too.
 
 ## The agent
 
@@ -236,7 +231,7 @@ More: [SECURITY.md](SECURITY.md) · [Threat model](docs/threat-model.md) · [Con
 ```mermaid
 flowchart TB
   subgraph clients [Clients]
-    SPA[GravityUI on Vue 3, classic React view as fallback]
+    SPA[GravityUI on Vue 3]
     PY[gravitylan_api, scripts, AI agents]
   end
   subgraph server [GravityLAN container]
@@ -262,7 +257,7 @@ Architecture decisions are recorded in [docs/adr/](docs/adr).
 
 ## Development
 
-**Windows:** `.\start_gravitylan.ps1` installs the dependencies and starts Uvicorn on `:8000`, GravityUI on `:5174` and the classic view on `:5173`.
+**Windows:** `.\start_gravitylan.ps1` installs the dependencies and starts Uvicorn on `:8000` and GravityUI on `:5174`.
 
 **Linux and macOS:**
 
@@ -276,14 +271,7 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 cd frontend-vue
 npm install
 npm run dev
-
-# Classic view, optional, on :5173
-cd frontend
-npm install
-npm run dev
 ```
-
-GravityUI takes its API client, types and texts from `frontend/src`, so `frontend/` has to stay next to it even when you only work on GravityUI.
 
 **Without touching your network:** `python scripts/dev_demo.py` (in the backend virtualenv) starts the API on `127.0.0.1:8000` with a throw-away demo database, simulated agents with 24 hours of history and a fake SSH shell, but no scans. Start GravityUI as above and log in with `demo`. `--reset` seeds the demo data again, `--fresh` starts like a new install, `--company` loads a small company network instead (8 VLANs, a four-node Proxmox cluster, about 130 devices, four racks with ports and cables, backup links, own database). The screenshots in this README come from `--company`.
 
@@ -293,7 +281,6 @@ GravityUI takes its API client, types and texts from `frontend/src`, so `fronten
 cd frontend-vue && npm test && npm run typecheck && npm run lint   # GravityUI (Vitest, vue-tsc, ESLint)
 cd backend && python -m pytest                                    # backend
 python -m pytest gravitylan_api/tests                             # Python client, from the repository root
-cd frontend && npm test && npm run typecheck                      # classic view
 ```
 
 **Repository layout:**
@@ -303,7 +290,6 @@ agent/            Linux agent (gravitylan-agent.py) and systemd unit
 backend/app/      FastAPI app: api/, models/, schemas/, scanner/, services/, database/
 backend/tests/    Backend tests (pytest)
 frontend-vue/     GravityUI (Vue 3, Vite, Tailwind, Pinia); design system in DESIGN.md
-frontend/         Classic React interface (fallback until the next release)
 gravitylan_api/   Python client
 docs/             Security and design docs, ADRs, screenshots (vue/)
 scripts/          Demo backend and maintenance scripts
@@ -326,7 +312,7 @@ GravityLAN ist ein selbst gehostetes Dashboard fürs Heim- oder Labornetz. Es du
 
 Bedient wird es über **GravityUI**, eine Weboberfläche auf Basis von Vue 3, die zuerst den Zustand des Netzes zeigt: welches Gerät ausgefallen ist, welcher Dienst hakt, welcher Switch andere mitreißen würde. Sie zeichnet das Netz als Orbit-Netzplan und deine Racks als Hardware, die du einbaust und verkabelst, und funktioniert am Handy genauso wie am Wandmonitor, auf Deutsch und Englisch, dunkel oder hell.
 
-Alles läuft in **einem Container** auf **SQLite**: ein FastAPI-Backend, das Inventar in `gravitylan.db` und die Messdaten in einer eigenen `telemetry.db`. GravityLAN ist für ein **vertrauenswürdiges Heimnetz** gebaut, nicht für den direkten Betrieb im Internet. Die ursprüngliche React-Oberfläche liegt noch als Rückfallebene bei (siehe [Klassische Oberfläche](#klassische-oberfläche-react)).
+Alles läuft in **einem Container** auf **SQLite**: ein FastAPI-Backend, das Inventar in `gravitylan.db` und die Messdaten in einer eigenen `telemetry.db`. GravityLAN ist für ein **vertrauenswürdiges Heimnetz** gebaut, nicht für den direkten Betrieb im Internet.
 
 ### GravityUI im Überblick
 
@@ -423,16 +409,11 @@ docker run -d --name gravitylan \
 
 **Unraid.** Die Vorlage [`templates/gravitylan.xml`](templates/gravitylan.xml) setzt `PUID=99` und `PGID=100` (Unraids `nobody:users`), legt die Daten unter `/mnt/user/appdata/gravitylan` ab und braucht keinen Privileged-Modus: `NET_RAW` und `NET_ADMIN` reichen zum Scannen. Sie erklärt, welcher Netzwerktyp passt (Host oder ein eigenes `br0`-Netz mit eigener Adresse). Mehr: [docs/unraid-template.md](docs/unraid-template.md).
 
-Das Image ist mehrstufig gebaut (Vite-Builds beider Oberflächen, dann eine schlanke Python-Laufzeit), und der Server läuft als Nicht-root-Benutzer; Nmap bekommt nur die Capabilities, die es braucht. Selbst bauen: `docker build -t gravitylan:local .`
+Das Image ist mehrstufig gebaut (Vite-Build von GravityUI, dann eine schlanke Python-Laufzeit), und der Server läuft als Nicht-root-Benutzer; Nmap bekommt nur die Capabilities, die es braucht. Selbst bauen: `docker build -t gravitylan:local .`
 
 ### Klassische Oberfläche (React)
 
-GravityLAN hat mit einer React-Oberfläche angefangen. GravityUI ist jetzt Standard: Die Startadresse `/` öffnet sie, solange du nichts anderes wählst. Das Image bringt die klassische Ansicht noch ein Release lang als Rückfallebene mit; sie bekommt nur noch Fehlerbehebungen und wird mit dem Release danach entfernt ([ADR-003](docs/adr/003-react-retirement.md)). Wer sie bis dahin nutzen will:
-
-- **für alle**: Einstellungen → System → Standard-Oberfläche → Klassische Ansicht (wer sie dort gewählt hat, behält sie);
-- **für diesen Browser**: der Umschalter unten in der Seitenleiste oder `/?ui=react` und `/?ui=vue`. Die Wahl bleibt in diesem Browser, egal was der Server vorgibt.
-
-GravityUI selbst liegt unter `/frontend-vue/`.
+GravityLAN hat mit einer React-Oberfläche angefangen. GravityUI hat sie abgelöst, die klassische Ansicht gibt es nicht mehr ([ADR-003](docs/adr/003-react-retirement.md)): Die Startadresse `/` öffnet GravityUI unter `/frontend-vue/`, und alte Lesezeichen der klassischen Ansicht führen ebenfalls dorthin.
 
 ### Der Agent
 
@@ -528,7 +509,7 @@ Mehr: [SECURITY.md](SECURITY.md) · [Bedrohungsmodell](docs/threat-model.md) · 
 ```mermaid
 flowchart TB
   subgraph clients [Clients]
-    SPA[GravityUI auf Vue 3, klassische React-Ansicht als Rückfallebene]
+    SPA[GravityUI auf Vue 3]
     PY[gravitylan_api, Skripte, KI-Agenten]
   end
   subgraph server [GravityLAN-Container]
@@ -554,7 +535,7 @@ Architekturentscheidungen stehen in [docs/adr/](docs/adr).
 
 ### Entwicklung
 
-**Windows:** `.\start_gravitylan.ps1` installiert die Abhängigkeiten und startet Uvicorn auf `:8000`, GravityUI auf `:5174` und die klassische Ansicht auf `:5173`.
+**Windows:** `.\start_gravitylan.ps1` installiert die Abhängigkeiten und startet Uvicorn auf `:8000` und GravityUI auf `:5174`.
 
 **Linux und macOS:**
 
@@ -568,14 +549,7 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 cd frontend-vue
 npm install
 npm run dev
-
-# Klassische Ansicht, optional, auf :5173
-cd frontend
-npm install
-npm run dev
 ```
-
-GravityUI holt API-Client, Typen und Texte aus `frontend/src`; `frontend/` muss daneben liegen bleiben, auch wenn du nur an GravityUI arbeitest.
 
 **Ohne dein Netz anzufassen:** `python scripts/dev_demo.py` (in der Backend-venv) startet die API auf `127.0.0.1:8000` mit einer Wegwerf-Demo-Datenbank, simulierten Agenten mit 24 Stunden Verlauf und einer Demo-Shell für SSH, aber ohne Scans. GravityUI wie oben starten, Passwort `demo`. `--reset` befüllt die Demo-Daten neu, `--fresh` startet wie eine Neuinstallation, `--company` lädt stattdessen ein kleines Firmennetz (8 VLANs, Proxmox-Cluster mit vier Knoten, rund 130 Geräte, vier Racks mit Ports und Kabeln, Backup-Verbindungen, eigene Datenbank). Die Screenshots in dieser README stammen aus `--company`.
 
@@ -585,7 +559,6 @@ GravityUI holt API-Client, Typen und Texte aus `frontend/src`; `frontend/` muss 
 cd frontend-vue && npm test && npm run typecheck && npm run lint   # GravityUI (Vitest, vue-tsc, ESLint)
 cd backend && python -m pytest                                    # Backend
 python -m pytest gravitylan_api/tests                             # Python-Client, aus dem Repo-Root
-cd frontend && npm test && npm run typecheck                      # klassische Ansicht
 ```
 
 **Repo-Übersicht:**
@@ -595,7 +568,6 @@ agent/            Linux-Agent (gravitylan-agent.py) und systemd-Unit
 backend/app/      FastAPI-App: api/, models/, schemas/, scanner/, services/, database/
 backend/tests/    Backend-Tests (pytest)
 frontend-vue/     GravityUI (Vue 3, Vite, Tailwind, Pinia); Designsystem in DESIGN.md
-frontend/         Klassische React-Oberfläche (Rückfallebene bis zum nächsten Release)
 gravitylan_api/   Python-Client
 docs/             Sicherheits- und Design-Doku, ADRs, Screenshots (vue/)
 scripts/          Demo-Backend und Wartungsskripte

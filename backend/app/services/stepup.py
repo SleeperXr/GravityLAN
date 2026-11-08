@@ -26,7 +26,7 @@ SETTING_KEY = "security.stepup_minutes"
 DEFAULT_MINUTES = 10
 MIN_MINUTES, MAX_MINUTES = 1, 60
 HEADER = "X-Step-Up"
-MESSAGE = "Confirm your password first. In the classic view this action is only available in GravityUI."
+MESSAGE = "Confirm your password first in GravityUI."
 NO_TOKEN_MESSAGE = (
     "Remote access requires a logged-in browser session with password confirmation; "
     "API and master tokens are not allowed."

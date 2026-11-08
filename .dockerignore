@@ -51,8 +51,6 @@ antigravity_key*
 **/.env.*
 
 # Frontend artifacts
-frontend/dist
-frontend/node_modules
 frontend-vue/dist
 frontend-vue/node_modules
 

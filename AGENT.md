@@ -13,7 +13,7 @@ This file defines the working standards for AI agents (like Antigravity) contrib
 ## Coding Patterns
 
 - **Python**: Follow PEP 8, use type hints, and prefer async/await for I/O.
-- **React**: Use functional components, Tailwind CSS, and keep components modular.
+- **Vue (GravityUI, `frontend-vue/`)**: Composition API with `<script setup>`, Tailwind CSS, components from `src/components/ui`; see `frontend-vue/DESIGN.md`.
 - **API**: Follow RESTful patterns; ensure JSON responses are consistent.
 
 ## Verification Checklist

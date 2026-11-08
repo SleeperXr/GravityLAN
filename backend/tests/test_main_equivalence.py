@@ -1,8 +1,7 @@
-"""app/main.py: the access-log filter and the two SPA routes answer as before the refactor.
+"""app/main.py: the access-log filter and the GravityUI route answer as before the refactor.
 
 Frozen copies (0.7.0-rc.7) run next to the live code: the filter over access records with and
-without arguments and status codes, the React and GravityUI catch-all routes over files, nested
-files, client routes, traversal attempts, sibling folders and missing builds. Plus the log
+without arguments and status codes, the GravityUI route over files, nested files, client routes, traversal attempts, sibling folders and missing builds. Plus the log
 WebSocket, which had no test.
 """
 
@@ -35,25 +34,6 @@ def _old_filter(record):
     if any(x in msg for x in ["/api/agent/status/", "/api/devices", "/api/groups", "/api/scanner/status", "/api/health", "/api/scanner/ws"]):
         return False
     return True
-
-
-async def _old_serve_spa(full_path):
-    if ".." in full_path or "\\" in full_path or full_path.startswith("/"):
-        raise HTTPException(status_code=400, detail="Invalid path")
-    if full_path.startswith("api/"):
-        raise HTTPException(status_code=404, detail="API endpoint not found")
-    try:
-        base_dir = os.path.realpath(str(main.FRONTEND_DIR))
-        resolved_path = os.path.realpath(os.path.join(base_dir, full_path))
-        if not resolved_path.startswith(base_dir) or os.path.commonpath([base_dir, resolved_path]) != base_dir:
-            raise HTTPException(status_code=400, detail="Invalid path")
-        if os.path.isfile(resolved_path):
-            headers = main.INDEX_HEADERS if os.path.basename(resolved_path) == "index.html" else None
-            return main.FileResponse(resolved_path, headers=headers)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid path")
-    index_file = os.path.realpath(os.path.join(base_dir, "index.html"))
-    return main.FileResponse(index_file, headers=main.INDEX_HEADERS)
 
 
 async def _old_serve_vue_spa(full_path):
@@ -124,7 +104,6 @@ def builds(tmp_path, monkeypatch):
     (tmp_path / "static_other").mkdir()
     (tmp_path / "static_other" / "x.txt").write_text("nope")
     (tmp_path / "secret.txt").write_text("secret")
-    monkeypatch.setattr(main, "FRONTEND_DIR", tmp_path / "static")
     monkeypatch.setattr(main, "_resolve_frontend_vue_dir", lambda: tmp_path / "static-vue")
     return tmp_path
 
@@ -138,9 +117,8 @@ async def _answer(coro):
 
 
 @pytest.mark.asyncio
-async def test_spa_routes_match_for_every_path(builds):
+async def test_gravityui_route_matches_for_every_path(builds):
     for path in SPA_PATHS:
-        assert await _answer(main.serve_spa(path)) == await _answer(_old_serve_spa(path)), path
         assert await _answer(main.serve_vue_spa(path)) == await _answer(_old_serve_vue_spa(path)), path
 
 

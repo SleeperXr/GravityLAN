@@ -11,6 +11,3 @@ export const PROJECT_LINKS = {
   notices: `${REPO_URL}/blob/main/THIRD_PARTY_NOTICES.md`,
   dockerHub: 'https://hub.docker.com/r/sleeperxr/gravitylan',
 } as const;
-
-/** The classic React interface; `?ui=react` keeps that choice for this browser. */
-export const REACT_UI_URL = '/?ui=react';

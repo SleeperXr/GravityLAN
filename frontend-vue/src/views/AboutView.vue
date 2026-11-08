@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue';
 import { BookOpen, Box, Bug, ExternalLink, FileText, GitBranch, Package, Scale, Tag } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import PageHeader from '@/components/ui/PageHeader.vue';
-import { PROJECT_LINKS, REACT_UI_URL } from '@/lib/project';
+import { PROJECT_LINKS } from '@/lib/project';
 import { t } from '@/i18n';
 
 /** About GravityLAN: versions, licence and where the project lives. No legal notice is invented here. */
@@ -49,9 +49,6 @@ const links = [
       <div class="bg-surface p-4">
         <p class="gl-eyebrow">{{ t('about.interface') }}</p>
         <p class="mt-1 text-base font-semibold text-fg">GravityUI</p>
-        <p class="mt-0.5 text-xs text-fg-subtle">
-          <a :href="REACT_UI_URL" class="text-info-text hover:underline">{{ t('about.classic') }}</a>
-        </p>
       </div>
     </section>
 

@@ -21,8 +21,8 @@ Usage (repository root, backend virtualenv):
     ... --fresh    start like a new install (separate empty database, setup wizard)
     ... --company  a small company network instead of the homelab (own database in .demo-data/company/)
 
-Then start the frontend (``cd frontend && npm run dev``), open
-http://localhost:5173 and log in with the password ``demo``.
+Then start the frontend (``cd frontend-vue && npm run dev``), open
+http://localhost:5174/frontend-vue/ and log in with the password ``demo``.
 """
 
 import argparse
@@ -517,7 +517,7 @@ async def main(reset: bool, fresh: bool, scenario_name: str) -> None:
 
         await init_db()
         print(f"[demo] fresh install, database: {data_dir} - the setup wizard sets the password")
-        print(f"[demo] API on http://{HOST}:{PORT} - start the UI with `cd frontend && npm run dev`")
+        print(f"[demo] API on http://{HOST}:{PORT} - start the UI with `cd frontend-vue && npm run dev`")
         await server.serve()
         return
 
@@ -534,7 +534,7 @@ async def main(reset: bool, fresh: bool, scenario_name: str) -> None:
         await run_telemetry_maintenance(db)
 
     print(f"[demo] {scenario.name}: {len(scenario.devices)} devices, {len(agents)} simulated agents, database: {data_dir}")
-    print(f"[demo] API on http://{HOST}:{PORT} - start the UI with `cd frontend && npm run dev`, log in with the demo password (see README)")
+    print(f"[demo] API on http://{HOST}:{PORT} - start the UI with `cd frontend-vue && npm run dev`, log in with the demo password (see README)")
     await asyncio.gather(server.serve(), _simulate_agents(server, scenario, agents))
 
 

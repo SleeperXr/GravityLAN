@@ -12,7 +12,7 @@ it into an enterprise platform (SIEM export, signed audit trails, network access
 | Phase | Goal | State |
 |---|---|---|
 | 0 · Release foundation | Calm, reproducible releases | ✅ done |
-| 1 · One interface | GravityUI only | ✅ done; React removal follows (AP-14) |
+| 1 · One interface | GravityUI only | ✅ done; React removed (AP-14) |
 | 2 · Safer administration | A logged-in session alone is no longer root on every host | 🟡 in progress |
 | 3 · Events | Reliable notifications about new devices and changes | ✅ done |
 
@@ -42,8 +42,8 @@ it into an enterprise platform (SIEM export, signed audit trails, network access
   One area per confirmation, valid 10 minutes by default (adjustable 1–60).
 - ✅ **AP-13 No remote actions by token:** terminal, agent deployment, manual install codes and package updates only from a
   browser session with confirmation; master and API tokens are refused and logged (`gravitylan_api` is unaffected).
-- ⏳ **AP-14 Remove the classic React interface** and its build stage, in the release after GravityUI
-  became the default.
+- ✅ **AP-14 Remove the classic React interface** and its build stage. Brought forward on 2026-11-08 (after
+  0.7.0, which keeps the classic view): `/` and old bookmarks open GravityUI, the switch and the default-interface setting are gone.
 - ✅ **AP-10 Agent installer checksum:** shows the agent version and SHA-256, verifies the download and
   aborts on a mismatch. An integrity check, not a proof of origin.
 

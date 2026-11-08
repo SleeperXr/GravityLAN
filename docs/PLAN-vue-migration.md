@@ -206,3 +206,6 @@ entfernt, die Dateien liegen als Kopien in `frontend-vue/` (`src/api/core.ts`, `
 Danach: `frontend/` und die Stage `frontend-build` im `Dockerfile` (inkl. `COPY frontend/src` in der Vue-Stage)
 entfernen, GravityUI von `/frontend-vue` nach `/` legen, Umschalter und `ui.default_frontend` entfernen, CI anpassen.
 Die Tests aus `frontend/` vorher auf Fälle prüfen, die in `frontend-vue/` noch fehlen.
+
+**Erledigt am 2026-11-08** (AP-14), bis auf den Umzug von `/frontend-vue` nach `/`: GravityUI bleibt unter
+`/frontend-vue/`, `/` und alte Adressen leiten dorthin weiter.

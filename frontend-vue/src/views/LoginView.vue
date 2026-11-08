@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { ArrowLeftRight, Lock } from 'lucide-vue-next';
+import { Lock } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import Button from '@/components/ui/Button.vue';
 import Field from '@/components/ui/Field.vue';
@@ -64,11 +64,6 @@ async function submit() {
           </Button>
         </form>
       </div>
-
-      <a href="/?ui=react" class="mt-4 inline-flex items-center gap-1.5 text-xs text-fg-subtle hover:text-fg">
-        <ArrowLeftRight class="size-3.5" aria-hidden="true" />
-        {{ t('gv.legacy.switch') }}
-      </a>
     </div>
   </main>
 </template>

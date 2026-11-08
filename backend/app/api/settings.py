@@ -28,10 +28,10 @@ SENSITIVE_KEYS = {"api.master_token", "api.admin_password"}
 # credentials by /api/auth/password. A settings:write token must not be able to put the
 # server back into setup mode, where /api/setup/complete hands out a new admin password.
 WRITABLE_KEYS = frozenset({
-    # Settings page (React useSettingsForm, Vue SettingsView)
+    # Settings page (GravityUI SettingsView)
     "scan_interval", "quick_scan_interval", "scan_timeout", "scanner.offline_threshold",
     "scanner.health_probe_interval", "dns.server", "dns.server_secondary", "history_retention_days",
-    "server_url_override", "server.url", "system.log_level", "ui.start_page", "ui.default_frontend",
+    "server_url_override", "server.url", "system.log_level", "ui.start_page",
     "ui.health_resilience",
     # Network view groups, topology flow controls, GravityUI appearance
     "network_groups", "ui.line_colors", "ui.orbit_layout", "ui.orbit_roles", "ui.orbit_visibility", "ui.link_type_colors",
@@ -45,6 +45,9 @@ WRITABLE_KEYS = frozenset({
 })
 # Display-only settings stored under a free-form key
 WRITABLE_PREFIXES = ("theme.", "topology.")
+# Keys that once were writable and now mean nothing. A GravityUI tab opened before the update still
+# sends them with the whole settings form, so they are dropped instead of failing the save with 400.
+RETIRED_KEYS = frozenset({"ui.default_frontend"})
 
 
 def is_writable_key(key: str) -> bool:
@@ -158,15 +161,6 @@ def _validate_health_resilience(value: str) -> None:
         )
 
 
-def _validate_default_frontend(value: str) -> None:
-    """Reject a default interface other than the React UI or GravityUI."""
-    if value not in ("react", "vue"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid default frontend: '{value}'. Must be 'react' or 'vue'."
-        )
-
-
 def _validate_orbit_visibility(value: str) -> None:
     """Orbit map visibility per device: a JSON object {"<device id>": true|false}."""
     try:
@@ -200,7 +194,6 @@ _VALIDATORS = {
     "scan_subnets": _validate_scan_subnets,
     "scanner.offline_threshold": _validate_offline_threshold,
     "ui.start_page": _validate_start_page,
-    "ui.default_frontend": _validate_default_frontend,
     "ui.health_resilience": _validate_health_resilience,
     "ui.orbit_visibility": _validate_orbit_visibility,
     "security.stepup_minutes": _validate_stepup_minutes,
@@ -210,7 +203,7 @@ _VALIDATORS = {
 @router.post("", dependencies=[Depends(get_current_admin)])
 async def update_settings(settings: SettingsUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     """Update or create system settings."""
-    values = settings.root
+    values = {key: value for key, value in settings.root.items() if key not in RETIRED_KEYS}
     _refuse_unwritable_keys(values)
     await _confirm_grant_change(db, request, values)
     _mirror_server_url(values)

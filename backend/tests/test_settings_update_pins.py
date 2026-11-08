@@ -46,10 +46,10 @@ async def test_server_url_is_mirrored_when_only_one_name_is_sent(client, db, aut
 async def test_existing_settings_are_updated_and_new_ones_added(client, db, auth):
     db.add(Setting(key="dns.server", value="1.1.1.1"))
     await db.commit()
-    res = await client.post("/api/settings", json={"dns.server": "192.168.1.2", "ui.default_frontend": "vue"}, headers=auth)
+    res = await client.post("/api/settings", json={"dns.server": "192.168.1.2", "ui.start_page": "/health"}, headers=auth)
     assert res.status_code == 200, res.text
     values = await _values(db)
-    assert (values["dns.server"], values["ui.default_frontend"]) == ("192.168.1.2", "vue")
+    assert (values["dns.server"], values["ui.start_page"]) == ("192.168.1.2", "/health")
     rows = (await db.execute(select(Setting).where(Setting.key == "dns.server"))).scalars().all()
     assert len(rows) == 1
 

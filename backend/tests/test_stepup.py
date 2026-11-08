@@ -60,7 +60,7 @@ async def test_a_session_without_confirmation_is_asked_for_it(browser, device, n
     res = await _deploy(browser, device)
     assert res.status_code == 403
     assert res.headers["X-Step-Up"] == "remote"
-    assert "GravityUI" in res.json()["detail"]  # readable for the classic view
+    assert "GravityUI" in res.json()["detail"]  # says where to confirm
 
 
 @pytest.mark.asyncio

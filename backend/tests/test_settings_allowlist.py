@@ -62,7 +62,6 @@ async def test_settings_form_keys_still_writable(client, db, admin_token):
         "server_url_override": "",
         "system.log_level": "info",
         "ui.start_page": "/",
-        "ui.default_frontend": "react",
         "network_groups": "[]",
         "ui.line_colors": "{}",
         "ui.orbit_layout": "custom",
