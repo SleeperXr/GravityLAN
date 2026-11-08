@@ -700,6 +700,17 @@ class PasswordChange(BaseModel):
     new_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=256)
 
 
+def _is_valid_browser_session(token: str) -> bool:
+    return token.startswith("session_") and session_store.get_session(token) is not None
+
+
+def _ensure_new_password_valid(req: PasswordChange) -> None:
+    if req.new_password == req.current_password:
+        raise HTTPException(status_code=400, detail="Choose a password that differs from the current one.")
+    if not req.new_password.strip():
+        raise HTTPException(status_code=400, detail="The new password must not be blank.")
+
+
 @router.post("/password")
 async def change_password(
     req: PasswordChange,
@@ -713,7 +724,7 @@ async def change_password(
     current password must be confirmed. Errors are 400, not 401, so the UI does not
     treat a typo as "logged out".
     """
-    if not (token.startswith("session_") and session_store.get_session(token)):
+    if not _is_valid_browser_session(token):
         await audit(request, "auth.password", "denied", detail="not a browser session")
         raise HTTPException(status_code=403, detail="Only a logged-in browser session can change the password.")
 
@@ -726,10 +737,7 @@ async def change_password(
         logger.warning("Password change rejected: current password is wrong")
         await audit(request, "auth.password", "failed", detail="current password wrong")
         raise HTTPException(status_code=400, detail="The current password is wrong.")
-    if req.new_password == req.current_password:
-        raise HTTPException(status_code=400, detail="Choose a password that differs from the current one.")
-    if not req.new_password.strip():
-        raise HTTPException(status_code=400, detail="The new password must not be blank.")
+    _ensure_new_password_valid(req)
 
     await _save_admin_password(
         db, admin_setting, req.new_password, description="Administrator password for dashboard login"
