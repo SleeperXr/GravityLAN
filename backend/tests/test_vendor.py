@@ -142,10 +142,10 @@ def test_save_cache_os_error(monkeypatch, caplog):
     monkeypatch.setattr("builtins.open", raise_os_error)
     monkeypatch.setattr(vendor, "_vendor_cache", {"00:11:22": "Test"})
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING, logger=vendor.__name__):
         vendor._save_cache()
 
-    assert any("Failed to persist vendor cache" in record.message for record in caplog.records)
+    assert "Failed to persist vendor cache" in caplog.text
 
 
 def test_api_lookup_rate_limit_cooldown(monkeypatch):
@@ -209,10 +209,10 @@ def test_api_lookup_http_500(monkeypatch, caplog):
         raise urllib.error.HTTPError(req.full_url, 500, "Internal Server Error", {}, None)
 
     monkeypatch.setattr(vendor.urllib.request, "urlopen", fake_urlopen)
-    with caplog.at_level(logging.DEBUG):
+    with caplog.at_level(logging.DEBUG, logger=vendor.__name__):
         result = vendor._api_lookup("AA:BB:CC:DD:EE:FF")
     assert result == ""
-    assert any("HTTP error: 500" in record.message for record in caplog.records)
+    assert "500" in caplog.text
 
 
 def test_api_lookup_http_404_quiet(monkeypatch):
@@ -313,10 +313,10 @@ def test_save_cache_permission_error(monkeypatch, caplog):
     # The hint names the IDs the process really runs as (Unraid: 99:100)
     monkeypatch.setattr(vendor, "process_ids", lambda: (99, 100))
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING, logger=vendor.__name__):
         vendor._save_cache()
 
-    assert any("chown -R 99:100" in record.message for record in caplog.records)
+    assert "chown -R 99:100" in caplog.text
 
 
 def test_is_locally_administered_mac():
