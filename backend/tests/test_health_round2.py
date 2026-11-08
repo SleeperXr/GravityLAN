@@ -249,3 +249,34 @@ async def test_summary_without_agents_or_scan(client, db, admin_token, monkeypat
     assert body["agents"] == {"total": 0, "high_cpu": 0, "high_temp": 0, "offline_agents": 0}
     assert body["scanner"] == {"running": False, "last_run": None, "stale_hours": None}
     assert body["issues"] == {"active": 0, "by_type": {"agent_offline": 0, "service_down": 0}}
+
+
+def test_parse_period_window_all_variants():
+    from app.api.health import _parse_period_window
+
+    now = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+    start_7d, buckets_7d = _parse_period_window("7d", now)
+    assert start_7d == now - timedelta(days=7)
+    assert buckets_7d == 28
+
+    start_30d, buckets_30d = _parse_period_window("30d", now)
+    assert start_30d == now - timedelta(days=30)
+    assert buckets_30d == 30
+
+    start_24h, buckets_24h = _parse_period_window("24h", now)
+    assert start_24h == now - timedelta(hours=24)
+    assert buckets_24h == 24
+
+
+def test_overview_incidents_caps_at_max():
+    from app.api.health import MAX_OVERVIEW_INCIDENTS, _overview_incidents
+
+    now = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+    dev = SimpleNamespace(id=1, ip="10.0.0.1", display_name="dev1", name="dev1", alert_offline=True)
+    rows = [
+        (SimpleNamespace(id=i, status="offline", message=f"down {i}", timestamp=now), dev)
+        for i in range(MAX_OVERVIEW_INCIDENTS + 10)
+    ]
+    incidents = _overview_incidents(rows, now)
+    assert len(incidents) == MAX_OVERVIEW_INCIDENTS
+
