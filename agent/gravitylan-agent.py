@@ -14,6 +14,7 @@ Architecture:
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import logging
@@ -23,6 +24,7 @@ import shutil
 import signal
 import socket
 import subprocess
+from subprocess import SubprocessError
 import sys
 import time
 import urllib.error
@@ -35,7 +37,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 # Constants & Logging
 # ---------------------------------------------------------------------------
 
-VERSION = "0.3.13"
+VERSION = "0.3.14"
 AGENT_NAME = "gravitylan-agent"
 DEFAULT_CONFIG_FILENAME = "agent.conf"
 DEFAULT_LOG_FILENAME = "gravitylan-agent.log"
@@ -127,10 +129,8 @@ class AgentConfig:
                     os.fsync(fh.fileno())
                 os.replace(tmp_path, self.config_path)
             except BaseException:
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(tmp_path)
-                except OSError:
-                    pass
                 raise
             logger.info("Configuration persisted to %s", self.config_path)
         except OSError as e:
@@ -151,7 +151,7 @@ def _read_if_exists(path: Path, binary: bool = False) -> Any:
         if not path.exists():
             return None
         return path.read_bytes() if binary else path.read_text(encoding="utf-8")
-    except Exception:
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -190,8 +190,8 @@ def _cpu_limit_v2(root: Path) -> Optional[float]:
             limit, period = int(parts[0]), int(parts[1])
             if period > 0:
                 return limit / period
-    except Exception:
-        pass
+    except (ValueError, IndexError) as e:
+        logger.debug("Failed parsing cgroup v2 cpu.max: %s", e)
     return None
 
 
@@ -206,8 +206,8 @@ def _cpu_limit_v1(root: Path) -> Optional[float]:
         period = int(period_path.read_text(encoding="utf-8").strip())
         if quota > 0 and period > 0:
             return quota / period
-    except Exception:
-        pass
+    except (OSError, ValueError) as e:
+        logger.debug("Failed reading cgroup v1 cpu limit: %s", e)
     return None
 
 
@@ -220,16 +220,16 @@ def get_lxc_cpu_usage_ns(root_path: str = "") -> int | None:
             for line in cpu_stat_v2.read_text(encoding="utf-8").splitlines():
                 if line.startswith("usage_usec"):
                     return int(line.split()[1]) * 1000
-        except Exception:
-            pass
+        except (OSError, ValueError, IndexError) as e:
+            logger.debug("Failed reading cgroup v2 cpu.stat: %s", e)
 
     # Try cgroup v1
     cpu_usage_v1 = Path(root_path) / "sys/fs/cgroup/cpuacct/cpuacct.usage"
     if cpu_usage_v1.exists():
         try:
             return int(cpu_usage_v1.read_text(encoding="utf-8").strip())
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            logger.debug("Failed reading cgroup v1 cpuacct.usage: %s", e)
 
     return None
 
@@ -373,8 +373,8 @@ class RAMMetrics(MetricProvider):
                 for line in fh:
                     if line.startswith("MemTotal:"):
                         return int(line.split()[1]) * 1024
-        except Exception:
-            pass
+        except (OSError, ValueError, IndexError) as e:
+            logger.debug("Failed reading MemTotal from /proc/meminfo: %s", e)
         return None
 
 def _v2_memory_limit(text: str) -> Optional[int]:
@@ -400,8 +400,8 @@ def _cgroup_memory(current: Path, limit: Path, parse_limit: Callable[[str], Opti
         used = int(current.read_text(encoding="utf-8").strip())
         if limit.exists():
             total = parse_limit(limit.read_text(encoding="utf-8"))
-    except Exception:
-        pass
+    except (OSError, ValueError) as e:
+        logger.debug("Failed reading cgroup memory: %s", e)
     return used, total
 
 
@@ -412,15 +412,15 @@ def _collect_zfs_stats() -> Dict[str, Dict[str, int]]:
         cmd = ["zfs", "list", "-H", "-p", "-o", "mountpoint,used,avail,refer"]
         output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode()
         for line in output.strip().split("\n"):
-            m, used, avail, refer = line.split("\t")
-            if m != "none":
-                zfs_stats[m] = {
-                    "used": int(used),
-                    "avail": int(avail),
-                    "refer": int(refer)
+            parts = line.split("\t")
+            if len(parts) == 4 and parts[0] != "none":
+                zfs_stats[parts[0]] = {
+                    "used": int(parts[1]),
+                    "avail": int(parts[2]),
+                    "refer": int(parts[3])
                 }
-    except Exception:
-        pass
+    except (OSError, SubprocessError, ValueError) as e:
+        logger.debug("ZFS stats collection skipped: %s", e)
     return zfs_stats
 
 
@@ -438,8 +438,8 @@ def _discover_mount_targets(default_paths: List[str]) -> set:
                     if any(x in mount for x in ("/docker/", "/container/", "/kubelet/")):
                         continue
                     targets.add(mount)
-    except Exception:
-        pass
+    except OSError as e:
+        logger.debug("Could not read /proc/mounts: %s", e)
     return targets
 
 
@@ -749,8 +749,8 @@ class PatchMetrics(MetricProvider):
             available, security = self._count_apt_upgrades(out)
             result["patch_available"] = available
             result["patch_security"] = security
-        except Exception:
-            pass
+        except (OSError, SubprocessError) as e:
+            logger.debug("apt upgrade check failed: %s", e)
 
         # Check if reboot is required
         result["reboot_required"] = os.path.exists("/var/run/reboot-required")
@@ -769,8 +769,8 @@ class PatchMetrics(MetricProvider):
                     parts = line.split("'")
                     if len(parts) >= 3:
                         result["major_upgrade_available"] = parts[1]
-        except Exception:
-            pass
+        except (OSError, SubprocessError) as e:
+            logger.debug("do-release-upgrade check failed: %s", e)
 
     def _collect_dnf(self, result: Dict[str, Any]) -> None:
         """Populate patch counts via the dnf package manager."""
@@ -779,23 +779,23 @@ class PatchMetrics(MetricProvider):
             # Security count: every non-empty line except the metadata note
             out_sec = _run_quiet(["dnf", "updateinfo", "list", "security", "--quiet"])
             result["patch_security"] = sum(1 for l in out_sec.splitlines() if l.strip() and not l.startswith("Last metadata"))
-        except Exception:
-            pass
+        except (OSError, SubprocessError) as e:
+            logger.debug("dnf check-update failed: %s", e)
 
         if shutil.which("needs-restarting"):
             try:
                 res = subprocess.run(["needs-restarting", "-r"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if res.returncode == 1:
                     result["reboot_required"] = True
-            except Exception:
-                pass
+            except (OSError, SubprocessError) as e:
+                logger.debug("needs-restarting failed: %s", e)
 
     def _collect_yum(self, result: Dict[str, Any]) -> None:
         """Populate patch counts via the yum package manager."""
         try:
             result["patch_available"] = _count_update_lines(_run_quiet(["yum", "check-update", "--quiet"]), skip_metadata=False)
-        except Exception:
-            pass
+        except (OSError, SubprocessError) as e:
+            logger.debug("yum check-update failed: %s", e)
 
 def _run_quiet(cmd: List[str]) -> str:
     """stdout of a package manager query (stderr dropped, 15 s at most)."""
@@ -891,13 +891,11 @@ def _udp_arp_burst(net: ipaddress.IPv4Network) -> None:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setblocking(False)
         for host in net.hosts():
-            try:
+            with contextlib.suppress(OSError):
                 sock.sendto(b"\x00", (str(host), 55555))
-            except Exception:
-                pass
         sock.close()
-    except Exception:
-        pass
+    except OSError as e:
+        logger.debug("UDP ARP burst failed: %s", e)
 
 
 def _broadcast_ping(net: ipaddress.IPv4Network) -> None:
@@ -909,8 +907,8 @@ def _broadcast_ping(net: ipaddress.IPv4Network) -> None:
             stderr=subprocess.DEVNULL,
             timeout=1.5,
         )
-    except Exception:
-        pass
+    except (OSError, SubprocessError) as e:
+        logger.debug("Broadcast ping failed: %s", e)
 
 
 class ArpNeighborCollector(MetricProvider):
@@ -938,8 +936,8 @@ class ArpNeighborCollector(MetricProvider):
         try:
             out = subprocess.check_output(["ip", "-4", "-o", "addr", "show"], stderr=subprocess.DEVNULL, timeout=2).decode("utf-8")
             networks = _subnets_from_ip_addr(out)
-        except Exception:
-            pass
+        except (OSError, SubprocessError) as e:
+            logger.debug("ip addr show failed: %s", e)
 
         # 2. Fallback to /proc/net/route if the ip command is unavailable; a bad line keeps what was read before it
         if not networks:
@@ -949,8 +947,8 @@ class ArpNeighborCollector(MetricProvider):
                         net = _route_line_subnet(line)
                         if net is not None:
                             networks.append(net)
-            except Exception:
-                pass
+            except (OSError, ValueError) as e:
+                logger.debug("Reading /proc/net/route failed: %s", e)
         return networks
 
     def _probe_local_subnets(self) -> None:
@@ -973,15 +971,15 @@ class ArpNeighborCollector(MetricProvider):
             try:
                 with open(arp_path, "r", encoding="utf-8") as f:
                     neighbors = _neighbors_from_proc_arp(f.readlines())
-            except Exception as e:
+            except OSError as e:
                 logger.debug("Failed to read /proc/net/arp: %s", e)
 
         # 2. Supplementary `ip neigh` check (catches any entries not in /proc/net/arp)
         try:
             out = subprocess.check_output(["ip", "-4", "neigh", "show"], stderr=subprocess.DEVNULL, timeout=2).decode("utf-8")
             _apply_ip_neigh(neighbors, out)
-        except Exception:
-            pass
+        except (OSError, SubprocessError) as e:
+            logger.debug("ip neigh show failed: %s", e)
 
         return list(neighbors.values())
 

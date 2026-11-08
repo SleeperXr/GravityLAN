@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - GravityUI orbit map, "Arrange automatically": many devices around the router or a switch no longer stretch one huge circle. They sit on several rings from the inside out, as many per ring as fit with their labels, and devices of the same group and subnet sit next to each other. A network with 40 devices and no links now needs about half the room.
 - Agent 0.3.12: the agent's readers for containers, cgroup limits, package updates, subnets and neighbours are split into smaller parts. What it reports is unchanged; GravityLAN offers the update so the new version can be rolled out and tested.
 - Agent 0.3.13: the agent's CPU, disk, network and system-info readers and its handling of settings from the server are split into smaller parts. What they report is unchanged.
+- Agent 0.3.14: hardened error handling across metric collectors and probes by narrowing broad exceptions and replacing swallowed exceptions with debug logging and contextlib suppression.
 
 ### Fixed
 - Agent 0.3.13, package updates on Debian and Ubuntu: a host without `sudo` whose `apt-get update` failed (for example a minimal container with an unreachable mirror) reported 0 available updates and logged nothing. It now counts from the package lists it already has and logs that they are out of date.
