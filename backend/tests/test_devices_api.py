@@ -283,5 +283,97 @@ async def test_delete_service(client, db, auth):
     db.add(svc)
     await db.commit()
 
-    assert (await client.delete(f"/api/services/{svc.id}", headers=auth)).status_code == 204
+    assert ( await client.delete(f"/api/services/{svc.id}", headers=auth)).status_code == 204
     assert await _services(db, dev.id) == {}
+
+
+# --- device & group edge cases ------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_update_delete_device_and_edge_cases(client, db, auth, monkeypatch):
+    dev = await _device(db, ip="192.0.2.80", display_name="srv")
+    dev_id = dev.id
+    db.expunge_all()
+
+    # get_device found and 404
+    res = await client.get(f"/api/devices/{dev_id}", headers=auth)
+    assert res.status_code == 200 and res.json()["ip"] == "192.0.2.80"
+    assert (await client.get("/api/devices/9999", headers=auth)).status_code == 404
+
+    # update_device 404
+    assert (await client.patch("/api/devices/9999", json={"display_name": "x"}, headers=auth)).status_code == 404
+
+    # _set_hostname_source invalid JSON in dns_names
+    dev = await db.get(Device, dev_id)
+    dev.dns_names = "{invalid-json"
+    await db.commit()
+    res_patch = await client.patch(f"/api/devices/{dev_id}", json={"hostname_source": "dns1"}, headers=auth)
+    assert res_patch.status_code == 200
+
+    # delete_device 404 & empty bulk-delete / _delete_device_dependencies
+    assert (await client.delete("/api/devices/9999", headers=auth)).status_code == 404
+    assert (await client.post("/api/devices/bulk-delete", json=[], headers=auth)).status_code == 204
+    from app.api.devices import _delete_device_dependencies
+    await _delete_device_dependencies(db, [])
+
+    # refresh_services adds missing port and marks existing un-classified port up when classification returns None
+    db.add(Service(device_id=dev_id, name="Custom", protocol="tcp", port=9999, url_template="", is_auto_detected=False, is_up=False))
+    await db.commit()
+    db.expunge_all()
+    monkeypatch.setattr("app.scanner.port_scanner.nmap_scan", AsyncMock(return_value=[9998, 9999]))
+    monkeypatch.setattr("app.scanner.classifier.classify_device", lambda _d: None)
+    assert (await client.post(f"/api/devices/{dev_id}/refresh-services", headers=auth)).status_code == 200
+    svcs = await _services(db, dev_id)
+    assert svcs[9999].is_up is True
+    assert svcs[9998].name == "Service 9998"
+
+    # refresh_all per-device error handling
+    class SameSession:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *_exc):
+            pass
+
+    monkeypatch.setattr("app.database.async_session", SameSession)
+    monkeypatch.setattr("app.scanner.arp.resolve_mac_addresses", AsyncMock())
+    monkeypatch.setattr("app.scanner.hostname.resolve_hostname", AsyncMock(side_effect=RuntimeError("boom")))
+    assert (await client.post("/api/devices/refresh-all", headers=auth)).status_code == 200
+
+    # refresh_all endpoint error handling (500)
+    from fastapi import HTTPException
+    from app.api.devices import refresh_all_devices
+
+    async def broken_dns(_db):
+        raise RuntimeError("db error")
+
+    monkeypatch.setattr("app.api.devices._dns_servers", broken_dns)
+    with pytest.raises(HTTPException) as exc_info:
+        await refresh_all_devices(background_tasks=None, db=db)
+    assert exc_info.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_group_edge_cases(client, db, auth):
+    from app.models.device import DeviceGroup
+    default_grp = DeviceGroup(name="Default", is_default=True)
+    db.add(default_grp)
+    await db.commit()
+
+    # list_groups with items
+    res = await client.get("/api/groups", headers=auth)
+    assert res.status_code == 200 and len(res.json()) >= 1
+
+    # create_group empty name
+    assert (await client.post("/api/groups", json={"name": "   "}, headers=auth)).status_code == 400
+
+    # update_group 404
+    assert (await client.patch("/api/groups/9999", json={"name": "New"}, headers=auth)).status_code == 404
+
+    # delete_group 404 and default group protection
+    assert (await client.delete("/api/groups/9999", headers=auth)).status_code == 404
+    assert (await client.delete(f"/api/groups/{default_grp.id}", headers=auth)).status_code == 400
+
+    # get_group_details 404
+    assert (await client.get("/api/groups/9999", headers=auth)).status_code == 404
+
