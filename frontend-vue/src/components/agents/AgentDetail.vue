@@ -1,26 +1,19 @@
-<script lang="ts">
-type AuthType = 'password' | 'key' | 'stored_key';
-interface SshCreds {
-  ssh_user: string;
-  ssh_password: string;
-  sudo_password?: string;
-  ssh_key: string;
-  key_id: number | null;
-  key_passphrase: string;
-  auth_type: AuthType;
-  ssh_port: number;
-}
-
-// SSH secrets are kept in memory only (never in web storage), so they are gone on reload
-const sshCredCache = new Map<number, SshCreds>();
-</script>
-
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ArrowUpCircle, Cpu, HardDrive, Lock, MemoryStick, RotateCcw, Shield, Terminal, Thermometer } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { SshKey } from '@/types';
 import type { AgentRow } from './agentRow';
+import {
+  type AuthType,
+  type DefaultSshConfig,
+  type SshCreds,
+  type SshFormState,
+  buildCachedCreds,
+  buildPatchPayload,
+  resolveDefaultSshConfig,
+  sshCredCache,
+} from './agentDetailModel';
 import Tabs from '@/components/ui/Tabs.vue';
 import Button from '@/components/ui/Button.vue';
 import Field from '@/components/ui/Field.vue';
@@ -97,34 +90,50 @@ const saveCreds = ref(true);
 const showForm = ref(true);
 const hasStored = ref(false);
 
+function applyCachedCreds(cached: SshCreds) {
+  sshUser.value = cached.ssh_user || 'root';
+  sshPassword.value = cached.ssh_password;
+  sudoPassword.value = cached.sudo_password || '';
+  sshKey.value = cached.ssh_key;
+  keyId.value = cached.key_id;
+  keyPassphrase.value = cached.key_passphrase;
+  sshPort.value = cached.ssh_port || 22;
+  authType.value = cached.auth_type;
+  showForm.value = false;
+  hasStored.value = true;
+}
+
+function applyDefaultSshConfig(config: DefaultSshConfig) {
+  if (config.sshUser) sshUser.value = config.sshUser;
+  if (config.sshPort) sshPort.value = config.sshPort;
+  authType.value = config.authType;
+  keyId.value = config.keyId;
+}
+
+function currentFormState(): SshFormState {
+  return {
+    sshUser: sshUser.value,
+    sshPassword: sshPassword.value,
+    sudoPassword: sudoPassword.value,
+    sshKey: sshKey.value,
+    keyId: keyId.value,
+    keyPassphrase: keyPassphrase.value,
+    authType: authType.value,
+    sshPort: sshPort.value,
+  };
+}
+
 onMounted(async () => {
   const cached = sshCredCache.get(deviceId.value);
   if (cached) {
-    sshUser.value = cached.ssh_user || 'root';
-    sshPassword.value = cached.ssh_password;
-    sudoPassword.value = cached.sudo_password || '';
-    sshKey.value = cached.ssh_key;
-    keyId.value = cached.key_id;
-    keyPassphrase.value = cached.key_passphrase;
-    sshPort.value = cached.ssh_port || 22;
-    authType.value = cached.auth_type;
-    showForm.value = false;
-    hasStored.value = true;
+    applyCachedCreds(cached);
   }
   try {
     const [keys, profiles] = await Promise.all([api.getSshKeys(), api.getSshProfiles().catch(() => [])]);
     storedKeys.value = keys;
     if (!cached) {
-      const matchedProfile = profiles.find((p) => p.device_id === deviceId.value || p.host === props.agent.ip);
-      if (matchedProfile && matchedProfile.auth_method === 'key' && matchedProfile.key_id) {
-        sshUser.value = matchedProfile.username || 'root';
-        sshPort.value = matchedProfile.port || 22;
-        authType.value = 'stored_key';
-        keyId.value = matchedProfile.key_id;
-      } else if (storedKeys.value.length > 0) {
-        authType.value = 'stored_key';
-        keyId.value = storedKeys.value[0].id;
-      }
+      const config = resolveDefaultSshConfig(profiles, deviceId.value, props.agent.ip, keys);
+      if (config) applyDefaultSshConfig(config);
     }
   } catch {
     storedKeys.value = [];
@@ -144,42 +153,15 @@ const selectedKeyNeedsPassphrase = computed(() => storedKeys.value.find((k) => k
 
 /** The request body, remembering (or forgetting) the credentials as the checkbox says. */
 function payload() {
-  const auth = authType.value;
+  const form = currentFormState();
   if (saveCreds.value) {
-    sshCredCache.set(deviceId.value, {
-      ssh_user: sshUser.value,
-      ssh_password: auth === 'password' ? sshPassword.value : '',
-      sudo_password: sudoPassword.value,
-      ssh_key: auth === 'key' ? sshKey.value : '',
-      key_id: auth === 'stored_key' ? keyId.value : null,
-      key_passphrase: auth === 'stored_key' ? keyPassphrase.value : '',
-      auth_type: auth,
-      ssh_port: sshPort.value,
-    });
+    sshCredCache.set(deviceId.value, buildCachedCreds(form));
     hasStored.value = true;
   } else {
     sshCredCache.delete(deviceId.value);
     hasStored.value = false;
   }
-  const body: {
-    ssh_user: string;
-    ssh_password?: string;
-    sudo_password?: string;
-    ssh_key?: string;
-    key_id?: number;
-    key_passphrase?: string;
-    ssh_port: number;
-  } = {
-    ssh_user: sshUser.value,
-    ssh_password: auth === 'password' ? (sshPassword.value || undefined) : undefined,
-    // Only with a key: a sudo password kept from key mode must not replace the login password
-    sudo_password: auth !== 'password' ? (sudoPassword.value || undefined) : undefined,
-    ssh_key: auth === 'key' ? (sshKey.value || undefined) : undefined,
-    key_id: auth === 'stored_key' ? (keyId.value ?? undefined) : undefined,
-    key_passphrase: auth === 'stored_key' && keyPassphrase.value ? keyPassphrase.value : undefined,
-    ssh_port: sshPort.value,
-  };
-  return body;
+  return buildPatchPayload(form);
 }
 
 // ── Patching ─────────────────────────────────────────────────────────────────
