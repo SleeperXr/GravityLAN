@@ -35,7 +35,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 # Constants & Logging
 # ---------------------------------------------------------------------------
 
-VERSION = "0.3.12"
+VERSION = "0.3.13"
 AGENT_NAME = "gravitylan-agent"
 DEFAULT_CONFIG_FILENAME = "agent.conf"
 DEFAULT_LOG_FILENAME = "gravitylan-agent.log"
@@ -247,24 +247,32 @@ class CPUMetrics(MetricProvider):
         if is_lxc_container(self.root_path):
             cpu_ns = get_lxc_cpu_usage_ns(self.root_path)
             if cpu_ns is not None:
-                now_time = time.time()
-                if self.prev_lxc_time == 0.0:
-                    self.prev_lxc_time, self.prev_lxc_ns = now_time, cpu_ns
-                    return 0.0
-                
-                delta_ns = cpu_ns - self.prev_lxc_ns
-                delta_time = now_time - self.prev_lxc_time
-                self.prev_lxc_time, self.prev_lxc_ns = now_time, cpu_ns
-
-                if delta_time <= 0 or delta_ns < 0:
-                    return 0.0
-
-                cpus = get_lxc_cpu_count(self.root_path)
-                delta_time_ns = delta_time * 1e9
-                pct = (delta_ns / delta_time_ns) * 100.0 / cpus
-                return min(100.0, max(0.0, round(pct, 1)))
+                return self._lxc_percent(cpu_ns)
 
         # Fallback to standard host /proc/stat
+        return self._host_percent()
+
+    def _lxc_percent(self, cpu_ns: int) -> float:
+        """CPU usage since the last cgroup sample, relative to the container's CPU limit."""
+        now_time = time.time()
+        if self.prev_lxc_time == 0.0:
+            self.prev_lxc_time, self.prev_lxc_ns = now_time, cpu_ns
+            return 0.0
+
+        delta_ns = cpu_ns - self.prev_lxc_ns
+        delta_time = now_time - self.prev_lxc_time
+        self.prev_lxc_time, self.prev_lxc_ns = now_time, cpu_ns
+
+        if delta_time <= 0 or delta_ns < 0:
+            return 0.0
+
+        cpus = get_lxc_cpu_count(self.root_path)
+        delta_time_ns = delta_time * 1e9
+        pct = (delta_ns / delta_time_ns) * 100.0 / cpus
+        return min(100.0, max(0.0, round(pct, 1)))
+
+    def _host_percent(self) -> float:
+        """CPU usage since the last /proc/stat sample."""
         try:
             stat_path = Path(self.root_path) / "proc/stat"
             with open(stat_path, encoding="utf-8") as fh:
@@ -435,50 +443,55 @@ def _discover_mount_targets(default_paths: List[str]) -> set:
     return targets
 
 
+def _disk_targets(disk_paths: List[str]) -> set:
+    """The paths to report: the configured ones, or the discovered mounts when only the default '/' is set."""
+    if len(disk_paths) == 1 and disk_paths[0] == "/":
+        return _discover_mount_targets(disk_paths)
+    return set(disk_paths)
+
+
+def _path_usage(path: str, zfs_stats: Dict[str, Dict[str, int]], seen_devices: set) -> Optional[tuple]:
+    """(total, used) bytes of ``path``; None for a filesystem already counted under another path."""
+    # Use ZFS stats if available for this path
+    if path in zfs_stats:
+        z = zfs_stats[path]
+        return z["used"] + z["avail"], z["used"]
+
+    # Fallback to statvfs
+    st = os.statvfs(path)
+    fs_id = f"{st.f_blocks}-{st.f_files}"
+    if fs_id in seen_devices and path != "/":
+        return None
+    seen_devices.add(fs_id)
+    total = st.f_blocks * st.f_frsize
+    return total, total - (st.f_bavail * st.f_frsize)
+
+
 class DiskMetrics(MetricProvider):
     """Reads disk usage for configured paths and automatically discovers physical/ZFS mounts."""
     def collect(self, config: AgentConfig) -> List[Dict[str, Any]]:
-        # 1. Determine if we should use auto-discovery
-        is_default = len(config.disk_paths) == 1 and config.disk_paths[0] == "/"
-        targets = set(config.disk_paths)
-
-        # 2. Pre-fetch ZFS stats if available
+        # Pre-fetch ZFS stats if available
         zfs_stats = _collect_zfs_stats()
-
-        if is_default:
-            targets = _discover_mount_targets(list(targets))
+        targets = _disk_targets(config.disk_paths)
 
         results = []
         seen_devices = set()
 
         for path in sorted(list(targets)):
             try:
-                # 3. Use ZFS stats if available for this path
-                if path in zfs_stats:
-                    z = zfs_stats[path]
-                    total = z["used"] + z["avail"]
-                    used = z["used"]
-                else:
-                    # 4. Fallback to statvfs
-                    st = os.statvfs(path)
-                    fs_id = f"{st.f_blocks}-{st.f_files}"
-                    if fs_id in seen_devices and path != "/":
-                        continue
-                    seen_devices.add(fs_id)
-                    total = st.f_blocks * st.f_frsize
-                    used = total - (st.f_bavail * st.f_frsize)
-
-                if total == 0:
-                    continue
-
-                results.append({
-                    "path": path,
-                    "total_gb": round(total / (1024**3), 1),
-                    "used_gb": round(used / (1024**3), 1),
-                    "percent": round(used / total * 100, 1)
-                })
+                usage = _path_usage(path, zfs_stats, seen_devices)
             except (OSError, PermissionError):
                 continue
+            if usage is None or usage[0] == 0:
+                continue
+
+            total, used = usage
+            results.append({
+                "path": path,
+                "total_gb": round(total / (1024**3), 1),
+                "used_gb": round(used / (1024**3), 1),
+                "percent": round(used / total * 100, 1)
+            })
 
         return results
 
@@ -489,7 +502,8 @@ class NetworkMetrics(MetricProvider):
         self.prev_counters: Dict[str, tuple[int, int]] = {}
         self.prev_time: float = 0.0
 
-    def collect(self, config: AgentConfig) -> Dict[str, Dict[str, int]]:
+    def _read_counters(self) -> Optional[Dict[str, tuple[int, int]]]:
+        """(rx, tx) byte counters per interface without loopback; None when /proc/net/dev cannot be read."""
         current: Dict[str, tuple[int, int]] = {}
         try:
             with open(Path(self.root_path) / "proc/net/dev", encoding="utf-8") as fh:
@@ -502,7 +516,13 @@ class NetworkMetrics(MetricProvider):
                     if len(parts) >= 9:
                         current[iface] = (int(parts[0]), int(parts[8]))
         except (OSError, ValueError):
-            return {}
+            return None
+        return current
+
+    def collect(self, config: AgentConfig) -> Dict[str, Dict[str, int]]:
+        current = self._read_counters()
+        if current is None:
+            return {}  # a failed read keeps the previous sample
 
         now = time.monotonic()
         delta_time = now - self.prev_time
@@ -523,6 +543,34 @@ class NetworkMetrics(MetricProvider):
         self.prev_time = now
         return result
 
+def _read_os_release() -> Dict[str, str]:
+    """KEY=value pairs of /etc/os-release without their quotes; empty when it cannot be read."""
+    try:
+        text = Path("/etc/os-release").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {}
+    release: Dict[str, str] = {}
+    for line in text.splitlines():
+        if "=" in line:
+            key, _, value = line.partition("=")
+            release[key.strip()] = value.strip().strip('"').strip("'")
+    return release
+
+
+def _os_release_fields(release: Dict[str, str], current_os: str) -> Dict[str, str]:
+    """The system-info fields /etc/os-release decides; ``current_os`` stays when it names no OS."""
+    pretty = release.get("PRETTY_NAME") or ""
+    fallback = f"{release.get('NAME', '')} {release.get('VERSION_ID', '')}".strip()
+    fields = {
+        "os": pretty or fallback or current_os,
+        "os_name": release.get("NAME") or platform.system(),
+        "os_version": release.get("VERSION_ID") or platform.release(),
+    }
+    if release.get("VERSION_CODENAME"):
+        fields["os_codename"] = release["VERSION_CODENAME"]
+    return fields
+
+
 class SystemInfoProvider(MetricProvider):
     """Provides static system metadata (hostname, OS, architecture, kernel)."""
     def collect(self, config: AgentConfig) -> Dict[str, str]:
@@ -532,22 +580,9 @@ class SystemInfoProvider(MetricProvider):
             "arch": platform.machine(),
             "kernel": platform.release(),
         }
-        try:
-            release: Dict[str, str] = {}
-            for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
-                if "=" in line:
-                    key, _, value = line.partition("=")
-                    release[key.strip()] = value.strip().strip('"').strip("'")
-            if release:
-                pretty = release.get("PRETTY_NAME") or ""
-                fallback = f"{release.get('NAME', '')} {release.get('VERSION_ID', '')}".strip()
-                info["os"] = pretty or fallback or info["os"]
-                info["os_name"] = release.get("NAME") or platform.system()
-                info["os_version"] = release.get("VERSION_ID") or platform.release()
-                if release.get("VERSION_CODENAME"):
-                    info["os_codename"] = release["VERSION_CODENAME"]
-        except (OSError, UnicodeDecodeError):
-            pass
+        release = _read_os_release()
+        if release:
+            info.update(_os_release_fields(release, info["os"]))
         return info
 
 class ThermalMetrics(MetricProvider):
@@ -598,7 +633,7 @@ def _run_apt_update(timeout: int = 90) -> bool:
             res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
             if res.returncode == 0:
                 return True
-        except subprocess.SubprocessError:
+        except (OSError, subprocess.SubprocessError):  # OSError: the command (sudo) is not installed
             continue
     return False
 
@@ -1002,6 +1037,27 @@ _REMOTE_CONFIG_FIELDS: List[tuple] = [
 ]
 
 
+def _sync_device_id(config: AgentConfig, device_id: Any) -> bool:
+    """Take over the device ID the server assigned; True when it changed."""
+    if not device_id or device_id == config.device_id:
+        return False
+    logger.info("Updating Device ID to %s", device_id)
+    config.device_id = device_id
+    return True
+
+
+def _sync_remote_config(config: AgentConfig, remote_conf: Any) -> bool:
+    """Take over the settings in which the server differs from ``config``; True when any did."""
+    if not isinstance(remote_conf, dict):
+        return False
+    changed = False
+    for key, convert in _REMOTE_CONFIG_FIELDS:
+        if key in remote_conf and getattr(config, key) != remote_conf[key]:
+            setattr(config, key, convert(remote_conf[key]))
+            changed = True
+    return changed
+
+
 class AgentOrchestrator:
     """Coordinates metric collection and reporting loop."""
     def __init__(self, config: AgentConfig):
@@ -1047,23 +1103,11 @@ class AgentOrchestrator:
 
     def process_response(self, response: Dict[str, Any]) -> None:
         """Updates internal config based on server feedback."""
-        changed = False
-        
-        # Device ID Sync
-        if response.get("device_id") and response["device_id"] != self.config.device_id:
-            logger.info("Updating Device ID to %s", response["device_id"])
-            self.config.device_id = response["device_id"]
-            changed = True
-        
-        # Runtime Config Updates
-        remote_conf = response.get("config")
-        if remote_conf and isinstance(remote_conf, dict):
-            for key, convert in _REMOTE_CONFIG_FIELDS:
-                if key in remote_conf and getattr(self.config, key) != remote_conf[key]:
-                    setattr(self.config, key, convert(remote_conf[key]))
-                    changed = True
+        # Both steps must run: one response can carry a new device ID and new settings
+        id_changed = _sync_device_id(self.config, response.get("device_id"))
+        settings_changed = _sync_remote_config(self.config, response.get("config"))
 
-        if changed:
+        if id_changed or settings_changed:
             self.config.save()
 
     def run(self) -> None:
