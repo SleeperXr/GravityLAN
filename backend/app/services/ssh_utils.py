@@ -222,10 +222,10 @@ def connect_with_gateway_fallback(
     try:
         client.connect(**connect_kwargs)
         return
-    except Exception as e:
+    except (paramiko.SSHException, OSError):
         gateway = host_bypass_gateway(host_ip)
         if not gateway:
-            raise e
+            raise
 
     logger.info("Direct connection failed. Attempting Host Bypass via bridge gateway: %s", gateway)
     connect_kwargs["hostname"] = gateway
@@ -299,8 +299,8 @@ def _feed_sudo_password(stdin, command: str, sudo_pass: Optional[str]) -> None:
         stdin.flush()
         try:
             stdin.channel.shutdown_write()
-        except Exception:
-            pass
+        except (paramiko.SSHException, OSError, EOFError) as exc:
+            logger.debug("Closing stdin channel failed: %s", exc)
 
 
 def _wait_for_exit(stdout, command: str, timeout: int) -> None:
@@ -315,25 +315,47 @@ def _wait_for_exit(stdout, command: str, timeout: int) -> None:
         time.sleep(0.1)
 
 
-def _check_exit(exit_code: int, out: str, err: str) -> str:
-    """The output of a finished command, or the readable error its exit code and stderr stand for."""
-    if exit_code == 0:
-        return out
-    if exit_code == 1 and ("not found" in err or "no such" in err.lower()):
-        return out
-    err_lower = (err or out).lower()
-    if any(term in err_lower for term in _SUDO_PASSWORD_NEEDED):
+def _is_benign_not_found(exit_code: int, err: str) -> bool:
+    """Return True if exit code 1 represents a benign 'not found' / 'no such' command result."""
+    if exit_code != 1:
+        return False
+    err_lower = err.lower()
+    return "not found" in err_lower or "no such" in err_lower
+
+
+def _check_sudo_password_error(output_text: str) -> None:
+    """Raise SudoPasswordError if the output matches known sudo password prompt or rejection patterns."""
+    text_lower = output_text.lower()
+    if any(term in text_lower for term in _SUDO_PASSWORD_NEEDED):
         raise SudoPasswordError(
             "sudo needs a password for this user. Enter the user's password; it is used for sudo and not stored."
         )
-    if any(term in err_lower for term in _SUDO_PASSWORD_WRONG):
+    if any(term in text_lower for term in _SUDO_PASSWORD_WRONG):
         raise SudoPasswordError(
             "Sudo password rejected by remote host. Please check your SSH / sudo password."
         )
+
+
+def _extract_error_detail(output_text: str) -> str:
+    """Extract a sanitized single-line summary of the last error output line."""
+    if not output_text:
+        return ""
+    last_line = output_text.splitlines()[-1][:200]
+    return f": {last_line}" if last_line else ""
+
+
+def _check_exit(exit_code: int, out: str, err: str) -> str:
+    """The output of a finished command, or the readable error its exit code and stderr stand for."""
+    if exit_code == 0 or _is_benign_not_found(exit_code, err):
+        return out
+
+    combined_output = err or out
+    _check_sudo_password_error(combined_output)
+
     # Not the command itself: staged files (heredocs) carry the agent token
     logger.warning("Remote command failed (exit %d): %s", exit_code, err)
-    detail = (err or out).splitlines()[-1][:200] if (err or out) else ""
-    raise RemoteCommandError(f"A command on the host failed (exit {exit_code}){': ' + detail if detail else ''}.")
+    detail = _extract_error_detail(combined_output)
+    raise RemoteCommandError(f"A command on the host failed (exit {exit_code}){detail}.")
 
 
 def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass: Optional[str]) -> str:
