@@ -144,7 +144,7 @@ AGENTS = [
 def _outcome(fn, *args):
     try:
         return fn(*args)
-    except Exception as exc:  # the old function raised on missed_scans=None; the new one must too
+    except TypeError as exc:  # the old function raised on missed_scans=None; the new one must too
         return type(exc)
 
 
