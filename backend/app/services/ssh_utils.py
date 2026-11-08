@@ -292,10 +292,8 @@ _SUDO_PASSWORD_NEEDED = ("a password is required", "passwort erforderlich", "es 
 _SUDO_PASSWORD_WRONG = ("incorrect password", "falsches passwort", "nicht funktioniert", "fehlversuch")
 
 
-def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass: Optional[str]) -> str:
-    """Low-level command execution with sudo password support and timeout handling."""
-    stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
-
+def _feed_sudo_password(stdin, command: str, sudo_pass: Optional[str]) -> None:
+    """Answer the password prompt of ``sudo -S`` on stdin, then close stdin."""
     if sudo_pass and "sudo -S" in command:
         stdin.write(f"{sudo_pass}\n")
         stdin.flush()
@@ -304,6 +302,9 @@ def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass
         except Exception:
             pass
 
+
+def _wait_for_exit(stdout, command: str, timeout: int) -> None:
+    """Wait until the command ends; close the channel and raise RemoteTimeoutError after ``timeout`` seconds."""
     start_time = time.time()
     while not stdout.channel.exit_status_ready():
         if time.time() - start_time > timeout:
@@ -313,25 +314,35 @@ def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass
             raise RemoteTimeoutError(f"A command on the host did not finish within {timeout}s.{hint}")
         time.sleep(0.1)
 
+
+def _check_exit(exit_code: int, out: str, err: str) -> str:
+    """The output of a finished command, or the readable error its exit code and stderr stand for."""
+    if exit_code == 0:
+        return out
+    if exit_code == 1 and ("not found" in err or "no such" in err.lower()):
+        return out
+    err_lower = (err or out).lower()
+    if any(term in err_lower for term in _SUDO_PASSWORD_NEEDED):
+        raise SudoPasswordError(
+            "sudo needs a password for this user. Enter the user's password; it is used for sudo and not stored."
+        )
+    if any(term in err_lower for term in _SUDO_PASSWORD_WRONG):
+        raise SudoPasswordError(
+            "Sudo password rejected by remote host. Please check your SSH / sudo password."
+        )
+    # Not the command itself: staged files (heredocs) carry the agent token
+    logger.warning("Remote command failed (exit %d): %s", exit_code, err)
+    detail = (err or out).splitlines()[-1][:200] if (err or out) else ""
+    raise RemoteCommandError(f"A command on the host failed (exit {exit_code}){': ' + detail if detail else ''}.")
+
+
+def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass: Optional[str]) -> str:
+    """Low-level command execution with sudo password support and timeout handling."""
+    stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+    _feed_sudo_password(stdin, command, sudo_pass)
+    _wait_for_exit(stdout, command, timeout)
+
     exit_code = stdout.channel.recv_exit_status()
     out = stdout.read().decode(errors='ignore').strip()
     err = stderr.read().decode(errors='ignore').strip()
-
-    if exit_code != 0:
-        if exit_code == 1 and ("not found" in err or "no such" in err.lower()):
-            return out
-        err_lower = (err or out).lower()
-        if any(term in err_lower for term in _SUDO_PASSWORD_NEEDED):
-            raise SudoPasswordError(
-                "sudo needs a password for this user. Enter the user's password; it is used for sudo and not stored."
-            )
-        if any(term in err_lower for term in _SUDO_PASSWORD_WRONG):
-            raise SudoPasswordError(
-                "Sudo password rejected by remote host. Please check your SSH / sudo password."
-            )
-        # Not the command itself: staged files (heredocs) carry the agent token
-        logger.warning("Remote command failed (exit %d): %s", exit_code, err)
-        detail = (err or out).splitlines()[-1][:200] if (err or out) else ""
-        raise RemoteCommandError(f"A command on the host failed (exit {exit_code}){': ' + detail if detail else ''}.")
-
-    return out
+    return _check_exit(exit_code, out, err)
