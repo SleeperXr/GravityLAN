@@ -559,31 +559,46 @@ async def _ssh_login(db: AsyncSession, device: Device, req: AgentInstallRequest,
     key is refused before any password is sent.
     """
     if req.profile_id is None:
-        if not req.ssh_user:
-            raise HTTPException(status_code=400, detail="Enter an SSH user or choose a saved connection.")
-        stmt = select(SshKnownHost).where(SshKnownHost.host == device.ip, SshKnownHost.port == req.ssh_port)
-        known = (await db.execute(stmt)).scalar_one_or_none()
-        pinned = PinnedHostKey(key_type=known.key_type, fingerprint=known.fingerprint) if known else None
-        tofu = TofuHostKeyPolicy() if pinned is None and not settings.ssh_strict_mode else None
+        return await _typed_in_login(db, device, req, http_request)
+    return await _saved_connection_login(db, device, req, http_request)
 
-        ssh_key = req.ssh_key
-        ssh_passphrase = req.key_passphrase
-        if req.key_id is not None:
-            if not has_browser_session(http_request):
-                raise HTTPException(status_code=403, detail="Saved SSH keys can only be used from a logged-in browser session.")
-            try:
-                ssh_key, ssh_passphrase = await resolve_stored_key(db, req.key_id, req.key_passphrase)
-            except StoredLoginError as exc:
-                raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-            await db.commit()
 
-        return dict(
-            host_ip=device.ip, ssh_user=req.ssh_user,
-            ssh_password=runner_password(req),
-            ssh_key=ssh_key, ssh_key_passphrase=ssh_passphrase, ssh_port=req.ssh_port, pinned_host_key=pinned,
-            tofu_policy=tofu,
-        )
+async def _known_host_policy(db: AsyncSession, host: str, port: int) -> tuple[PinnedHostKey | None, TofuHostKeyPolicy | None]:
+    """The stored key of host:port to pin, or (outside strict mode) a policy that learns the first one."""
+    stmt = select(SshKnownHost).where(SshKnownHost.host == host, SshKnownHost.port == port)
+    known = (await db.execute(stmt)).scalar_one_or_none()
+    pinned = PinnedHostKey(key_type=known.key_type, fingerprint=known.fingerprint) if known else None
+    tofu = TofuHostKeyPolicy() if pinned is None and not settings.ssh_strict_mode else None
+    return pinned, tofu
 
+
+async def _typed_in_login(db: AsyncSession, device: Device, req: AgentInstallRequest, http_request: Request) -> dict:
+    """Login from typed-in credentials, optionally with a stored key (browser sessions only)."""
+    if not req.ssh_user:
+        raise HTTPException(status_code=400, detail="Enter an SSH user or choose a saved connection.")
+    pinned, tofu = await _known_host_policy(db, device.ip, req.ssh_port)
+
+    ssh_key = req.ssh_key
+    ssh_passphrase = req.key_passphrase
+    if req.key_id is not None:
+        if not has_browser_session(http_request):
+            raise HTTPException(status_code=403, detail="Saved SSH keys can only be used from a logged-in browser session.")
+        try:
+            ssh_key, ssh_passphrase = await resolve_stored_key(db, req.key_id, req.key_passphrase)
+        except StoredLoginError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        await db.commit()
+
+    return dict(
+        host_ip=device.ip, ssh_user=req.ssh_user,
+        ssh_password=runner_password(req),
+        ssh_key=ssh_key, ssh_key_passphrase=ssh_passphrase, ssh_port=req.ssh_port, pinned_host_key=pinned,
+        tofu_policy=tofu,
+    )
+
+
+async def _saved_connection_login(db: AsyncSession, device: Device, req: AgentInstallRequest, http_request: Request) -> dict:
+    """Login through a saved key connection of the device (browser sessions only, host key already confirmed)."""
     if not has_browser_session(http_request):
         raise HTTPException(status_code=403, detail="Saved SSH connections can only be used from a logged-in browser session.")
     try:
