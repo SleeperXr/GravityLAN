@@ -152,6 +152,11 @@ interface RawParent {
   linkColor?: string | null;
 }
 
+/** Both ends are different devices on the map: neither a self-link nor dangling. */
+function joinsTwoDevices(l: OrbitLink, byId: Map<number, Device>): boolean {
+  return l.source_id !== l.target_id && byId.has(l.source_id) && byId.has(l.target_id);
+}
+
 /**
  * Undirected adjacency of the primary links whose both ends exist (self-links dropped). Backup links stay
  * out, so adding a fallback path never changes roles, hubs or the layout.
@@ -159,7 +164,7 @@ interface RawParent {
 function buildAdjacency(devices: Device[], links: OrbitLink[], byId: Map<number, Device>): Adjacency {
   const adj: Adjacency = new Map(devices.map((d) => [d.id, []]));
   for (const l of links) {
-    if (isBackupLink(l) || !byId.has(l.source_id) || !byId.has(l.target_id) || l.source_id === l.target_id) continue;
+    if (isBackupLink(l) || !joinsTwoDevices(l, byId)) continue;
     adj.get(l.source_id)!.push({ neighborId: l.target_id, link: l });
     adj.get(l.target_id)!.push({ neighborId: l.source_id, link: l });
   }
@@ -235,26 +240,32 @@ function breakCycles(devices: Device[], rawParents: Map<number, RawParent>, prim
   }
 }
 
+/** What deciding a device's body kind needs to know about it. */
+interface BodyFacts {
+  isStar: boolean;
+  role: OrbitRole | undefined;
+  degree: number;
+  children: number;
+  hasVmChildren: boolean;
+}
+
+/** A body others orbit cannot be a moon; otherwise a chosen role wins over what the device is. */
+function isPlanetBody(d: Device, { role, degree, children, hasVmChildren }: BodyFacts): boolean {
+  if (role === 'planet' || role === 'dwarf' || children > 0) return true;
+  return role !== 'moon' && isPlanetCandidate(d, degree, hasVmChildren);
+}
+
+/** Chosen as a dwarf, a chosen moon that others orbit, or, without a choice, network gear carrying few devices. */
+function isDwarfPlanet(d: Device, { role, children }: BodyFacts): boolean {
+  if (role) return role === 'dwarf' || (role === 'moon' && children > 0);
+  return isNetworkGear(d) && children < DWARF_MAX_CHILDREN;
+}
+
 /** Star, planet or moon, and whether a planet is drawn as a dwarf. */
-function classify(
-  d: Device,
-  isStar: boolean,
-  role: OrbitRole | undefined,
-  degree: number,
-  children: number,
-  hasVmChildren: boolean,
-): { kind: BodyKind; dwarf: boolean } {
-  if (isStar) return { kind: 'star', dwarf: false };
-  // A body others orbit cannot be a moon, so a chosen moon with children stays a dwarf planet.
-  const planet =
-    role === 'planet' ||
-    role === 'dwarf' ||
-    children > 0 ||
-    (role !== 'moon' && isPlanetCandidate(d, degree, hasVmChildren));
-  if (!planet) return { kind: 'moon', dwarf: false };
-  const dwarf =
-    role === 'dwarf' || (role === 'moon' && children > 0) || (!role && isNetworkGear(d) && children < DWARF_MAX_CHILDREN);
-  return { kind: 'planet', dwarf };
+function classify(d: Device, facts: BodyFacts): { kind: BodyKind; dwarf: boolean } {
+  if (facts.isStar) return { kind: 'star', dwarf: false };
+  if (!isPlanetBody(d, facts)) return { kind: 'moon', dwarf: false };
+  return { kind: 'planet', dwarf: isDwarfPlanet(d, facts) };
 }
 
 /**
@@ -287,14 +298,13 @@ export function resolveOrbitSystem(
 
   const result = new Map<number, OrbitBody>();
   for (const d of devices) {
-    const { kind, dwarf } = classify(
-      d,
-      starIds.has(d.id),
-      roles[String(d.id)],
-      adj.get(d.id)?.length ?? 0,
-      childCount.get(d.id) ?? 0,
-      vmParentIds.has(d.id),
-    );
+    const { kind, dwarf } = classify(d, {
+      isStar: starIds.has(d.id),
+      role: roles[String(d.id)],
+      degree: adj.get(d.id)?.length ?? 0,
+      children: childCount.get(d.id) ?? 0,
+      hasVmChildren: vmParentIds.has(d.id),
+    });
     result.set(d.id, toBody(d, rawParents.get(d.id)!, kind, dwarf));
   }
   return result;
