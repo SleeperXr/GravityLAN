@@ -15,6 +15,7 @@ from app.models.device import Device, DeviceGroup, Service
 from app.models.agent import AgentToken
 from app.scanner.vendor import get_vendor
 from app.services.cache_service import topology_cache, dashboard_cache
+from app.dns_answers import stored_dns_answers
 from app.scanner.hostname import HOSTNAME_SOURCES, choose_hostname, lookup_dns_names, resolve_hostname, is_ip_like
 from app.services.interface_service import annotate_primary_subnets, device_for_interface_ip
 from app.schemas.device import (
@@ -89,13 +90,10 @@ async def _lookup_device_hostname(dev, servers: tuple[str | None, str | None], l
 def _set_hostname_source(device, source: str | None) -> None:
     """Pin the DNS server that names the device; a pinned server that answered sets the hostname right away."""
     device.hostname_source = source if source in HOSTNAME_SOURCES else None
-    if not device.hostname_source or not device.dns_names:
+    if not device.hostname_source:
         return
-    try:
-        names = json.loads(device.dns_names)
-    except ValueError:
-        return
-    name = names.get(device.hostname_source[-1]) if isinstance(names, dict) else None
+    names = stored_dns_answers(device.dns_names)
+    name = names.get(device.hostname_source[-1]) if names else None
     if name:
         _apply_hostname(device, name)
 
