@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import json
 import sqlite3
 import os
@@ -56,37 +57,23 @@ def _open_sqlite_connection(db_path: str, isolation_level: str | None = "") -> s
     return conn
 
 
+# Module -> dict-like cache that describes the database. Looked up on use: these API modules import this one.
+_RUNTIME_CACHES = (
+    ("app.api.devices", "dashboard_cache"),
+    ("app.api.topology", "topology_cache"),
+    ("app.api.discovery", "discovery_cache"),
+    ("app.api.agent", "_latest_metrics"),
+    ("app.api.auth", "_setting_cache"),
+)
+
+
 def invalidate_all_runtime_caches() -> None:
-    """Clear all in-memory API caches after a database restore."""
-    try:
-        from app.api.devices import dashboard_cache
-        dashboard_cache.clear()
-    except Exception as e:
-        logger.warning("Could not clear dashboard_cache: %s", e)
-
-    try:
-        from app.api.topology import topology_cache
-        topology_cache.clear()
-    except Exception as e:
-        logger.warning("Could not clear topology_cache: %s", e)
-
-    try:
-        from app.api.discovery import discovery_cache
-        discovery_cache.clear()
-    except Exception as e:
-        logger.warning("Could not clear discovery_cache: %s", e)
-
-    try:
-        from app.api.agent import _latest_metrics
-        _latest_metrics.clear()
-    except Exception as e:
-        logger.warning("Could not clear _latest_metrics: %s", e)
-
-    try:
-        from app.api.auth import _setting_cache
-        _setting_cache.clear()
-    except Exception as e:
-        logger.warning("Could not clear _setting_cache: %s", e)
+    """Clear all in-memory API caches after a database restore; one failure does not stop the others."""
+    for module, name in _RUNTIME_CACHES:
+        try:
+            getattr(importlib.import_module(module), name).clear()
+        except Exception as e:
+            logger.warning("Could not clear %s: %s", name, e)
 
 
 @router.get("/export", dependencies=[Depends(get_current_admin), Depends(require_step_up("instance"))])
@@ -209,20 +196,34 @@ def _clean_rows(cursor, table: str, rows: list[dict]) -> list[dict]:
     return [_clean_row(table, row, table_info, now_str) for row in rows]
 
 
-def _clean_row(table: str, row: dict, table_info: dict, now_str: str) -> dict:
-    """Known columns only; NOT NULL columns the backup left out or empty get their default."""
-    clean_row = {
+def _known_columns(row: dict, table_info: dict) -> dict:
+    """The row without unknown columns and without empty values for NOT NULL columns."""
+    return {
         col: val
         for col, val in row.items()
         if col in table_info and not (val is None and table_info[col]["notnull"])
     }
+
+
+def _fill_required_columns(clean_row: dict, table: str, table_info: dict, now_str: str) -> None:
     for col, info in table_info.items():
         if info["notnull"] and clean_row.get(col) is None:
             clean_row[col] = _default_for_missing_col(table, col, info, now_str)
-    if table == "services" and not is_safe_url_template(clean_row.get("url_template") or ""):
-        # A tampered backup must not smuggle javascript: links into the dashboard (#42)
-        logger.warning(f"Backup: Dropping unsafe url_template of service {clean_row.get('name')!r}")
-        clean_row["url_template"] = ""
+
+
+def _drop_unsafe_url_template(service: dict) -> None:
+    """A tampered backup must not smuggle javascript: links into the dashboard (#42)."""
+    if not is_safe_url_template(service.get("url_template") or ""):
+        logger.warning(f"Backup: Dropping unsafe url_template of service {service.get('name')!r}")
+        service["url_template"] = ""
+
+
+def _clean_row(table: str, row: dict, table_info: dict, now_str: str) -> dict:
+    """Known columns only; NOT NULL columns the backup left out or empty get their default."""
+    clean_row = _known_columns(row, table_info)
+    _fill_required_columns(clean_row, table, table_info, now_str)
+    if table == "services":
+        _drop_unsafe_url_template(clean_row)
     return clean_row
 
 
@@ -245,6 +246,39 @@ def _same_device(before: tuple[str, str], after: tuple[str, str]) -> bool:
     return before[1] == after[1]
 
 
+def _existing_tables(cursor) -> set[str]:
+    cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    return {row[0] for row in cursor.fetchall()}
+
+
+def _reassigned_ids(before: dict[int, tuple[str, str]], after: dict[int, tuple[str, str]]) -> list[int]:
+    """Device ids of ``before`` that are gone or name another device in ``after``."""
+    return sorted(
+        device_id for device_id, identity in before.items()
+        if device_id not in after or not _same_device(identity, after[device_id])
+    )
+
+
+def _delete_device_bound_rows(cursor, deletable: set[str], reassigned: list[int]) -> None:
+    placeholders = ", ".join("?" * len(reassigned))
+    for table in DEVICE_BOUND_DELETE:
+        if table in deletable:
+            cursor.execute(f"DELETE FROM {table} WHERE device_id IN ({placeholders})", reassigned)
+
+
+def _unlink_device_bound_rows(
+    cursor, existing: set[str], reassigned: list[int], before: dict[int, tuple[str, str]]
+) -> None:
+    for table in DEVICE_BOUND_UNLINK:
+        if table in existing:
+            # A connection bound to a device may have no host of its own: keep the old
+            # device's address as its target, or it would point nowhere after the unlink
+            cursor.executemany(
+                f"UPDATE {table} SET host = COALESCE(NULLIF(host, ''), ?), device_id = NULL WHERE device_id = ?",
+                [(before[device_id][1] or None, device_id) for device_id in reassigned],
+            )
+
+
 def _detach_reassigned_devices(
     cursor, before: dict[int, tuple[str, str]], restored: frozenset[str] = frozenset()
 ) -> list[int]:
@@ -256,27 +290,12 @@ def _detach_reassigned_devices(
     backup itself and already belong to the new devices, so they are left alone.
     Returns the affected device ids.
     """
-    after = _device_identities(cursor)
-    reassigned = sorted(
-        device_id for device_id, identity in before.items()
-        if device_id not in after or not _same_device(identity, after[device_id])
-    )
+    reassigned = _reassigned_ids(before, _device_identities(cursor))
     if not reassigned:
         return []
-    cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-    existing = {row[0] for row in cursor.fetchall()}
-    placeholders = ", ".join("?" * len(reassigned))
-    for table in DEVICE_BOUND_DELETE:
-        if table in existing and table not in restored:
-            cursor.execute(f"DELETE FROM {table} WHERE device_id IN ({placeholders})", reassigned)
-    for table in DEVICE_BOUND_UNLINK:
-        if table in existing:
-            # A connection bound to a device may have no host of its own: keep the old
-            # device's address as its target, or it would point nowhere after the unlink
-            cursor.executemany(
-                f"UPDATE {table} SET host = COALESCE(NULLIF(host, ''), ?), device_id = NULL WHERE device_id = ?",
-                [(before[device_id][1] or None, device_id) for device_id in reassigned],
-            )
+    existing = _existing_tables(cursor)
+    _delete_device_bound_rows(cursor, existing - restored, reassigned)
+    _unlink_device_bound_rows(cursor, existing, reassigned, before)
     return reassigned
 
 
@@ -286,8 +305,7 @@ def _drop_orphaned_rack_rows(cursor) -> None:
     Rack items on a rack the backup no longer has, ports of a device or item that is gone, and
     cables on a port that is gone are deleted, so no cable ends up in another rack.
     """
-    cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-    if not {"racks", "rack_items", "rack_ports", "rack_cables"} <= {row[0] for row in cursor.fetchall()}:
+    if not {"racks", "rack_items", "rack_ports", "rack_cables"} <= _existing_tables(cursor):
         return
     cursor.execute("DELETE FROM rack_items WHERE rack_id NOT IN (SELECT id FROM racks)")
     cursor.execute(
@@ -308,6 +326,20 @@ def _drop_dangling_links(cursor) -> None:
     )
 
 
+def _is_duplicate(keys: list[tuple], seen: list[set]) -> bool:
+    return any(None not in key and key in taken for key, taken in zip(keys, seen))
+
+
+def _remember_keys(keys: list[tuple], seen: list[set]) -> None:
+    for key, taken in zip(keys, seen):
+        if None not in key:
+            taken.add(key)
+
+
+def _row_id(row: dict) -> int:
+    return row.get("id") or 0
+
+
 def _drop_duplicates(table: str, rows: list[dict]) -> tuple[list[dict], int]:
     """Keep one row per unique key, the newest (highest id).
 
@@ -320,15 +352,13 @@ def _drop_duplicates(table: str, rows: list[dict]) -> tuple[list[dict], int]:
         return rows, 0
     seen: list[set] = [set() for _ in key_sets]
     kept = []
-    for row in sorted(rows, key=lambda r: r.get("id") or 0, reverse=True):
+    for row in sorted(rows, key=_row_id, reverse=True):
         keys = [tuple(row.get(c) for c in cols) for cols in key_sets]
-        if any(None not in key and key in taken for key, taken in zip(keys, seen)):
+        if _is_duplicate(keys, seen):
             continue
-        for key, taken in zip(keys, seen):
-            if None not in key:
-                taken.add(key)
+        _remember_keys(keys, seen)
         kept.append(row)
-    kept.sort(key=lambda r: r.get("id") or 0)
+    kept.sort(key=_row_id)
     return kept, len(rows) - len(kept)
 
 
@@ -349,6 +379,63 @@ def _replace_table(cursor, table: str, rows: list[dict]) -> None:
     )
 
 
+def _restorable_table(key: str, rows) -> str | None:
+    """The table a backup key restores, or None when this key is to be skipped."""
+    if key == "metadata" or (not rows and key not in REPLACE_WHEN_EMPTY):
+        return None
+    if key not in ALLOWED_TABLE_MAP:
+        logger.warning(f"Backup: Skipping unauthorized table key '{key}'")
+        return None
+    return ALLOWED_TABLE_MAP[key]
+
+
+def _import_tables(cursor, data: dict) -> tuple[dict[str, int], dict[str, int]]:
+    """Replace each table the backup has. Returns (table -> rows imported, table -> duplicates dropped)."""
+    imported: dict[str, int] = {}
+    duplicates: dict[str, int] = {}
+    for key, rows in data.items():
+        table = _restorable_table(key, rows)
+        if table is None:
+            continue
+        valid_rows = _clean_rows(cursor, table, rows) if rows else []
+        if not valid_rows and key not in REPLACE_WHEN_EMPTY:
+            continue
+        valid_rows, dropped = _drop_duplicates(table, valid_rows)
+        if dropped:
+            duplicates[table] = dropped
+            logger.warning("Backup: %d duplicate row(s) in %s skipped, the newest of each kept", dropped, table)
+
+        _replace_table(cursor, table, valid_rows)
+        imported[table] = len(valid_rows)
+    return imported, duplicates
+
+
+def _count_agent_tokens(cursor) -> int:
+    cursor.execute("SELECT COUNT(*) FROM agent_tokens")
+    return cursor.fetchone()[0]
+
+
+def _apply_backup(cursor, data: dict, report: dict | None) -> dict[str, int]:
+    """The import itself, inside the open transaction of :func:`_write_db`."""
+    protected_before = _read_protected_settings(cursor)
+    devices_before = _device_identities(cursor)
+    tokens_before = _count_agent_tokens(cursor)
+
+    imported, duplicates = _import_tables(cursor, data)
+
+    if _read_protected_settings(cursor) != protected_before:
+        raise RuntimeError("Backup import would change protected settings")
+
+    reassigned = _detach_reassigned_devices(cursor, devices_before, frozenset(imported))
+    _drop_orphaned_rack_rows(cursor)
+    _drop_dangling_links(cursor)
+    if report is not None:
+        report["agent_tokens_revoked"] = tokens_before - _count_agent_tokens(cursor)
+        report["reassigned_device_ids"] = reassigned
+        report["duplicates_dropped"] = duplicates
+    return imported
+
+
 def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str, int]:
     """Replace the allowed tables with the backup rows in a single transaction.
 
@@ -363,44 +450,7 @@ def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str,
         # Only takes effect outside a transaction, so it is set before BEGIN
         cursor.execute("PRAGMA foreign_keys = OFF")
         cursor.execute("BEGIN IMMEDIATE")
-        protected_before = _read_protected_settings(cursor)
-        devices_before = _device_identities(cursor)
-        cursor.execute("SELECT COUNT(*) FROM agent_tokens")
-        tokens_before = cursor.fetchone()[0]
-        imported: dict[str, int] = {}
-        duplicates: dict[str, int] = {}
-
-        for key, rows in data.items():
-            if key == "metadata" or (not rows and key not in REPLACE_WHEN_EMPTY):
-                continue
-            if key not in ALLOWED_TABLE_MAP:
-                logger.warning(f"Backup: Skipping unauthorized table key '{key}'")
-                continue
-
-            table = ALLOWED_TABLE_MAP[key]
-            valid_rows = _clean_rows(cursor, table, rows) if rows else []
-            if not valid_rows and key not in REPLACE_WHEN_EMPTY:
-                continue
-            valid_rows, dropped = _drop_duplicates(table, valid_rows)
-            if dropped:
-                duplicates[table] = dropped
-                logger.warning("Backup: %d duplicate row(s) in %s skipped, the newest of each kept", dropped, table)
-
-            _replace_table(cursor, table, valid_rows)
-            imported[table] = len(valid_rows)
-
-        if _read_protected_settings(cursor) != protected_before:
-            raise RuntimeError("Backup import would change protected settings")
-
-        reassigned = _detach_reassigned_devices(cursor, devices_before, frozenset(imported))
-        _drop_orphaned_rack_rows(cursor)
-        _drop_dangling_links(cursor)
-        if report is not None:
-            cursor.execute("SELECT COUNT(*) FROM agent_tokens")
-            report["agent_tokens_revoked"] = tokens_before - cursor.fetchone()[0]
-            report["reassigned_device_ids"] = reassigned
-            report["duplicates_dropped"] = duplicates
-
+        imported = _apply_backup(cursor, data, report)
         conn.commit()
         return imported
     except Exception:
@@ -430,8 +480,8 @@ async def import_backup(request: Request, file: UploadFile = File(...), db: Asyn
     return await restore_upload(request, file, db)
 
 
-async def restore_upload(request: Request, file: UploadFile, db: AsyncSession, actor: str | None = None) -> dict:
-    """Check, write and clean up after an uploaded backup; used by the import and the setup wizard."""
+async def _read_backup_upload(file: UploadFile) -> dict:
+    """The parsed backup of an upload; HTTP 400/413 when it is no usable backup file."""
     if not file.filename.endswith(".json"):
         raise HTTPException(status_code=400, detail="Only JSON files are supported")
 
@@ -445,6 +495,38 @@ async def restore_upload(request: Request, file: UploadFile, db: AsyncSession, a
     except (json.JSONDecodeError, UnicodeDecodeError):
         raise HTTPException(status_code=400, detail="Invalid backup file: not valid JSON")
     _validate_backup_shape(data)
+    return data
+
+
+def _import_audit_detail(imported: dict[str, int], skipped: int) -> str:
+    detail = f"{imported.get('devices', 0)} devices, {imported.get('app_settings', 0)} settings"
+    return f"{detail}, {skipped} duplicates skipped" if skipped else detail
+
+
+def _import_message(revoked: int, skipped: int) -> str:
+    message = "Backup successfully imported"
+    if revoked:
+        message += f". {revoked} agent(s) belonged to devices that are different now and must be enrolled again"
+    if skipped:
+        message += f". {skipped} duplicate entr{'y was' if skipped == 1 else 'ies were'} skipped, the newest of each kept"
+    return message
+
+
+async def _retire_reassigned_devices(db: AsyncSession, reassigned: list[int], revoked: int) -> None:
+    """Remove what outlives the database import for device ids that now name other devices."""
+    # Revoke first: the import is committed, and an old install code must not be redeemed
+    # while the measurement data is still being deleted
+    await _revoke_device_grants(reassigned)
+    await _purge_telemetry(db, reassigned)
+    logger.warning(
+        "Backup: %d device id(s) now name other devices; removed their agent tokens (%d), interfaces and "
+        "measurement data", len(reassigned), revoked,
+    )
+
+
+async def restore_upload(request: Request, file: UploadFile, db: AsyncSession, actor: str | None = None) -> dict:
+    """Check, write and clean up after an uploaded backup; used by the import and the setup wizard."""
+    data = await _read_backup_upload(file)
 
     db_path = settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
     report: dict = {}
@@ -459,35 +541,18 @@ async def restore_upload(request: Request, file: UploadFile, db: AsyncSession, a
         logger.info(f"Backup: Imported {count} rows into {table}")
     duplicates = report.get("duplicates_dropped", {})
     skipped = sum(duplicates.values())
-    await audit(
-        request, "backup.import",
-        detail=f"{imported.get('devices', 0)} devices, {imported.get('app_settings', 0)} settings"
-        + (f", {skipped} duplicates skipped" if skipped else ""),
-        actor=actor,
-    )
+    await audit(request, "backup.import", detail=_import_audit_detail(imported, skipped), actor=actor)
 
     reassigned = report.get("reassigned_device_ids", [])
     revoked = report.get("agent_tokens_revoked", 0)
     if reassigned:
-        # Revoke first: the import is committed, and an old install code must not be redeemed
-        # while the measurement data is still being deleted
-        await _revoke_device_grants(reassigned)
-        await _purge_telemetry(db, reassigned)
-        logger.warning(
-            "Backup: %d device id(s) now name other devices; removed their agent tokens (%d), interfaces and "
-            "measurement data", len(reassigned), revoked,
-        )
+        await _retire_reassigned_devices(db, reassigned, revoked)
 
     invalidate_all_runtime_caches()
 
-    message = "Backup successfully imported"
-    if revoked:
-        message += f". {revoked} agent(s) belonged to devices that are different now and must be enrolled again"
-    if skipped:
-        message += f". {skipped} duplicate entr{'y was' if skipped == 1 else 'ies were'} skipped, the newest of each kept"
     return {
         "status": "ok",
-        "message": message,
+        "message": _import_message(revoked, skipped),
         "agent_tokens_revoked": revoked,
         "reassigned_devices": len(reassigned),
         "devices": imported.get("devices", 0),
