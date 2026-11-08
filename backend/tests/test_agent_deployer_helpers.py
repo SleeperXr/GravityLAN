@@ -94,6 +94,7 @@ def staged(monkeypatch):
 
 
 def _deploy_ctx(client=None, runner=None, device_id=7, base_dir="/opt/a", agent_path="/opt/a/agent.py", server_url="http://srv"):
+    """Create a minimal _Deployment fixture for helper unit tests."""
     return dep._Deployment(
         client=client,
         runner=runner,
@@ -107,6 +108,7 @@ def _deploy_ctx(client=None, runner=None, device_id=7, base_dir="/opt/a", agent_
 
 
 def test_systemd_install_stages_the_unit_and_reports_failure(staged):
+    """Ensure systemd unit staging succeeds and sudo batch errors return False."""
     runner = SimpleNamespace(batches=[], run_sudo_batch=None)
     runner.run_sudo_batch = lambda cmds: runner.batches.append(cmds)
     assert dep._install_systemd_service(_deploy_ctx(runner=runner), "/usr/bin/python3") is True
@@ -141,6 +143,7 @@ def test_agent_config_json():
 
 
 def test_nohup_fallback_reports_start_or_failure(monkeypatch):
+    """Verify nohup fallback return tuple on process start, log error, or silent failure."""
     monkeypatch.setattr(dep.time, "sleep", lambda s: None)
     ok = FakeClient({"ps aux": "python3 /opt/a/agent.py"})
     assert dep._nohup_fallback(_deploy_ctx(client=ok), "python3") == (
@@ -199,6 +202,7 @@ def test_version_and_checksum_of_the_local_agent_file(monkeypatch, tmp_path):
 
 
 def test_ssh_error_mapping_for_remote_command_and_network_errors():
+    """Verify _map_ssh_error formats RemoteCommandError and TimeoutError messages."""
     from app.services.ssh_utils import RemoteCommandError
 
     assert dep._map_ssh_error(RemoteCommandError("sudo failed"), "10.0.0.5") == (False, "sudo failed")
@@ -207,6 +211,7 @@ def test_ssh_error_mapping_for_remote_command_and_network_errors():
 
 
 def test_version_and_checksum_handle_oserror_and_script_path_fallbacks(monkeypatch, tmp_path):
+    """Verify OSError fallbacks when reading local script version/checksum and path resolution."""
     bad_dir = tmp_path / "is_a_dir"
     bad_dir.mkdir()
     monkeypatch.setattr(dep, "AGENT_SCRIPT_PATH", bad_dir)
@@ -220,6 +225,7 @@ def test_version_and_checksum_handle_oserror_and_script_path_fallbacks(monkeypat
 
 
 def test_client_for_pinned_and_tofu_and_blocking_error_paths(monkeypatch):
+    """Verify _client_for policies and error handling in blocking deploy/remove entrypoints."""
     from app.config import settings
     from app.services.ssh_utils import PinnedHostKey, TofuHostKeyPolicy
 
