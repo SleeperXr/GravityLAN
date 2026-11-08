@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Dict
@@ -70,6 +71,51 @@ def _is_device_stale(now: datetime, device: Device, token_obj: AgentToken | None
     return (now - last_seen_aware).total_seconds() > 300
 
 
+async def _load_device_for_ip(db: AsyncSession, client_ip: str | None, device_id: int) -> Device:
+    """The device behind ``client_ip``, which must be the one the agent claims to be (401 otherwise)."""
+    if not client_ip:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
+    device = dev_result.scalar_one_or_none()
+    if not device or device.id != device_id:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+    return device
+
+
+async def _adopt_token(db: AsyncSession, device: Device, token_obj: AgentToken | None, token: str) -> AgentToken:
+    """Make ``token`` the device's active token, creating the AgentToken row when missing."""
+    if token_obj:
+        token_obj.token = hash_agent_token(token)
+        token_obj.pending_token = None
+        token_obj.pending_at = None
+        token_obj.is_active = True
+    else:
+        token_obj = AgentToken(device_id=device.id, token=hash_agent_token(token), is_active=True)
+        db.add(token_obj)
+    await db.commit()
+    return token_obj
+
+
+async def _store_pending_token(db: AsyncSession, device: Device, token_obj: AgentToken | None, token: str) -> None:
+    """Park ``token`` as pending until an admin adopts it."""
+    pending_at = datetime.now(timezone.utc)
+    if token_obj:
+        token_obj.pending_token = hash_agent_token(token)
+        token_obj.pending_at = pending_at
+    else:
+        # Placeholder until an admin adopts pending_token: random and inactive, so it
+        # can never authenticate and leaks nothing of the submitted token.
+        db.add(AgentToken(
+            device_id=device.id,
+            token=new_agent_token()[1],
+            is_active=False,
+            pending_token=hash_agent_token(token),
+            pending_at=pending_at,
+        ))
+    await db.commit()
+
+
 async def _resolve_token_mismatch(
     db: AsyncSession,
     agent_token: AgentToken | None,
@@ -82,47 +128,17 @@ async def _resolve_token_mismatch(
     if agent_token:
         return agent_token
 
-    if not client_ip:
-        raise HTTPException(status_code=401, detail="Invalid token.")
-
-    dev_result = await db.execute(select(Device).where(Device.ip == client_ip))
-    device = dev_result.scalar_one_or_none()
-    if not device or device.id != device_id:
-        raise HTTPException(status_code=401, detail="Invalid token.")
+    device = await _load_device_for_ip(db, client_ip, device_id)
 
     logger.warning(f"Token mismatch for device {device.id} ({client_ip}). Storing pending_token.")
     token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))
     token_obj = token_res.scalar_one_or_none()
 
-    now = datetime.now(timezone.utc)
-    if allow_auto_adopt and _is_device_stale(now, device, token_obj):
+    if allow_auto_adopt and _is_device_stale(datetime.now(timezone.utc), device, token_obj):
         logger.info(f"Auto-adopting token for device {device.id} ({client_ip}) because device is offline or stale.")
-        if token_obj:
-            token_obj.token = hash_agent_token(token)
-            token_obj.pending_token = None
-            token_obj.pending_at = None
-            token_obj.is_active = True
-        else:
-            token_obj = AgentToken(device_id=device.id, token=hash_agent_token(token), is_active=True)
-            db.add(token_obj)
-        await db.commit()
-        return token_obj  # Proceed with normal metric persist!
+        return await _adopt_token(db, device, token_obj, token)  # Proceed with normal metric persist!
 
-    if token_obj:
-        token_obj.pending_token = hash_agent_token(token)
-        token_obj.pending_at = datetime.now(timezone.utc)
-    else:
-        # Placeholder until an admin adopts pending_token: random and inactive, so it
-        # can never authenticate and leaks nothing of the submitted token.
-        new_token = AgentToken(
-            device_id=device.id,
-            token=new_agent_token()[1],
-            is_active=False,
-            pending_token=hash_agent_token(token),
-            pending_at=datetime.now(timezone.utc),
-        )
-        db.add(new_token)
-    await db.commit()
+    await _store_pending_token(db, device, token_obj, token)
     raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
 
 
@@ -196,53 +212,66 @@ def _build_config_payload(agent_config: AgentConfig) -> dict:
     }
 
 
+_PERSIST_ATTEMPTS = 5
+
+
+async def _load_report_targets(
+    db: AsyncSession, token_id: int, device_id: int, client_ip: str | None
+) -> tuple[AgentToken | None, Device]:
+    """Fresh token + device for this transaction; remaps both by IP if the device was deleted/recreated."""
+    db_token = await db.get(AgentToken, token_id)
+    device = await db.get(Device, device_id)
+    if device:
+        return db_token, device
+
+    dev_res = await db.execute(select(Device).where(Device.ip == client_ip))
+    device = dev_res.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device mapping lost")
+    if db_token:
+        db_token.device_id = device.id
+    return db_token, device
+
+
+async def _load_or_create_config(db: AsyncSession, device_id: int) -> AgentConfig:
+    """The device's AgentConfig; a default one is created (flushed) on first report."""
+    config_res = await db.execute(select(AgentConfig).where(AgentConfig.device_id == device_id))
+    agent_config = config_res.scalar_one_or_none()
+    if not agent_config:
+        agent_config = AgentConfig(device_id=device_id)
+        db.add(agent_config)
+        await db.flush()
+    return agent_config
+
+
+async def _persist_report_once(
+    db: AsyncSession, token_id: int, device_id: int, payload: Any, client_ip: str | None
+) -> dict:
+    """One transactional attempt of persisting an agent report; returns the config to send back."""
+    db_token, device = await _load_report_targets(db, token_id, device_id, client_ip)
+    if db_token:
+        _persist_device_metadata(db_token, device, payload)
+    _build_metrics_row(db, device.id, payload)
+
+    config_to_send = _build_config_payload(await _load_or_create_config(db, device.id))
+    await db.commit()
+    return config_to_send
+
+
 async def _persist_agent_report(db: AsyncSession, agent_token: AgentToken, payload: Any, client_ip: str | None) -> dict:
     """Persist the agent report with up to 5 retries on stale/operational DB errors."""
     token_id = agent_token.id
-    effective_device_id = agent_token.device_id
+    device_id = agent_token.device_id
 
-    for attempt in range(5):
+    for attempt in range(_PERSIST_ATTEMPTS):
         try:
-            # Refresh objects in this transaction
-            db_token = await db.get(AgentToken, token_id)
-            device = await db.get(Device, effective_device_id)
-
-            if not device:
-                # Fallback mapping if device was deleted/recreated
-                dev_res = await db.execute(select(Device).where(Device.ip == client_ip))
-                device = dev_res.scalar_one_or_none()
-                if device:
-                    if db_token:
-                        db_token.device_id = device.id
-                    effective_device_id = device.id
-                else:
-                    raise HTTPException(status_code=404, detail="Device mapping lost")
-
-            if db_token and device:
-                _persist_device_metadata(db_token, device, payload)
-            _build_metrics_row(db, effective_device_id, payload)
-
-            # Fetch Config
-            config_res = await db.execute(select(AgentConfig).where(AgentConfig.device_id == effective_device_id))
-            agent_config = config_res.scalar_one_or_none()
-            if not agent_config:
-                agent_config = AgentConfig(device_id=effective_device_id)
-                db.add(agent_config)
-                await db.flush()
-
-            config_to_send = _build_config_payload(agent_config)
-
-            await db.commit()
-            return config_to_send
-
+            return await _persist_report_once(db, token_id, device_id, payload, client_ip)
         except (StaleDataError, OperationalError) as e:
             await db.rollback()
-            if attempt < 4:
-                wait = (attempt + 1) * 0.3
-                await asyncio.sleep(wait)
-                continue
-            logger.error(f"Agent report persistence failed after 5 attempts: {e}")
-            raise
+            if attempt == _PERSIST_ATTEMPTS - 1:
+                logger.error(f"Agent report persistence failed after {_PERSIST_ATTEMPTS} attempts: {e}")
+                raise
+            await asyncio.sleep((attempt + 1) * 0.3)
 
     raise HTTPException(status_code=500, detail="Agent report persistence failed")
 
@@ -423,10 +452,10 @@ def assemble_agents_overview_data(
     intervals: dict[int, int] | None = None,
 ) -> tuple[list[AgentSummary], int, int, int, float, float]:
     """Aggregate metrics and calculate averages for all agent devices in one pass."""
-    from collections import defaultdict
     metrics_by_device: dict[int, list[DeviceMetrics]] = defaultdict(list)
     for m in all_24h_metrics:
         metrics_by_device[m.device_id].append(m)
+    intervals = intervals or {}
 
     agents_list: list[AgentSummary] = []
     total_metrics_count = 0
@@ -435,31 +464,34 @@ def assemble_agents_overview_data(
     active_count = 0
 
     for device_id in device_ids:
-        device = device_map[device_id]
         token = token_map[device_id]
         device_metrics_24h = metrics_by_device[device_id]
-        last_m = device_metrics_24h[0] if device_metrics_24h else None
-
-        m_count = total_count_map.get(device_id, 0)
-        total_metrics_count += m_count
-
-        is_active = _is_agent_active(token, now, (intervals or {}).get(device_id))
-        if is_active:
-            active_count += 1
-
-        uptime_pct = _compute_uptime_pct(token, now, cutoff_24h, device_metrics_24h)
-        uptime_history = _compute_uptime_history(token, now, cutoff_24h, device_metrics_24h)
-
+        last_m = next(iter(device_metrics_24h), None)
         if last_m:
             total_cpu += last_m.cpu_percent
             total_ram += last_m.ram_percent
 
-        agents_list.append(_build_agent_summary(device, token, last_m, m_count, is_active, uptime_pct, uptime_history))
+        m_count = total_count_map.get(device_id, 0)
+        total_metrics_count += m_count
+
+        is_active = _is_agent_active(token, now, intervals.get(device_id))
+        active_count += is_active
+
+        uptime_pct = _compute_uptime_pct(token, now, cutoff_24h, device_metrics_24h)
+        uptime_history = _compute_uptime_history(token, now, cutoff_24h, device_metrics_24h)
+        agents_list.append(
+            _build_agent_summary(device_map[device_id], token, last_m, m_count, is_active, uptime_pct, uptime_history)
+        )
 
     n = len(agents_list)
-    avg_cpu = total_cpu / n if n else 0.0
-    avg_ram = total_ram / n if n else 0.0
+    avg_cpu = _average(total_cpu, n)
+    avg_ram = _average(total_ram, n)
     return agents_list, n, active_count, total_metrics_count, avg_cpu, avg_ram
+
+
+def _average(total: float, count: int) -> float:
+    """``total / count``, or 0.0 for an empty set."""
+    return total / count if count else 0.0
 
 
 def aggregate_global_metrics_buckets(all_metrics: list) -> list[GlobalMetricPoint]:
