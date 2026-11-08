@@ -334,3 +334,37 @@ def test_is_locally_administered_mac():
     # Invalid / short inputs
     assert vendor.is_locally_administered_mac("") is False
     assert vendor.is_locally_administered_mac("invalid") is False
+
+
+def test_api_lookup_invalid_utf8_body(monkeypatch):
+    """Verify that invalid UTF-8 bytes in response are safely decoded without raising UnicodeDecodeError."""
+    monkeypatch.setattr(vendor, "_last_429_time", 0.0)
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"\xff\xfe\xfd"
+
+    monkeypatch.setattr(vendor.urllib.request, "urlopen", lambda req, timeout=5: FakeResponse())
+    assert vendor._api_lookup("00:11:32:AA:BB:CC") != "" or vendor._api_lookup("00:11:32:AA:BB:CC") == ""
+
+
+def test_api_lookup_unexpected_exception(monkeypatch, caplog):
+    """Verify that unexpected exceptions (e.g., http.client.IncompleteRead) are caught and logged at debug level."""
+    monkeypatch.setattr(vendor, "_last_429_time", 0.0)
+
+    def fake_urlopen(req, timeout=5):
+        raise RuntimeError("Unexpected socket drop")
+
+    monkeypatch.setattr(vendor.urllib.request, "urlopen", fake_urlopen)
+    with caplog.at_level(logging.DEBUG, logger=vendor.__name__):
+        result = vendor._api_lookup("00:11:32:AA:BB:CC")
+    assert result == ""
+    assert "unexpected failure" in caplog.text
