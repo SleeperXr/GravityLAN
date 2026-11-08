@@ -5,10 +5,9 @@ import { api } from '@/api/client';
 import type { Device } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
-import { isAgentOutdated, patchState } from '@/lib/agent';
-import { isClientStandby } from '@/lib/standby';
-import { deviceLabel, lineLabelFor, networkColor } from '@/lib/networks';
+import { lineLabelFor, networkColor } from '@/lib/networks';
 import { t } from '@/i18n';
+import { buildNotices, type Notice } from './serviceNotices';
 
 /**
  * Service notices: everything that needs the operator, most urgent first. Offline devices
@@ -22,51 +21,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ openDevice: [device: Device]; openUpdates: []; openPatches: [device: Device] }>();
 
-interface Notice {
-  key: string;
-  rank: number;
-  device?: Device;
-  tone: 'danger' | 'warn' | 'info';
-  title: string;
-  detail: string;
-  since?: string | null;
-  action?: 'device' | 'updates' | 'patches';
-}
-
-const notices = computed<Notice[]>(() => {
-  const list: Notice[] = [];
-  for (const d of props.devices) {
-    const name = deviceLabel(d);
-    if (!d.is_online && d.alert_offline !== false) {
-      list.push({ key: `off-${d.id}`, rank: 0, device: d, tone: 'danger', title: t('gv.notices.dropped', { name }), detail: d.ip, since: d.status_changed_at, action: 'device' });
-    }
-    if (d.has_pending_token) {
-      list.push({ key: `key-${d.id}`, rank: 1, device: d, tone: 'danger', title: t('gv.notices.new_key', { name }), detail: t('dashboard.security_alert'), action: 'device' });
-    }
-    // A client with every port closed is asleep (standby), not disrupted
-    const down = d.is_online && !isClientStandby(d) ? d.services.filter((s) => !s.is_up) : [];
-    if (down.length) {
-      const title = down.length === d.services.length ? t('gv.notices.services_none', { name }) : t('gv.notices.services_down', { name, count: down.length });
-      list.push({ key: `svc-${d.id}`, rank: 2, device: d, tone: 'warn', title, detail: down.map((s) => `${s.name} :${s.port}`).join(', '), action: 'device' });
-    }
-    // Security updates the agent reports, or a pending reboot: the Agents page installs them
-    const patches = patchState(d);
-    if (patches && (patches.security > 0 || patches.reboot)) {
-      const parts = [t('gv.notices.updates_total', { count: patches.available }), patches.reboot ? t('gv.notices.reboot') : ''].filter(Boolean);
-      const title = patches.security > 0 ? t('gv.notices.security_updates', { name, count: patches.security }) : t('gv.notices.reboot_only', { name });
-      list.push({ key: `sec-${d.id}`, rank: 2, device: d, tone: patches.security > 0 ? 'warn' : 'info', title, detail: parts.join(' · '), action: 'patches' });
-    }
-    if (d.old_ip) {
-      list.push({ key: `ip-${d.id}`, rank: 3, device: d, tone: 'info', title: t('gv.notices.ip_changed', { name }), detail: `${d.old_ip} → ${d.ip}`, since: d.ip_changed_at, action: 'device' });
-    }
-  }
-  const outdated = props.devices.filter((d) => d.has_agent && isAgentOutdated(d.agent_info?.agent_version, d.agent_info?.latest_version));
-  if (outdated.length) {
-    const target = outdated[0].agent_info?.latest_version;
-    list.push({ key: 'updates', rank: 4, tone: 'info', title: t('gv.notices.updates', { count: outdated.length }), detail: target ? `→ v${target}` : '', action: 'updates' });
-  }
-  return list.sort((a, b) => a.rank - b.rank);
-});
+const notices = computed<Notice[]>(() => buildNotices(props.devices));
 
 const expanded = ref(false);
 const shown = computed(() => (props.limit && !expanded.value ? notices.value.slice(0, props.limit) : notices.value));
