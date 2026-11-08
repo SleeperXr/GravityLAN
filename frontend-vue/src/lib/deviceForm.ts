@@ -44,11 +44,6 @@ export function initialFormData(device: Device): DeviceFormData {
   };
 }
 
-/** `<select>`/number input value to an id, empty meaning "none". */
-export function intOrNull(value: string): number | null {
-  return value ? parseInt(value) : null;
-}
-
 /** A device moved to another group lands at the bottom of that group's grid. */
 export function computeGroupPlacement(formData: DeviceFormData, currentDevice: Device, devices: Device[]): { x: number; y: number } | null {
   if (formData.group_id === currentDevice.group_id) return null;
@@ -100,8 +95,4 @@ export function deviceRoleOf(device: Device): string | null {
   if (device.virtual_type === 'docker') return 'Docker';
   if (device.virtual_type === 'vm') return 'VM';
   return device.virtual_type || (device.is_host ? 'Host' : null);
-}
-
-export function errorMessage(err: unknown): string | undefined {
-  return err instanceof Error ? err.message : (err as { message?: string } | null)?.message;
 }
