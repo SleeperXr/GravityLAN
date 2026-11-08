@@ -56,3 +56,46 @@ def test_other_failures_name_the_last_error_line():
         su._check_exit(2, "", "first line\nsecond line")
     with pytest.raises(su.RemoteCommandError, match=r"failed \(exit 3\)\.$"):
         su._check_exit(3, "", "")
+
+
+@pytest.mark.parametrize("phrase", ["incorrect password", "falsches passwort", "nicht funktioniert", "fehlversuch"])
+def test_detects_sudo_password_rejected(phrase):
+    with pytest.raises(su.SudoPasswordError, match="Sudo password rejected"):
+        su._check_exit(1, "", f"sudo: {phrase}")
+
+
+def test_wait_for_exit_waits_until_channel_ready(monkeypatch):
+    states = [False, True]
+    channel = SimpleNamespace(exit_status_ready=lambda: states.pop(0), close=lambda: None)
+    stdout = SimpleNamespace(channel=channel)
+    slept = []
+    monkeypatch.setattr(su.time, "sleep", lambda s: slept.append(s))
+    su._wait_for_exit(stdout, "true", timeout=5)
+    assert slept == [0.1]
+
+
+def test_build_connect_kwargs_invalid_key():
+    kwargs, err = su.build_connect_kwargs("1.2.3.4", "user", 22, None, "NOT A VALID KEY")
+    assert kwargs == {}
+    assert err == "Invalid SSH key format or encrypted key."
+
+
+def test_build_connect_kwargs_missing_credentials():
+    kwargs, err = su.build_connect_kwargs("1.2.3.4", "user", 22, None, None)
+    assert kwargs == {}
+    assert err == "Neither password nor SSH key provided."
+
+
+def test_connect_with_gateway_fallback_direct_success():
+    from unittest.mock import MagicMock
+    client = MagicMock()
+    su.connect_with_gateway_fallback(client, {"hostname": "1.2.3.4"}, "1.2.3.4")
+    client.connect.assert_called_once_with(hostname="1.2.3.4")
+
+
+def test_remote_runner_run_batch():
+    from unittest.mock import MagicMock
+    runner = su.RemoteRunner(MagicMock(), has_sudo=False, ssh_user="root", ssh_password=None)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(runner, "run", lambda cmd, timeout=15: f"out:{cmd}")
+        assert runner.run_batch(["c1", "c2"]) == ["out:c1", "out:c2"]
