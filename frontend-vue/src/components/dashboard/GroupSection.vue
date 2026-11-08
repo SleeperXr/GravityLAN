@@ -49,15 +49,13 @@ const groupDefaultH = computed(() => {
 });
 
 function tileAttrs(device: Device) {
-  const useSavedPos = !props.filtering && device.x !== null && device.y !== null;
-  const x = useSavedPos ? (device.x ?? undefined) : undefined;
-  const y = useSavedPos ? (device.y ?? undefined) : undefined;
+  const hasSavedPos = !props.filtering && device.x != null && device.y != null;
   return {
-    x,
-    y,
-    w: device.w !== null && device.w !== undefined ? device.w : 4,
-    h: device.h !== null && device.h !== undefined ? device.h : groupDefaultH.value,
-    autoPosition: !useSavedPos,
+    x: hasSavedPos ? device.x : undefined,
+    y: hasSavedPos ? device.y : undefined,
+    w: device.w ?? 4,
+    h: device.h ?? groupDefaultH.value,
+    autoPosition: !hasSavedPos,
   };
 }
 
@@ -68,13 +66,84 @@ const layoutKey = computed(
 function destroy() {
   try {
     grid?.destroy(false);
-  } catch {
-    // already gone
+  } catch (err) {
+    // GridStack may throw during teardown if container DOM nodes were already detached by Vue.
+    console.debug('[GroupSection] GridStack destroy failed:', err);
   }
   grid = null;
 }
 
 const tileId = (el: Element | undefined) => parseInt(el?.getAttribute('gs-id') || '0', 10);
+
+const POSITION_STYLES = ['top', 'left', 'right', 'width', 'height', 'display'] as const;
+
+function setOrRemoveAttr(el: HTMLElement, name: string, value: string | undefined) {
+  if (value !== undefined) {
+    el.setAttribute(name, value);
+  } else {
+    el.removeAttribute(name);
+  }
+}
+
+function syncItemElement(itemEl: HTMLElement, dev: Device) {
+  const attrs = tileAttrs(dev);
+  for (const prop of POSITION_STYLES) {
+    itemEl.style.removeProperty(prop);
+  }
+  setOrRemoveAttr(itemEl, 'gs-x', attrs.x !== undefined ? String(attrs.x) : undefined);
+  setOrRemoveAttr(itemEl, 'gs-y', attrs.y !== undefined ? String(attrs.y) : undefined);
+  itemEl.setAttribute('gs-w', String(attrs.w));
+  itemEl.setAttribute('gs-h', String(attrs.h));
+  itemEl.setAttribute('gs-min-w', '2');
+  itemEl.setAttribute('gs-min-h', '2');
+  setOrRemoveAttr(itemEl, 'gs-auto-position', attrs.autoPosition ? 'true' : undefined);
+}
+
+function syncGridItemElements(container: HTMLElement) {
+  const byId = new Map(props.devices.map((d) => [d.id, d]));
+  for (const itemEl of container.querySelectorAll<HTMLElement>('.grid-stack-item')) {
+    const dev = byId.get(tileId(itemEl));
+    if (dev) {
+      syncItemElement(itemEl, dev);
+    }
+  }
+}
+
+function setupEditListeners(instance: GridStack) {
+  instance.on('dropped', (_event: Event, previous: GridStackNode | undefined, dropped: GridStackNode) => {
+    const el = dropped?.el;
+    const id = tileId(el);
+    const home = previous?.grid?.el;
+    if (!el || !id) return;
+    if (!home || !grid) return;
+
+    // Vue rendered this tile in the old group: hand the element back, hidden, and let the
+    // reload after saving render it in its new group.
+    instance.removeWidget(el, false);
+    el.style.display = 'none';
+    home.appendChild(el);
+    emit('tileMoved', id, groupId.value, { x: dropped.x, y: dropped.y, w: dropped.w, h: dropped.h });
+  });
+
+  const save = (_event: Event, el: HTMLElement) => {
+    const node = (el as HTMLElement & { gridstackNode?: GridStackNode }).gridstackNode;
+    const id = tileId(el);
+    if (node && id) {
+      emit('tileChange', id, { x: node.x, y: node.y, w: node.w, h: node.h });
+    }
+  };
+
+  instance.on('dragstop', save);
+  instance.on('resizestop', save);
+}
+
+function applyCompactLayout(instance: GridStack) {
+  instance.float(false);
+  instance.compact();
+  if (!props.filtering) {
+    instance.float(true);
+  }
+}
 
 async function init() {
   destroy();
@@ -85,28 +154,7 @@ async function init() {
   // GridStack mutates gs-* attributes and inline positioning styles directly on reused DOM nodes.
   // Synchronize each item element from Vue state before initializing GridStack so filtered subsets
   // never inherit stale row/column coordinates from the unfiltered grid.
-  const byId = new Map(props.devices.map((d) => [d.id, d]));
-  for (const itemEl of gridEl.value.querySelectorAll<HTMLElement>('.grid-stack-item')) {
-    const dev = byId.get(tileId(itemEl));
-    if (!dev) continue;
-    const attrs = tileAttrs(dev);
-    itemEl.style.removeProperty('top');
-    itemEl.style.removeProperty('left');
-    itemEl.style.removeProperty('right');
-    itemEl.style.removeProperty('width');
-    itemEl.style.removeProperty('height');
-    itemEl.style.removeProperty('display');
-    if (attrs.x !== undefined) itemEl.setAttribute('gs-x', String(attrs.x));
-    else itemEl.removeAttribute('gs-x');
-    if (attrs.y !== undefined) itemEl.setAttribute('gs-y', String(attrs.y));
-    else itemEl.removeAttribute('gs-y');
-    itemEl.setAttribute('gs-w', String(attrs.w));
-    itemEl.setAttribute('gs-h', String(attrs.h));
-    itemEl.setAttribute('gs-min-w', '2');
-    itemEl.setAttribute('gs-min-h', '2');
-    if (attrs.autoPosition) itemEl.setAttribute('gs-auto-position', 'true');
-    else itemEl.removeAttribute('gs-auto-position');
-  }
+  syncGridItemElements(gridEl.value);
 
   grid = GridStack.init(
     {
@@ -126,30 +174,10 @@ async function init() {
   );
 
   if (props.editMode) {
-    grid.on('dropped', (_event: Event, previous: GridStackNode | undefined, dropped: GridStackNode) => {
-      const el = dropped?.el;
-      const id = tileId(el);
-      const home = previous?.grid?.el;
-      if (!el || !id || !home || !grid) return;
-      // Vue rendered this tile in the old group: hand the element back, hidden, and let the
-      // reload after saving render it in its new group.
-      grid.removeWidget(el, false);
-      el.style.display = 'none';
-      home.appendChild(el);
-      emit('tileMoved', id, groupId.value, { x: dropped.x, y: dropped.y, w: dropped.w, h: dropped.h });
-    });
-    const save = (_event: Event, el: HTMLElement) => {
-      const node = (el as HTMLElement & { gridstackNode?: GridStackNode }).gridstackNode;
-      const id = tileId(el);
-      if (node && id) emit('tileChange', id, { x: node.x, y: node.y, w: node.w, h: node.h });
-    };
-    grid.on('dragstop', save);
-    grid.on('resizestop', save);
+    setupEditListeners(grid);
   } else if (props.filtering || props.devices.some((d) => d.x === null)) {
     // Filtered views and tiles without a saved position get a top-gravity compact pass
-    grid.float(false);
-    grid.compact();
-    if (!props.filtering) grid.float(true);
+    applyCompactLayout(grid);
   }
 }
 
