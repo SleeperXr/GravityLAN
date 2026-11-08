@@ -81,6 +81,10 @@ def _ipv4(value: Any) -> ipaddress.IPv4Address | None:
         return None
 
 
+def _if_index(value: Any) -> int | None:
+    return int(value) if value is not None else None
+
+
 def addresses_from_ip_addr_table(rows: Rows) -> list[tuple[ipaddress.IPv4Address, int, int | None]]:
     """(address, prefix length, ifIndex) from ipAddrTable rows."""
     found = []
@@ -93,9 +97,19 @@ def addresses_from_ip_addr_table(rows: Rows) -> list[tuple[ipaddress.IPv4Address
             prefix = ipaddress.IPv4Network(f"0.0.0.0/{mask}").prefixlen
         except ValueError:
             continue
-        if_index = cols.get(2)
-        found.append((addr, prefix, int(if_index) if if_index is not None else None))
+        found.append((addr, prefix, _if_index(cols.get(2))))
     return found
+
+
+def _prefix_from_pointer(pointer: Any) -> int | None:
+    """The prefix length in the last sub-identifier of an ipAddressPrefix row pointer, None if unusable."""
+    if not pointer:
+        return None
+    try:
+        prefix = int(tuple(pointer)[-1])
+    except (TypeError, ValueError, IndexError):
+        return None
+    return prefix if 0 < prefix <= 32 else None
 
 
 def addresses_from_ip_address_table(rows: Rows) -> list[tuple[ipaddress.IPv4Address, int, int | None]]:
@@ -109,18 +123,18 @@ def addresses_from_ip_address_table(rows: Rows) -> list[tuple[ipaddress.IPv4Addr
         if not index or index[0] != 1 or len(index) < 5:
             continue
         addr = _ipv4(".".join(map(str, index[-4:])))
-        pointer = cols.get(5)
-        if addr is None or not pointer:
+        prefix = _prefix_from_pointer(cols.get(5))
+        if addr is None or prefix is None:
             continue
-        try:
-            prefix = int(tuple(pointer)[-1])
-        except (TypeError, ValueError, IndexError):
-            continue
-        if not 0 < prefix <= 32:
-            continue
-        if_index = cols.get(3)
-        found.append((addr, prefix, int(if_index) if if_index is not None else None))
+        found.append((addr, prefix, _if_index(cols.get(3))))
     return found
+
+
+def _is_lan_address(addr: ipaddress.IPv4Address, prefix: int) -> bool:
+    """Private, not loopback or link-local, and on a network larger than a /31."""
+    if prefix > 30 or not addr.is_private:
+        return False
+    return not (addr.is_loopback or addr.is_link_local)
 
 
 def build_networks(
@@ -134,7 +148,7 @@ def build_networks(
     networks: list[RouterNetwork] = []
     seen: set[str] = set()
     for addr, prefix, if_index in addresses:
-        if not addr.is_private or addr.is_loopback or addr.is_link_local or prefix > 30:
+        if not _is_lan_address(addr, prefix):
             continue
         cidr = str(ipaddress.IPv4Network(f"{addr}/{prefix}", strict=False))
         if cidr in seen:
@@ -143,8 +157,9 @@ def build_networks(
         if_name = (if_names.get(if_index) or if_descrs.get(if_index) or "").strip() or None
         vlan_id = parse_vlan_id(if_name) or parse_vlan_id(if_descrs.get(if_index))
         alias = (if_aliases.get(if_index) or "").strip()
-        name = alias or (vlan_names.get(vlan_id, "").strip() if vlan_id else "") or if_name
-        networks.append(RouterNetwork(cidr=cidr, gateway_ip=str(addr), name=name or None, vlan_id=vlan_id, interface=if_name))
+        vlan_name = vlan_names.get(vlan_id, "").strip() if vlan_id else ""
+        name = alias or vlan_name or if_name or None
+        networks.append(RouterNetwork(cidr=cidr, gateway_ip=str(addr), name=name, vlan_id=vlan_id, interface=if_name))
     return networks
 
 
@@ -204,6 +219,15 @@ def _to_python(value: Any) -> Any:
         return str(value)
 
 
+def _present_values(var_binds) -> Rows:
+    """The rows of one response, without the markers for values the agent does not have."""
+    return [
+        (tuple(oid), _to_python(value))
+        for oid, value in var_binds
+        if type(value).__name__ not in ("NoSuchObject", "NoSuchInstance", "EndOfMibView")
+    ]
+
+
 class PysnmpWalker:
     """Walks tables of one router with pysnmp (pure Python, no net-snmp needed)."""
 
@@ -219,14 +243,18 @@ class PysnmpWalker:
         self._auth = self._auth_data()
 
     def _auth_data(self):
+        version = str(self._conn.options.get("version") or "2c")
+        return self._community_auth(version) if version in ("1", "2c") else self._usm_auth()
+
+    def _community_auth(self, version: str):
+        community = self._conn.secrets.get("community") or ""
+        if not community:
+            raise RouterImportError("Enter the SNMP community.", 400)
+        return self._hlapi.CommunityData(community, mpModel=0 if version == "1" else 1)
+
+    def _usm_auth(self):
         hlapi = self._hlapi
         options, secrets = self._conn.options, self._conn.secrets
-        version = str(options.get("version") or "2c")
-        if version in ("1", "2c"):
-            community = secrets.get("community") or ""
-            if not community:
-                raise RouterImportError("Enter the SNMP community.", 400)
-            return hlapi.CommunityData(community, mpModel=0 if version == "1" else 1)
         user = (options.get("username") or "").strip()
         if not user:
             raise RouterImportError("Enter the SNMPv3 user name.", 400)
@@ -240,31 +268,35 @@ class PysnmpWalker:
             kwargs["privProtocol"] = getattr(hlapi, _PRIV_PROTOCOLS[str(options.get("priv_protocol") or "AES")])
         return hlapi.UsmUserData(user, authKey=auth_key, privKey=priv_key, **kwargs)
 
-    async def walk(self, base: Oid) -> Rows:
-        hlapi = self._hlapi
+    async def _udp_target(self):
         if self._target is None:
-            self._target = await hlapi.UdpTransportTarget.create(
+            self._target = await self._hlapi.UdpTransportTarget.create(
                 (self._conn.address, self._conn.port or SnmpProvider.default_port),
                 timeout=self._timeout, retries=self._retries,
             )
+        return self._target
+
+    def _no_answer(self, indication: Any) -> RouterImportError:
+        return RouterImportError(
+            f"No valid SNMP answer from {self._conn.host}: {indication}. "
+            "Check that SNMP is enabled, UDP port 161 is reachable and the credentials match.",
+            502,
+        )
+
+    async def walk(self, base: Oid) -> Rows:
+        hlapi = self._hlapi
+        target = await self._udp_target()
         rows: Rows = []
         async for err_indication, err_status, _err_index, var_binds in hlapi.walk_cmd(
-            self._engine, self._auth, self._target, hlapi.ContextData(),
+            self._engine, self._auth, target, hlapi.ContextData(),
             hlapi.ObjectType(hlapi.ObjectIdentity(".".join(map(str, base)))),
             lexicographicMode=False, lookupMib=False,
         ):
             if err_indication:
-                raise RouterImportError(
-                    f"No valid SNMP answer from {self._conn.host}: {err_indication}. "
-                    "Check that SNMP is enabled, UDP port 161 is reachable and the credentials match.",
-                    502,
-                )
+                raise self._no_answer(err_indication)
             if err_status:
                 break  # v1 noSuchName at the end of the table, or the agent refuses this table
-            for oid, value in var_binds:
-                if type(value).__name__ in ("NoSuchObject", "NoSuchInstance", "EndOfMibView"):
-                    continue
-                rows.append((tuple(oid), _to_python(value)))
+            rows.extend(_present_values(var_binds))
             if len(rows) >= MAX_ROWS:
                 break
         return rows
