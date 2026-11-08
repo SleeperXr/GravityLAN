@@ -172,7 +172,7 @@ def _probe_python(client) -> str:
         _, stdout, _ = client.exec_command("which python3")
         if stdout.channel.recv_exit_status() == 0:
             return stdout.read().decode().strip()
-    except (OSError, paramiko.SSHException) as exc:
+    except (OSError, paramiko.SSHException, UnicodeDecodeError) as exc:
         logger.debug("python3 probe failed, falling back to 'python3': %s", exc)
     return "python3"
 

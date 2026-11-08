@@ -29,6 +29,7 @@ def test_stage_verified_agent(script, monkeypatch):
 
 
 def _deployment(client=None, runner=None, server_url="http://gl:8000", agent_path=dep.REMOTE_AGENT_PATH):
+    """Build a test _Deployment context with mocked SSH client and runner defaults."""
     return dep._Deployment(
         client=client or MagicMock(),
         runner=runner or MagicMock(),
@@ -56,6 +57,7 @@ def test_install_agent_files_cleans_up_moves_and_writes_an_owner_only_config(mon
 
 @pytest.mark.parametrize("systemd, syno, expected", [(True, False, "systemd"), (False, True, "syno"), (False, False, None)])
 def test_install_service_picks_the_init_system(monkeypatch, systemd, syno, expected):
+    """Verify that _install_service dispatches to systemd, Synology rc.d, or neither."""
     called = []
     monkeypatch.setattr(dep, "_install_systemd_service", lambda *a: called.append("systemd") or True)
     monkeypatch.setattr(dep, "_install_syno_rc", lambda *a: called.append("syno"))
