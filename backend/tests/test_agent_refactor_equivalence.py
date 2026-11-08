@@ -29,164 +29,213 @@ def agent():
 
 # --- frozen copies (agent 0.3.11) ----------------------------------------------------------
 
+_OLD_ERRORS = (OSError, ValueError, UnicodeDecodeError)
+
+
+def _old_read_text(root_path, rel):
+    p = Path(root_path) / rel
+    if not p.exists():
+        return None
+    try:
+        return p.read_text(encoding="utf-8")
+    except _OLD_ERRORS:
+        return None
+
+
+def _old_pid1_has_lxc_env(root_path):
+    p = Path(root_path) / "proc/1/environ"
+    if not p.exists():
+        return False
+    try:
+        return any(item.startswith(b"container=lxc") for item in p.read_bytes().split(b"\x00"))
+    except _OLD_ERRORS:
+        return False
+
+
 def old_is_lxc(root_path):
+    marker = _old_read_text(root_path, "run/systemd/container")
+    if marker is not None:
+        return marker.strip() == "lxc"
+    cgroup = _old_read_text(root_path, "proc/self/cgroup")
+    if cgroup is not None and ("lxc" in cgroup or "/lxc/" in cgroup):
+        return True
+    return _old_pid1_has_lxc_env(root_path)
+
+
+def _old_cpu_v2(root_path):
+    text = _old_read_text(root_path, "sys/fs/cgroup/cpu.max")
+    parts = text.strip().split() if text is not None else []
+    if len(parts) != 2 or parts[0] == "max":
+        return None
     try:
-        p = Path(root_path) / "run/systemd/container"
-        if p.exists():
-            return p.read_text(encoding="utf-8").strip() == "lxc"
-    except Exception:
-        pass
+        limit, period = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    return limit / period if period > 0 else None
+
+
+def _old_cpu_v1(root_path):
+    q_text = _old_read_text(root_path, "sys/fs/cgroup/cpu/cpu.cfs_quota_us")
+    p_text = _old_read_text(root_path, "sys/fs/cgroup/cpu/cpu.cfs_period_us")
+    if q_text is None or p_text is None:
+        return None
     try:
-        p = Path(root_path) / "proc/self/cgroup"
-        if p.exists():
-            content = p.read_text(encoding="utf-8")
-            if "lxc" in content or "/lxc/" in content:
-                return True
-    except Exception:
-        pass
-    try:
-        p = Path(root_path) / "proc/1/environ"
-        if p.exists():
-            for item in p.read_bytes().split(b"\x00"):
-                if item.startswith(b"container=lxc"):
-                    return True
-    except Exception:
-        pass
-    return False
+        quota, period = int(q_text.strip()), int(p_text.strip())
+    except ValueError:
+        return None
+    return quota / period if quota > 0 and period > 0 else None
 
 
 def old_cpu_count(root_path, host_count):
-    v2 = Path(root_path) / "sys/fs/cgroup/cpu.max"
-    if v2.exists():
-        try:
-            parts = v2.read_text(encoding="utf-8").strip().split()
-            if len(parts) == 2 and parts[0] != "max":
-                limit, period = int(parts[0]), int(parts[1])
-                if period > 0:
-                    return limit / period
-        except Exception:
-            pass
-    q = Path(root_path) / "sys/fs/cgroup/cpu/cpu.cfs_quota_us"
-    pp = Path(root_path) / "sys/fs/cgroup/cpu/cpu.cfs_period_us"
-    if q.exists() and pp.exists():
-        try:
-            quota, period = int(q.read_text(encoding="utf-8").strip()), int(pp.read_text(encoding="utf-8").strip())
-            if quota > 0 and period > 0:
-                return quota / period
-        except Exception:
-            pass
-    return host_count or 1.0
+    limit = _old_cpu_v2(root_path) or _old_cpu_v1(root_path)
+    return limit if limit is not None else (host_count or 1.0)
+
+
+def _old_mem_limit_v2(text):
+    s = text.strip()
+    return None if s == "max" else int(s)
+
+
+def _old_mem_limit_v1(text):
+    v = int(text.strip())
+    return v if v < 2**60 else None
+
+
+def _old_cgroup_mem(root_path, cur_rel, mx_rel, parse_limit):
+    cur_text = _old_read_text(root_path, cur_rel)
+    if cur_text is None:
+        return None, None
+    used = total = None
+    try:
+        used = int(cur_text.strip())
+        mx_text = _old_read_text(root_path, mx_rel)
+        if mx_text is not None:
+            total = parse_limit(mx_text)
+    except ValueError:
+        return used, total
+    return used, total
 
 
 def old_memory(root_path):
-    used = total = None
-    cur, mx = Path(root_path) / "sys/fs/cgroup/memory.current", Path(root_path) / "sys/fs/cgroup/memory.max"
-    if cur.exists():
-        try:
-            used = int(cur.read_text(encoding="utf-8").strip())
-            if mx.exists():
-                s = mx.read_text(encoding="utf-8").strip()
-                if s != "max":
-                    total = int(s)
-        except Exception:
-            pass
+    used, total = _old_cgroup_mem(root_path, "sys/fs/cgroup/memory.current", "sys/fs/cgroup/memory.max", _old_mem_limit_v2)
     if used is None:
-        cur = Path(root_path) / "sys/fs/cgroup/memory/memory.usage_in_bytes"
-        mx = Path(root_path) / "sys/fs/cgroup/memory/memory.limit_in_bytes"
-        if cur.exists():
-            try:
-                used = int(cur.read_text(encoding="utf-8").strip())
-                if mx.exists():
-                    v = int(mx.read_text(encoding="utf-8").strip())
-                    if v < 2**60:
-                        total = v
-            except Exception:
-                pass
+        used, total = _old_cgroup_mem(
+            root_path, "sys/fs/cgroup/memory/memory.usage_in_bytes", "sys/fs/cgroup/memory/memory.limit_in_bytes", _old_mem_limit_v1
+        )
     return used, total
 
 
 def old_dnf(out, out_sec, fail):
-    result = {}
-    try:
-        if fail:
-            raise OSError("dnf missing")
-        lines = [l.strip() for l in out.splitlines() if l.strip()]
-        result["patch_available"] = sum(1 for l in lines if len(l.split()) >= 3 and not l.startswith("Last metadata"))
-        result["patch_security"] = sum(1 for l in out_sec.splitlines() if l.strip() and not l.startswith("Last metadata"))
-    except Exception:
-        pass
-    return result
+    if fail:
+        return {}
+    lines = [l.strip() for l in out.splitlines() if l.strip()]
+    return {
+        "patch_available": sum(1 for l in lines if len(l.split()) >= 3 and not l.startswith("Last metadata")),
+        "patch_security": sum(1 for l in out_sec.splitlines() if l.strip() and not l.startswith("Last metadata")),
+    }
 
 
 def old_yum(out, fail):
-    result = {}
+    if fail:
+        return {}
+    lines = [l.strip() for l in out.splitlines() if l.strip()]
+    return {"patch_available": sum(1 for l in lines if len(l.split()) >= 3)}
+
+
+def _old_addr_subnet(line):
+    parts = line.split()
+    if len(parts) < 4 or parts[2] != "inet" or parts[3].startswith("127."):
+        return None
     try:
-        if fail:
-            raise OSError("yum missing")
-        lines = [l.strip() for l in out.splitlines() if l.strip()]
-        result["patch_available"] = sum(1 for l in lines if len(l.split()) >= 3)
-    except Exception:
-        pass
-    return result
+        net = ipaddress.ip_network(parts[3], strict=False)
+    except ValueError:
+        return None
+    return net if 16 <= net.prefixlen <= 30 else None
+
+
+def _old_route_subnet(line):
+    parts = line.strip().split()
+    if len(parts) < 8 or parts[0] == "lo":
+        return None
+    if not (int(parts[3], 16) & 0x1) or parts[1] == "00000000":
+        return None
+    d = socket.inet_ntoa(bytes.fromhex(parts[1])[::-1])
+    m = socket.inet_ntoa(bytes.fromhex(parts[7])[::-1])
+    net = ipaddress.ip_network(f"{d}/{m}", strict=False)
+    return net if 16 <= net.prefixlen <= 30 else None
 
 
 def old_subnets(ip_out, route_text):
     networks = []
-    try:
-        if ip_out is None:
-            raise OSError("no ip")
+    if ip_out is not None:
         for line in ip_out.splitlines():
-            parts = line.split()
-            if len(parts) >= 4 and parts[2] == "inet" and not parts[3].startswith("127."):
-                try:
-                    net = ipaddress.ip_network(parts[3], strict=False)
-                    if 16 <= net.prefixlen <= 30:
-                        networks.append(net)
-                except ValueError:
-                    pass
-    except Exception:
-        pass
-    if not networks:
+            net = _old_addr_subnet(line)
+            if net is not None:
+                networks.append(net)
+    if not networks and route_text is not None:
         try:
-            if route_text is None:
-                raise OSError("no route table")
             for line in route_text.splitlines(keepends=True)[1:]:
-                parts = line.strip().split()
-                if len(parts) >= 8 and parts[0] != "lo":
-                    flags = int(parts[3], 16)
-                    if (flags & 0x1) and parts[1] != "00000000":
-                        d = socket.inet_ntoa(bytes.fromhex(parts[1])[::-1])
-                        m = socket.inet_ntoa(bytes.fromhex(parts[7])[::-1])
-                        net = ipaddress.ip_network(f"{d}/{m}", strict=False)
-                        if 16 <= net.prefixlen <= 30:
-                            networks.append(net)
-        except Exception:
-            pass
+                net = _old_route_subnet(line)
+                if net is not None:
+                    networks.append(net)
+        except _OLD_ERRORS:
+            return networks
     return networks
+
+
+def _old_arp_proc_line(neighbors, line):
+    parts = line.split()
+    if len(parts) < 6:
+        return
+    ip, flags, mac, dev = parts[0], parts[2], parts[3].lower(), parts[5]
+    if flags == "0x2" and mac and mac != "00:00:00:00:00:00":
+        neighbors[ip] = {"ip": ip, "mac": mac, "interface": dev}
+
+
+def _old_arp_neigh_line(neighbors, line):
+    parts = line.split()
+    if len(parts) < 5 or "lladdr" not in parts:
+        return
+    idx = parts.index("lladdr")
+    if idx + 1 >= len(parts):
+        return
+    ip, mac = parts[0], parts[idx + 1].lower()
+    dev = parts[parts.index("dev") + 1] if "dev" in parts else ""
+    if parts[-1].upper() in ("STALE", "FAILED", "INCOMPLETE"):
+        neighbors.pop(ip, None)
+    elif mac != "00:00:00:00:00:00":
+        neighbors[ip] = {"ip": ip, "mac": mac, "interface": dev}
 
 
 def old_arp(arp_text, neigh_out):
     neighbors = {}
     if arp_text is not None:
         for line in arp_text.splitlines(keepends=True)[1:]:
-            parts = line.split()
-            if len(parts) >= 6:
-                ip, flags, mac, dev = parts[0], parts[2], parts[3].lower(), parts[5]
-                if flags == "0x2" and mac and mac != "00:00:00:00:00:00":
-                    neighbors[ip] = {"ip": ip, "mac": mac, "interface": dev}
+            _old_arp_proc_line(neighbors, line)
     if neigh_out is not None:
         for line in neigh_out.splitlines():
-            parts = line.split()
-            if len(parts) >= 5 and "lladdr" in parts:
-                idx = parts.index("lladdr")
-                if idx + 1 < len(parts):
-                    ip, mac = parts[0], parts[idx + 1].lower()
-                    dev = parts[parts.index("dev") + 1] if "dev" in parts else ""
-                    if parts[-1].upper() in ("STALE", "FAILED", "INCOMPLETE"):
-                        neighbors.pop(ip, None)
-                    elif mac != "00:00:00:00:00:00":
-                        neighbors[ip] = {"ip": ip, "mac": mac, "interface": dev}
+            _old_arp_neigh_line(neighbors, line)
     return list(neighbors.values())
+
+
+_OLD_FEEDBACK_FIELDS = (
+    ("interval", lambda v: v),
+    ("disk_paths", lambda v: v),
+    ("enable_temp", lambda v: v),
+    ("enable_patch_check", lambda v: v),
+    ("enable_scanner_relay", bool),
+)
+
+
+def _old_sync_rc(config, rc):
+    if not isinstance(rc, dict):
+        return False
+    changed = False
+    for key, convert in _OLD_FEEDBACK_FIELDS:
+        if key in rc and getattr(config, key) != rc[key]:
+            setattr(config, key, convert(rc[key]))
+            changed = True
+    return changed
 
 
 def old_feedback(config, response):
@@ -194,15 +243,8 @@ def old_feedback(config, response):
     if response.get("device_id") and response["device_id"] != config.device_id:
         config.device_id = response["device_id"]
         changed = True
-    rc = response.get("config")
-    if rc and isinstance(rc, dict):
-        for key in ("interval", "disk_paths", "enable_temp", "enable_patch_check"):
-            if key in rc and getattr(config, key) != rc[key]:
-                setattr(config, key, rc[key])
-                changed = True
-        if "enable_scanner_relay" in rc and config.enable_scanner_relay != rc["enable_scanner_relay"]:
-            config.enable_scanner_relay = bool(rc["enable_scanner_relay"])
-            changed = True
+    if _old_sync_rc(config, response.get("config")):
+        changed = True
     return changed
 
 
