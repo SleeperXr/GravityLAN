@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 - Agent 0.3.14: hardened error handling across metric collectors and probes by narrowing broad exceptions and replacing swallowed exceptions with debug logging and contextlib suppression.
 
 ### Fixed
+- Agent 0.3.15: a metric reader that fails no longer costs the whole report. The agent sends everything else and logs which reader failed. Package updates, disks and neighbours are also read correctly on hosts whose tools or mount names are not UTF-8.
+- "Refresh all devices": looking up manufacturers no longer freezes the web interface, and a device that fails no longer costs the results of the others.
 - Agent 0.3.13, package updates on Debian and Ubuntu: a host without `sudo` whose `apt-get update` failed (for example a minimal container with an unreachable mirror) reported 0 available updates and logged nothing. It now counts from the package lists it already has and logs that they are out of date.
 - Network scan: a scan no longer loses all its results when a router that is online in one VLAN answers on an address in another VLAN that an older discovered host still holds. Before, the scan stopped saving with a database error; now the existing entry at that address is kept and marked online.
 - Agent settings: saving the agent configuration of a device whose configuration had never been opened before no longer fails with a server error (500).
