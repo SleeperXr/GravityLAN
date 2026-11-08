@@ -5,12 +5,10 @@ import { ChevronsUpDown } from 'lucide-vue-next';
 import { t } from '@/i18n';
 import type { RackCable, RackPort } from '@/types';
 import RackFaceplate from './RackFaceplate.vue';
-import RackCables, { type CableDraw, type StubLabel } from './RackCables.vue';
+import RackCables from './RackCables.vue';
 import {
   REST_SAG,
   assignLanes,
-  channelEdge,
-  channelPath,
   faceHeight,
   faceLayout,
   faceTop,
@@ -20,11 +18,9 @@ import {
   isShortCable,
   jackCentre,
   laneCount,
-  laneX,
   loopPath,
   rackFrame,
   snapUnit,
-  stubPath,
   unitTop,
   type FaceLayout,
   type JackSpot,
@@ -32,6 +28,7 @@ import {
 } from './rackGeometry';
 import { prefersReducedMotion, stepFaceplate, stepSag, useFrameLoop, type Faceplate, type Spring } from './rackMotion';
 import { blockerAt, cableDefaults, ownerKeyOf, sideOf, type PortSide, type RackEntry } from './rackModel';
+import { buildCableLayer, type StubPlace, type StubTarget } from './rackCableLayer';
 import type { DragState, DragTarget } from './useRackDrag';
 
 /**
@@ -189,30 +186,42 @@ let filled = false;
 /** Where the last dragged-in entry was let go, so it settles from there instead of appearing on its unit */
 let lastDrop: { key: string; y: number } | null = null;
 
+const faceplateAt = (y: number, wait = 0): Faceplate => ({ y: { value: y, velocity: 0 }, x: { value: 0, velocity: 0 }, wait });
+
+/** A faceplate that appears on its unit fades in for a moment */
+function flashArrival(key: string) {
+  arrived.value = new Set(arrived.value).add(key);
+  window.setTimeout(() => {
+    const next = new Set(arrived.value);
+    next.delete(key);
+    arrived.value = next;
+  }, 450);
+}
+
+/** A new faceplate: drops in when the rack first fills, otherwise settles from where it was let go. */
+function addFaceplate(key: string, y: number, order: number, firstFill: boolean) {
+  if (firstFill && !reduceMotion) {
+    motion.set(key, faceplateAt(y - 26, order * 0.028));
+    return;
+  }
+  const from = lastDrop?.key === key ? lastDrop.y : y;
+  motion.set(key, faceplateAt(from));
+  if (filled && from === y && !reduceMotion) flashArrival(key);
+}
+
+function dropGoneFaceplates() {
+  for (const key of [...motion.keys()]) if (!entryByKey.value.get(key)?.unit) motion.delete(key);
+}
+
 function syncMotion() {
   if (!box.value.height) return;
   const f = frame.value;
   const firstFill = !filled && placed.value.length > 0;
   const topFirst = [...placed.value].sort((a, b) => (b.unit ?? 0) - (a.unit ?? 0));
   topFirst.forEach((e, order) => {
-    if (motion.has(e.key) || e.unit === null) return;
-    const y = faceTop(f, e.unit);
-    if (firstFill && !reduceMotion) {
-      motion.set(e.key, { y: { value: y - 26, velocity: 0 }, x: { value: 0, velocity: 0 }, wait: order * 0.028 });
-      return;
-    }
-    const from = lastDrop?.key === e.key ? lastDrop.y : y;
-    motion.set(e.key, { y: { value: from, velocity: 0 }, x: { value: 0, velocity: 0 }, wait: 0 });
-    if (filled && from === y && !reduceMotion) {
-      arrived.value = new Set(arrived.value).add(e.key);
-      window.setTimeout(() => {
-        const next = new Set(arrived.value);
-        next.delete(e.key);
-        arrived.value = next;
-      }, 450);
-    }
+    if (!motion.has(e.key) && e.unit !== null) addFaceplate(e.key, faceTop(f, e.unit), order, firstFill);
   });
-  for (const key of [...motion.keys()]) if (!entryByKey.value.get(key)?.unit) motion.delete(key);
+  dropGoneFaceplates();
   if (placed.value.length) filled = true;
 }
 
@@ -229,9 +238,13 @@ watch(
   () => props.drag,
   (now, before) => {
     // Remember where a dragged-in entry was let go over the rack
-    if (!now && before?.lifted && before.zone === 'stage' && before.from !== 'rack') lastDrop = { key: before.key, y: localOf(before)?.y ?? 0 };
+    if (!now && before && landedFromOutside(before)) lastDrop = { key: before.key, y: localOf(before)?.y ?? 0 };
   },
 );
+
+function landedFromOutside(d: DragState): boolean {
+  return d.lifted && d.zone === 'stage' && d.from !== 'rack';
+}
 
 /** The pointer of a drag in rack coordinates, or null when it is not over the rack. */
 function localOf(d: { x: number; y: number }): Point | null {
@@ -332,15 +345,8 @@ const lanes = computed(() => {
   return assignLanes(spans, laneCount(f));
 });
 
-type StubTarget = { ownerKey: string; side: PortSide | null; rackId: number | null };
-interface Place {
-  id: string;
-  text: string;
-  target: StubTarget;
-}
-
 /** Where the other end of a stub is: the other side of this rack, another rack, or nowhere yet. */
-function placeOf(port: RackPort): Place {
+function placeOf(port: RackPort): StubPlace {
   const key = ownerKeyOf(port);
   if (entryByKey.value.get(key)?.unit) {
     const side = sideOf(port);
@@ -358,45 +364,19 @@ let stubTargets = new Map<string, StubTarget>();
 
 const cableLayer = computed(() => {
   void frameNo.value;
-  const f = frame.value;
-  const draws: CableDraw[] = [];
-  const groups = new Map<string, { y: number; count: number; place: Place }>();
-  const focus = hoverCable.value?.id ?? props.highlightCableId;
-  const anyFocus = props.selectedKey !== null || focus !== null;
-  for (const c of props.cables) {
-    const pa = portById.value.get(c.a_port_id);
-    const pb = portById.value.get(c.b_port_id);
-    if (!pa || !pb) continue;
-    const a = jackPoint(pa.id);
-    const b = jackPoint(pb.id);
-    if (!a && !b) continue;
-    const mine = props.selectedKey !== null && (ownerKeyOf(pa) === props.selectedKey || ownerKeyOf(pb) === props.selectedKey);
-    const state: CableDraw['state'] = focus === c.id || mine ? 'active' : anyFocus ? 'dim' : 'normal';
-    const colour = c.color ?? cableDefaults(pa.kind).colour;
-    const sag = sags.get(c.id)?.value ?? REST_SAG;
-    if (a && b) {
-      const d = isShortCable(f, a, b) ? loopPath(a, b, sag) : channelPath(a, b, laneX(f, lanes.value.get(c.id) ?? 0), (sag - REST_SAG) * 0.8);
-      draws.push({ id: c.id, d, colour, dashed: false, state });
-      continue;
-    }
-    const own = (a ?? b)!;
-    const ownPort = a ? pa : pb;
-    const place = placeOf(a ? pb : pa);
-    const groupKey = `${ownerKeyOf(ownPort)}|${place.id}`;
-    const group = groups.get(groupKey) ?? { y: own.y, count: 0, place };
-    const end = { x: channelEdge(f), y: Math.round(group.y + 6 + Math.min(group.count, 5) * 3) };
-    group.count++;
-    groups.set(groupKey, group);
-    draws.push({ id: c.id, d: stubPath(own, end, sag), colour, dashed: true, state });
-  }
-  stubTargets = new Map([...groups].map(([key, g]) => [key, g.place.target]));
-  const labels: StubLabel[] = [...groups].map(([key, g]) => ({
-    key,
-    x: channelEdge(f),
-    y: Math.round(g.y - 5),
-    text: g.count > 1 ? `${g.place.text} · ${g.count}` : g.place.text,
-  }));
-  return { draws, labels };
+  const layer = buildCableLayer({
+    frame: frame.value,
+    cables: props.cables,
+    portOf: (id) => portById.value.get(id),
+    jackPoint,
+    sagOf: (id) => sags.get(id)?.value ?? REST_SAG,
+    laneOf: (id) => lanes.value.get(id) ?? 0,
+    selectedKey: props.selectedKey,
+    focus: hoverCable.value?.id ?? props.highlightCableId,
+    placeOf,
+  });
+  stubTargets = layer.targets;
+  return layer;
 });
 
 function onStub(key: string) {
@@ -450,9 +430,10 @@ function onCablePick(id: number) {
 const hoverInfo = computed(() => {
   const hover = hoverCable.value;
   const cable = hover && props.cables.find((c) => c.id === hover.id);
-  const pa = cable && portById.value.get(cable.a_port_id);
-  const pb = cable && portById.value.get(cable.b_port_id);
-  if (!hover || !cable || !pa || !pb) return null;
+  if (!hover || !cable) return null;
+  const pa = portById.value.get(cable.a_port_id);
+  const pb = portById.value.get(cable.b_port_id);
+  if (!pa || !pb) return null;
   return {
     x: hover.x,
     y: hover.y,
@@ -530,17 +511,25 @@ function endPatch() {
 
 const pendingTarget = computed(() => (props.pendingPortId !== null && hoverPoint.value ? nearestJack(hoverPoint.value, props.pendingPortId) : null));
 
+/** Where the cable being plugged in points: the pull in progress, else the port waiting for its other end. */
+function liveAim(): { pointer: Point | null; target: number | null } {
+  return patch.value ?? { pointer: hoverPoint.value, target: pendingTarget.value };
+}
+
+function portColour(portId: number): string {
+  return cableDefaults(portById.value.get(portId)?.kind ?? 'RJ45').colour;
+}
+
 const live = computed(() => {
   void frameNo.value;
   const from = patch.value?.from ?? props.pendingPortId;
-  if (from === null || from === undefined) return null;
+  if (from === null) return null;
   const a = jackPoint(from);
-  const pointer = patch.value ? patch.value.pointer : hoverPoint.value;
+  const { pointer, target } = liveAim();
   if (!a || !pointer) return null;
-  const target = patch.value ? patch.value.target : pendingTarget.value;
   const b = (target !== null && jackPoint(target)) || pointer;
   const dist = Math.hypot(b.x - a.x, b.y - a.y);
-  return { d: loopPath(a, b, 16 + dist * 0.12), colour: cableDefaults(portById.value.get(from)?.kind ?? 'RJ45').colour, snapped: target !== null, target };
+  return { d: loopPath(a, b, 16 + dist * 0.12), colour: portColour(from), snapped: target !== null, target };
 });
 
 const liveInfo = computed(() => {
@@ -705,7 +694,8 @@ function reveal(key: string) {
   const entry = entryByKey.value.get(key);
   const scroller = scrollRef.value;
   const body = bodyRef.value;
-  if (!entry || entry.unit === null || !scroller || !body) return;
+  if (!entry || entry.unit === null) return;
+  if (!scroller || !body) return;
   const y = body.offsetTop + faceTop(frame.value, entry.unit);
   scroller.scrollTo({ top: Math.max(0, y - scroller.clientHeight / 2), behavior: reduceMotion ? 'auto' : 'smooth' });
 }
