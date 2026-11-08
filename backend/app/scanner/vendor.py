@@ -8,9 +8,8 @@ import logging
 import os
 import threading
 import time
-import urllib.request
 import urllib.error
-from typing import Dict, Optional
+import urllib.request
 
 from app.config import process_ids, settings
 
@@ -52,7 +51,7 @@ COMMON_VENDORS = {
 }
 
 # -- Module-level state ------------------------------------------------------
-_vendor_cache: Dict[str, str] = {}
+_vendor_cache: dict[str, str] = {}
 _cache_loaded: bool = False
 _cache_lock = threading.Lock()
 
@@ -97,7 +96,7 @@ def _load_cache() -> None:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse vendor cache file {CACHE_FILE}: {e}")
             _vendor_cache = {}
-        except IOError as e:
+        except OSError as e:
             logger.error(f"Failed to read vendor cache file {CACHE_FILE}: {e}")
             _vendor_cache = {}
         finally:
@@ -127,13 +126,37 @@ def _save_cache() -> None:
                 "In-memory caching remains active."
             )
             _permission_warned = True
-    except (IOError, OSError) as e:
+    except OSError as e:
         logger.warning(f"Failed to persist vendor cache to {CACHE_FILE}: {e}")
-    except Exception as e:
-        logger.warning(f"Unexpected error saving vendor cache: {e}")
 
 
-def get_vendor(mac: Optional[str], use_cache: bool = True) -> str:
+def _extract_oui(mac: str | None) -> str | None:
+    """Extracts and normalizes the 8-character OUI prefix from a MAC address."""
+    if not mac or mac == "-" or "N/A" in mac.upper():
+        return None
+
+    mac_normalized = mac.replace("-", ":").upper()
+    if len(mac_normalized) < 8:
+        return None
+
+    return mac_normalized[:8]
+
+
+def _get_cached_vendor(oui: str) -> str | None:
+    """Retrieves vendor from cache if loaded, returning None if not found."""
+    _load_cache()
+    with _cache_lock:
+        return _vendor_cache.get(oui)
+
+
+def _cache_vendor(oui: str, vendor: str) -> None:
+    """Stores vendor in memory and persists to disk in a background thread."""
+    with _cache_lock:
+        _vendor_cache[oui] = vendor
+    threading.Thread(target=_save_cache, daemon=True).start()
+
+
+def get_vendor(mac: str | None, use_cache: bool = True) -> str:
     """
     Identifies the hardware vendor based on the MAC address OUI.
 
@@ -144,14 +167,9 @@ def get_vendor(mac: Optional[str], use_cache: bool = True) -> str:
     Returns:
         The vendor name as a string, or an empty string if not identified.
     """
-    if not mac or mac == "-" or "N/A" in mac.upper():
+    oui = _extract_oui(mac)
+    if not oui:
         return ""
-
-    mac_normalized = mac.replace("-", ":").upper()
-    if len(mac_normalized) < 8:
-        return ""
-
-    oui = mac_normalized[:8]
 
     # 1. Check static fallback (Fastest)
     if oui in COMMON_VENDORS:
@@ -159,21 +177,83 @@ def get_vendor(mac: Optional[str], use_cache: bool = True) -> str:
 
     # 2. Check local cache (includes negative hits where value is "")
     if use_cache:
-        _load_cache()
-        with _cache_lock:
-            if oui in _vendor_cache:
-                return _vendor_cache[oui]
+        cached = _get_cached_vendor(oui)
+        if cached is not None:
+            return cached
 
     # 3. API Lookup (Last resort)
+    mac_normalized = mac.replace("-", ":").upper() if mac else ""
     vendor = _api_lookup(mac_normalized)
 
     if use_cache:
-        with _cache_lock:
-            _vendor_cache[oui] = vendor  # Negative cache empty string if unknown
-        # Run save in background to not block the main scanning process
-        threading.Thread(target=_save_cache, daemon=True).start()
+        _cache_vendor(oui, vendor)
 
     return vendor
+
+
+def _check_and_update_rate_limit() -> bool:
+    """
+    Verifies API cooldown and enforces the minimum inter-request interval.
+    Returns True if rate-limited (should abort), False if allowed to proceed.
+    Must be called while holding _api_lock.
+    """
+    global _last_api_request_time
+    now = time.time()
+
+    if now - _last_429_time < _COOLDOWN_SECONDS:
+        return True
+
+    elapsed = now - _last_api_request_time
+    if elapsed < _MIN_API_INTERVAL:
+        time.sleep(_MIN_API_INTERVAL - elapsed)
+
+    _last_api_request_time = time.time()
+    return False
+
+
+def _handle_rate_limit_exceeded(detail: str = "") -> None:
+    """Sets the 429 cooldown timestamp and logs a warning."""
+    global _last_429_time
+    _last_429_time = time.time()
+    msg = f" ({detail})" if detail else ""
+    logger.warning(
+        f"API rate limit hit{msg}. Entering {_COOLDOWN_SECONDS // 60}m cooldown."
+    )
+
+
+def _parse_api_response(response_text: str) -> str:
+    """Parses vendor name from API response, filtering error messages."""
+    vendor = response_text.strip()
+    if vendor and "errors" not in vendor.lower() and "not found" not in vendor.lower():
+        return vendor
+    return ""
+
+
+def _fetch_vendor_from_api(mac_query: str) -> str:
+    """Executes the HTTP GET to the vendor API and handles protocol errors."""
+    url = f"https://api.macvendors.com/{mac_query}"
+    headers = {
+        "User-Agent": "GravityLAN/1.1 (github.com/SleeperXr/GravityLAN)",
+        "Accept": "text/plain",
+    }
+    req = urllib.request.Request(url, headers=headers)
+
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                body = response.read().decode("utf-8")
+                return _parse_api_response(body)
+            if response.status == 429:
+                _handle_rate_limit_exceeded()
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            _handle_rate_limit_exceeded(f"HTTP {e.code}")
+        elif e.code != 404:  # 404 is "Not Found", which is expected for unknown OUIs
+            logger.debug("API vendor lookup HTTP error: %d", e.code)
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        logger.debug("API vendor lookup network failure: %s", e)
+
+    return ""
 
 
 def _api_lookup(mac: str) -> str:
@@ -187,57 +267,10 @@ def _api_lookup(mac: str) -> str:
     Returns:
         The vendor name if found, else an empty string.
     """
-    global _last_429_time, _last_api_request_time
-
     with _api_lock:
-        now = time.time()
-
-        # Check cooldown
-        if now - _last_429_time < _COOLDOWN_SECONDS:
+        if _check_and_update_rate_limit():
             return ""
 
-        # Enforce rate limit (at most 1 request per _MIN_API_INTERVAL seconds)
-        elapsed = now - _last_api_request_time
-        if elapsed < _MIN_API_INTERVAL:
-            time.sleep(_MIN_API_INTERVAL - elapsed)
-
-        _last_api_request_time = time.time()
-
-        try:
-            # Use only the first 6 hex chars (3 bytes) for the API
-            mac_query = mac.replace(":", "").replace("-", "")[:6]
-            url = f"https://api.macvendors.com/{mac_query}"
-
-            headers = {
-                "User-Agent": "GravityLAN/1.1 (github.com/SleeperXr/GravityLAN)",
-                "Accept": "text/plain",
-            }
-
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=5) as response:
-                if response.status == 200:
-                    vendor = response.read().decode("utf-8").strip()
-                    if (
-                        vendor
-                        and "errors" not in vendor.lower()
-                        and "not found" not in vendor.lower()
-                    ):
-                        return vendor
-                elif response.status == 429:
-                    _last_429_time = time.time()
-                    logger.warning(
-                        f"API rate limit hit for vendor lookup. Entering {_COOLDOWN_SECONDS // 60}m cooldown."
-                    )
-        except urllib.error.HTTPError as e:
-            if e.code == 429:
-                _last_429_time = time.time()
-                logger.warning(
-                    f"API rate limit hit (HTTP {e.code}). Entering {_COOLDOWN_SECONDS // 60}m cooldown."
-                )
-            elif e.code != 404:  # 404 is "Not Found", which is expected for unknown OUIs
-                logger.debug("API vendor lookup HTTP error: %d", e.code)
-        except Exception as e:
-            # Network issues are common with this API
-            logger.debug("API vendor lookup network failure: %s", e)
-
-        return ""
+        # Use only the first 6 hex chars (3 bytes) for the API
+        mac_query = mac.replace(":", "").replace("-", "")[:6]
+        return _fetch_vendor_from_api(mac_query)
