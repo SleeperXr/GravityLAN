@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { type PropType, defineComponent, h } from 'vue';
+import { defineComponent, h, type PropType } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 import AgentDetail from './AgentDetail.vue';
 import {
@@ -207,17 +207,18 @@ describe('AgentDetail component', () => {
   });
 
   const mockAgent: AgentRow = {
-    id: 1,
     device_id: 101,
     hostname: 'srv-app',
     ip: '192.168.1.15',
+    is_online: true,
     agent_version: '1.2.0',
-    status: 'online',
     last_seen: '2026-11-08T12:00:00Z',
-    cpu_percent: 15,
-    ram_percent: 45,
-    disk_percent: 60,
-    temperature: 42,
+    cpu_usage: 15,
+    ram_usage: 45,
+    temp: 42,
+    uptime_pct: 99.9,
+    uptime_history: [],
+    metrics_count: 10,
     patch_manager: 'apt',
     patch_available: 3,
     patch_security: 1,
@@ -228,7 +229,6 @@ describe('AgentDetail component', () => {
   it('renders telemetry and requests metrics on mount', async () => {
     const wrapper = mount(AgentDetail, {
       props: { agent: mockAgent },
-      global: { stubs: { Tabs: TabsStub } },
     });
     await flushPromises();
 
@@ -236,7 +236,7 @@ describe('AgentDetail component', () => {
     expect(wrapper.text()).toContain('24h');
   });
 
-  it('prefills SSH credentials from cache when present', async () => {
+  it('prefills SSH credentials from cache when present on patching tab', async () => {
     sshCredCache.set(101, {
       ssh_user: 'cached-user',
       ssh_password: '',
