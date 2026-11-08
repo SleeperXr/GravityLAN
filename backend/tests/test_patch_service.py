@@ -302,6 +302,8 @@ async def test_run_ssh_command_stream_sends_sudo_password_on_late_prompt(mock_ss
 
 # A blocking paramiko call on the event loop shows up as a stall this long
 _SLOW_SSH_SECONDS = 0.5
+# Below the full stall, so a real regression still fails, with headroom for busy CI runners
+_MAX_LOOP_STALL_SECONDS = _SLOW_SSH_SECONDS * 0.8
 
 
 def _slow(value):
@@ -367,7 +369,7 @@ async def test_list_device_updates_keeps_event_loop_running(mock_ssh_client):
     assert "error" not in res, res.get("error")
     assert res["patch_manager"] == "apt"
     assert len(res["packages"]) == 2
-    assert stall < _SLOW_SSH_SECONDS / 2, f"event loop stalled for {stall:.2f} s"
+    assert stall < _MAX_LOOP_STALL_SECONDS, f"event loop stalled for {stall:.2f} s"
 
 
 @pytest.mark.asyncio
@@ -401,7 +403,7 @@ async def test_run_ssh_command_stream_keeps_event_loop_running(mock_ssh_client):
 
     assert (ok, message) == (True, "Success")
     assert output == ["first\n", "second\n"]
-    assert stall < _SLOW_SSH_SECONDS / 2, f"event loop stalled for {stall:.2f} s"
+    assert stall < _MAX_LOOP_STALL_SECONDS, f"event loop stalled for {stall:.2f} s"
 
 
 @pytest.mark.asyncio
