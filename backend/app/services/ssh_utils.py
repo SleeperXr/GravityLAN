@@ -222,7 +222,7 @@ def connect_with_gateway_fallback(
     try:
         client.connect(**connect_kwargs)
         return
-    except (paramiko.SSHException, OSError):
+    except (paramiko.SSHException, OSError, EOFError):
         gateway = host_bypass_gateway(host_ip)
         if not gateway:
             raise
@@ -321,8 +321,8 @@ def _is_benign_not_found(exit_code: int, err: str) -> bool:
     """Return True if exit code 1 represents a benign 'not found' / 'no such' command result."""
     if exit_code != 1:
         return False
-    err_lower = err.lower()
-    return "not found" in err_lower or "no such" in err_lower
+    # Case matters for "not found": a capitalised "Not Found" is an HTTP 404 from wget and the like, a real failure.
+    return "not found" in err or "no such" in err.lower()
 
 
 def _extract_error_detail(output_text: str) -> str:

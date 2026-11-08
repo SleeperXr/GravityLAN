@@ -47,6 +47,12 @@ def test_exit_1_with_a_missing_file_still_returns_the_output(err):
     assert su._check_exit(1, "partial", err) == "partial"
 
 
+@pytest.mark.parametrize("err", ["wget: server returned error: HTTP/1.1 404 Not Found", "Not Found"])
+def test_exit_1_with_a_capitalised_not_found_is_a_failure(err):
+    with pytest.raises(su.RemoteCommandError, match=r"failed \(exit 1\)"):
+        su._check_exit(1, "partial", err)
+
+
 def test_success_returns_the_output():
     assert su._check_exit(0, "ok", "warning on stderr") == "ok"
 
@@ -84,6 +90,21 @@ def test_build_connect_kwargs_missing_credentials():
     kwargs, err = su.build_connect_kwargs("1.2.3.4", "user", 22, None, None)
     assert kwargs == {}
     assert err == "Neither password nor SSH key provided."
+
+
+def test_build_connect_kwargs_with_a_password():
+    kwargs, err = su.build_connect_kwargs("1.2.3.4", "user", 2222, "pw", None)
+    assert err is None
+    assert kwargs == {"hostname": "1.2.3.4", "port": 2222, "username": "user", "timeout": 15, "password": "pw"}
+
+
+def test_build_connect_kwargs_prefers_the_key_over_the_password(monkeypatch):
+    key, loaded = object(), []
+    monkeypatch.setattr(su, "_load_ssh_key", lambda text, passphrase: loaded.append((text, passphrase)) or key)
+    kwargs, err = su.build_connect_kwargs("1.2.3.4", "user", 22, "pw", "KEY TEXT", "phrase")
+    assert err is None
+    assert kwargs["pkey"] is key and "password" not in kwargs
+    assert loaded == [("KEY TEXT", "phrase")]
 
 
 def test_connect_with_gateway_fallback_direct_success():
