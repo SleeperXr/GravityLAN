@@ -161,10 +161,11 @@ const selected = computed<RackEntry | null>(() => {
   return key ? (entries.value.find((e) => e.key === key) ?? unracked.value.find((e) => e.key === key) ?? null) : null;
 });
 const selectedInRack = computed(() => Boolean(selected.value && entries.value.some((e) => e.key === selected.value!.key)));
+const isPlacedEntry = (entry: RackEntry | null): entry is RackEntry & { unit: number } =>
+  Boolean(entry && entry.unit !== null && selectedInRack.value && !issueOf.value.has(entry.key));
 const selectedPosition = computed(() => {
   const entry = selected.value;
-  if (!entry || entry.unit === null || !selectedInRack.value || issueOf.value.has(entry.key)) return null;
-  return t('gv.rack.position', { unit: entry.unit, count: entry.height });
+  return isPlacedEntry(entry) ? t('gv.rack.position', { unit: entry.unit, count: entry.height }) : null;
 });
 const selectedMaxHeight = computed(() => {
   const entry = selected.value;
@@ -344,11 +345,16 @@ function openEntry(key: string) {
 /** The toast that can undo the last move of an entry; moving it again (arrow keys) keeps its first place. */
 let lastMove: { toastId: number; key: string; revert: () => void } | null = null;
 
+function activeMoveFor(seriesKey?: string) {
+  if (seriesKey === undefined || lastMove?.key !== seriesKey) return null;
+  return isShowing(lastMove.toastId) ? lastMove : null;
+}
+
 /** Confirms a change with a toast that can undo it; changes of one entry in a row share one toast. */
 function undoable(title: string, message: string, revert: () => void, seriesKey?: string) {
-  const series = seriesKey !== undefined && lastMove !== null && lastMove.key === seriesKey && isShowing(lastMove.toastId);
-  const run = series && lastMove ? lastMove.revert : revert;
-  if (series && lastMove) removeToast(lastMove.toastId);
+  const previous = activeMoveFor(seriesKey);
+  const run = previous ? previous.revert : revert;
+  if (previous) removeToast(previous.toastId);
   const toastId = showToast('success', title, message, { label: t('gv.toast.undo'), run });
   lastMove = seriesKey !== undefined ? { toastId, key: seriesKey, revert: run } : null;
 }
@@ -356,6 +362,10 @@ function undoable(title: string, message: string, revert: () => void, seriesKey?
 // ── Moving ───────────────────────────────────────────────────────────────────
 function findEntry(key: string): RackEntry | undefined {
   return entries.value.find((e) => e.key === key) ?? unracked.value.find((e) => e.key === key);
+}
+
+function updateItemInState(itemId: number, patch: Partial<RackItem>) {
+  cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === itemId ? { ...i, ...patch } : i)) };
 }
 
 /** Saves where an entry is; a device can come from another rack or from no rack */
@@ -366,24 +376,30 @@ async function savePlace(entry: RackEntry, rackId: number | null, unit: number |
     await api.updateDevice(entry.id, patch);
   } else {
     await api.updateRackItem(entry.id, { rack_unit: unit });
-    cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, rack_unit: unit } : i)) };
+    updateItemInState(entry.id, { rack_unit: unit });
   }
   emit('changed');
+}
+
+function entryRackId(entry: RackEntry, fallbackRackId: number): number | null {
+  if (entry.kind !== 'device') return fallbackRackId;
+  return props.devices.find((d) => d.id === entry.id)?.rack_id ?? null;
 }
 
 async function moveEntry(key: string, unit: number, withUndo = true) {
   const entry = findEntry(key);
   const current = rack.value;
   if (!entry || !current) return;
-  const before = { rackId: entry.kind === 'device' ? (props.devices.find((d) => d.id === entry.id)?.rack_id ?? null) : current.id, unit: entry.unit };
-  if (before.rackId === current.id && before.unit === unit) return;
+  const beforeRackId = entryRackId(entry, current.id);
+  if (beforeRackId === current.id && entry.unit === unit) return;
   if (!fitsAt(current.units, placed.value, unit, entry.height, key)) {
     showToast('error', t('gv.rack.drop_title'), t('gv.rack.no_room'));
     return;
   }
+  const beforeUnit = entry.unit;
   try {
     await savePlace(entry, current.id, unit);
-    if (withUndo) undoable(t('gv.rack.moved_title'), t('gv.rack.moved', { label: entry.label, unit }), () => void restorePlace(key, before.rackId, before.unit), key);
+    if (withUndo) undoable(t('gv.rack.moved_title'), t('gv.rack.moved', { label: entry.label, unit }), () => void restorePlace(key, beforeRackId, beforeUnit), key);
   } catch (err) {
     showToast('error', t('gv.rack.drop_title'), apiErrorMessage(err));
     void load(current.id);
@@ -454,7 +470,7 @@ async function placeAt(entry: RackEntry, unit: number) {
 const selectedTargets = computed(() => {
   const entry = selected.value;
   const current = rack.value;
-  if (!entry || !current || (entry.unit !== null && selectedInRack.value && !issueOf.value.has(entry.key))) return [];
+  if (!entry || !current || isPlacedEntry(entry)) return [];
   return placeTargets(current.units, placed.value, entry);
 });
 
@@ -466,6 +482,17 @@ function nudge(key: string, delta: number) {
   if (fitsAt(current.units, placed.value, unit, entry.height, key)) void moveEntry(key, unit);
 }
 
+async function saveEntryHeight(entry: RackEntry, height: number) {
+  if (entry.kind === 'device') {
+    store.patchDevice(entry.id, { rack_height: height });
+    await api.updateDevice(entry.id, { rack_height: height });
+  } else {
+    await api.updateRackItem(entry.id, { rack_height: height });
+    updateItemInState(entry.id, { rack_height: height });
+  }
+  emit('changed');
+}
+
 async function setHeight(height: number) {
   const entry = selected.value;
   const current = rack.value;
@@ -475,14 +502,7 @@ async function setHeight(height: number) {
     return;
   }
   try {
-    if (entry.kind === 'device') {
-      store.patchDevice(entry.id, { rack_height: height });
-      await api.updateDevice(entry.id, { rack_height: height });
-    } else {
-      await api.updateRackItem(entry.id, { rack_height: height });
-      cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, rack_height: height } : i)) };
-    }
-    emit('changed');
+    await saveEntryHeight(entry, height);
   } catch (err) {
     showToast('error', t('gv.rack.item_height'), apiErrorMessage(err));
     void load(current.id);
@@ -548,7 +568,7 @@ async function renameItem(name: string) {
   if (!entry || entry.kind !== 'item') return;
   try {
     await api.updateRackItem(entry.id, { name });
-    cabling.value = { ...cabling.value, items: cabling.value.items.map((i) => (i.id === entry.id ? { ...i, name } : i)) };
+    updateItemInState(entry.id, { name });
   } catch (err) {
     showToast('error', t('gv.rack.item_save'), apiErrorMessage(err));
   }
@@ -587,14 +607,22 @@ function onDragClick(subject: DragSubject) {
   else select(subject.key);
 }
 
+function dropOnStage(d: DragState, unit: number) {
+  if (d.from === 'palette' && d.itemKind) void createItem(d.itemKind, unit);
+  else void moveEntry(d.key, unit);
+}
+
+function canDetachOnDrop(d: DragState): boolean {
+  return d.entry?.kind === 'device' && d.from !== 'palette' && entries.value.some((e) => e.key === d.key);
+}
+
 function onDrop(d: DragState) {
   if (d.zone === 'stage' && d.target && !d.target.blocker) {
-    if (d.from === 'palette' && d.itemKind) void createItem(d.itemKind, d.target.unit);
-    else void moveEntry(d.key, d.target.unit);
+    dropOnStage(d, d.target.unit);
     return;
   }
   if (d.zone === 'store' && d.from === 'rack') void unplace(d.key);
-  else if (d.zone === 'unrack' && d.entry?.kind === 'device' && d.from !== 'palette' && entries.value.some((e) => e.key === d.key)) void detach(d.key);
+  else if (d.zone === 'unrack' && canDetachOnDrop(d)) void detach(d.key);
 }
 
 /** Shown next to the pointer while something is dragged outside the rack */
