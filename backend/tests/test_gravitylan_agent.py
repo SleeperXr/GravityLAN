@@ -276,6 +276,46 @@ def test_patch_metrics_apt_reboot_flag(agent_mod):
     assert result["reboot_required"] is True
 
 
+def _apt_host_without_sudo(agent_mod, monkeypatch, upgrade_output: bytes) -> list:
+    """apt-get update fails (mirror unreachable) and sudo is not installed; returns the commands that ran."""
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd[0])
+        if cmd[0] == "sudo":
+            raise FileNotFoundError("sudo")
+        return SimpleNamespace(returncode=100)
+
+    def fake_check_output(cmd, **kwargs):
+        calls.append(cmd[0])
+        return upgrade_output
+
+    monkeypatch.setattr(agent_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(agent_mod.subprocess, "check_output", fake_check_output)
+    return calls
+
+
+def test_run_apt_update_survives_missing_sudo(agent_mod, monkeypatch):
+    calls = _apt_host_without_sudo(agent_mod, monkeypatch, b"")
+    assert agent_mod._run_apt_update() is False
+    assert calls == ["apt-get", "sudo"]
+
+
+def test_patch_metrics_apt_counts_stale_lists_without_sudo(agent_mod, monkeypatch, caplog):
+    """A failed apt-get update on a host without sudo still counts from the old package lists and says so."""
+    _apt_host_without_sudo(agent_mod, monkeypatch, b"Inst foo [1.0] (1.1 Debian-Security) [a]\nInst bar [2.0] [b]\n")
+    monkeypatch.setattr(agent_mod, "_apt_cache_is_stale", lambda: True)
+    monkeypatch.setattr(agent_mod.shutil, "which", lambda name: None)
+    result = {"patch_available": 0, "patch_security": 0, "reboot_required": False}
+
+    with caplog.at_level("WARNING", logger=agent_mod.AGENT_NAME):
+        agent_mod.PatchMetrics()._collect_apt(result)
+
+    assert result["patch_available"] == 2
+    assert result["patch_security"] == 1
+    assert "apt-get update failed" in caplog.text
+
+
 def test_patch_metrics_dnf(agent_mod):
 
     proc = MagicMock()

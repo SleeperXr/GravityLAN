@@ -14,8 +14,10 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - GravityUI orbit map, "Arrange automatically": many devices around the router or a switch no longer stretch one huge circle. They sit on several rings from the inside out, as many per ring as fit with their labels, and devices of the same group and subnet sit next to each other. A network with 40 devices and no links now needs about half the room.
 - Agent 0.3.12: the agent's readers for containers, cgroup limits, package updates, subnets and neighbours are split into smaller parts. What it reports is unchanged; GravityLAN offers the update so the new version can be rolled out and tested.
+- Agent 0.3.13: the agent's CPU, disk, network and system-info readers and its handling of settings from the server are split into smaller parts. What they report is unchanged.
 
 ### Fixed
+- Agent 0.3.13, package updates on Debian and Ubuntu: a host without `sudo` whose `apt-get update` failed (for example a minimal container with an unreachable mirror) reported 0 available updates and logged nothing. It now counts from the package lists it already has and logs that they are out of date.
 - Network scan: a scan no longer loses all its results when a router that is online in one VLAN answers on an address in another VLAN that an older discovered host still holds. Before, the scan stopped saving with a database error; now the existing entry at that address is kept and marked online.
 - Agent settings: saving the agent configuration of a device whose configuration had never been opened before no longer fails with a server error (500).
 - Agent Update Center: with "use saved SSH connections", a device whose connection logs in as a user other than root no longer fails on sudo. The password typed in the dialog now goes along as the sudo password (it is not stored). A failed update also says why (sudo needs a password, sudo refused the password, a command did not finish in time, the host is not reachable on its SSH port) instead of "Deployment failed due to an unexpected internal error".
