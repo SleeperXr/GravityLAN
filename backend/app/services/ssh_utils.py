@@ -323,19 +323,6 @@ def _is_benign_not_found(exit_code: int, err: str) -> bool:
     return "not found" in err_lower or "no such" in err_lower
 
 
-def _check_sudo_password_error(output_text: str) -> None:
-    """Raise SudoPasswordError if the output matches known sudo password prompt or rejection patterns."""
-    text_lower = output_text.lower()
-    if any(term in text_lower for term in _SUDO_PASSWORD_NEEDED):
-        raise SudoPasswordError(
-            "sudo needs a password for this user. Enter the user's password; it is used for sudo and not stored."
-        )
-    if any(term in text_lower for term in _SUDO_PASSWORD_WRONG):
-        raise SudoPasswordError(
-            "Sudo password rejected by remote host. Please check your SSH / sudo password."
-        )
-
-
 def _extract_error_detail(output_text: str) -> str:
     """Extract a sanitized single-line summary of the last error output line."""
     if not output_text:
@@ -349,12 +336,19 @@ def _check_exit(exit_code: int, out: str, err: str) -> str:
     if exit_code == 0 or _is_benign_not_found(exit_code, err):
         return out
 
-    combined_output = err or out
-    _check_sudo_password_error(combined_output)
+    err_lower = (err or out).lower()
+    if any(term in err_lower for term in _SUDO_PASSWORD_NEEDED):
+        raise SudoPasswordError(
+            "sudo needs a password for this user. Enter the user's password; it is used for sudo and not stored."
+        )
+    if any(term in err_lower for term in _SUDO_PASSWORD_WRONG):
+        raise SudoPasswordError(
+            "Sudo password rejected by remote host. Please check your SSH / sudo password."
+        )
 
     # Not the command itself: staged files (heredocs) carry the agent token
     logger.warning("Remote command failed (exit %d): %s", exit_code, err)
-    detail = _extract_error_detail(combined_output)
+    detail = _extract_error_detail(err or out)
     raise RemoteCommandError(f"A command on the host failed (exit {exit_code}){detail}.")
 
 
