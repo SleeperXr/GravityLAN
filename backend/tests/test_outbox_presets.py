@@ -405,3 +405,119 @@ async def test_entry_without_subscription_is_not_sent(db):
     send.assert_not_awaited()
     await db.refresh(entry)
     assert (entry.status, entry.last_error) == ("failed", "Subscription removed")
+
+
+
+@pytest.mark.asyncio
+async def test_close_webhook_client():
+    from app.services.webhook_service import _get_client, close_webhook_client
+    client = await _get_client()
+    assert client is not None and not client.is_closed
+    await close_webhook_client()
+    # Calling again when None is safe
+    await close_webhook_client()
+
+
+def test_payload_parsing_and_token_decryption_edge_cases():
+    from app.services.secret_vault import VaultError
+    from app.services.webhook_service import _decrypt_token, _parse_payload
+
+    # Invalid json string
+    assert _parse_payload("not-json") == {"raw": "not-json"}
+    # Non-dict json
+    assert _parse_payload("123") == {"raw": "123"}
+    assert _parse_payload(None) == {}
+
+    # Token decryption error
+    mock_sub = WebhookSubscription(url="https://ntfy.sh/test", events="device.offline", encrypted_token="invalid")
+    with patch("app.services.webhook_service.vault.decrypt_optional", side_effect=VaultError("Corrupt")):
+        assert _decrypt_token(mock_sub) is None
+
+
+@pytest.mark.asyncio
+async def test_deliver_single_entry_network_and_os_errors(db):
+    sub = WebhookSubscription(url="https://ntfy.example.com/net-err", service_type="ntfy", events="device.offline", is_active=True)
+    db.add(sub)
+    await db.flush()
+
+    entry = NotificationOutbox(
+        subscription_id=sub.id,
+        event_type="device.offline",
+        target_url=sub.url,
+        service_type="ntfy",
+        payload="{}",
+        status="pending",
+        attempts=0,
+        max_attempts=3,
+        next_attempt_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    db.add(entry)
+    await db.commit()
+
+    with patch("app.services.webhook_service._send_webhook_post", AsyncMock(side_effect=httpx.ConnectTimeout("Timeout"))):
+        assert await deliver_pending_outbox(db) == 0
+    await db.refresh(entry)
+    assert entry.attempts == 1
+    assert "Timeout" in entry.last_error
+
+    # Test OSError / socket error
+    entry.next_attempt_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    await db.commit()
+    with patch("app.services.webhook_service._send_webhook_post", AsyncMock(side_effect=OSError("Network unreachable"))):
+        assert await deliver_pending_outbox(db) == 0
+    await db.refresh(entry)
+    assert entry.attempts == 2
+    assert "Network unreachable" in entry.last_error
+
+
+@pytest.mark.asyncio
+async def test_deliver_pending_outbox_db_none_and_process_outbox(db):
+    from app.services.webhook_service import deliver_pending_outbox, process_outbox
+
+    class _SessionCtx:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    with patch("app.services.webhook_service.async_session", return_value=_SessionCtx()):
+        res1 = await deliver_pending_outbox(db=None)
+        assert res1 == 0
+        res2 = await process_outbox()
+        assert res2 == 0
+
+
+@pytest.mark.asyncio
+async def test_trigger_webhooks_runs_task(db):
+    class _SessionCtx:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    with patch("app.services.webhook_service.async_session", return_value=_SessionCtx()), \
+         patch("app.services.webhook_service._send_webhook_post", AsyncMock(return_value=httpx.Response(200))):
+        task = await trigger_webhooks("test.event", {"status": "ok"})
+        await task
+
+
+@pytest.mark.asyncio
+async def test_send_webhook_post_variations_and_httperror():
+    from app.services.webhook_service import _send_webhook_post
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=httpx.Response(200))
+
+    # Bytes payload without headers
+    res = await _send_webhook_post(mock_client, "https://example.com/hook", b"raw-bytes")
+    assert res is not None
+
+    # Dict payload without headers
+    res = await _send_webhook_post(mock_client, "https://example.com/hook", {"k": "v"})
+    assert res is not None
+
+    # HTTPError raised from client.post
+    mock_client.post = AsyncMock(side_effect=httpx.RequestError("Request failed"))
+    with pytest.raises(httpx.HTTPError):
+        await _send_webhook_post(mock_client, "https://example.com/hook", {"k": "v"})

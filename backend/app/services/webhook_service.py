@@ -14,12 +14,14 @@ from sqlalchemy import select
 from app.database import async_session
 from app.models.webhook import NotificationOutbox, WebhookSubscription
 from app.schemas.webhook import check_webhook_url, is_blocked_webhook_ip
-from app.services.secret_vault import vault
+from app.services.secret_vault import VaultError, vault
 
 logger = logging.getLogger(__name__)
 
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 _background_webhook_tasks: set[asyncio.Task] = set()
 # One delivery pass at a time: an event's own pass and the retry loop must not send the same entry twice
@@ -41,6 +43,7 @@ async def close_webhook_client():
     if _shared_client is not None and not _shared_client.is_closed:
         await _shared_client.aclose()
         _shared_client = None
+
 
 EVENT_ALIASES = {
     "new_device": {"new_device", "device.new"},
@@ -177,39 +180,75 @@ async def _blocked_target_reason(url: str) -> str | None:
     return None
 
 
-async def _deliver_single_entry(db, client: httpx.AsyncClient, entry: NotificationOutbox) -> bool:
-    """Deliver a single outbox entry, updating its status, attempts, error, and next attempt time.
+def _decrypt_token(sub: WebhookSubscription) -> str | None:
+    """Decrypt the subscription token using vault, returning None on missing or invalid token."""
+    if not sub.encrypted_token:
+        return None
+    try:
+        return vault.decrypt_optional(sub.encrypted_token)
+    except (VaultError, ValueError, TypeError) as exc:
+        logger.error("Notification Outbox: Failed to decrypt secret token: %s", exc)
+        return None
 
-    The token stays on the subscription, so a deleted or disabled subscription sends nothing more.
-    Returns True if successfully delivered, False otherwise.
-    """
-    sub = await db.get(WebhookSubscription, entry.subscription_id) if entry.subscription_id else None
+
+def _parse_payload(payload_raw: str | None) -> dict:
+    """Parse outbox entry JSON payload into a dictionary, falling back to raw payload."""
+    if not payload_raw:
+        return {}
+    try:
+        parsed = json.loads(payload_raw)
+        return parsed if isinstance(parsed, dict) else {"raw": payload_raw}
+    except (json.JSONDecodeError, TypeError):
+        return {"raw": payload_raw}
+
+
+def _record_success(entry: NotificationOutbox) -> None:
+    """Mark an outbox entry as successfully delivered."""
+    entry.status = "delivered"
+    entry.delivered_at = _utc_now()
+    entry.attempts += 1
+    entry.last_error = None
+
+
+def _record_failure(entry: NotificationOutbox, error_msg: str) -> None:
+    """Record an attempt failure, scheduling exponential backoff or marking as failed."""
+    entry.attempts += 1
+    entry.last_error = error_msg[:300]
+    if entry.attempts >= entry.max_attempts:
+        entry.status = "failed"
+    else:
+        backoff = 10 * (2 ** (entry.attempts - 1))
+        entry.next_attempt_at = _utc_now() + timedelta(seconds=backoff)
+
+
+async def _resolve_subscription(
+    db,
+    entry: NotificationOutbox,
+    subscription: WebhookSubscription | None = None,
+    subscription_resolved: bool = False,
+) -> WebhookSubscription | None:
+    """Resolve and validate the subscription for an outbox entry."""
+    sub = subscription
+    if not subscription_resolved and sub is None and entry.subscription_id:
+        sub = await db.get(WebhookSubscription, entry.subscription_id)
+
     if sub is None or not sub.is_active:
         entry.status = "failed"
         entry.last_error = "Subscription removed"
-        return False
+        return None
+    return sub
 
-    raw_token = None
-    if sub.encrypted_token:
-        try:
-            raw_token = vault.decrypt_optional(sub.encrypted_token)
-        except Exception as exc:
-            logger.error("Notification Outbox: Failed to decrypt secret token: %s", exc)
 
-    payload_data = {}
-    if entry.payload:
-        try:
-            payload_data = json.loads(entry.payload)
-        except Exception:
-            payload_data = {"raw": entry.payload}
-
-    eff_url, headers, body = prepare_request_for_service(
-        entry.service_type, entry.target_url, raw_token, entry.event_type, payload_data
-    )
-
+async def _execute_and_record_delivery(
+    client: httpx.AsyncClient,
+    eff_url: str,
+    headers: dict[str, str],
+    body: dict | bytes,
+    entry: NotificationOutbox,
+) -> bool:
+    """Perform HTTP post and record success or backoff failure on the entry."""
     try:
         resp = await _send_webhook_post(client, eff_url, body, headers=headers)
-
         if resp is None:
             # Target blocked by SSRF protection
             entry.attempts += 1
@@ -223,40 +262,57 @@ async def _deliver_single_entry(db, client: httpx.AsyncClient, entry: Notificati
             status_code = 200
 
         if status_code < 400:
-            entry.status = "delivered"
-            entry.delivered_at = _utc_now()
-            entry.attempts += 1
-            entry.last_error = None
+            _record_success(entry)
             logger.debug("Notification Outbox: Successfully delivered event %s to %s", entry.event_type, eff_url)
             return True
 
-        entry.attempts += 1
         text = getattr(resp, "text", "")[:200]
-        err_msg = f"HTTP {status_code}: {text}"
-        entry.last_error = err_msg
         logger.warning(
             "Notification Outbox: %s returned %d (attempt %d/%d)",
-            eff_url, status_code, entry.attempts, entry.max_attempts,
+            eff_url, status_code, entry.attempts + 1, entry.max_attempts,
         )
-        if entry.attempts >= entry.max_attempts:
-            entry.status = "failed"
-        else:
-            backoff = 10 * (2 ** (entry.attempts - 1))
-            entry.next_attempt_at = _utc_now() + timedelta(seconds=backoff)
+        _record_failure(entry, f"HTTP {status_code}: {text}")
         return False
-    except Exception as e:
-        entry.attempts += 1
-        entry.last_error = str(e)[:300]
+    except httpx.HTTPError as e:
         logger.error(
             "Notification Outbox: Delivery error to %s: %s (attempt %d/%d)",
-            eff_url, e, entry.attempts, entry.max_attempts,
+            eff_url, e, entry.attempts + 1, entry.max_attempts,
         )
-        if entry.attempts >= entry.max_attempts:
-            entry.status = "failed"
-        else:
-            backoff = 10 * (2 ** (entry.attempts - 1))
-            entry.next_attempt_at = _utc_now() + timedelta(seconds=backoff)
+        _record_failure(entry, str(e))
         return False
+    except OSError as e:
+        logger.error(
+            "Notification Outbox: Network error to %s: %s (attempt %d/%d)",
+            eff_url, e, entry.attempts + 1, entry.max_attempts,
+        )
+        _record_failure(entry, str(e))
+        return False
+
+
+async def _deliver_single_entry(
+    db,
+    client: httpx.AsyncClient,
+    entry: NotificationOutbox,
+    subscription: WebhookSubscription | None = None,
+    subscription_resolved: bool = False,
+) -> bool:
+    """Deliver a single outbox entry, updating its status, attempts, error, and next attempt time.
+
+    The token stays on the subscription, so a deleted or disabled subscription sends nothing more.
+    Returns True if successfully delivered, False otherwise.
+    """
+    sub = await _resolve_subscription(db, entry, subscription, subscription_resolved)
+    if sub is None:
+        return False
+
+    raw_token = _decrypt_token(sub)
+    payload_data = _parse_payload(entry.payload)
+
+    eff_url, headers, body = prepare_request_for_service(
+        entry.service_type, entry.target_url, raw_token, entry.event_type, payload_data
+    )
+
+    return await _execute_and_record_delivery(client, eff_url, headers, body, entry)
 
 
 async def trigger_webhooks(event_type: str, data: dict):
@@ -267,6 +323,61 @@ async def trigger_webhooks(event_type: str, data: dict):
     return task
 
 
+def _filter_by_event_type(
+    subscriptions: list[WebhookSubscription],
+    event_type: str,
+) -> list[WebhookSubscription]:
+    """Return subscriptions that match the event type or any of its aliases."""
+    match_events = EVENT_ALIASES.get(event_type, {event_type})
+    matching: list[WebhookSubscription] = []
+    for sub in subscriptions:
+        sub_events = [e.strip() for e in sub.events.split(",") if e.strip()]
+        if any(e in match_events for e in sub_events):
+            matching.append(sub)
+    return matching
+
+
+def _match_subscriptions(
+    subscriptions: list[WebhookSubscription],
+    event_type: str,
+    data: dict,
+) -> list[WebhookSubscription]:
+    """Select subscriptions relevant for the given event and payload."""
+    target_sub_id = data.get("subscription_id") if isinstance(data, dict) else None
+    if event_type == "test.event" and target_sub_id is not None:
+        return [sub for sub in subscriptions if sub.id == target_sub_id]
+
+    target_subs = _filter_by_event_type(subscriptions, event_type)
+    if not target_subs and event_type == "test.event":
+        return list(subscriptions)
+    return target_subs
+
+
+def _build_outbox_entries(
+    target_subs: list[WebhookSubscription],
+    event_type: str,
+    data: dict,
+    now: datetime,
+) -> list[NotificationOutbox]:
+    """Create pending NotificationOutbox records for target subscriptions."""
+    payload_str = json.dumps(data)
+    return [
+        NotificationOutbox(
+            subscription_id=sub.id,
+            event_type=event_type,
+            target_url=sub.url,
+            service_type=sub.service_type or "webhook",
+            payload=payload_str,
+            attempts=0,
+            max_attempts=3,
+            status="pending",
+            next_attempt_at=now,
+            created_at=now,
+        )
+        for sub in target_subs
+    ]
+
+
 async def _enqueue_and_dispatch(event_type: str, data: dict):
     """Enqueues events into NotificationOutbox and immediately delivers entries."""
     try:
@@ -274,44 +385,20 @@ async def _enqueue_and_dispatch(event_type: str, data: dict):
             result = await db.execute(
                 select(WebhookSubscription).where(WebhookSubscription.is_active == True)
             )
-            subscriptions = result.scalars().all()
-
-            match_events = EVENT_ALIASES.get(event_type, {event_type})
-            target_sub_id = data.get("subscription_id") if isinstance(data, dict) else None
-            target_subs = []
-            if event_type == "test.event" and target_sub_id is not None:
-                target_subs = [sub for sub in subscriptions if sub.id == target_sub_id]
-            else:
-                for sub in subscriptions:
-                    sub_events = [e.strip() for e in sub.events.split(",") if e.strip()]
-                    if any(e in match_events for e in sub_events):
-                        target_subs.append(sub)
-                if not target_subs and event_type == "test.event":
-                    target_subs = list(subscriptions)
-
+            subscriptions = list(result.scalars().all())
+            target_subs = _match_subscriptions(subscriptions, event_type, data)
             if not target_subs:
                 return
 
             now = _utc_now()
-            for sub in target_subs:
-                db.add(NotificationOutbox(
-                    subscription_id=sub.id,
-                    event_type=event_type,
-                    target_url=sub.url,
-                    service_type=sub.service_type or "webhook",
-                    payload=json.dumps(data),
-                    attempts=0,
-                    max_attempts=3,
-                    status="pending",
-                    next_attempt_at=now,
-                    created_at=now,
-                ))
+            entries = _build_outbox_entries(target_subs, event_type, data, now)
+            db.add_all(entries)
 
             # Stored before the first attempt: after a crash or restart the retry loop picks them up
             await db.commit()
             await deliver_pending_outbox(db)
     except Exception as e:
-        logger.error(f"Webhook: Failed to enqueue outbox notifications for {event_type}: {e}", exc_info=True)
+        logger.exception("Webhook: Failed to enqueue outbox notifications for %s: %s", event_type, e)
 
 
 # Backwards compatibility alias for tests and external callers
@@ -331,15 +418,9 @@ async def _send_webhook_post(
         return None
     try:
         if isinstance(payload, bytes):
-            if headers:
-                response = await client.post(url, content=payload, headers=headers)
-            else:
-                response = await client.post(url, content=payload)
+            response = await client.post(url, content=payload, headers=headers)
         else:
-            if headers:
-                response = await client.post(url, json=payload, headers=headers)
-            else:
-                response = await client.post(url, json=payload)
+            response = await client.post(url, json=payload, headers=headers)
         if response.status_code >= 400:
             logger.warning(
                 f"Webhook: Target URL '{url}' returned status code {response.status_code}"
@@ -349,9 +430,6 @@ async def _send_webhook_post(
         return response
     except httpx.HTTPError as e:
         logger.error(f"Webhook: Failed to post to '{url}': {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Webhook: Unexpected error posting to '{url}': {e}")
         raise
 
 
@@ -381,10 +459,19 @@ async def deliver_pending_outbox(db=None) -> int:
         if not entries:
             return 0
 
+        # Batch-fetch all subscriptions for these entries to prevent N+1 queries in the loop
+        sub_ids = {e.subscription_id for e in entries if e.subscription_id}
+        subs_by_id: dict[int, WebhookSubscription] = {}
+        if sub_ids:
+            sub_query = select(WebhookSubscription).where(WebhookSubscription.id.in_(sub_ids))
+            sub_res = await db.execute(sub_query)
+            subs_by_id = {s.id: s for s in sub_res.scalars().all()}
+
         delivered_count = 0
         client = await _get_client()
         for entry in entries:
-            if await _deliver_single_entry(db, client, entry):
+            sub = subs_by_id.get(entry.subscription_id) if entry.subscription_id else None
+            if await _deliver_single_entry(db, client, entry, subscription=sub, subscription_resolved=True):
                 delivered_count += 1
             # Per entry: a crash in this pass must not send the earlier ones again
             await db.commit()
