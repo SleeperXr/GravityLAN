@@ -51,6 +51,14 @@ def test_docker_host_itself_retries_on_gateway(monkeypatch, configure):
     assert [c.kwargs["hostname"] for c in client.connect.call_args_list] == [DOCKER_HOST, GATEWAY]
 
 
+def test_docker_host_retries_when_the_handshake_is_cut_off(monkeypatch):
+    monkeypatch.setattr(settings, "docker_host_ip", DOCKER_HOST)
+    client = MagicMock()
+    client.connect.side_effect = [EOFError(), None]  # paramiko re-raises this when the key exchange is closed
+    connect_with_gateway_fallback(client, {"hostname": DOCKER_HOST, "port": 22, "username": "root"}, DOCKER_HOST)
+    assert [c.kwargs["hostname"] for c in client.connect.call_args_list] == [DOCKER_HOST, GATEWAY]
+
+
 def test_terminal_does_not_open_docker_host_for_offline_device(monkeypatch):
     targets = []
 
