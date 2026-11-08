@@ -1,6 +1,5 @@
 """Tests for hostname resolution helpers (app/scanner/hostname.py)."""
 
-import sys
 
 import pytest
 
@@ -113,7 +112,6 @@ def test_resolve_shell_win32_delegates(monkeypatch):
 
 # --- cache: found names for an hour, misses only until the next quick scan ---
 
-import pytest
 from datetime import datetime, timedelta, timezone
 
 
@@ -289,3 +287,117 @@ def test_try_dig_without_dig_installed(monkeypatch):
 def test_win32_api_is_only_used_on_windows(monkeypatch):
     monkeypatch.setattr(hostname.sys, "platform", "linux")
     assert hostname._resolve_win32("192.0.2.5") is None
+
+
+# --- additional coverage: Windows helpers, error paths, HostnameResolveOptions ---
+
+from unittest.mock import AsyncMock
+
+
+def test_resolve_ping_win32_success(monkeypatch):
+    stdout = "Pinging win-pc [192.168.1.50] with 32 bytes of data:\nReply from 192.168.1.50: bytes=32\n"
+    monkeypatch.setattr(hostname.subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=0, stdout=stdout))
+    assert hostname._resolve_ping_win32("192.168.1.50") == "win-pc"
+
+
+def test_resolve_ping_win32_error(monkeypatch):
+    def fake_run(*a, **kw):
+        raise hostname.subprocess.SubprocessError("timeout")
+
+    monkeypatch.setattr(hostname.subprocess, "run", fake_run)
+    assert hostname._resolve_ping_win32("192.168.1.50") is None
+
+
+def test_resolve_win32_success(monkeypatch):
+    monkeypatch.setattr(hostname.sys, "platform", "win32")
+    import ctypes
+
+    def fake_getnameinfo(sa, sa_size, host, host_size, serv, serv_size, flags):
+        host.value = "desktop.lan"
+        return 0
+
+    monkeypatch.setattr(ctypes.windll.ws2_32, "GetNameInfoW", fake_getnameinfo)
+    assert hostname._resolve_win32("192.168.1.10") == "desktop.lan"
+
+
+def test_resolve_win32_exception(monkeypatch):
+    monkeypatch.setattr(hostname.sys, "platform", "win32")
+    import ctypes
+
+    def fake_getnameinfo(*a, **kw):
+        raise OSError("failed")
+
+    monkeypatch.setattr(ctypes.windll.ws2_32, "GetNameInfoW", fake_getnameinfo)
+    assert hostname._resolve_win32("192.168.1.10") is None
+
+
+def test_resolve_direct_dns_no_dnspython(monkeypatch):
+    monkeypatch.setattr(hostname, "HAS_DNS_PYTHON", False)
+    assert hostname._resolve_direct_dns("192.168.1.1", None, 2.0) is None
+
+
+def test_resolve_direct_dns_error(monkeypatch):
+    import dns.resolver
+
+    class ErrorResolver:
+        def __init__(self):
+            self.nameservers = []
+
+        def resolve(self, *a, **kw):
+            raise dns.resolver.NXDOMAIN()
+
+    monkeypatch.setattr(hostname, "HAS_DNS_PYTHON", True)
+    monkeypatch.setattr(dns.resolver, "Resolver", ErrorResolver)
+    assert hostname._resolve_direct_dns("192.168.1.1", "192.168.1.2", 2.0) is None
+
+
+def test_resolve_socket_error(monkeypatch):
+    def fake_getnameinfo(*a, **kw):
+        raise hostname.socket.gaierror("lookup failed")
+
+    monkeypatch.setattr(hostname.socket, "getnameinfo", fake_getnameinfo)
+    assert hostname._resolve_socket("192.168.1.1") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_hostname_executor_exception(monkeypatch):
+    loop = hostname.asyncio.get_running_loop()
+
+    def fake_run_in_executor(executor, func, *args):
+        raise RuntimeError("executor crashed")
+
+    monkeypatch.setattr(loop, "run_in_executor", fake_run_in_executor)
+    assert await hostname.resolve_hostname("192.0.2.88", use_cache=False) is None
+
+
+def test_ptr_lookup_without_dnspython(monkeypatch):
+    monkeypatch.setattr(hostname, "HAS_DNS_PYTHON", False)
+    assert hostname.ptr_lookup("192.0.2.1", None) == (None, "error")
+
+
+@pytest.mark.asyncio
+async def test_resolve_hostnames_with_options_object(monkeypatch):
+    monkeypatch.setattr(hostname, "resolve_hostname", AsyncMock(return_value="my-host"))
+    options = hostname.HostnameResolveOptions(timeout=1.0, max_concurrent=2)
+    hosts = [{"ip": "10.0.0.1"}]
+    res = await hostname.resolve_hostnames(hosts, options)
+    assert res[0]["hostname"] == "my-host"
+
+
+@pytest.mark.asyncio
+async def test_resolve_hostnames_positional_timeout(monkeypatch):
+    monkeypatch.setattr(hostname, "resolve_hostname", AsyncMock(return_value="my-host"))
+    hosts = [{"ip": "10.0.0.1"}]
+    res = await hostname.resolve_hostnames(hosts, 2.5)
+    assert res[0]["hostname"] == "my-host"
+
+
+@pytest.mark.asyncio
+async def test_resolve_hostnames_gather_exception_handled(monkeypatch):
+    async def failing_resolve(*args):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(hostname, "resolve_hostname", failing_resolve)
+    hosts = [{"ip": "10.0.0.1"}]
+    res = await hostname.resolve_hostnames(hosts)
+    assert res == [{"ip": "10.0.0.1"}]
