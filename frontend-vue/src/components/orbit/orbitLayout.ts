@@ -113,10 +113,18 @@ function fan(n: number, centre: number, span: number): number[] {
   return Array.from({ length: n }, (_, i) => centre - span / 2 + step * (i + 0.5));
 }
 
-/** Positions for every body, one solar system per star, systems side by side. */
-export function layoutOrbit(bodies: Map<number, OrbitBody>): Map<number, Point> {
+type Sectors = Map<number, { start: number; span: number }>;
+
+/** Who hangs below whom, and the two measures the tiers need (memoised for one layout). */
+interface OrbitTree {
+  moons: Map<number, OrbitBody[]>;
+  planets: Map<number, OrbitBody[]>;
+  extent: (p: OrbitBody) => number;
+  weight: (p: OrbitBody) => number;
+}
+
+function orbitTree(bodies: Map<number, OrbitBody>): OrbitTree {
   const { moons, planets } = childrenOf(bodies);
-  const roots = [...bodies.values()].filter((b) => b.parentId == null || !bodies.has(b.parentId)).sort((a, b) => (a.kind === 'star' ? 0 : 1) - (b.kind === 'star' ? 0 : 1) || a.id - b.id);
 
   /** Radius a planet's own system needs: its moon ring plus their labels. */
   const extentCache = new Map<number, number>();
@@ -138,70 +146,87 @@ export function layoutOrbit(bodies: Map<number, OrbitBody>): Map<number, Point> 
     return value;
   }
 
+  return { moons, planets, extent, weight };
+}
+
+const totalWeight = (list: OrbitBody[], weight: OrbitTree['weight']) => list.reduce((s, p) => s + weight(p), 0) || 1;
+
+/** Share the arc from `start` among `kids`, each by how much hangs below it. */
+function divideSector(kids: OrbitBody[], weight: OrbitTree['weight'], start: number, span: number, sectors: Sectors): void {
+  const total = totalWeight(kids, weight);
+  let at = start;
+  for (const kid of kids) {
+    const share = (weight(kid) / total) * span;
+    sectors.set(kid.id, { start: at, span: share });
+    at += share;
+  }
+}
+
+/** Moons of the star on their own rings around it, as many rings as they need. Returns the reach. */
+function placeStarMoons(local: Map<number, Point>, tree: OrbitTree, root: OrbitBody, centre: Point): number {
+  const starMoons = moonOrder(tree.moons.get(root.id) ?? []);
+  const starRings = packRings(starMoons.length, TAU, STAR_MOON_RING_MIN);
+  placeOnRings(local, starMoons, centre, starRings, -Math.PI / 2 + Math.PI / Math.max(1, starRings[0]?.count ?? 1), TAU, true);
+  return starMoons.length ? outerRing(starRings) + BODY_RADIUS.moon + LABEL_PAD : BODY_RADIUS.star + LABEL_PAD;
+}
+
+/** Ring big enough to clear the inner rings and to give every planet the arc it needs. */
+function tierRadius(tier: OrbitBody[], tree: OrbitTree, sectors: Sectors, reach: number, maxExtent: number): number {
+  let radius = Math.round(reach + maxExtent + TIER_GAP);
+  for (const p of tier) radius = Math.max(radius, Math.ceil((2 * tree.extent(p) + TIER_GAP) / Math.max(sectors.get(p.id)!.span, 0.05)));
+  return radius;
+}
+
+/** A planet on its ring, its moons fanned away from the star, its sector split among its child planets. */
+function placePlanet(local: Map<number, Point>, tree: OrbitTree, sectors: Sectors, p: OrbitBody, centre: Point, radius: number): void {
+  const s = sectors.get(p.id)!;
+  const angle = s.start + s.span / 2;
+  const pos = polar(centre, radius, angle);
+  local.set(p.id, pos);
+  const own = moonOrder(tree.moons.get(p.id) ?? []);
+  placeOnRings(local, own, pos, packRings(own.length, MOON_FAN, MOON_RING_MIN), angle, MOON_FAN, false);
+  divideSector(tree.planets.get(p.id) ?? [], tree.weight, s.start, s.span, sectors);
+}
+
+/** One solar system around (0, 0): its positions and how far it reaches. */
+function layoutSystem(root: OrbitBody, tree: OrbitTree): { local: Map<number, Point>; reach: number } {
+  const local = new Map<number, Point>();
+  const centre = { x: 0, y: 0 };
+  local.set(root.id, centre);
+  let reach = placeStarMoons(local, tree, root, centre);
+
+  // Planets tier by tier, as a radial tree: every planet owns a sector of the circle, sized
+  // by how much hangs below it, and its child planets share that sector. So a single core
+  // switch still spreads its servers and APs all around the router.
+  const sectors: Sectors = new Map();
+  let tier = tree.planets.get(root.id) ?? [];
+  const first = tier.length ? tree.weight(tier[0]) : 1;
+  divideSector(tier, tree.weight, -Math.PI / 2 - (first / totalWeight(tier, tree.weight)) * Math.PI, TAU, sectors);
+
+  while (tier.length) {
+    const maxExtent = Math.max(...tier.map(tree.extent));
+    const radius = tierRadius(tier, tree, sectors, reach, maxExtent);
+    for (const p of tier) placePlanet(local, tree, sectors, p, centre, radius);
+    reach = radius + maxExtent;
+    tier = tier.flatMap((p) => tree.planets.get(p.id) ?? []);
+  }
+  return { local, reach };
+}
+
+/** Positions for every body, one solar system per star, systems side by side. */
+export function layoutOrbit(bodies: Map<number, OrbitBody>): Map<number, Point> {
+  const tree = orbitTree(bodies);
+  const roots = [...bodies.values()].filter((b) => b.parentId == null || !bodies.has(b.parentId)).sort((a, b) => (a.kind === 'star' ? 0 : 1) - (b.kind === 'star' ? 0 : 1) || a.id - b.id);
+
   const out = new Map<number, Point>();
   let cursorX = 0;
   let previousRadius = 0;
 
   roots.forEach((root, index) => {
-    const local = new Map<number, Point>();
-    const centre = { x: 0, y: 0 };
-    local.set(root.id, centre);
-
-    // Moons of the star on their own rings around it, as many rings as they need
-    const starMoons = moonOrder(moons.get(root.id) ?? []);
-    const starRings = packRings(starMoons.length, TAU, STAR_MOON_RING_MIN);
-    placeOnRings(local, starMoons, centre, starRings, -Math.PI / 2 + Math.PI / Math.max(1, starRings[0]?.count ?? 1), TAU, true);
-    let reach = starMoons.length ? outerRing(starRings) + BODY_RADIUS.moon + LABEL_PAD : BODY_RADIUS.star + LABEL_PAD;
-
-    // Planets tier by tier, as a radial tree: every planet owns a sector of the circle, sized
-    // by how much hangs below it, and its child planets share that sector. So a single core
-    // switch still spreads its servers and APs all around the router.
-    const sector = new Map<number, { start: number; span: number }>();
-    const tier1 = planets.get(root.id) ?? [];
-    const w1 = tier1.map(weight);
-    const w1Total = w1.reduce((s, w) => s + w, 0) || 1;
-    let start = -Math.PI / 2 - ((w1[0] ?? 1) / w1Total) * Math.PI;
-    tier1.forEach((p, i) => {
-      const span = (w1[i] / w1Total) * TAU;
-      sector.set(p.id, { start, span });
-      start += span;
-    });
-
-    let tier = tier1;
-    while (tier.length) {
-      const maxExtent = Math.max(...tier.map(extent));
-      // Ring big enough to clear the inner rings and to give every planet the arc it needs
-      let radius = Math.round(reach + maxExtent + TIER_GAP);
-      for (const p of tier) radius = Math.max(radius, Math.ceil((2 * extent(p) + TIER_GAP) / Math.max(sector.get(p.id)!.span, 0.05)));
-
-      for (const p of tier) {
-        const s = sector.get(p.id)!;
-        const angle = s.start + s.span / 2;
-        const pos = polar(centre, radius, angle);
-        local.set(p.id, pos);
-        // The planet's moons, fanned away from the star, on as many rings as they need
-        const own = moonOrder(moons.get(p.id) ?? []);
-        placeOnRings(local, own, pos, packRings(own.length, MOON_FAN, MOON_RING_MIN), angle, MOON_FAN, false);
-        // Split the sector among the child planets
-        const kids = planets.get(p.id) ?? [];
-        const wk = kids.map(weight);
-        const wTotal = wk.reduce((sum, w) => sum + w, 0) || 1;
-        let a = s.start;
-        kids.forEach((k, i) => {
-          const span = (wk[i] / wTotal) * s.span;
-          sector.set(k.id, { start: a, span });
-          a += span;
-        });
-      }
-
-      reach = radius + maxExtent;
-      tier = tier.flatMap((p) => planets.get(p.id) ?? []);
-    }
-
+    const { local, reach } = layoutSystem(root, tree);
     // Systems side by side along x
-    const systemRadius = reach;
-    if (index > 0) cursorX += previousRadius + SYSTEM_GAP + systemRadius;
-    previousRadius = systemRadius;
+    if (index > 0) cursorX += previousRadius + SYSTEM_GAP + reach;
+    previousRadius = reach;
     for (const [id, p] of local) out.set(id, { x: p.x + cursorX, y: p.y });
   });
 
@@ -267,35 +292,45 @@ const hitsCircle = (b: Box, c: Point, r: number) => {
   return Math.hypot(nx - c.x, ny - c.y) < r + 2;
 };
 
+type LabelItem = { id: number; pos: Point; radius: number; size: { w: number; h: number }; rank: number };
+type LabelObstacle = { id: number; pos: Point; radius: number };
+type LabelClaim = { box: Box; place: LabelPlacement };
+
+const LABEL_SIDES: LabelSide[] = ['below', 'above', 'right', 'left'];
+
+function isFree(box: Box, ownId: number, placed: Box[], obstacles: LabelObstacle[]): boolean {
+  return !placed.some((b) => overlaps(b, box)) && !obstacles.some((o) => o.id !== ownId && hitsCircle(box, o.pos, o.radius));
+}
+
+/** The first free spot: every side next to the body, then the same sides up to three label heights further out. */
+function freeClaim(item: LabelItem, size: { w: number; h: number }, scale: number, placed: Box[], obstacles: LabelObstacle[]): LabelClaim | null {
+  for (let ring = 0; ring < 4; ring++) {
+    for (const side of LABEL_SIDES) {
+      const candidate = boxFor(item.pos, item.radius + ring * size.h, size, side, scale);
+      if (isFree(candidate.box, item.id, placed, obstacles)) return candidate;
+    }
+  }
+  return null;
+}
+
 /**
  * Put every label where it collides with nothing: below the body if free, else above, right or
  * left (stars first, then planets, then moons). When every side is taken it tries the same sides
  * a label height further out, up to three times, and only then falls back to below.
  */
 export function placeLabels(
-  items: { id: number; pos: Point; radius: number; size: { w: number; h: number }; rank: number }[],
+  items: LabelItem[],
   /** Labels drawn larger than 1:1 (counter-scaled against the zoom) need larger boxes */
   scale = 1,
   /** Bodies whose circles labels must avoid, labelled or not (defaults to `items`) */
-  obstacles: { id: number; pos: Point; radius: number }[] = items,
+  obstacles: LabelObstacle[] = items,
 ): Map<number, LabelPlacement> {
   const placed: Box[] = [];
   const out = new Map<number, LabelPlacement>();
   const order = [...items].sort((a, b) => a.rank - b.rank || a.id - b.id);
   for (const item of order) {
     const size = { w: item.size.w * scale, h: item.size.h * scale };
-    let chosen: { box: Box; place: LabelPlacement } | null = null;
-    for (let ring = 0; ring < 4 && !chosen; ring++) {
-      for (const side of ['below', 'above', 'right', 'left'] as LabelSide[]) {
-        const candidate = boxFor(item.pos, item.radius + ring * size.h, size, side, scale);
-        const blocked = placed.some((b) => overlaps(b, candidate.box)) || obstacles.some((o) => o.id !== item.id && hitsCircle(candidate.box, o.pos, o.radius));
-        if (!blocked) {
-          chosen = candidate;
-          break;
-        }
-      }
-    }
-    chosen ??= boxFor(item.pos, item.radius, size, 'below', scale);
+    const chosen = freeClaim(item, size, scale, placed, obstacles) ?? boxFor(item.pos, item.radius, size, 'below', scale);
     placed.push(chosen.box);
     out.set(item.id, chosen.place);
   }
