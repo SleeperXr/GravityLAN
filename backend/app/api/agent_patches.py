@@ -397,6 +397,70 @@ async def _report_result(websocket: WebSocket, success: bool, msg: str) -> None:
         pass
 
 
+def _session_ssh_options(session_data: dict) -> tuple[dict, dict]:
+    """SSH login and the optional host key handling of a consumed patch session.
+
+    Without a pinned key (and outside strict mode) the first connection learns it (TOFU).
+    """
+    ssh = {key: session_data[key] for key in ("host_ip", "ssh_user", "ssh_password", "ssh_key", "ssh_port")}
+    pinned_host_key = session_data.get("pinned_host_key")
+    tofu_policy = TofuHostKeyPolicy() if pinned_host_key is None and not settings.ssh_strict_mode else None
+    optional = {
+        "ssh_key_passphrase": session_data.get("ssh_key_passphrase"),
+        "pinned_host_key": pinned_host_key,
+        "tofu_policy": tofu_policy,
+    }
+    return ssh, optional
+
+
+async def _pin_probed_host_key(ssh: dict, optional: dict) -> None:
+    """A host key learned during the probe is stored and pinned for the run itself."""
+    tofu_policy = optional["tofu_policy"]
+    if tofu_policy and tofu_policy.captured:
+        await _remember_host_key(ssh["host_ip"], ssh["ssh_port"], tofu_policy.captured)
+        optional["pinned_host_key"] = PinnedHostKey(
+            key_type=tofu_policy.captured.key_type, fingerprint=tofu_policy.captured.fingerprint,
+        )
+        optional["tofu_policy"] = None
+
+
+async def _announce_update_command(websocket: WebSocket, pkg_manager: str, mode: str) -> str | None:
+    """The update command for this package manager, announced to the client; None (socket closed) if unsupported."""
+    await websocket.send_text(f"[Info] Detected package manager: {pkg_manager}\r\n")
+    cmd = _build_update_command(pkg_manager, mode)
+    if cmd is None:
+        await websocket.send_text(f"[Error] Package manager {pkg_manager} is not supported.\r\n")
+        await websocket.close()
+        return None
+    if mode == "security-only":
+        await websocket.send_text("[Info] Running security updates only...\r\n")
+    else:
+        await websocket.send_text("[Info] Running full system upgrade...\r\n")
+    return cmd
+
+
+async def _stream_update(
+    websocket: WebSocket, device_id: int, mode: str, actor: str, ssh: dict, optional: dict, cmd: str,
+) -> None:
+    """Run the update with live output, audit it, and on success keep a learned host key and clear the patch state."""
+    sink = _ClientSink(websocket, device_id)
+    stream_fn = _get_agent_attr("run_ssh_command_stream", run_ssh_command_stream)
+    success, msg = await stream_fn(**_ssh_kwargs_for(stream_fn, {**ssh, "command": cmd, "output_callback": sink}, **optional))
+    await audit(
+        websocket, "agent.patches", "ok" if success else "failed",
+        device_id=device_id, target=ssh["host_ip"], detail=mode, actor=actor,
+    )
+
+    if success:
+        tofu_policy = optional["tofu_policy"]
+        if tofu_policy and tofu_policy.captured:
+            await _remember_host_key(ssh["host_ip"], ssh["ssh_port"], tofu_policy.captured)
+        clear_fn = _get_agent_attr("_clear_device_patch_state", _clear_device_patch_state)
+        await clear_fn(device_id)
+    if sink.connected:
+        await _report_result(websocket, success, msg)
+
+
 @patch_router.websocket("/patches/{device_id}/run-ws")
 async def run_patches_websocket(websocket: WebSocket, device_id: int):
     """WebSocket endpoint to run updates and stream output live to the frontend."""
@@ -422,15 +486,7 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
 
     mode = session_data["mode"]
     actor = actor_from_identity(auth_info.get("identity"))
-    ssh = {key: session_data[key] for key in ("host_ip", "ssh_user", "ssh_password", "ssh_key", "ssh_port")}
-    host_ip, ssh_port = ssh["host_ip"], ssh["ssh_port"]
-    pinned_host_key = session_data.get("pinned_host_key")
-    tofu_policy = TofuHostKeyPolicy() if pinned_host_key is None and not settings.ssh_strict_mode else None
-    optional = {
-        "ssh_key_passphrase": session_data.get("ssh_key_passphrase"),
-        "pinned_host_key": pinned_host_key,
-        "tofu_policy": tofu_policy,
-    }
+    ssh, optional = _session_ssh_options(session_data)
 
     await websocket.send_text("[Info] Starting update session...\r\n")
     await websocket.send_text("[Info] Detecting target system configuration...\r\n")
@@ -438,34 +494,8 @@ async def run_patches_websocket(websocket: WebSocket, device_id: int):
     if pkg_manager is None:
         return
 
-    # A host key learned during the probe is stored and pinned for the run itself
-    if tofu_policy and tofu_policy.captured:
-        await _remember_host_key(host_ip, ssh_port, tofu_policy.captured)
-        optional["pinned_host_key"] = PinnedHostKey(
-            key_type=tofu_policy.captured.key_type, fingerprint=tofu_policy.captured.fingerprint,
-        )
-        optional["tofu_policy"] = tofu_policy = None
-
-    await websocket.send_text(f"[Info] Detected package manager: {pkg_manager}\r\n")
-    cmd = _build_update_command(pkg_manager, mode)
+    await _pin_probed_host_key(ssh, optional)
+    cmd = await _announce_update_command(websocket, pkg_manager, mode)
     if cmd is None:
-        await websocket.send_text(f"[Error] Package manager {pkg_manager} is not supported.\r\n")
-        await websocket.close()
         return
-    if mode == "security-only":
-        await websocket.send_text("[Info] Running security updates only...\r\n")
-    else:
-        await websocket.send_text("[Info] Running full system upgrade...\r\n")
-
-    sink = _ClientSink(websocket, device_id)
-    stream_fn = _get_agent_attr("run_ssh_command_stream", run_ssh_command_stream)
-    success, msg = await stream_fn(**_ssh_kwargs_for(stream_fn, {**ssh, "command": cmd, "output_callback": sink}, **optional))
-    await audit(websocket, "agent.patches", "ok" if success else "failed", device_id=device_id, target=host_ip, detail=mode, actor=actor)
-
-    if success:
-        if tofu_policy and tofu_policy.captured:
-            await _remember_host_key(host_ip, ssh_port, tofu_policy.captured)
-        clear_fn = _get_agent_attr("_clear_device_patch_state", _clear_device_patch_state)
-        await clear_fn(device_id)
-    if sink.connected:
-        await _report_result(websocket, success, msg)
+    await _stream_update(websocket, device_id, mode, actor, ssh, optional, cmd)
