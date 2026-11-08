@@ -94,6 +94,33 @@ def _mac_is_valid(mac: str | None) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class ScanHit:
+    """What one scan learned about one host."""
+
+    ip: str | None
+    mac: str | None
+    hostname: str | None = None
+    vendor: str | None = None
+    ports: list[int] | None = None
+
+    @classmethod
+    def from_host(cls, host: dict) -> "ScanHit":
+        return cls(host.get("ip"), host.get("mac"), host.get("hostname"), host.get("vendor"), host.get("ports"))
+
+    @property
+    def is_valid_mac(self) -> bool:
+        return _mac_is_valid(self.mac)
+
+
+def _mark_seen(record) -> None:
+    """A Device or DiscoveredHost answered just now: online, and no longer a placeholder."""
+    record.is_online = True
+    record.last_seen = datetime.now(timezone.utc)
+    if getattr(record, "ip_placeholder", False):
+        record.ip_placeholder = False
+
+
 def _should_apply_custom_name(disc, dev) -> bool:
     """True when a scan-provided custom name may overwrite the device display name."""
     if not disc:
@@ -234,30 +261,43 @@ def _is_unraid_host(entity) -> bool:
     return False
 
 
+def _macs_conflict(known_mac: str | None, mac: str, is_valid_mac: bool) -> bool:
+    return bool(is_valid_mac and _mac_is_valid(known_mac) and known_mac.lower() != mac.lower())
+
+
+async def _mac_owner_allows_ip_match(db, model, mac: str, cand) -> bool:
+    """True when the record that holds the scanned MAC does not rule out the IP match on `cand`."""
+    mac_owners = [owner for owner in await _query_by_mac_all(db, model, mac) if owner.id != cand.id]
+    if len(mac_owners) != 1:
+        # No owner: nothing speaks against the IP. Several records behind one MAC is the
+        # ipvlan pattern (containers share the host's MAC): the MAC can't tell them apart,
+        # so the IP match stands. Asking for a single owner here raised
+        # MultipleResultsFound and skipped the host every scan.
+        return True
+    return _is_unraid_host(mac_owners[0])
+
+
 async def _match_ip_with_mac_conflict(db, model, mac: str, ip: str, is_valid_mac: bool):
     """
     IP-only match that prefers a candidate whose MAC conflicts with the scanned MAC
     only if the MAC owner is an Unraid host (otherwise the candidate is rejected).
     """
     cand = await _query_by_ip(db, model, ip)
-    if not cand:
-        return None
+    if not cand or not _macs_conflict(cand.mac, mac, is_valid_mac):
+        return cand
+    return cand if await _mac_owner_allows_ip_match(db, model, mac, cand) else None
 
-    if not (is_valid_mac and _mac_is_valid(cand.mac) and cand.mac.lower() != mac.lower()):
-        return cand
 
-    mac_owners = [owner for owner in await _query_by_mac_all(db, model, mac) if owner.id != cand.id]
-    if not mac_owners:
-        return cand
-    if len(mac_owners) > 1:
-        # Several records behind one MAC is the ipvlan pattern (containers share the
-        # host's MAC): the MAC can't tell them apart, so the IP match stands. Asking for
-        # a single owner here raised MultipleResultsFound and skipped the host every scan.
-        return cand
-
-    if _is_unraid_host(mac_owners[0]):
-        return cand
-    return None
+async def _match_by_address(db, model, hit: ScanHit):
+    """The record at the scanned address. Returns (record, "exact" or "ip") or (None, None)."""
+    if not hit.ip:
+        return None, None
+    if hit.is_valid_mac:
+        exact = await _query_by_mac_and_ip(db, model, hit.mac, hit.ip)
+        if exact:
+            return exact, "exact"
+    cand = await _match_ip_with_mac_conflict(db, model, hit.mac, hit.ip, hit.is_valid_mac)
+    return (cand, "ip") if cand else (None, None)
 
 
 async def _match_by_name(db, model, name: str | None, name_columns):
@@ -270,27 +310,18 @@ async def _match_by_name(db, model, name: str | None, name_columns):
     return placeholder or candidates[0]
 
 
-async def _match_dashboard_device(db, ip: str, mac: str | None, hostname: str | None, is_valid_mac: bool):
+async def _match_dashboard_device(db, hit: ScanHit):
     """Match a monitored Device. Returns (device, match_type) or (None, None)."""
-    if is_valid_mac and ip:
-        dev = await _query_by_mac_and_ip(db, Device, mac, ip)
-        if dev:
-            return dev, "exact"
+    dev, match_type = await _match_by_address(db, Device, hit)
+    if dev:
+        return dev, match_type
 
-    if ip:
-        cand = await _match_ip_with_mac_conflict(db, Device, mac, ip, is_valid_mac)
-        if cand:
-            return cand, "ip"
+    dev = await _match_dashboard_by_mac(db, hit.mac, hit.ip, hit.is_valid_mac)
+    if dev:
+        return dev, "mac"
 
-    cand = await _match_dashboard_by_mac(db, mac, ip, is_valid_mac)
-    if cand:
-        return cand, "mac"
-
-    cand = await _match_by_name(db, Device, hostname, (Device.hostname, Device.display_name))
-    if cand:
-        return cand, "hostname"
-
-    return None, None
+    dev = await _match_by_name(db, Device, hit.hostname, (Device.hostname, Device.display_name))
+    return (dev, "hostname") if dev else (None, None)
 
 
 async def _match_dashboard_by_mac(db, mac: str, ip: str, is_valid_mac: bool):
@@ -309,26 +340,21 @@ async def _match_dashboard_by_mac(db, mac: str, ip: str, is_valid_mac: bool):
     return None
 
 
-async def _match_discovered_host(db, ip: str, mac: str | None, hostname: str | None, is_valid_mac: bool, ctx: SyncContext | None = None):
+async def _match_discovered_host(db, hit: ScanHit, ctx: SyncContext | None = None):
     """Match a DiscoveredHost record. Returns the record or None."""
-    if is_valid_mac and ip:
-        disc = await _query_by_mac_and_ip(db, DiscoveredHost, mac, ip)
-        if disc:
-            return disc
-
-    if ip:
-        disc = await _match_ip_with_mac_conflict(db, DiscoveredHost, mac, ip, is_valid_mac)
-        if disc:
-            return disc
-
-    disc = await _match_discovered_by_mac(db, mac, is_valid_mac)
-    if disc and not _is_live_record_elsewhere(disc, ip, ctx):
+    disc, _ = await _match_by_address(db, DiscoveredHost, hit)
+    if disc:
         return disc
 
-    disc = await _match_by_name(db, DiscoveredHost, hostname, (DiscoveredHost.hostname, DiscoveredHost.custom_name))
-    if disc and not _is_live_record_elsewhere(disc, ip, ctx):
+    disc = _unless_live_elsewhere(await _match_discovered_by_mac(db, hit.mac, hit.is_valid_mac), hit.ip, ctx)
+    if disc:
         return disc
-    return None
+    by_name = await _match_by_name(db, DiscoveredHost, hit.hostname, (DiscoveredHost.hostname, DiscoveredHost.custom_name))
+    return _unless_live_elsewhere(by_name, hit.ip, ctx)
+
+
+def _unless_live_elsewhere(record, ip: str, ctx: SyncContext | None):
+    return None if record is None or _is_live_record_elsewhere(record, ip, ctx) else record
 
 
 def _is_live_record_elsewhere(record, ip: str, ctx: SyncContext | None) -> bool:
@@ -354,51 +380,54 @@ async def _match_discovered_by_mac(db, mac: str, is_valid_mac: bool):
     return None
 
 
-async def _upsert_discovered_host(db, disc, dev, ip: str, mac: str | None, hostname: str | None, vendor: str | None, ports: list[int] | None, is_valid_mac: bool):
+async def _upsert_discovered_host(db, disc, dev, hit: ScanHit):
     """Update an existing DiscoveredHost or create a new one. Does NOT commit."""
     if disc:
-        return await _update_existing_discovered_host(db, disc, dev, ip, mac, hostname, vendor, ports, is_valid_mac)
+        return await _update_existing_discovered_host(db, disc, dev, hit)
 
-    inherited_name = dev.display_name if (dev and dev.ip == ip) else None
+    inherited_name = dev.display_name if (dev and dev.ip == hit.ip) else None
 
     disc = DiscoveredHost(
-        ip=ip, mac=mac, hostname=hostname,
+        ip=hit.ip, mac=hit.mac, hostname=hit.hostname,
         custom_name=inherited_name,
-        vendor=vendor or (get_vendor(mac) if mac else None),
+        vendor=hit.vendor or (get_vendor(hit.mac) if hit.mac else None),
         is_online=True,
         is_monitored=dev is not None,
         last_seen=datetime.now(timezone.utc),
         first_seen=datetime.now(timezone.utc),
-        ports=json.dumps(ports) if ports else None
+        ports=json.dumps(hit.ports) if hit.ports else None
     )
     db.add(disc)
     return disc
 
 
-async def _update_existing_discovered_host(db, disc, dev, ip: str, mac: str | None, hostname: str | None, vendor: str | None, ports: list[int] | None, is_valid_mac: bool):
+async def _move_discovered_host(db, disc, ip: str) -> None:
+    """Give `disc` the address `ip`, removing any other record that holds it. Does NOT commit."""
+    if disc.ip == ip:
+        return
+    await db.execute(delete(DiscoveredHost).where(DiscoveredHost.ip == ip).where(DiscoveredHost.id != disc.id))
+    disc.ip = ip
+
+
+def _apply_scan_fields(disc, hit: ScanHit) -> None:
+    """Copy what the scan found onto `disc`; an empty scan field keeps the known value."""
+    if hit.hostname:
+        disc.hostname = hit.hostname
+    if hit.is_valid_mac and not _mac_is_valid(disc.mac):
+        disc.mac = hit.mac
+    if hit.vendor:
+        disc.vendor = hit.vendor
+    if hit.ports:
+        disc.ports = json.dumps(hit.ports)
+
+
+async def _update_existing_discovered_host(db, disc, dev, hit: ScanHit):
     """Apply scan results to an existing DiscoveredHost. Does NOT commit."""
-    if disc.ip != ip:
-        await db.execute(delete(DiscoveredHost).where(DiscoveredHost.ip == ip).where(DiscoveredHost.id != disc.id))
-        disc.ip = ip
-        if hasattr(disc, "ip_changed_at"):
-            disc.ip_changed_at = datetime.now(timezone.utc)
+    await _move_discovered_host(db, disc, hit.ip)
+    _mark_seen(disc)
+    _apply_scan_fields(disc, hit)
 
-    disc.is_online = True
-    disc.last_seen = datetime.now(timezone.utc)
-    if getattr(disc, "ip_placeholder", False):
-        disc.ip_placeholder = False
-    if hostname:
-        disc.hostname = hostname
-
-    if is_valid_mac and not _mac_is_valid(disc.mac):
-        disc.mac = mac
-
-    if vendor:
-        disc.vendor = vendor
-    if ports:
-        disc.ports = json.dumps(ports)
-
-    if not disc.custom_name and dev and dev.ip == ip:
+    if not disc.custom_name and dev and dev.ip == hit.ip:
         disc.custom_name = dev.display_name
 
     disc.is_monitored = dev is not None
@@ -444,63 +473,76 @@ async def _resolve_ip_conflict(db, ip: str, dev):
     logger.warning(f"Sync: Resolved IP conflict. Moved conflicting device {conflict_dev.id} to placeholder IP {conflict_dev.ip}")
 
 
-async def _update_dashboard_device(db, dev, disc, ip: str, mac: str | None, is_valid_mac: bool, dev_match_type: str | None, hostname: str | None = None, ctx: SyncContext | None = None):
-    """Apply cross-sync updates to a monitored Device. Does NOT commit."""
-    if not dev:
+def _fill_scanned_name(dev, hostname: str | None) -> None:
+    """A name the scan found fills a device that has none yet, as Info-Refresh does; a known
+    hostname and a name the user gave stay untouched."""
+    if not hostname or is_ip_like(hostname) or not is_ip_like(dev.hostname):
         return
+    dev.hostname = hostname
+    if is_ip_like(dev.display_name):
+        dev.display_name = hostname.split('.')[0]
 
-    # A name the scan found fills a device that has none yet, as Info-Refresh does; a known
-    # hostname and a name the user gave stay untouched.
-    if hostname and not is_ip_like(hostname) and is_ip_like(dev.hostname):
-        dev.hostname = hostname
-        if is_ip_like(dev.display_name):
-            dev.display_name = hostname.split('.')[0]
 
-    dev.is_online = True
+def _refresh_device(dev, disc, hit: ScanHit) -> None:
+    """The device answered: fill its gaps from the scan and mark it online."""
+    _fill_scanned_name(dev, hit.hostname)
+    _mark_seen(dev)
     dev.missed_scans = 0
-    dev.last_seen = datetime.now(timezone.utc)
-    if getattr(dev, "ip_placeholder", False):
-        dev.ip_placeholder = False
-
-    if is_valid_mac and not _mac_is_valid(dev.mac):
-        dev.mac = mac
-
+    if hit.is_valid_mac and not _mac_is_valid(dev.mac):
+        dev.mac = hit.mac
     if _should_apply_custom_name(disc, dev):
         dev.display_name = disc.custom_name
 
-    if dev.ip == ip:
-        return
 
-    same_mac = bool(mac and dev.mac and dev.mac.lower() == mac.lower())
-    is_verified_change = bool(is_valid_mac and same_mac and dev_match_type in ("exact", "mac"))
+def _is_verified_ip_change(dev, hit: ScanHit, match_type: str | None) -> bool:
+    same_mac = bool(hit.mac and dev.mac and dev.mac.lower() == hit.mac.lower())
+    return bool(hit.is_valid_mac and same_mac and match_type in ("exact", "mac"))
+
+
+def _record_verified_ip_change(db, dev, ctx: SyncContext) -> None:
+    """Add the DeviceHistory entry and queue the webhook of an IP change just applied to `dev`."""
+    db.add(DeviceHistory(
+        device_id=dev.id,
+        status="ip_changed",
+        read=False,
+        message=f"IP changed from {dev.old_ip} to {dev.ip}"
+    ))
+    ctx.pending_webhooks.append(("device.ip_changed", {
+        "device_id": dev.id,
+        "old_ip": dev.old_ip,
+        "new_ip": dev.ip,
+        "mac": dev.mac,
+        "display_name": dev.display_name,
+        "hostname": dev.hostname,
+    }))
+
+
+async def _move_device_to_scanned_ip(db, dev, hit: ScanHit, match_type: str | None, ctx: SyncContext) -> None:
+    """Give `dev` the scanned address. Does NOT commit."""
+    is_verified_change = _is_verified_ip_change(dev, hit, match_type)
 
     # To prevent UNIQUE constraint error on devices.ip:
     # check if another device already has the new IP.
-    await _resolve_ip_conflict(db, ip, dev)
+    await _resolve_ip_conflict(db, hit.ip, dev)
 
     dev.old_ip = dev.ip
-    dev.ip = ip
+    dev.ip = hit.ip
     dev.ip_changed_at = datetime.now(timezone.utc)
 
     # ONLY emit DeviceHistory event if IP change is VERIFIED
     if is_verified_change:
-        db.add(DeviceHistory(
-            device_id=dev.id,
-            status="ip_changed",
-            read=False,
-            message=f"IP changed from {dev.old_ip} to {ip}"
-        ))
-        if ctx is not None:
-            ctx.pending_webhooks.append(("device.ip_changed", {
-                "device_id": dev.id,
-                "old_ip": dev.old_ip,
-                "new_ip": ip,
-                "mac": dev.mac,
-                "display_name": dev.display_name,
-                "hostname": dev.hostname,
-            }))
+        _record_verified_ip_change(db, dev, ctx)
     else:
-        logger.info(f"Sync: Updated IP of device {dev.id} to {ip} without DeviceHistory notification (unverified match).")
+        logger.info(f"Sync: Updated IP of device {dev.id} to {hit.ip} without DeviceHistory notification (unverified match).")
+
+
+async def _update_dashboard_device(db, dev, disc, hit: ScanHit, match_type: str | None, ctx: SyncContext):
+    """Apply cross-sync updates to a monitored Device. Does NOT commit."""
+    if not dev:
+        return
+    _refresh_device(dev, disc, hit)
+    if dev.ip != hit.ip:
+        await _move_device_to_scanned_ip(db, dev, hit, match_type, ctx)
 
 
 def _keeps_ip_across_subnets(dev, ip: str, match_type: str | None, ctx: SyncContext) -> bool:
@@ -549,72 +591,69 @@ async def _attach_interface(db, dev, ip: str, mac: str | None, ctx: SyncContext)
     return iface
 
 
-async def _sync_interface_hit(db, iface, host: dict, is_valid_mac: bool, ctx: SyncContext):
+async def _sync_interface_hit(db, iface, hit: ScanHit, ctx: SyncContext):
     """A scan answer from a known interface: refresh it, never move or create a Device."""
-    ip, mac = host.get("ip"), host.get("mac")
-    _refresh_interface(iface, mac, is_valid_mac, ctx)
+    _refresh_interface(iface, hit.mac, hit.is_valid_mac, ctx)
     dev = await db.get(Device, iface.device_id)
-    disc = await _match_discovered_host(db, ip, mac, host.get("hostname"), is_valid_mac, ctx)
-    return await _upsert_discovered_host(
-        db, disc, dev, ip, mac, host.get("hostname"), host.get("vendor"), host.get("ports"), is_valid_mac
+    disc = await _match_discovered_host(db, hit, ctx)
+    return await _upsert_discovered_host(db, disc, dev, hit)
+
+
+async def _sync_discovered(db, dev, match_type: str | None, hit: ScanHit, ctx: SyncContext):
+    """Record the hit as a DiscoveredHost and carry it over to the matched Device, if any."""
+    disc = await _match_discovered_host(db, hit, ctx)
+    is_new_discovery = disc is None and dev is None
+
+    disc = await _upsert_discovered_host(db, disc, dev, hit)
+    if is_new_discovery and not ctx.is_initial:
+        ctx.pending_webhooks.append(("new_device", {
+            "ip": hit.ip,
+            "mac": hit.mac,
+            "hostname": hit.hostname,
+            "vendor": hit.vendor,
+            "first_seen": datetime.now(timezone.utc).isoformat(),
+        }))
+
+    await _update_dashboard_device(db, dev, disc, hit, match_type, ctx)
+    return disc
+
+
+async def _sync_second_address(db, dev, match_type: str | None, hit: ScanHit, ctx: SyncContext):
+    """A device answered from another subnet: a gateway address becomes its interface."""
+    if match_type == "mac" and hit.is_valid_mac and ctx.is_gateway(hit.ip):
+        iface = await _attach_interface(db, dev, hit.ip, hit.mac, ctx)
+        return await _sync_interface_hit(db, iface, hit, ctx)
+    # Same box on a second address: leave it a separate discovered host, the
+    # merge suggestions offer to make it an interface
+    logger.info(
+        "Sync: IP %s shares %s with device %s in another subnet; not treating as IP change",
+        hit.ip,
+        match_type,
+        dev.id,
     )
+    return await _sync_discovered(db, None, None, hit, ctx)
 
 
 async def _sync_host_internal(db, host: dict, ctx: SyncContext | None = None):
     """
     Internal logic for syncing a single host. Does NOT commit.
     """
-    ip = host.get("ip")
-    mac = host.get("mac")
-    hostname = host.get("hostname")
-    vendor = host.get("vendor")
-    ports = host.get("ports")
-
-    is_valid_mac = _mac_is_valid(mac)
+    hit = ScanHit.from_host(host)
     if ctx is None:
         ctx = await load_sync_context(db)
 
     # 0. A further address of a known device (e.g. a router's VLAN gateway)
-    iface = await _query_by_ip(db, DeviceInterface, ip) if ip else None
+    iface = await _query_by_ip(db, DeviceInterface, hit.ip) if hit.ip else None
     if iface:
-        return await _sync_interface_hit(db, iface, host, is_valid_mac, ctx)
+        return await _sync_interface_hit(db, iface, hit, ctx)
 
     # 1. Dashboard Check (Is this host already monitored?)
-    dev, dev_match_type = await _match_dashboard_device(db, ip, mac, hostname, is_valid_mac)
+    dev, match_type = await _match_dashboard_device(db, hit)
+    if dev and _keeps_ip_across_subnets(dev, hit.ip, match_type, ctx):
+        return await _sync_second_address(db, dev, match_type, hit, ctx)
 
-    if dev and _keeps_ip_across_subnets(dev, ip, dev_match_type, ctx):
-        if dev_match_type == "mac" and is_valid_mac and ctx.is_gateway(ip):
-            iface = await _attach_interface(db, dev, ip, mac, ctx)
-            return await _sync_interface_hit(db, iface, host, is_valid_mac, ctx)
-        # Same box on a second address: leave it a separate discovered host, the
-        # merge suggestions offer to make it an interface
-        logger.info(
-            "Sync: IP %s shares %s with device %s in another subnet; not treating as IP change",
-            ip,
-            dev_match_type,
-            dev.id,
-        )
-        dev, dev_match_type = None, None
-
-    # 2. Discovery Table Deduplication & Search
-    disc = await _match_discovered_host(db, ip, mac, hostname, is_valid_mac, ctx)
-    is_new_discovery = disc is None and dev is None
-
-    # 3. Apply Updates to DiscoveredHost
-    disc = await _upsert_discovered_host(db, disc, dev, ip, mac, hostname, vendor, ports, is_valid_mac)
-    if is_new_discovery and not ctx.is_initial:
-        ctx.pending_webhooks.append(("new_device", {
-            "ip": ip,
-            "mac": mac,
-            "hostname": hostname,
-            "vendor": vendor,
-            "first_seen": datetime.now(timezone.utc).isoformat(),
-        }))
-
-    # 4. Cross-Sync to Dashboard
-    await _update_dashboard_device(db, dev, disc, ip, mac, is_valid_mac, dev_match_type, hostname, ctx)
-
-    return disc
+    # 2. Discovery Table Deduplication and 3./4. updates of both tables
+    return await _sync_discovered(db, dev, match_type, hit, ctx)
 
 
 def _fuzzy_match(n1: str | None, n2: str | None) -> bool:
@@ -673,44 +712,46 @@ async def _relocate_conflicting_device(db, ip: str, used_ips: set[str]):
     await db.flush()
 
 
-async def _sync_container_ip(db, ip: str, container_name: str | None, used_ips: set[str]):
-    """Sync one container IP against DiscoveredHost and Device tables."""
-    # 1. Update discovered hosts
+async def _sync_container_discovered(db, ip: str, container_name: str | None) -> None:
+    """Mark the container's DiscoveredHost online at `ip`. Does NOT commit."""
     disc = await _match_disc_for_container(db, ip, container_name)
+    if not disc:
+        return
+    await _move_discovered_host(db, disc, ip)
+    _mark_seen(disc)
+    if not disc.custom_name or disc.custom_name == "Unknown":
+        disc.custom_name = container_name
 
-    if disc:
-        if disc.ip != ip:
-            await db.execute(delete(DiscoveredHost).where(DiscoveredHost.ip == ip).where(DiscoveredHost.id != disc.id))
-            disc.ip = ip
-        disc.is_online = True
-        disc.last_seen = datetime.now(timezone.utc)
-        if getattr(disc, "ip_placeholder", False):
-            disc.ip_placeholder = False
-        if not disc.custom_name or disc.custom_name == "Unknown":
-            disc.custom_name = container_name
 
-    # 2. Update dashboard devices
+async def _move_container_device(db, dev, ip: str, used_ips: set[str]) -> None:
+    """Give the container's Device the address `ip`, keeping `used_ips` current. Does NOT commit."""
+    # Clear conflict on target IP if held by another device
+    await _relocate_conflicting_device(db, ip, used_ips)
+
+    if dev.ip in used_ips:
+        used_ips.remove(dev.ip)
+    dev.old_ip = dev.ip
+    dev.ip = ip
+    used_ips.add(ip)
+    dev.ip_changed_at = datetime.now(timezone.utc)
+
+
+async def _sync_container_device(db, ip: str, container_name: str | None, used_ips: set[str]) -> None:
+    """Mark the container's monitored Device online at `ip`. Does NOT commit."""
     dev = await _match_dev_for_container(db, ip, container_name)
     if not dev:
         return
-
     if dev.ip != ip:
-        # Clear conflict on target IP if held by another device
-        await _relocate_conflicting_device(db, ip, used_ips)
-
-        if dev.ip in used_ips:
-            used_ips.remove(dev.ip)
-        dev.old_ip = dev.ip
-        dev.ip = ip
-        used_ips.add(ip)
-        dev.ip_changed_at = datetime.now(timezone.utc)
-
-    dev.is_online = True
+        await _move_container_device(db, dev, ip, used_ips)
+    _mark_seen(dev)
     dev.missed_scans = 0
-    dev.last_seen = datetime.now(timezone.utc)
-    if getattr(dev, "ip_placeholder", False):
-        dev.ip_placeholder = False
     logger.info(f"Docker Sync: Marked container {container_name} ({ip}) as ONLINE")
+
+
+async def _sync_container_ip(db, ip: str, container_name: str | None, used_ips: set[str]):
+    """Sync one container IP against DiscoveredHost and Device tables."""
+    await _sync_container_discovered(db, ip, container_name)
+    await _sync_container_device(db, ip, container_name, used_ips)
 
 
 async def sync_docker_containers(containers: list[dict]):
