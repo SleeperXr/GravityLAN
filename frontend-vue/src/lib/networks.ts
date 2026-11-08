@@ -81,10 +81,3 @@ export function chipName(chip: Pick<NetworkChip, 'name' | 'ip'>): string {
 export function deviceLabel(device: Pick<Device, 'display_name' | 'hostname' | 'ip'>): string {
   return device.display_name || device.hostname || device.ip;
 }
-
-/** Sort key for IPv4 addresses (10.0.0.9 before 10.0.0.10). */
-export function ipSortKey(ip: string): number {
-  const parts = ip.split('.').map((p) => parseInt(p, 10));
-  if (parts.length !== 4 || parts.some(Number.isNaN)) return Number.MAX_SAFE_INTEGER;
-  return ((parts[0] * 256 + parts[1]) * 256 + parts[2]) * 256 + parts[3];
-}
