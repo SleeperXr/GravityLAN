@@ -267,22 +267,38 @@ def _maintenance_penalty(agent: AgentHealthAlerts) -> int:
     return (10 if agent.patch_security > 0 else 0) + (5 if agent.reboot_required else 0)
 
 
+def _is_agent_silent(agent: AgentHealthAlerts | None) -> bool:
+    """True when the device has an agent registered that stopped reporting."""
+    return bool(agent and agent.has_agent and not agent.is_active)
+
+
+def _all_services_down(services: list[ServiceHealthItem]) -> bool:
+    return bool(services) and all(not s.is_up for s in services)
+
+
+def _is_part_time_sleeping(dev: Device, latency: LatencyStats, services: list[ServiceHealthItem]) -> bool:
+    if not dev.is_online or latency.current_ms is None:
+        return True
+    if (dev.missed_scans or 0) > 0:
+        return True
+    return _all_services_down(services)
+
+
+def _part_time_penalty(services: list[ServiceHealthItem], agent: AgentHealthAlerts | None) -> int:
+    penalty = sum(_certificate_penalty(svc) for svc in services)
+    if agent and agent.is_active:
+        penalty += _maintenance_penalty(agent)
+    return penalty
+
+
 def _score_part_time_device(
     dev: Device, latency: LatencyStats, services: list[ServiceHealthItem], agent: AgentHealthAlerts | None
 ) -> tuple[int, str]:
     """A device without offline alert (TV, PC, laptop, phone) may sleep; when on, only certificates and patches count."""
-    is_sleeping = (
-        not dev.is_online
-        or (dev.missed_scans or 0) > 0
-        or latency.current_ms is None
-        or bool(services and all(not s.is_up for s in services))
-    )
-    if is_sleeping:
+    if _is_part_time_sleeping(dev, latency, services):
         return 100, "standby"
 
-    score = 100 - sum(_certificate_penalty(svc) for svc in services)
-    if agent and agent.is_active:
-        score -= _maintenance_penalty(agent)
+    score = 100 - _part_time_penalty(services, agent)
     return score, "healthy" if score >= 85 else "degraded"
 
 
@@ -309,7 +325,7 @@ def _service_penalty(services: list[ServiceHealthItem]) -> int:
 def _agent_host_gone(agent: AgentHealthAlerts | None, latency: LatencyStats, services: list[ServiceHealthItem]) -> bool:
     """The agent stopped reporting and nothing else answers: the host counts as offline."""
     return bool(
-        agent and agent.has_agent and not agent.is_active
+        _is_agent_silent(agent)
         and latency.current_ms is None
         and (not services or all(not s.is_up for s in services))
     )
@@ -329,14 +345,30 @@ def _agent_penalty(agent: AgentHealthAlerts | None) -> int:
     return penalty
 
 
+def _is_monitored_critical(
+    score: int, services: list[ServiceHealthItem], agent: AgentHealthAlerts | None
+) -> bool:
+    if score < 60:
+        return True
+    if any(not s.is_up for s in services):
+        return True
+    return _is_agent_silent(agent)
+
+
+def _is_monitored_degraded(score: int, latency: LatencyStats) -> bool:
+    if score < 85:
+        return True
+    return bool(latency.avg_ms and latency.avg_ms > 60)
+
+
 def _monitored_status(
     dev: Device, score: int, latency: LatencyStats, services: list[ServiceHealthItem], agent: AgentHealthAlerts | None
 ) -> str:
     if dev.missed_scans > 0:
         return "flapping"
-    if score < 60 or any(not s.is_up for s in services) or (agent and agent.has_agent and not agent.is_active):
+    if _is_monitored_critical(score, services, agent):
         return "critical"
-    if score < 85 or (latency.avg_ms and latency.avg_ms > 60):
+    if _is_monitored_degraded(score, latency):
         return "degraded"
     return "healthy"
 
