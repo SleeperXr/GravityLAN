@@ -26,6 +26,27 @@ def process_ids() -> tuple[int, int]:
     return uid, gid
 
 
+def _is_ip_literal(value: str, family: socket.AddressFamily) -> bool:
+    """Return whether value is a valid address literal of the given family."""
+    try:
+        socket.inet_pton(family, value)
+    except OSError:
+        return False
+    return True
+
+
+def _check_hostname_label(label: str) -> None:
+    """Raise ValueError unless label is a valid RFC 1123 host name label."""
+    if not label:
+        raise ValueError("host labels cannot be empty")
+    if len(label) > 63:
+        raise ValueError("host label is too long")
+    if not (label[0].isalnum() and label[-1].isalnum()):
+        raise ValueError("host labels must start and end with an alphanumeric character")
+    if not all(c.isalnum() or c == "-" for c in label):
+        raise ValueError("host name contains invalid characters")
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables.
 
@@ -122,39 +143,20 @@ class Settings(BaseSettings):
         v_clean = v.strip()
         if not v_clean:
             raise ValueError("host cannot be empty")
-            
+
         if v_clean in ("0.0.0.0", "::", "localhost"):
             return v_clean
-            
-        # Validate as IPv4
-        try:
-            socket.inet_pton(socket.AF_INET, v_clean)
+
+        if _is_ip_literal(v_clean, socket.AF_INET) or _is_ip_literal(v_clean, socket.AF_INET6):
             return v_clean
-        except socket.error:
-            pass
-            
-        # Validate as IPv6
-        try:
-            socket.inet_pton(socket.AF_INET6, v_clean)
-            return v_clean
-        except socket.error:
-            pass
-            
+
         # Validate as a hostname (RFC 1123)
         if len(v_clean) > 253:
             raise ValueError("host name is too long")
-        
-        labels = v_clean.split(".")
-        for label in labels:
-            if not label:
-                raise ValueError("host labels cannot be empty")
-            if len(label) > 63:
-                raise ValueError("host label is too long")
-            if not (label[0].isalnum() and label[-1].isalnum()):
-                raise ValueError("host labels must start and end with an alphanumeric character")
-            if not all(c.isalnum() or c == "-" for c in label):
-                raise ValueError("host name contains invalid characters")
-                
+
+        for label in v_clean.split("."):
+            _check_hostname_label(label)
+
         return v_clean
 
 

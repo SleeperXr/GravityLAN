@@ -1,11 +1,11 @@
 """Tests for the application configuration (app/config.py)."""
 
-import socket
+import os
 from pathlib import Path
 
 import pytest
 
-from app.config import Settings
+from app.config import Settings, _default_data_dir, process_ids
 
 
 # --- field validators -------------------------------------------------------
@@ -89,6 +89,86 @@ def test_validate_host_rejects_invalid(host):
 
 def test_validate_host_trims_whitespace():
     assert Settings(host=" 192.168.1.10 ").host == "192.168.1.10"
+
+
+@pytest.mark.parametrize(
+    ("host", "message"),
+    [
+        ("   ", "host cannot be empty"),
+        ("a" * 254, "host name is too long"),
+        ("my..host", "host labels cannot be empty"),
+        ("a" * 64, "host label is too long"),
+        ("-host", "host labels must start and end with an alphanumeric character"),
+        ("host-", "host labels must start and end with an alphanumeric character"),
+        ("bad_host", "host name contains invalid characters"),
+    ],
+)
+def test_validate_host_error_messages(host, message):
+    with pytest.raises(ValueError, match=message):
+        Settings(host=host)
+
+
+def test_validate_host_reports_first_failing_label():
+    # The first bad label decides the error, and the length limit comes before the label checks.
+    with pytest.raises(ValueError, match="host labels cannot be empty"):
+        Settings(host=f".{'a' * 64}")
+    with pytest.raises(ValueError, match="host label is too long"):
+        Settings(host=f"{'a' * 64}.")
+    with pytest.raises(ValueError, match="host name is too long"):
+        Settings(host=".".join(["a..b"] * 60))
+
+
+@pytest.mark.parametrize("host", ["a" * 63, ".".join(["a" * 63] * 3) + "." + "a" * 61, "1-a.b2"])
+def test_validate_host_accepts_length_limits(host):
+    assert Settings(host=host).host == host
+
+
+def test_validate_host_malformed_ip_falls_through_to_hostname_rules():
+    # Not an IPv4 address, but still a valid RFC 1123 name.
+    assert Settings(host="999.1.1.1").host == "999.1.1.1"
+    # Not an IPv6 address, and ":" is not allowed in a host name.
+    with pytest.raises(ValueError, match="host name contains invalid characters"):
+        Settings(host="fe80:::1")
+
+
+# --- module helpers ---------------------------------------------------------
+
+def test_default_data_dir_inside_container(monkeypatch):
+    monkeypatch.setattr(Path, "is_dir", lambda self: True)
+    assert _default_data_dir() == Path("/app/data")
+
+
+def test_default_data_dir_outside_container(monkeypatch):
+    monkeypatch.setattr(Path, "is_dir", lambda self: False)
+    assert _default_data_dir() == Path("./data")
+
+
+def test_process_ids_uses_posix_ids(monkeypatch):
+    monkeypatch.setattr(os, "getuid", lambda: 99, raising=False)
+    monkeypatch.setattr(os, "getgid", lambda: 100, raising=False)
+    assert process_ids() == (99, 100)
+
+
+def test_process_ids_falls_back_without_posix_ids(monkeypatch):
+    monkeypatch.delattr(os, "getuid", raising=False)
+    monkeypatch.delattr(os, "getgid", raising=False)
+    assert process_ids() == (1000, 1000)
+
+
+# --- telemetry_database_path ------------------------------------------------
+
+def test_telemetry_database_path_next_to_sqlite_inventory():
+    s = Settings(database_url="sqlite+aiosqlite:////data/gravitylan.db")
+    assert Path(s.telemetry_database_path) == Path("/data/telemetry.db")
+
+
+def test_telemetry_database_path_empty_for_other_databases():
+    assert Settings(database_url="postgresql+asyncpg://db/gravitylan").telemetry_database_path == ""
+
+
+@pytest.mark.parametrize("url", ["sqlite+aiosqlite:///:memory:", "sqlite+aiosqlite://", "sqlite+aiosqlite:///"])
+def test_telemetry_database_path_in_memory(url):
+    assert Settings(database_url=url).telemetry_database_path == ":memory:"
 
 
 # --- effective_database_url -------------------------------------------------
