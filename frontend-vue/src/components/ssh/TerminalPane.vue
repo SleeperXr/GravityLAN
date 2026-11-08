@@ -55,15 +55,34 @@ function setStatus(next: TerminalStatus) {
   emit('status', next);
 }
 
+function isElementVisible(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  return el.offsetWidth > 0 && el.offsetHeight > 0;
+}
+
+function isValidDimensions(dims?: { cols: number; rows: number }): dims is { cols: number; rows: number } {
+  if (!dims) return false;
+  return Number.isFinite(dims.cols) && Number.isFinite(dims.rows);
+}
+
+function syncTerminalSize(cols: number, rows: number) {
+  if (!term) return;
+  if (cols !== term.cols || rows !== term.rows) {
+    term.resize(cols, rows);
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+  }
+}
+
 function fitAndSync() {
-  const el = container.value;
-  if (!term || !fit || !el || el.offsetWidth === 0 || el.offsetHeight === 0) return;
+  if (!term || !fit) return;
+  if (!isElementVisible(container.value)) return;
   const dims = fit.proposeDimensions();
-  if (!dims || !Number.isFinite(dims.cols) || !Number.isFinite(dims.rows)) return;
+  if (!isValidDimensions(dims)) return;
   // xterm 6 draws its scrollbar over the text area; keep the last columns clear of it
   const cols = Math.max(2, dims.cols - SCROLLBAR_COLS);
-  if (cols !== term.cols || dims.rows !== term.rows) term.resize(cols, dims.rows);
-  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+  syncTerminalSize(cols, dims.rows);
 }
 
 function fail(text: string) {
@@ -107,52 +126,74 @@ function closeSocket() {
   ws = null;
 }
 
-/** One SSH session per attempt (the first and every "reconnect"): ticket, socket, control messages. */
-async function connect(again = false) {
-  if (!term) return;
+function resetConnectionState() {
   closeSocket();
   hostKey.value = null;
   message.value = null;
   setStatus('connecting');
-  if (again) term.write('\r\n');
-  fitAndSync();
-  let ticket: string;
+}
+
+async function acquireTicket(): Promise<string | null> {
   try {
-    ({ ticket } = await api.prepareSshSession(props.request));
+    const { ticket } = await api.prepareSshSession(props.request);
+    return ticket;
   } catch (err) {
     if (!disposed) fail((err as Error).message);
+    return null;
+  }
+}
+
+function handleSocketMessage(event: MessageEvent) {
+  if (typeof event.data !== 'string') {
+    term?.write(new Uint8Array(event.data as ArrayBuffer));
     return;
   }
-  if (disposed || !term) return;
-  const socket = createSshTerminalSocket(ticket, term.cols, term.rows);
-  ws = socket;
+  let controlMsg: ServerMessage;
+  try {
+    controlMsg = JSON.parse(event.data) as ServerMessage;
+  } catch (err) {
+    console.warn('Ignoring unparseable terminal message:', err);
+    return;
+  }
+  applyServerMessage(controlMsg);
+}
+
+function handleSocketClose(socket: WebSocket, wasOpened: boolean) {
+  if (disposed || ws !== socket) return;
+  // Refused during the handshake: the server did not accept this browser's login
+  if (!wasOpened) {
+    const loginReq = t('ssh.terminal.login_required');
+    message.value = loginReq;
+    setStatus('error');
+    term?.writeln(red(loginReq));
+    return;
+  }
+  if (status.value !== 'error') setStatus('closed');
+  term?.writeln(`\r\n\x1b[90m${t('ssh.terminal.disconnected')}\x1b[0m`);
+}
+
+function attachSocketListeners(socket: WebSocket) {
   let opened = false;
   socket.onopen = () => {
     opened = true;
   };
-  socket.onmessage = (event: MessageEvent) => {
-    if (typeof event.data !== 'string') {
-      term?.write(new Uint8Array(event.data as ArrayBuffer));
-      return;
-    }
-    try {
-      applyServerMessage(JSON.parse(event.data) as ServerMessage);
-    } catch {
-      // not a control message
-    }
-  };
-  socket.onclose = () => {
-    if (disposed || ws !== socket) return;
-    // Refused during the handshake: the server did not accept this browser's login
-    if (!opened) {
-      message.value = t('ssh.terminal.login_required');
-      setStatus('error');
-      term?.writeln(red(t('ssh.terminal.login_required')));
-      return;
-    }
-    if (status.value !== 'error') setStatus('closed');
-    term?.writeln(`\r\n\x1b[90m${t('ssh.terminal.disconnected')}\x1b[0m`);
-  };
+  socket.onmessage = handleSocketMessage;
+  socket.onclose = () => handleSocketClose(socket, opened);
+}
+
+/** One SSH session per attempt (the first and every "reconnect"): ticket, socket, control messages. */
+async function connect(again = false) {
+  if (!term) return;
+  resetConnectionState();
+  if (again) term.write('\r\n');
+  fitAndSync();
+
+  const ticket = await acquireTicket();
+  if (!ticket || disposed || !term) return;
+
+  const socket = createSshTerminalSocket(ticket, term.cols, term.rows);
+  ws = socket;
+  attachSocketListeners(socket);
 }
 
 function answerHostKey(accept: boolean) {
@@ -182,8 +223,13 @@ async function copySelection(clearAfter: boolean | Event = false) {
   term?.focus();
 }
 
+function isMarkerActive(marker: IMarker | null): marker is IMarker {
+  if (!marker || marker.isDisposed) return false;
+  return marker.line >= 0;
+}
+
 async function copyLastCommand() {
-  if (!term || !lastCommand || lastCommand.isDisposed || lastCommand.line < 0) return flash(lastCopyState, 'empty');
+  if (!term || !isMarkerActive(lastCommand)) return flash(lastCopyState, 'empty');
   const text = lastCommandText(term.buffer.active, lastCommand.line);
   if (!text) return flash(lastCopyState, 'empty');
   flash(lastCopyState, (await copyText(text)) ? 'copied' : 'empty');
