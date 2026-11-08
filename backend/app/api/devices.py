@@ -38,15 +38,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/devices", tags=["devices"], dependencies=[Depends(get_current_admin)])
 
 
-def _annotate_agent(device, token, latest_version, latest_metrics, normalize_version) -> None:
+def _annotate_agent(device, token: AgentToken | None) -> None:
     """has_agent, has_pending_token and agent_info of a device from its agent token (None: no agent)."""
+    from app.api.agent import LATEST_AGENT_VERSION, _latest_metrics
+    from app.version import normalize_version
+
     device.has_agent = token is not None
     device.has_pending_token = token is not None and token.pending_token is not None
     if token is not None:
         device.agent_info = {
             "agent_version": normalize_version(token.agent_version),
-            "latest_version": latest_version,
-            "latest_metrics": latest_metrics.get(device.id),
+            "latest_version": normalize_version(LATEST_AGENT_VERSION),
+            "latest_metrics": _latest_metrics.get(device.id),
         }
 
 
@@ -65,17 +68,19 @@ async def _dns_servers(db: AsyncSession) -> tuple[str | None, str | None]:
     return values.get("dns.server"), values.get("dns.server_secondary")
 
 
-async def _lookup_device_hostname(dev, ip: str, servers: tuple[str | None, str | None], lookup, use_cache: bool = True) -> str | None:
+async def _lookup_device_hostname(dev, servers: tuple[str | None, str | None], lookup=None, use_cache: bool = True) -> str | None:
     """A device's hostname. With a second DNS server both servers are asked, their answers kept on the
     device for the editor, and the one the user picked wins (`lookup` is the usual resolver chain)."""
+    if lookup is None:
+        lookup = resolve_hostname
     primary, secondary = servers
     if not secondary:
         # Answers kept from a DNS 2 that is gone would stay pickable in the editor
         dev.dns_names = None
-        return await lookup(ip, dns_server=primary, use_cache=use_cache)
+        return await lookup(dev.ip, dns_server=primary, use_cache=use_cache)
     # Asked side by side, so a slow or unreachable DNS 2 adds no wait to the usual lookup
     found, names = await asyncio.gather(
-        lookup(ip, dns_server=primary, use_cache=use_cache), lookup_dns_names(ip, primary, secondary)
+        lookup(dev.ip, dns_server=primary, use_cache=use_cache), lookup_dns_names(dev.ip, primary, secondary)
     )
     dev.dns_names = json.dumps(names)
     return choose_hostname(found, names, dev.hostname_source)
@@ -95,6 +100,30 @@ def _set_hostname_source(device, source: str | None) -> None:
         _apply_hostname(device, name)
 
 
+async def _load_agent_tokens(db: AsyncSession, devices: list[Device]) -> dict[int, AgentToken]:
+    """Batch-load AgentToken rows keyed by device_id."""
+    device_ids = [d.id for d in devices]
+    if not device_ids:
+        return {}
+    token_res = await db.execute(select(AgentToken).where(AgentToken.device_id.in_(device_ids)))
+    return {t.device_id: t for t in token_res.scalars().all()}
+
+
+async def _annotate_parent_names(db: AsyncSession, devices: list[Device]) -> None:
+    """Populate parent_name for devices, querying any parents outside the current list in one batch."""
+    device_map = {d.id: (d.display_name or d.ip) for d in devices}
+    missing_parent_ids = {d.parent_id for d in devices if d.parent_id and d.parent_id not in device_map}
+    if missing_parent_ids:
+        parent_res = await db.execute(
+            select(Device.id, Device.display_name).where(Device.id.in_(missing_parent_ids))
+        )
+        for pid, name in parent_res.all():
+            device_map[pid] = name
+    for device in devices:
+        if device.parent_id:
+            device.parent_name = device_map.get(device.parent_id)
+
+
 @router.get("", response_model=list[DeviceResponse])
 async def list_devices(
     include_hidden: bool = False,
@@ -102,51 +131,24 @@ async def list_devices(
     db: AsyncSession = Depends(get_db),
 ) -> list[DeviceResponse]:
     """List all discovered devices, optionally filtered by group."""
-    query = select(Device)
-
-    if not include_hidden:
-        query = query.where(Device.is_hidden == False)  # noqa: E712
-
-    if group_id is not None:
-        query = query.where(Device.group_id == group_id)
-
-    query = query.order_by(Device.sort_order, Device.display_name)
-    # Cache check
     cache_key = f"list_devices:{include_hidden}:{group_id}"
     cached = dashboard_cache.get(cache_key)
-    if cached: return cached
+    if cached:
+        return cached
 
-    result = await db.execute(query)
-    devices = result.scalars().all()
-    
-    # Pre-populate has_agent and agent_info flags based on AgentToken existence
-    # Also map parent names
-    from app.api.agent import LATEST_AGENT_VERSION, _latest_metrics
-    from app.version import normalize_version
-    device_map = {d.id: (d.display_name or d.ip) for d in devices}
+    query = select(Device)
+    if not include_hidden:
+        query = query.where(Device.is_hidden == False)  # noqa: E712
+    if group_id is not None:
+        query = query.where(Device.group_id == group_id)
+    query = query.order_by(Device.sort_order, Device.display_name)
 
-    # Batch-load agent tokens and out-of-list parent names (one query each, not one per device)
-    device_ids = [d.id for d in devices]
-    token_map: dict[int, AgentToken] = {}
-    if device_ids:
-        token_res = await db.execute(select(AgentToken).where(AgentToken.device_id.in_(device_ids)))
-        token_map = {t.device_id: t for t in token_res.scalars().all()}
-
-    # Parents outside the current list (e.g. hidden or in another group)
-    missing_parent_ids = {d.parent_id for d in devices if d.parent_id and d.parent_id not in device_map}
-    missing_parent_names: dict[int, str | None] = {}
-    if missing_parent_ids:
-        parent_res = await db.execute(
-            select(Device.id, Device.display_name).where(Device.id.in_(missing_parent_ids))
-        )
-        missing_parent_names = {pid: name for pid, name in parent_res.all()}
-
-    latest_version = normalize_version(LATEST_AGENT_VERSION)
+    devices = list((await db.execute(query)).scalars().all())
+    token_map = await _load_agent_tokens(db, devices)
     for device in devices:
-        _annotate_agent(device, token_map.get(device.id), latest_version, _latest_metrics, normalize_version)
-        if device.parent_id:
-            device.parent_name = device_map.get(device.parent_id) or missing_parent_names.get(device.parent_id)
+        _annotate_agent(device, token_map.get(device.id))
 
+    await _annotate_parent_names(db, devices)
     await annotate_primary_subnets(db, devices)
 
     # Cache plain response objects: the ORM instances detach when this request's
@@ -156,30 +158,36 @@ async def list_devices(
     return responses
 
 
-async def _refresh_device_metadata(dev, ip: str, mac_map: dict[str, str], servers: tuple[str | None, str | None]) -> bool:
-    """Fill a missing MAC, update the vendor and the hostname; True when anything changed."""
-    from app.scanner.hostname import resolve_hostname as lookup_hostname, is_ip_like as ip_like
-
-    names_before = dev.dns_names
+def _refresh_mac_and_vendor(dev, mac_map: dict[str, str], vendor_map: dict[str, str]) -> bool:
+    """Fill a missing MAC from mac_map and update vendor; True when either changed."""
     changed = False
-    if not dev.mac and ip in mac_map:
-        dev.mac = mac_map[ip]
+    if not dev.mac and dev.ip in mac_map:
+        dev.mac = mac_map[dev.ip]
         changed = True
-    new_vendor = get_vendor(dev.mac) if dev.mac else None
+    new_vendor = vendor_map.get(dev.mac) if dev.mac else None
     if new_vendor and dev.vendor != new_vendor:
         dev.vendor = new_vendor
         changed = True
-    new_hostname = await _lookup_device_hostname(dev, ip, servers, lookup_hostname)
+    return changed
+
+
+async def _refresh_device_metadata(
+    dev, mac_map: dict[str, str], vendor_map: dict[str, str], servers: tuple[str | None, str | None]
+) -> bool:
+    """Fill a missing MAC, update the vendor and the hostname; True when anything changed."""
+    from app.scanner.hostname import resolve_hostname as lookup_hostname
+
+    names_before = dev.dns_names
+    changed = _refresh_mac_and_vendor(dev, mac_map, vendor_map)
+    new_hostname = await _lookup_device_hostname(dev, servers, lookup_hostname)
     if new_hostname and dev.hostname != new_hostname:
-        dev.hostname = new_hostname
-        if ip_like(dev.display_name) and not ip_like(new_hostname):
-            dev.display_name = new_hostname.split('.')[0]
+        _apply_hostname(dev, new_hostname)
         changed = True
     return changed or dev.dns_names != names_before
 
 
 async def _bulk_metadata_refresh(devices_to_refresh, servers: tuple[str | None, str | None]) -> None:
-    """Background part of refresh-all: one ARP sweep, then each device in its own session."""
+    """Background part of refresh-all: one ARP sweep, then update all devices in one session."""
     from app.database import async_session
     from app.scanner.arp import resolve_mac_addresses
 
@@ -188,18 +196,23 @@ async def _bulk_metadata_refresh(devices_to_refresh, servers: tuple[str | None, 
     await resolve_mac_addresses(hosts_for_mac)
     mac_map = {h["ip"]: h["mac"] for h in hosts_for_mac if h["mac"]}
 
+    device_ids = [d_id for d_id, _d_ip, _display_name in devices_to_refresh]
     updated = 0
-    for d_id, d_ip, _display_name in devices_to_refresh:
-        try:
-            async with async_session() as local_db:
-                dev = await local_db.get(Device, d_id)
-                if dev and await _refresh_device_metadata(dev, d_ip, mac_map, servers):
-                    await local_db.commit()
-                    updated += 1
-        except Exception as e:
-            logger.debug(f"Metadata refresh failed for {d_ip}: {e}")
+    if device_ids:
+        async with async_session() as local_db:
+            rows = (await local_db.execute(select(Device).where(Device.id.in_(device_ids)))).scalars().all()
+            all_macs = {m for m in [*(d.mac for d in rows), *mac_map.values()] if m}
+            vendor_map = {mac: get_vendor(mac) for mac in all_macs}
+            for dev in rows:
+                try:
+                    if await _refresh_device_metadata(dev, mac_map, vendor_map, servers):
+                        updated += 1
+                except (OSError, RuntimeError) as e:
+                    logger.debug(f"Metadata refresh failed for {dev.ip}: {e}")
+            if updated:
+                await local_db.commit()
 
-    # Device rows changed in their own sessions: drop the cached lists and topology
+    # Device rows changed in their own session: drop the cached lists and topology
     dashboard_cache.invalidate_all()
     topology_cache.invalidate()
     logger.info(f"Bulk metadata refresh complete. Updated {updated} devices.")
@@ -269,7 +282,7 @@ async def add_device_from_ip(ip: str, db: AsyncSession = Depends(get_db)) -> Dev
         await db.refresh(device)
         dashboard_cache.invalidate_all()
         topology_cache.invalidate()
-    except Exception as e:
+    except (OSError, RuntimeError) as e:
         logger.error(f"Failed to auto-refresh details for new device {ip}: {e}")
 
     return device
@@ -284,12 +297,12 @@ async def _lookup_mac(ip: str) -> str | None:
 
 async def _fill_new_device_details(device, ip: str) -> None:
     """Hostname and short display name (the IP when no real name answers), MAC and vendor of a new device."""
-    from app.scanner.hostname import resolve_hostname as lookup_hostname, is_ip_like as ip_like
+    from app.scanner.hostname import resolve_hostname as lookup_hostname
 
     new_hostname = await lookup_hostname(ip)
     if new_hostname:
         device.hostname = new_hostname
-    device.display_name = new_hostname.split('.')[0] if new_hostname and not ip_like(new_hostname) else ip
+    device.display_name = new_hostname.split('.')[0] if new_hostname and not is_ip_like(new_hostname) else ip
 
     mac = await _lookup_mac(ip)
     if mac:
@@ -423,7 +436,7 @@ async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=404, detail="Device not found")
     
     # 1. Hostname (a user's request always looks again instead of answering from the cache)
-    new_hostname = await _lookup_device_hostname(device, device.ip, await _dns_servers(db), resolve_hostname, use_cache=False)
+    new_hostname = await _lookup_device_hostname(device, await _dns_servers(db), use_cache=False)
     if new_hostname:
         _apply_hostname(device, new_hostname)
 
@@ -816,29 +829,10 @@ async def get_group_details(
         raise HTTPException(status_code=404, detail="Group not found")
         
     # Populate agent details
-    from app.api.agent import LATEST_AGENT_VERSION, _latest_metrics
-    from app.version import normalize_version
-    
+    tokens_by_device = await _load_agent_tokens(db, group.devices)
     devices_list = []
-    device_ids = [d.id for d in group.devices]
-    tokens_by_device: dict[int, AgentToken] = {}
-    if device_ids:
-        token_q = await db.execute(select(AgentToken).where(AgentToken.device_id.in_(device_ids)))
-        tokens_by_device = {t.device_id: t for t in token_q.scalars().all()}
-
     for d in group.devices:
-        token = tokens_by_device.get(d.id)
-        if token:
-            d.has_agent = True
-            d.has_pending_token = token.pending_token is not None
-            d.agent_info = {
-                "agent_version": normalize_version(token.agent_version),
-                "latest_version": normalize_version(LATEST_AGENT_VERSION),
-                "latest_metrics": _latest_metrics.get(d.id)
-            }
-        else:
-            d.has_agent = False
-            d.has_pending_token = False
+        _annotate_agent(d, tokens_by_device.get(d.id))
         devices_list.append(DeviceResponse.model_validate(d))
         
     return GroupWithDevicesResponse(
