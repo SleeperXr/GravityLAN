@@ -4,6 +4,7 @@ import re
 from urllib.parse import urlparse
 from pydantic import RootModel
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select, text, update as sa_update
 from app.services.stepup import require_step_up
@@ -79,18 +80,20 @@ _SERVER_URL_PATH_RE = re.compile(r"^[a-zA-Z0-9._~/\-]*$")
 _SHELL_SPECIAL_CHARS = frozenset("\"'`$;&|\n\r\t \\<>(){}*?!#")
 
 
+def _validate_url_host(parsed) -> None:
+    if not parsed.netloc or not _SERVER_URL_NETLOC_RE.match(parsed.netloc) or not parsed.hostname:
+        raise ValueError("host may only contain letters, digits, dots, hyphens and a port")
+    _ = parsed.port  # raises ValueError for a non-numeric or out-of-range port
+
+
 def check_server_url(value: str) -> None:
     """Raise ValueError unless value is a plain http(s)://host[:port][/path] URL."""
-    if any(ch in _SHELL_SPECIAL_CHARS for ch in value):
+    if _SHELL_SPECIAL_CHARS.intersection(value):
         raise ValueError("contains whitespace or shell special characters")
     parsed = urlparse(value)
     if parsed.scheme not in ("http", "https"):
         raise ValueError("scheme must be http or https")
-    if not parsed.netloc or not _SERVER_URL_NETLOC_RE.match(parsed.netloc) or not parsed.hostname:
-        raise ValueError("host may only contain letters, digits, dots, hyphens and a port")
-    _ = parsed.port  # raises ValueError for a non-numeric or out-of-range port
-    if parsed.query or parsed.fragment or parsed.params:
-        raise ValueError("query strings and fragments are not allowed")
+    _validate_url_host(parsed)
     if not _SERVER_URL_PATH_RE.match(parsed.path):
         raise ValueError("path contains unsupported characters")
 
@@ -207,18 +210,9 @@ async def update_settings(settings: SettingsUpdate, request: Request, db: AsyncS
     _refuse_unwritable_keys(values)
     await _confirm_grant_change(db, request, values)
     _mirror_server_url(values)
-
-    for key, value in values.items():
-        # Validate known keys before persisting
-        validator = _VALIDATORS.get(key)
-        if validator and value:
-            validator(value)
-        await _store_setting(db, key, value)
-    if "dns.server_secondary" in values and not str(values["dns.server_secondary"] or "").strip():
-        # Without DNS 2 its kept answers and the picks made from them no longer apply
-        from app.services.cache_service import dashboard_cache
-        await db.execute(sa_update(Device).values(dns_names=None, hostname_source=None))
-        dashboard_cache.invalidate_all()
+    _validate_settings_values(values)
+    await _persist_settings(db, values)
+    await _apply_post_update_hooks(db, values)
     await db.commit()
 
     # Apply log level if changed
@@ -226,6 +220,43 @@ async def update_settings(settings: SettingsUpdate, request: Request, db: AsyncS
         from app.services.log_streamer import apply_log_level
         apply_log_level(values["system.log_level"])
     return {"status": "success"}
+
+
+def _validate_settings_values(values: dict[str, str]) -> None:
+    """Validate known setting keys before persisting."""
+    for key, value in values.items():
+        validator = _VALIDATORS.get(key)
+        if validator and value:
+            validator(value)
+
+
+async def _persist_settings(db: AsyncSession, values: dict[str, str]) -> None:
+    """Persist setting updates in bulk, routing legacy scan_subnets to the Subnet table."""
+    if "scan_subnets" in values:
+        # Scan subnets live in the Subnet table (#18); older clients still send the old
+        # comma-separated setting, so its entries are added there instead of stored here
+        await merge_subnets(db, [s for s in values["scan_subnets"].split(",") if s.strip()])
+
+    setting_items = {k: v for k, v in values.items() if k != "scan_subnets"}
+    if not setting_items:
+        return
+
+    result = await db.execute(select(Setting).where(Setting.key.in_(setting_items)))
+    existing = {s.key: s for s in result.scalars().all()}
+    for key, value in setting_items.items():
+        if key in existing:
+            existing[key].value = value
+        else:
+            db.add(Setting(key=key, value=value))
+
+
+async def _apply_post_update_hooks(db: AsyncSession, values: dict[str, str]) -> None:
+    """Clear dependent cached DNS picks when the secondary DNS server is cleared."""
+    if "dns.server_secondary" in values and not str(values["dns.server_secondary"] or "").strip():
+        # Without DNS 2 its kept answers and the picks made from them no longer apply
+        from app.services.cache_service import dashboard_cache
+        await db.execute(sa_update(Device).values(dns_names=None, hostname_source=None))
+        dashboard_cache.invalidate_all()
 
 
 def _refuse_unwritable_keys(values: dict) -> None:
@@ -264,16 +295,8 @@ def _mirror_server_url(values: dict) -> None:
 
 
 async def _store_setting(db: AsyncSession, key: str, value: str) -> None:
-    if key == "scan_subnets":
-        # Scan subnets live in the Subnet table (#18); older clients still send the old
-        # comma-separated setting, so its entries are added there instead of stored here
-        await merge_subnets(db, [s for s in value.split(",") if s.strip()])
-        return
-    setting = (await db.execute(select(Setting).where(Setting.key == key))).scalar_one_or_none()
-    if setting:
-        setting.value = value
-    else:
-        db.add(Setting(key=key, value=value))
+    """Store a single setting (delegates to bulk helper)."""
+    await _persist_settings(db, {key: value})
 
 
 def _drop_runtime_credentials() -> None:
@@ -302,25 +325,25 @@ async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
     try:
         import asyncio
         from app.scanner.scheduler import scheduler
-        
+
         # Stop scheduler BEFORE deletion to avoid StaleDataError
         logger.info("Stopping scanner scheduler before data wipe...")
         try:
             await asyncio.wait_for(scheduler.stop(), timeout=5.0)
-        except Exception as se:
+        except (asyncio.TimeoutError, RuntimeError, OSError) as se:
             logger.warning(f"Scheduler stop failed/timed out: {se}")
 
         from app.models.device import DeviceHistory, DiscoveredHost, Device, Service, DeviceGroup
         from app.models.agent import AgentToken, DeviceMetrics, AgentConfig
         from app.models.topology import TopologyLink, Rack
-        
+
         # 2. Wipe tables (Nuclear Option: sync_wipe with PRAGMA foreign_keys=OFF)
         logger.info("Wiping database tables...")
-        
+
         def sync_wipe(sync_conn):
             """Synchronous wipe executed on the raw connection to bypass FK constraints."""
             sync_conn.execute(text("PRAGMA foreign_keys=OFF"))
-            
+
             # List of tables to clear in order (Leaf to Root)
             # Using raw table names to be independent of model mapping issues
             # Credentials of the old setup go too (#48): after a reset because something leaked,
@@ -337,19 +360,19 @@ async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
                 "device_history", "services", "devices", "racks", "discovered_hosts",
                 "subnets", "router_import_sources", "app_settings"
             ]
-            
+
             for table in tables:
                 try:
                     sync_conn.execute(text(f"DELETE FROM {table}"))
                     logger.debug(f"Table {table} wiped.")
-                except Exception as te:
+                except SQLAlchemyError as te:
                     # Ignore errors for tables that might not exist yet
                     logger.debug(f"Skipping table {table}: {te}")
 
             # Special resets (where we don't want to delete everything)
             sync_conn.execute(text("DELETE FROM device_groups WHERE is_default = 0"))
             sync_conn.execute(text("DELETE FROM app_settings WHERE key = 'setup.complete'"))
-            
+
             sync_conn.execute(text("PRAGMA foreign_keys=ON"))
 
         # Run the sync wipe in the async context
@@ -370,7 +393,7 @@ async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
         try:
             await scheduler.start()
             logger.info("Scanner scheduler restarted after database reset.")
-        except Exception as se:
+        except (RuntimeError, OSError) as se:
             logger.error(f"Failed to restart scheduler: {se}")
 
         logger.warning("Database reset triggered: All devices and setup status cleared.")
