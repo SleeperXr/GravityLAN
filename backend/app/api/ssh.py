@@ -89,6 +89,14 @@ def _device_label(device: Device) -> str:
     return device.display_name or device.hostname or device.ip
 
 
+def _clean_str(value: Optional[str]) -> str:
+    return (value or "").strip()
+
+
+def _clean_host(host: Optional[str]) -> Optional[str]:
+    return _clean_str(host) or None
+
+
 async def _load_refs(db: AsyncSession, items) -> tuple[dict[int, Device], dict[int, SshKey]]:
     """Batch-load the devices and keys a list of profiles/history entries point to (two queries)."""
     device_ids = {i.device_id for i in items if i.device_id}
@@ -104,16 +112,27 @@ async def _load_refs(db: AsyncSession, items) -> tuple[dict[int, Device], dict[i
     return devices, keys
 
 
+async def _resolve_ref_fields(
+    db: AsyncSession, item: SshProfile | SshHistory, refs=None
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Resolve (device_name, target_host, key_name) for a profile or history entry."""
+    if refs is None:
+        refs = await _load_refs(db, [item])
+    devices, keys = refs
+    device = devices.get(item.device_id)
+    key = keys.get(item.key_id)
+    device_name = _device_label(device) if device else None
+    device_ip = device.ip if device else None
+    return device_name, item.host or device_ip, key.name if key else None
+
+
 async def _profile_out(db: AsyncSession, profile: SshProfile, refs=None) -> SshProfileOut:
-    devices, keys = refs if refs is not None else await _load_refs(db, [profile])
-    device = devices.get(profile.device_id) if profile.device_id else None
-    key = keys.get(profile.key_id) if profile.key_id else None
+    device_name, target_host, key_name = await _resolve_ref_fields(db, profile, refs)
     return SshProfileOut(
         id=profile.id, name=profile.name, device_id=profile.device_id,
-        device_name=_device_label(device) if device else None,
-        host=profile.host, target_host=profile.host or (device.ip if device else None),
+        device_name=device_name, host=profile.host, target_host=target_host,
         port=profile.port, username=profile.username, auth_method=profile.auth_method,
-        key_id=profile.key_id, key_name=key.name if key else None,
+        key_id=profile.key_id, key_name=key_name,
         has_password=bool(profile.encrypted_password),
         created_at=profile.created_at, last_connected_at=profile.last_connected_at,
     )
@@ -137,21 +156,27 @@ def _decrypt(value: Optional[str]) -> Optional[str]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+async def _validate_profile_auth(db: AsyncSession, profile: SshProfile) -> None:
+    if profile.auth_method == "key":
+        key = await db.get(SshKey, profile.key_id) if profile.key_id is not None else None
+        if key is None:
+            raise HTTPException(status_code=400, detail="Choose a stored key for key authentication.")
+    elif profile.auth_method == "password" and not profile.encrypted_password:
+        raise HTTPException(status_code=400, detail="Enter a password or choose 'ask every time'.")
+
+
 async def _validate_profile(db: AsyncSession, profile: SshProfile) -> None:
     """Raise 400 when a profile cannot work as configured."""
     if not profile.name.strip():
         raise HTTPException(status_code=400, detail="Name is required.")
     if not profile.username.strip():
         raise HTTPException(status_code=400, detail="Username is required.")
-    if profile.device_id is None and not (profile.host or "").strip():
-        raise HTTPException(status_code=400, detail="Choose a device or enter a host.")
-    if profile.device_id is not None and await db.get(Device, profile.device_id) is None:
+    if profile.device_id is None:
+        if not _clean_str(profile.host):
+            raise HTTPException(status_code=400, detail="Choose a device or enter a host.")
+    elif await db.get(Device, profile.device_id) is None:
         raise HTTPException(status_code=400, detail="Device not found.")
-    if profile.auth_method == "key":
-        if profile.key_id is None or await db.get(SshKey, profile.key_id) is None:
-            raise HTTPException(status_code=400, detail="Choose a stored key for key authentication.")
-    elif profile.auth_method == "password" and not profile.encrypted_password:
-        raise HTTPException(status_code=400, detail="Enter a password or choose 'ask every time'.")
+    await _validate_profile_auth(db, profile)
 
 
 def _purge_expired_tickets() -> None:
@@ -195,15 +220,9 @@ async def _load_key_material(db: AsyncSession, key_id: int) -> tuple[str, Option
     return _decrypt(key.encrypted_private_key), _decrypt(key.encrypted_passphrase)
 
 
-async def _target_from_profile(db: AsyncSession, profile: SshProfile, password: Optional[str]) -> ConnectionTarget:
-    device = await db.get(Device, profile.device_id) if profile.device_id else None
-    host = profile.host or (device.ip if device else None)
-    if not host:
-        raise HTTPException(status_code=400, detail="The profile has no reachable host.")
-    target = ConnectionTarget(
-        host=host, port=profile.port, username=profile.username,
-        label=profile.name, device_id=profile.device_id, profile_id=profile.id,
-    )
+async def _apply_profile_auth(
+    db: AsyncSession, profile: SshProfile, password: Optional[str], target: ConnectionTarget
+) -> None:
     if profile.auth_method == "key":
         if profile.key_id is None:
             raise HTTPException(status_code=400, detail="The profile has no SSH key assigned.")
@@ -214,30 +233,51 @@ async def _target_from_profile(db: AsyncSession, profile: SshProfile, password: 
         target.password = _decrypt(profile.encrypted_password)
     else:
         raise HTTPException(status_code=400, detail="Password required.")
+
+
+async def _target_from_profile(db: AsyncSession, profile: SshProfile, password: Optional[str]) -> ConnectionTarget:
+    device = await db.get(Device, profile.device_id) if profile.device_id else None
+    host = profile.host or (device.ip if device else None)
+    if not host:
+        raise HTTPException(status_code=400, detail="The profile has no reachable host.")
+    target = ConnectionTarget(
+        host=host, port=profile.port, username=profile.username,
+        label=profile.name, device_id=profile.device_id, profile_id=profile.id,
+    )
+    await _apply_profile_auth(db, profile, password, target)
     profile.last_connected_at = _now()
     return target
 
 
-async def _target_ad_hoc(db: AsyncSession, req: SshSessionPrepare) -> ConnectionTarget:
-    device = None
-    if req.device_id is not None:
-        device = await db.get(Device, req.device_id)
-        if device is None:
-            raise HTTPException(status_code=404, detail="Device not found.")
-    host = (req.host or "").strip() or (device.ip if device else "")
-    if not host:
-        raise HTTPException(status_code=400, detail="Choose a device or enter a host.")
-    username = (req.username or "").strip()
-    if not username:
-        raise HTTPException(status_code=400, detail="Username is required.")
-    label = f"{username}@{_device_label(device) if device else host}"
-    target = ConnectionTarget(host=host, port=req.port, username=username, label=label, device_id=req.device_id)
+async def _get_ad_hoc_device(db: AsyncSession, device_id: Optional[int]) -> Optional[Device]:
+    if device_id is None:
+        return None
+    device = await db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found.")
+    return device
+
+
+async def _apply_ad_hoc_auth(db: AsyncSession, req: SshSessionPrepare, target: ConnectionTarget) -> None:
     if req.key_id is not None:
         target.private_key, target.passphrase = await _load_key_material(db, req.key_id)
     elif req.password:
         target.password = req.password
     else:
         raise HTTPException(status_code=400, detail="Choose a key or enter a password.")
+
+
+async def _target_ad_hoc(db: AsyncSession, req: SshSessionPrepare) -> ConnectionTarget:
+    device = await _get_ad_hoc_device(db, req.device_id)
+    host = _clean_str(req.host) or (device.ip if device else "")
+    if not host:
+        raise HTTPException(status_code=400, detail="Choose a device or enter a host.")
+    username = _clean_str(req.username)
+    if not username:
+        raise HTTPException(status_code=400, detail="Username is required.")
+    label = f"{username}@{_device_label(device) if device else host}"
+    target = ConnectionTarget(host=host, port=req.port, username=username, label=label, device_id=req.device_id)
+    await _apply_ad_hoc_auth(db, req, target)
     return target
 
 
@@ -261,6 +301,24 @@ async def list_keys(db: AsyncSession = Depends(get_db)):
     return [_key_out(k) for k in res.scalars().all()]
 
 
+def _load_uploaded_key(private_key: str, passphrase: Optional[str]):
+    """Normalize PuTTY .ppk keys to OpenSSH and parse the uploaded private key."""
+    try:
+        if is_ppk(private_key):
+            # Store PuTTY keys as OpenSSH: one format in the vault, no passphrase needed later
+            private_key, passphrase = ppk_as_openssh(private_key, passphrase).strip(), None
+        return load_private_key(private_key, passphrase), private_key, passphrase
+    except SSHKeyPassphraseRequired as exc:
+        raise HTTPException(status_code=400, detail="This key is encrypted: enter the correct passphrase.") from exc
+    except PpkError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Not a supported private key (OpenSSH, PEM or PuTTY .ppk: Ed25519, ECDSA or RSA).",
+        ) from exc
+
+
 @router.post("/keys", response_model=SshKeyOut, dependencies=[Depends(require_step_up("credentials"))])
 async def create_key(req: SshKeyCreate, request: Request, db: AsyncSession = Depends(get_db)):
     """Store an uploaded private key (validated, then encrypted)."""
@@ -272,18 +330,7 @@ async def create_key(req: SshKeyCreate, request: Request, db: AsyncSession = Dep
         raise HTTPException(status_code=400, detail="Private key is required.")
     if len(private_key) > MAX_PRIVATE_KEY_LENGTH:
         raise HTTPException(status_code=400, detail="Private key is too large.")
-    passphrase = req.passphrase
-    try:
-        if is_ppk(private_key):
-            # Store PuTTY keys as OpenSSH: one format in the vault, no passphrase needed later
-            private_key, passphrase = ppk_as_openssh(private_key, passphrase).strip(), None
-        pkey = load_private_key(private_key, passphrase)
-    except SSHKeyPassphraseRequired:
-        raise HTTPException(status_code=400, detail="This key is encrypted: enter the correct passphrase.")
-    except PpkError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Not a supported private key (OpenSSH, PEM or PuTTY .ppk: Ed25519, ECDSA or RSA).")
+    pkey, private_key, passphrase = _load_uploaded_key(private_key, req.passphrase)
 
     key = SshKey(
         name=name, key_type=pkey.get_name(), fingerprint=pkey.fingerprint,
@@ -349,6 +396,34 @@ async def delete_key(key_id: int, request: Request, db: AsyncSession = Depends(g
 
 # --- profiles ----------------------------------------------------------------
 
+_PROFILE_SCALAR_TRANSFORMS = {
+    "name": str.strip,
+    "username": str.strip,
+    "port": int,
+    "auth_method": str,
+}
+
+
+def _apply_profile_fields(profile: SshProfile, data: dict) -> None:
+    for field, transform in _PROFILE_SCALAR_TRANSFORMS.items():
+        if data.get(field) is not None:
+            setattr(profile, field, transform(data[field]))
+    for field in ("device_id", "key_id"):
+        if field in data:
+            setattr(profile, field, data[field])
+    if "host" in data:
+        profile.host = _clean_host(data["host"])
+
+
+def _reconcile_profile_auth(profile: SshProfile, password: Optional[str]) -> None:
+    if password:
+        profile.encrypted_password = _encrypt(password)
+    if profile.auth_method != "password":
+        profile.encrypted_password = None
+    if profile.auth_method != "key":
+        profile.key_id = None
+
+
 @router.get("/profiles", response_model=list[SshProfileOut])
 async def list_profiles(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(SshProfile).order_by(SshProfile.name))
@@ -360,7 +435,7 @@ async def list_profiles(db: AsyncSession = Depends(get_db)):
 @router.post("/profiles", response_model=SshProfileOut, dependencies=[Depends(require_step_up("credentials"))])
 async def create_profile(req: SshProfileCreate, request: Request, db: AsyncSession = Depends(get_db)):
     profile = SshProfile(
-        name=req.name.strip(), device_id=req.device_id, host=(req.host or "").strip() or None,
+        name=req.name.strip(), device_id=req.device_id, host=_clean_host(req.host),
         port=req.port, username=req.username.strip(), auth_method=req.auth_method,
         key_id=req.key_id if req.auth_method == "key" else None,
         encrypted_password=_encrypt(req.password) if req.auth_method == "password" and req.password else None,
@@ -381,25 +456,8 @@ async def update_profile(profile_id: int, req: SshProfileUpdate, request: Reques
 
     data = req.model_dump(exclude_unset=True)
     password = data.pop("password", None)
-    for field in ("name", "username"):
-        if data.get(field) is not None:
-            setattr(profile, field, data[field].strip())
-    if "host" in data:
-        profile.host = (data["host"] or "").strip() or None
-    for field in ("device_id", "key_id"):
-        if field in data:
-            setattr(profile, field, data[field])
-    if data.get("port") is not None:
-        profile.port = data["port"]
-    if data.get("auth_method") is not None:
-        profile.auth_method = data["auth_method"]
-
-    if password:
-        profile.encrypted_password = _encrypt(password)
-    if profile.auth_method != "password":
-        profile.encrypted_password = None
-    if profile.auth_method != "key":
-        profile.key_id = None
+    _apply_profile_fields(profile, data)
+    _reconcile_profile_auth(profile, password)
 
     await _validate_profile(db, profile)
     await db.commit()
@@ -444,16 +502,13 @@ HISTORY_LIMIT = 20
 
 
 async def _history_out(db: AsyncSession, entry: SshHistory, refs=None) -> SshHistoryOut:
-    devices, keys = refs if refs is not None else await _load_refs(db, [entry])
-    device = devices.get(entry.device_id) if entry.device_id else None
-    key = keys.get(entry.key_id) if entry.key_id else None
-    target_name = _device_label(device) if device else entry.host
+    device_name, target_host, key_name = await _resolve_ref_fields(db, entry, refs)
+    target_name = device_name if device_name is not None else entry.host
     return SshHistoryOut(
         id=entry.id, label=f"{entry.username}@{target_name}", device_id=entry.device_id,
-        device_name=_device_label(device) if device else None,
-        host=entry.host, target_host=entry.host or (device.ip if device else None),
+        device_name=device_name, host=entry.host, target_host=target_host,
         port=entry.port, username=entry.username, auth_method=entry.auth_method,
-        key_id=entry.key_id, key_name=key.name if key else None, last_used_at=entry.last_used_at,
+        key_id=entry.key_id, key_name=key_name, last_used_at=entry.last_used_at,
     )
 
 
