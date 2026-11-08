@@ -7,6 +7,7 @@ import {
   computeLightBeams,
   computeOrbitRings,
   findDropTargetBody,
+  inferLinkType,
   LINK_TYPES,
   linkCount,
   linkTypeOptions,
@@ -283,5 +284,16 @@ describe('isOnOrbit', () => {
     const visibility = { '1': false, '2': true };
     expect(isOnOrbit({ id: 1, is_hidden: false }, visibility)).toBe(false);
     expect(isOnOrbit({ id: 2, is_hidden: true }, visibility)).toBe(true);
+  });
+});
+
+// inferLinkType: WLAN when either end is an AP or wireless client
+describe('inferLinkType', () => {
+  it('defaults to 1GbE for wired ends and missing devices', () => {
+    expect(inferLinkType({ is_ap: false, is_wlan: false }, undefined)).toBe('1GbE');
+  });
+
+  it.each([[{ is_ap: true }, {}], [{}, { is_ap: true }], [{ is_wlan: true }, {}], [{}, { is_wlan: true }]])('is WLAN for %j / %j', (a, b) => {
+    expect(inferLinkType(a, b)).toBe('WLAN');
   });
 });
