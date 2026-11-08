@@ -82,6 +82,34 @@ def test_powershell_single_adapter_and_failure(monkeypatch):
     assert subnets == []
 
 
+@pytest.mark.parametrize(
+    "output",
+    [
+        b"not json",
+        b"null",  # json.loads gives None: nothing to iterate over
+        b"[1]",  # a list, but not of adapters
+        b'[{"IPAddress": "192.0.2.10", "PrefixLength": 99}]',  # no such prefix
+        b'[{"InterfaceAlias": null, "IPAddress": "192.0.2.10", "PrefixLength": 24}]',  # no name to inspect
+    ],
+)
+def test_powershell_output_that_cannot_be_read(monkeypatch, output):
+    monkeypatch.setattr(utils.subprocess, "check_output", lambda *a, **k: output)
+    subnets: list = []
+    utils._collect_powershell_subnets(subnets, set())
+    assert subnets == []
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError("powershell"), subprocess.CalledProcessError(1, "powershell")])
+def test_powershell_that_cannot_run(monkeypatch, error):
+    def fail(*_a, **_k):
+        raise error
+
+    monkeypatch.setattr(utils.subprocess, "check_output", fail)
+    subnets: list = []
+    utils._collect_powershell_subnets(subnets, set())
+    assert subnets == []
+
+
 def test_socket_subnets(monkeypatch):
     monkeypatch.setattr(utils.socket, "gethostname", lambda: "host")
     monkeypatch.setattr(utils.socket, "gethostbyname_ex", lambda _h: ("host", [], ["127.0.1.1", "192.0.2.7"]))
@@ -136,6 +164,19 @@ async def test_tcp_latency(open_port):
     assert await utils.measure_tcp_latency_ms("127.0.0.1", _closed_port()) is None
 
 
+@pytest.mark.parametrize(
+    "error",
+    [TimeoutError(), ConnectionResetError(), socket.gaierror("no name"), OverflowError("port must be 0-65535"), UnicodeError("label too long")],
+)
+@pytest.mark.asyncio
+async def test_tcp_latency_is_none_when_the_connect_fails(monkeypatch, error):
+    async def fail(_ip, _port):
+        raise error
+
+    monkeypatch.setattr(utils.asyncio, "open_connection", fail)
+    assert await utils.measure_tcp_latency_ms("192.0.2.1", 80) is None
+
+
 # --- ping -------------------------------------------------------------------------------------------
 
 def _ping_result(monkeypatch, returncode=0, stdout=""):
@@ -169,6 +210,58 @@ async def test_ping_survives_a_broken_ping(monkeypatch):
     monkeypatch.setattr(utils.subprocess, "run", broken)
     assert await utils.ping_host_async("192.0.2.1") is False
     assert await utils.measure_ping_latency_ms("192.0.2.1") is None
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        subprocess.TimeoutExpired("ping", 2),
+        PermissionError("ping"),
+        ValueError("embedded null byte"),
+        RuntimeError("cannot schedule new futures after shutdown"),
+    ],
+)
+@pytest.mark.parametrize("probe, expected", [(utils.ping_host_async, False), (utils.measure_ping_latency_ms, None)])
+@pytest.mark.asyncio
+async def test_a_failing_ping_gives_no_result(monkeypatch, probe, expected, error):
+    def fail(*_a, **_k):
+        raise error
+
+    monkeypatch.setattr(utils.subprocess, "run", fail)
+    assert await probe("192.0.2.1") is expected
+
+
+@pytest.mark.parametrize(
+    "os_name, timeout, count_flag, wait_flag, wait, creationflags",
+    [
+        ("nt", 0.6, "-n", "-w", "600", 0x08000000),
+        ("posix", 0.6, "-c", "-W", "1", 0),
+        ("posix", 2.5, "-c", "-W", "2", 0),
+    ],
+)
+@pytest.mark.parametrize("probe", [utils.ping_host_async, utils.measure_ping_latency_ms])
+@pytest.mark.asyncio
+async def test_ping_command_per_platform(monkeypatch, probe, os_name, timeout, count_flag, wait_flag, wait, creationflags):
+    seen = {}
+
+    def run(command, **kwargs):
+        seen.update(command=command, kwargs=kwargs)
+        return SimpleNamespace(returncode=0, stdout="Reply: time=1ms TTL=64")
+
+    monkeypatch.setattr(utils.subprocess, "run", run)
+    monkeypatch.setattr(utils.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    # Only around the call: pytest's own path handling reads os.name too
+    with monkeypatch.context() as patch:
+        patch.setattr(utils.os, "name", os_name)
+        await probe("192.0.2.1", timeout)
+
+    assert seen["command"] == ["ping", count_flag, "1", wait_flag, wait, "192.0.2.1"]
+    assert seen["kwargs"]["timeout"] == timeout + 1.5
+    assert seen["kwargs"]["creationflags"] == creationflags
+    assert seen["kwargs"]["stdout"] == subprocess.PIPE
+    assert seen["kwargs"]["stderr"] == subprocess.DEVNULL
+    assert seen["kwargs"]["text"] is True
+    assert seen["kwargs"]["errors"] == "ignore"
 
 
 @pytest.mark.parametrize(
@@ -255,3 +348,47 @@ async def test_ssl_expiry_days_of_a_self_signed_cert(tls_port):
 @pytest.mark.asyncio
 async def test_ssl_expiry_without_tls_is_none():
     assert await utils.check_ssl_expiry_days("127.0.0.1", _closed_port(), timeout=0.5) is None
+
+
+class _FakeTls:
+    """Stands in for the context, the socket and the wrapped socket, and hands out a fixed certificate."""
+
+    def __init__(self, der):
+        self.der = der
+
+    def wrap_socket(self, sock, server_hostname=None):
+        return self
+
+    def getpeercert(self, binary_form=False):
+        return self.der
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
+@pytest.mark.parametrize("der", [b"", None, b"not a certificate"])
+@pytest.mark.asyncio
+async def test_ssl_expiry_without_a_readable_certificate_is_none(monkeypatch, der):
+    fake = _FakeTls(der)
+    monkeypatch.setattr(utils.ssl, "create_default_context", lambda: fake)
+    monkeypatch.setattr(utils.socket, "create_connection", lambda *_a, **_k: fake)
+    assert await utils.check_ssl_expiry_days("192.0.2.1") is None
+
+
+@pytest.mark.asyncio
+async def test_ssl_expiry_without_the_cryptography_package_is_none(monkeypatch):
+    monkeypatch.setitem(utils.sys.modules, "cryptography.x509", None)
+    assert await utils.check_ssl_expiry_days("192.0.2.1") is None
+
+
+@pytest.mark.asyncio
+async def test_ssl_expiry_during_shutdown_is_none(monkeypatch):
+    def closed(*_a, **_k):
+        raise RuntimeError("cannot schedule new futures after shutdown")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(asyncio.get_running_loop(), "run_in_executor", closed)
+        assert await utils.check_ssl_expiry_days("192.0.2.1") is None

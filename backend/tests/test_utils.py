@@ -26,6 +26,8 @@ def test_is_virtual_docker_bridges():
 def test_is_virtual_172_on_generic_names():
     assert utils._is_virtual_interface("eth0", "172.17.0.2") is True
     assert utils._is_virtual_interface("veth2f3a", "172.19.0.1") is True
+    # A 172.x address alone does not make a named physical adapter virtual
+    assert utils._is_virtual_interface("wlan0", "172.16.0.5") is False
 
 
 def test_is_virtual_physical_interfaces():
@@ -110,6 +112,29 @@ def test_collect_psutil_subnets_handles_missing(monkeypatch):
     subnets = []
     seen = set()
     utils._collect_psutil_subnets(subnets, seen)  # must not raise
+    assert subnets == []
+
+
+@pytest.mark.parametrize("error", [OSError("no netlink"), RuntimeError("psutil C call failed")])
+def test_collect_psutil_subnets_survives_a_failing_call(monkeypatch, error):
+    fake_psutil = MagicMock()
+    fake_psutil.net_if_addrs.side_effect = error
+    monkeypatch.setitem(utils.sys.modules, "psutil", fake_psutil)
+
+    subnets = []
+    utils._collect_psutil_subnets(subnets, set())  # must not raise: the next stage takes over
+    assert subnets == []
+
+
+def test_collect_psutil_subnets_ignores_non_ipv4_addresses(monkeypatch):
+    addr = MagicMock(address="fe80::1", netmask=None, family=23)
+    fake_psutil = MagicMock()
+    fake_psutil.net_if_addrs.return_value = {"eth0": [addr]}
+    fake_psutil.net_if_stats.return_value = {}
+    monkeypatch.setitem(utils.sys.modules, "psutil", fake_psutil)
+
+    subnets = []
+    utils._collect_psutil_subnets(subnets, set())
     assert subnets == []
 
 
@@ -198,6 +223,24 @@ def test_collect_netifaces_subnets_handles_missing(monkeypatch):
     seen = set()
     utils._collect_netifaces_subnets(subnets, seen)  # must not raise
     assert subnets == []
+
+
+def test_collect_netifaces_subnets_keeps_what_it_found_before_a_failure(monkeypatch):
+    fake = MagicMock()
+    fake.AF_INET = 2
+    fake.interfaces.return_value = ["eth0", "gone0"]
+
+    def ifaddresses(iface):
+        if iface == "gone0":
+            raise ValueError("You must specify a valid interface name.")
+        return {2: [{"addr": "10.0.0.5", "netmask": "255.255.255.0"}]}
+
+    fake.ifaddresses = ifaddresses
+    monkeypatch.setitem(utils.sys.modules, "netifaces", fake)
+
+    subnets = []
+    utils._collect_netifaces_subnets(subnets, set())
+    assert [s.subnet for s in subnets] == ["10.0.0.0/24"]
 
 
 def test_get_local_subnets_fallback_returns_virtual(monkeypatch):

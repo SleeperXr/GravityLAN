@@ -138,8 +138,8 @@ def _add_subnet(subnets: list[SubnetInfo], seen_subnets: set, name: str, ip: str
                 is_virtual=is_virtual
             ))
             seen_subnets.add(subnet_str)
-    except (ValueError, OSError):
-        pass
+    except (ValueError, OSError) as exc:
+        logger.debug("Skipping unusable address on interface %s: %s", name, type(exc).__name__)
 
 
 def _is_usable_psutil_interface(name: str, stats) -> bool:
@@ -163,8 +163,9 @@ def _collect_psutil_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> Non
             for addr in addrs:
                 if addr.family == socket.AF_INET:
                     _add_subnet(subnets, seen_subnets, name, addr.address, addr.netmask or "255.255.255.0")
-    except Exception:
-        pass
+    except (ImportError, OSError, RuntimeError) as exc:
+        # RuntimeError includes psutil's NotImplementedError on unsupported platforms
+        logger.debug("psutil subnet detection failed: %s", exc)
 
 
 def _collect_netifaces_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> None:
@@ -177,8 +178,9 @@ def _collect_netifaces_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> 
                 continue
             for addr_info in addrs[netifaces.AF_INET]:
                 _add_subnet(subnets, seen_subnets, iface, addr_info.get("addr"), addr_info.get("netmask", "255.255.255.0"))
-    except Exception:
-        pass
+    except (ImportError, OSError, ValueError) as exc:
+        # netifaces raises ValueError for an interface that disappeared mid-scan
+        logger.debug("netifaces subnet detection failed: %s", exc)
 
 
 def _collect_powershell_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> None:
@@ -198,8 +200,9 @@ def _collect_powershell_subnets(subnets: list[SubnetInfo], seen_subnets: set) ->
                 # Convert prefix to mask
                 mask = str(ipaddress.IPv4Network(f"0.0.0.0/{prefix}").netmask)
                 _add_subnet(subnets, seen_subnets, name, ip, mask)
-    except Exception:
-        pass
+    except (OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError) as exc:
+        # TypeError and AttributeError are JSON of an unexpected shape, such as "null"
+        logger.debug("PowerShell subnet detection failed: %s", type(exc).__name__)
 
 
 def _collect_socket_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> None:
@@ -209,8 +212,8 @@ def _collect_socket_subnets(subnets: list[SubnetInfo], seen_subnets: set) -> Non
         _, _, ip_list = socket.gethostbyname_ex(hostname)
         for ip in ip_list:
             _add_subnet(subnets, seen_subnets, "default", ip, "255.255.255.0")
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug("Socket subnet detection failed: %s", type(exc).__name__)
 
 async def check_port_async(ip: str, port: int, timeout: float = 0.4) -> bool:
     """Async check if a TCP port is open."""
@@ -223,40 +226,60 @@ async def check_port_async(ip: str, port: int, timeout: float = 0.4) -> bool:
     except (TimeoutError, OSError, ConnectionRefusedError):
         return False
 
-async def ping_host_async(ip: str, timeout: float = 0.6) -> bool:
-    """Run a single ICMP ping using async-compatible subprocess execution."""
-    try:
-        param = '-n' if os.name == 'nt' else '-c'
-        timeout_val = str(int(timeout * 1000)) if os.name == 'nt' else str(max(1, int(timeout)))
-        timeout_param = '-w' if os.name == 'nt' else '-W'
-        
-        command = ['ping', param, '1', timeout_param, timeout_val, ip]
-        
-        def _run_ping():
-            # Use subprocess.run for Windows compatibility (avoids SelectorEventLoop issues)
-            return subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                errors='ignore',
-                timeout=timeout + 1.5,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
+_PING_TIME_RE = re.compile(r"(?:time|zeit)[=<]([0-9]+(?:\.[0-9]+)?)\s*ms", re.IGNORECASE)
 
+
+def _build_ping_command(ip: str, timeout: float) -> list[str]:
+    """Return the single-echo ping command line for this platform."""
+    if os.name == 'nt':
+        return ['ping', '-n', '1', '-w', str(int(timeout * 1000)), ip]
+    return ['ping', '-c', '1', '-W', str(max(1, int(timeout))), ip]
+
+
+async def _ping_reply(ip: str, timeout: float) -> str | None:
+    """Ping once and return ping's output if the host answered, otherwise None."""
+    command = _build_ping_command(ip, timeout)
+
+    def _run_ping():
+        # Use subprocess.run for Windows compatibility (avoids SelectorEventLoop issues)
+        return subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            errors='ignore',
+            timeout=timeout + 1.5,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        )
+
+    try:
         loop = asyncio.get_running_loop()
         proc = await loop.run_in_executor(None, _run_ping)
-        
-        if proc.returncode == 0:
-            # Windows ping returns 0 even if target is unreachable, check for TTL
-            if "TTL=" in proc.stdout.upper():
-                return True
-        return False
-    except Exception:
-        return False
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        # A timeout, no ping binary, an unusable address, or the executor shutting down
+        logger.debug("Ping could not be completed: %s", type(exc).__name__)
+        return None
+
+    stdout = proc.stdout or ""
+    # Windows ping returns 0 even if target is unreachable, check for TTL
+    if proc.returncode != 0 or "TTL=" not in stdout.upper():
+        return None
+    return stdout
 
 
-_PING_TIME_RE = re.compile(r"(?:time|zeit)[=<]([0-9]+(?:\.[0-9]+)?)\s*ms", re.IGNORECASE)
+def _parse_ping_time_ms(stdout: str) -> float | None:
+    """Return the round-trip time reported by the ping binary, or None if it cannot be read."""
+    match = _PING_TIME_RE.search(stdout)
+    if not match:
+        return None
+    if "<" in match.group(0):
+        return 0.5
+    return round(float(match.group(1)), 2)
+
+
+async def ping_host_async(ip: str, timeout: float = 0.6) -> bool:
+    """Run a single ICMP ping using async-compatible subprocess execution."""
+    return await _ping_reply(ip, timeout) is not None
 
 
 async def measure_ping_latency_ms(ip: str, timeout: float = 0.8) -> float | None:
@@ -264,45 +287,14 @@ async def measure_ping_latency_ms(ip: str, timeout: float = 0.8) -> float | None
 
     Returns the measured RTT in ms, or None if host is unreachable / ping timed out.
     """
-    try:
-        param = '-n' if os.name == 'nt' else '-c'
-        timeout_val = str(int(timeout * 1000)) if os.name == 'nt' else str(max(1, int(timeout)))
-        timeout_param = '-w' if os.name == 'nt' else '-W'
-        command = ['ping', param, '1', timeout_param, timeout_val, ip]
-
-        t0 = time.perf_counter()
-
-        def _run_ping():
-            return subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                errors='ignore',
-                timeout=timeout + 1.5,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
-
-        loop = asyncio.get_running_loop()
-        proc = await loop.run_in_executor(None, _run_ping)
-        elapsed_perf = (time.perf_counter() - t0) * 1000.0
-
-        if proc.returncode == 0:
-            stdout_txt = proc.stdout or ""
-            # On Windows unreachable responses may exit 0 with "Destination host unreachable"
-            if "TTL=" in stdout_txt.upper():
-                # Parse exact ping time reported by ping binary
-                match = _PING_TIME_RE.search(stdout_txt)
-                if match:
-                    val = float(match.group(1))
-                    if "<" in match.group(0):
-                        return 0.5
-                    return round(val, 2)
-                # If TTL is confirmed but string regex failed, fallback to measured wall time
-                return round(elapsed_perf, 2)
+    t0 = time.perf_counter()
+    stdout = await _ping_reply(ip, timeout)
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    if stdout is None:
         return None
-    except Exception:
-        return None
+    # If TTL is confirmed but the time could not be read, fall back to the measured wall time
+    reported_ms = _parse_ping_time_ms(stdout)
+    return reported_ms if reported_ms is not None else round(elapsed_ms, 2)
 
 
 async def measure_tcp_latency_ms(ip: str, port: int, timeout: float = 1.0) -> float | None:
@@ -315,7 +307,8 @@ async def measure_tcp_latency_ms(ip: str, port: int, timeout: float = 1.0) -> fl
         writer.close()
         await writer.wait_closed()
         return round(rtt_ms, 2)
-    except Exception:
+    except (TimeoutError, OSError, ValueError, OverflowError):
+        # ValueError covers a host name that cannot be encoded, OverflowError a port out of range
         return None
 
 
@@ -343,12 +336,14 @@ async def check_ssl_expiry_days(ip: str, port: int = 443, hostname: str | None =
                     now = datetime.now(UTC)
                     remaining = (not_after - now).total_seconds() / 86400.0
                     return int(remaining)
-        except Exception:
+        except (ImportError, OSError, ValueError, OverflowError):
+            # OSError includes ssl.SSLError; ValueError is also a certificate that does not parse
             return None
 
     try:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _fetch_cert)
-    except Exception:
+    except RuntimeError:
+        # The executor refuses new work while the application shuts down
         return None
 
