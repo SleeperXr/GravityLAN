@@ -433,6 +433,17 @@ async def _send_webhook_post(
         raise
 
 
+async def _attempt_delivery(db, client: httpx.AsyncClient, entry: NotificationOutbox, sub: WebhookSubscription | None) -> bool:
+    """Deliver one entry. Anything that goes wrong is a failed attempt, or the entry would stay
+    pending at the head of the queue and stop every notification behind it."""
+    try:
+        return await _deliver_single_entry(db, client, entry, subscription=sub, subscription_resolved=True)
+    except Exception as exc:
+        logger.error("Notification Outbox: Delivery of entry %s failed: %s", entry.id, type(exc).__name__)
+        _record_failure(entry, str(exc))
+        return False
+
+
 async def deliver_pending_outbox(db=None) -> int:
     """Deliver any pending outbox notifications whose next_attempt_at has arrived.
 
@@ -471,7 +482,7 @@ async def deliver_pending_outbox(db=None) -> int:
         client = await _get_client()
         for entry in entries:
             sub = subs_by_id.get(entry.subscription_id) if entry.subscription_id else None
-            if await _deliver_single_entry(db, client, entry, subscription=sub, subscription_resolved=True):
+            if await _attempt_delivery(db, client, entry, sub):
                 delivered_count += 1
             # Per entry: a crash in this pass must not send the earlier ones again
             await db.commit()

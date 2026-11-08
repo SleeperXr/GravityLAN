@@ -186,8 +186,20 @@ async def _refresh_device_metadata(
     return changed or dev.dns_names != names_before
 
 
+async def _vendors_for(device_ids: list[int], mac_map: dict[str, str]) -> dict[str, str]:
+    """Vendor per MAC of these devices. In a thread: get_vendor can wait on the rate-limited vendor API."""
+    from app.database import async_session
+
+    if not device_ids:
+        return {}
+    async with async_session() as db:
+        rows = (await db.execute(select(Device.ip, Device.mac).where(Device.id.in_(device_ids)))).all()
+    macs = {mac or mac_map.get(ip) for ip, mac in rows} - {None, ""}
+    return await asyncio.to_thread(lambda: {mac: get_vendor(mac) for mac in macs})
+
+
 async def _bulk_metadata_refresh(devices_to_refresh, servers: tuple[str | None, str | None]) -> None:
-    """Background part of refresh-all: one ARP sweep, then update all devices in one session."""
+    """Background part of refresh-all: one ARP sweep, then each device in its own session."""
     from app.database import async_session
     from app.scanner.arp import resolve_mac_addresses
 
@@ -196,23 +208,20 @@ async def _bulk_metadata_refresh(devices_to_refresh, servers: tuple[str | None, 
     await resolve_mac_addresses(hosts_for_mac)
     mac_map = {h["ip"]: h["mac"] for h in hosts_for_mac if h["mac"]}
 
-    device_ids = [d_id for d_id, _d_ip, _display_name in devices_to_refresh]
+    vendor_map = await _vendors_for([d_id for d_id, _d_ip, _display_name in devices_to_refresh], mac_map)
     updated = 0
-    if device_ids:
-        async with async_session() as local_db:
-            rows = (await local_db.execute(select(Device).where(Device.id.in_(device_ids)))).scalars().all()
-            all_macs = {m for m in [*(d.mac for d in rows), *mac_map.values()] if m}
-            vendor_map = {mac: get_vendor(mac) for mac in all_macs}
-            for dev in rows:
-                try:
-                    if await _refresh_device_metadata(dev, mac_map, vendor_map, servers):
-                        updated += 1
-                except (OSError, RuntimeError) as e:
-                    logger.debug(f"Metadata refresh failed for {dev.ip}: {e}")
-            if updated:
-                await local_db.commit()
+    # Saved per device: a failure or a locked database costs that device, not what the others found
+    for d_id, d_ip, _display_name in devices_to_refresh:
+        try:
+            async with async_session() as local_db:
+                dev = await local_db.get(Device, d_id)
+                if dev and await _refresh_device_metadata(dev, mac_map, vendor_map, servers):
+                    await local_db.commit()
+                    updated += 1
+        except Exception as e:
+            logger.debug(f"Metadata refresh failed for {d_ip}: {e}")
 
-    # Device rows changed in their own session: drop the cached lists and topology
+    # Device rows changed in their own sessions: drop the cached lists and topology
     dashboard_cache.invalidate_all()
     topology_cache.invalidate()
     logger.info(f"Bulk metadata refresh complete. Updated {updated} devices.")

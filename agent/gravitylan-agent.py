@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 # Constants & Logging
 # ---------------------------------------------------------------------------
 
-VERSION = "0.3.14"
+VERSION = "0.3.15"
 AGENT_NAME = "gravitylan-agent"
 DEFAULT_CONFIG_FILENAME = "agent.conf"
 DEFAULT_LOG_FILENAME = "gravitylan-agent.log"
@@ -428,7 +428,7 @@ def _discover_mount_targets(default_paths: List[str]) -> set:
     """Auto-discover physical mounts when the default '/' config is used."""
     targets = set(default_paths)
     try:
-        with open("/proc/mounts", "r", encoding="utf-8") as fh:
+        with open("/proc/mounts", "r", encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 parts = line.split()
                 if len(parts) < 3:
@@ -744,7 +744,7 @@ class PatchMetrics(MetricProvider):
 
             # Run simulate upgrade without locks
             cmd = ["apt-get", "-s", "-o", "Debug::NoLocking=true", "upgrade"]
-            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8")
+            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8", errors="replace")
 
             available, security = self._count_apt_upgrades(out)
             result["patch_available"] = available
@@ -763,7 +763,7 @@ class PatchMetrics(MetricProvider):
         """Detect a major release upgrade (e.g. Ubuntu 22.04 -> 24.04) via do-release-upgrade."""
         try:
             cmd = ["do-release-upgrade", "-c"]
-            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8")
+            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=10).decode("utf-8", errors="replace")
             for line in out.splitlines():
                 if "New release" in line and "available" in line:
                     parts = line.split("'")
@@ -800,7 +800,7 @@ class PatchMetrics(MetricProvider):
 def _run_quiet(cmd: List[str]) -> str:
     """stdout of a package manager query (stderr dropped, 15 s at most)."""
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15)
-    return proc.stdout.decode("utf-8")
+    return proc.stdout.decode("utf-8", errors="replace")
 
 
 def _count_update_lines(out: str, skip_metadata: bool) -> int:
@@ -934,7 +934,7 @@ class ArpNeighborCollector(MetricProvider):
         # 1. `ip -4 -o addr show`
         networks: List[ipaddress.IPv4Network] = []
         try:
-            out = subprocess.check_output(["ip", "-4", "-o", "addr", "show"], stderr=subprocess.DEVNULL, timeout=2).decode("utf-8")
+            out = subprocess.check_output(["ip", "-4", "-o", "addr", "show"], stderr=subprocess.DEVNULL, timeout=2).decode("utf-8", errors="replace")
             networks = _subnets_from_ip_addr(out)
         except (OSError, SubprocessError) as e:
             logger.debug("ip addr show failed: %s", e)
@@ -969,14 +969,14 @@ class ArpNeighborCollector(MetricProvider):
         arp_path = _PROC / "net/arp"
         if arp_path.exists():
             try:
-                with open(arp_path, "r", encoding="utf-8") as f:
+                with open(arp_path, "r", encoding="utf-8", errors="replace") as f:
                     neighbors = _neighbors_from_proc_arp(f.readlines())
             except OSError as e:
                 logger.debug("Failed to read /proc/net/arp: %s", e)
 
         # 2. Supplementary `ip neigh` check (catches any entries not in /proc/net/arp)
         try:
-            out = subprocess.check_output(["ip", "-4", "neigh", "show"], stderr=subprocess.DEVNULL, timeout=2).decode("utf-8")
+            out = subprocess.check_output(["ip", "-4", "neigh", "show"], stderr=subprocess.DEVNULL, timeout=2).decode("utf-8", errors="replace")
             _apply_ip_neigh(neighbors, out)
         except (OSError, SubprocessError) as e:
             logger.debug("ip neigh show failed: %s", e)
@@ -1093,7 +1093,12 @@ class AgentOrchestrator:
         }
         
         for key, collector in self.collectors.items():
-            value = collector.collect(self.config)
+            try:
+                value = collector.collect(self.config)
+            except Exception as e:
+                # One reader must not cost the whole report: the server would take the host for offline
+                logger.warning("Collector %s failed: %s", key, e)
+                continue
             if value is not None:
                 payload[key] = value
         
