@@ -3,13 +3,14 @@ tickets, building a connection target from a profile or ad hoc, and the 404s of 
 profile and known-host endpoints."""
 
 import time
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 
 import app.api.ssh as ssh_api
 from app.models.device import Device
-from app.models.ssh import SshKey, SshProfile
+from app.models.ssh import SshHistory, SshKey, SshKnownHost, SshProfile
 from app.schemas.ssh import SshSessionPrepare
 from app.services.secret_vault import SecretVault, VaultError
 from app.services.ssh_terminal import ConnectionTarget
@@ -174,7 +175,7 @@ async def test_ad_hoc_target_errors(db, req, status, message):
     assert (exc.value.status_code, exc.value.detail) == (status, message)
 
 
-# --- endpoint errors ---------------------------------------------------------------------------
+# --- endpoint errors & edge paths --------------------------------------------------------------
 
 async def test_unknown_keys_profiles_and_known_hosts(client, auth, vault):
     assert (await client.patch("/api/ssh/keys/9999", json={"name": "x"}, headers=auth)).status_code == 404
@@ -190,3 +191,116 @@ async def test_key_rename_and_delete(client, auth, db, vault):
     renamed = await client.patch(f"/api/ssh/keys/{key.id}", json={"name": " homelab "}, headers=auth)
     assert renamed.json()["name"] == "homelab"
     assert (await client.delete(f"/api/ssh/keys/{key.id}", headers=auth)).json() == {"status": "ok"}
+
+
+async def test_ssh_status_and_known_hosts_crud(client, auth, db, vault):
+    status = await client.get("/api/ssh/status", headers=auth)
+    assert status.status_code == 200
+    assert status.json()["vault_key_source"] in ("file", "env")
+
+    entry = SshKnownHost(host="192.0.2.10", port=22, key_type="ssh-ed25519", fingerprint="SHA256:xyz", public_key="ssh-ed25519 AAAA")
+    db.add(entry)
+    await db.commit()
+
+    listed = await client.get("/api/ssh/known-hosts", headers=auth)
+    assert listed.status_code == 200 and len(listed.json()) == 1
+    assert listed.json()[0]["fingerprint"] == "SHA256:xyz"
+
+    deleted = await client.delete(f"/api/ssh/known-hosts/{entry.id}", headers=auth)
+    assert deleted.status_code == 200 and deleted.json() == {"status": "ok"}
+    assert (await client.get("/api/ssh/known-hosts", headers=auth)).json() == []
+
+
+async def test_key_creation_and_generation_validation_edges(client, auth, vault):
+    empty_key = await client.post("/api/ssh/keys", json={"name": "k", "private_key": "   "}, headers=auth)
+    assert empty_key.status_code == 400 and "Private key is required" in empty_key.json()["detail"]
+
+    huge_key = await client.post(
+        "/api/ssh/keys",
+        json={"name": "k", "private_key": "A" * (ssh_api.MAX_PRIVATE_KEY_LENGTH + 1)},
+        headers=auth,
+    )
+    assert huge_key.status_code == 400 and "too large" in huge_key.json()["detail"]
+
+    empty_gen = await client.post("/api/ssh/keys/generate", json={"name": "   "}, headers=auth)
+    assert empty_gen.status_code == 400 and "Name is required" in empty_gen.json()["detail"]
+
+
+async def test_update_profile_all_fields_and_missing_profile_session(client, auth, db, vault):
+    from app.services.session_service import session_store
+
+    key = await _key(db, vault)
+    dev = Device(ip="192.0.2.25", display_name="switch")
+    db.add(dev)
+    await db.commit()
+
+    created = await client.post(
+        "/api/ssh/profiles",
+        json={"name": "orig", "host": "192.0.2.1", "username": "u1", "auth_method": "ask"},
+        headers=auth,
+    )
+    pid = created.json()["id"]
+
+    updated = await client.patch(
+        f"/api/ssh/profiles/{pid}",
+        json={
+            "name": " new-name ",
+            "username": " u2 ",
+            "host": " 192.0.2.2 ",
+            "port": 2222,
+            "device_id": dev.id,
+            "auth_method": "key",
+            "key_id": key.id,
+        },
+        headers=auth,
+    )
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert (body["name"], body["username"], body["host"], body["port"]) == ("new-name", "u2", "192.0.2.2", 2222)
+    assert (body["device_id"], body["key_id"]) == (dev.id, key.id)
+
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    try:
+        missing = await client.post("/api/ssh/sessions/prepare", json={"profile_id": 99999})
+        assert missing.status_code == 404
+    finally:
+        client.cookies.clear()
+
+
+async def test_history_out_loads_refs_and_websocket_edge_cases(db, vault, monkeypatch):
+    entry = SshHistory(host="192.0.2.40", port=22, username="root", auth_method="password")
+    db.add(entry)
+    await db.commit()
+    out = await ssh_api._history_out(db, entry)
+    assert out.label == "root@192.0.2.40"
+
+    async def auth_denied(websocket, endpoint_type, allowed_levels=(), device_id=None):
+        return None
+
+    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", auth_denied)
+    ws_denied = SimpleNamespace(cookies={"gravitylan_token": "bad"}, accepted=False)
+    await ssh_api.ssh_terminal_websocket(ws_denied)
+    assert not ws_denied.accepted
+
+    async def auth_ok(websocket, endpoint_type, allowed_levels=(), device_id=None):
+        return {"authenticated": True, "auth_type": "session", "identity": "s"}
+
+    captured = {}
+
+    async def fake_run(websocket, target, cols, rows):
+        captured["size"] = (cols, rows)
+
+    async def noop(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", auth_ok)
+    monkeypatch.setattr(ssh_api, "run_terminal", fake_run)
+    ticket = ssh_api._issue_ticket(TARGET)
+    ws_bad_size = SimpleNamespace(
+        cookies={"gravitylan_token": "ok"},
+        query_params={"ticket": ticket, "cols": "not-an-int", "rows": "nope"},
+        client=SimpleNamespace(host="10.0.0.1"),
+        accept=noop,
+    )
+    await ssh_api.ssh_terminal_websocket(ws_bad_size)
+    assert captured["size"] == (80, 24)
