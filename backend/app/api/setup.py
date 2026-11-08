@@ -99,12 +99,53 @@ def _in_adoption_networks(host, networks) -> bool:
     return any(ip_obj in net for net in networks)
 
 
+def _resolve_display_name(host, current_hostname: str | None) -> str:
+    """Determine the display name from hostname (domain stripped), custom name, or IP."""
+    from app.scanner.hostname import is_ip_like
+
+    if current_hostname and not is_ip_like(current_hostname):
+        return current_hostname.split(".")[0]
+    if host.custom_name:
+        return host.custom_name
+    return host.ip
+
+
+def _build_detected_services(classified: dict) -> list:
+    """Build Service model instances for auto-detected services."""
+    from app.models.device import Service
+
+    return [
+        Service(
+            name=svc_data["name"],
+            protocol=svc_data["protocol"],
+            port=svc_data["port"],
+            url_template=safe_url_template(svc_data["url_template"]),
+            color=svc_data.get("color"),
+            is_auto_detected=True,
+            is_up=True,
+        )
+        for svc_data in classified.get("services", [])
+    ]
+
+
+async def _ensure_hostname(host, dns_server: str | None) -> str | None:
+    """Resolve the host's name when missing or IP-like, updating host.hostname in place."""
+    from app.scanner.hostname import is_ip_like, resolve_hostname
+
+    current_hostname = host.hostname
+    if is_ip_like(current_hostname):
+        new_hname = await resolve_hostname(host.ip, timeout=1.5, dns_server=dns_server)
+        if new_hname:
+            current_hostname = new_hname
+            host.hostname = new_hname
+    return current_hostname
+
+
 async def _process_discovered_host(host, group_map, existing_ips, adoption_networks, dns_server):
     """Classify and package one discovered host into a (device, services, host) tuple or None."""
-    from app.models.device import Device, Service
+    from app.models.device import Device
     from app.scanner.classifier import classify_device
-    from app.scanner.hostname import resolve_hostname, is_ip_like
-    from app.scanner.port_scanner import scan_ports, DEFAULT_SCAN_PORTS
+    from app.scanner.port_scanner import DEFAULT_SCAN_PORTS, scan_ports
     from app.scanner.utils import GROUP_TYPE_MAP
 
     if not _in_adoption_networks(host, adoption_networks):
@@ -116,53 +157,31 @@ async def _process_discovered_host(host, group_map, existing_ips, adoption_netwo
 
     # Full discovery of key ports for better classification
     found_ports = await scan_ports(host.ip, ports=DEFAULT_SCAN_PORTS, timeout=0.4)
-
-    # Try hostname resolution again if missing or just an IP
-    current_hostname = host.hostname
-    if is_ip_like(current_hostname):
-        new_hname = await resolve_hostname(host.ip, timeout=1.5, dns_server=dns_server)
-        if new_hname:
-            current_hostname = new_hname
-            host.hostname = new_hname
+    current_hostname = await _ensure_hostname(host, dns_server)
 
     classified = classify_device({
         "ip": host.ip,
         "hostname": current_hostname,
         "mac": host.mac,
-        "ports": found_ports
+        "ports": found_ports,
     }) or {"device_type": "unknown", "device_subtype": "Unknown", "services": []}
 
-    device_type = classified.get("device_type", "unknown")
-    group_name = GROUP_TYPE_MAP.get(device_type, "Newly discovered")
-    group_id = group_map.get(group_name, group_map.get("Newly discovered"))
-
-    # Format display name (strip domain)
-    display_name = host.ip
-    if current_hostname and not is_ip_like(current_hostname):
-        display_name = current_hostname.split('.')[0]
-    elif host.custom_name:
-        display_name = host.custom_name
-
-    device = Device(
-        ip=host.ip, mac=host.mac, hostname=current_hostname, display_name=display_name,
-        device_type=device_type, device_subtype=classified.get("device_subtype", "Unknown"),
-        vendor=host.vendor, group_id=group_id, is_online=True
-    )
-
-    services = []
-    if "services" in classified:
-        for svc_data in classified["services"]:
-            services.append(Service(
-                name=svc_data["name"], protocol=svc_data["protocol"], port=svc_data["port"],
-                url_template=safe_url_template(svc_data["url_template"]), color=svc_data.get("color"),
-                is_auto_detected=True, is_up=True
-            ))
-
+    services = _build_detected_services(classified)
     # CRITICAL: Only add device if it has at least one service
     if not services:
         logger.info(f"Setup: Skipping auto-adoption for {host.ip} (No services found)")
         return None
 
+    device_type = classified.get("device_type", "unknown")
+    group_name = GROUP_TYPE_MAP.get(device_type, "Newly discovered")
+    group_id = group_map.get(group_name, group_map.get("Newly discovered"))
+    display_name = _resolve_display_name(host, current_hostname)
+
+    device = Device(
+        ip=host.ip, mac=host.mac, hostname=current_hostname, display_name=display_name,
+        device_type=device_type, device_subtype=classified.get("device_subtype", "Unknown"),
+        vendor=host.vendor, group_id=group_id, is_online=True,
+    )
     return (device, services, host)
 
 
@@ -241,80 +260,75 @@ async def restore_during_setup(http_request: Request, file: UploadFile = File(..
     return await restore_upload(http_request, file, db, actor="setup")
 
 
-@router.post("/complete")
-async def mark_setup_complete(
-    request: SetupCompleteRequest,
-    http_request: Request,
-    response: Response,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Mark the initial setup as completed, sign the admin in and adopt discovered hosts."""
-    logger.info(f"mark_setup_complete called: has_password={request.admin_password is not None}")
-    
-    from app.models.setting import Setting
-    from app.services.auth_service import hash_password
-    
-    # 0. Idempotency check: don't allow setup to run again if already complete
-    res_setup = await db.execute(select(Setting).where(Setting.key == "setup.complete"))
-    setting_complete = res_setup.scalar_one_or_none()
-    if setting_complete and setting_complete.value == "true":
-        raise HTTPException(status_code=400, detail="Setup already completed. Use Settings UI to change configuration.")
-
-    # 0a. Save DNS server if provided
-    if request.dns_server:
-        dns_res = await db.execute(select(Setting).where(Setting.key == "dns.server"))
-        dns_s = dns_res.scalar_one_or_none()
-        if dns_s:
-            dns_s.value = request.dns_server
-        else:
-            db.add(Setting(key="dns.server", value=request.dns_server, category="scan", description="Custom DNS server for hostname resolution"))
-        await db.flush()
-
-    # 0b. Save Admin Password if provided (hashed!)
-    if request.admin_password:
-        hashed_password = hash_password(request.admin_password)
-        pass_res = await db.execute(select(Setting).where(Setting.key == "api.admin_password"))
-        pass_s = pass_res.scalar_one_or_none()
-        if pass_s:
-            pass_s.value = hashed_password
-        else:
-            db.add(Setting(key="api.admin_password", value=hashed_password, category="system", description="Administrator password for dashboard login"))
-        await db.flush()
-
-    # 1. Prepare setup complete flag
-    if setting_complete:
-        setting_complete.value = "true"
+async def _upsert_setting(
+    db: AsyncSession,
+    key: str,
+    value: str,
+    *,
+    category: str | None = None,
+    description: str | None = None,
+) -> None:
+    """Create or update a Setting row."""
+    row = (await db.execute(select(Setting).where(Setting.key == key))).scalar_one_or_none()
+    if row:
+        row.value = value
     else:
-        db.add(Setting(key="setup.complete", value="true", category="system"))
-    if request.restored:
-        res_initial = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
-        if not res_initial.scalar_one_or_none():
-            db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
+        db.add(Setting(key=key, value=value, category=category, description=description))
 
-    # 1b. Initialize Master API Token if missing (ATOMIC WITH SETUP COMPLETE)
+
+async def _insert_setting_if_missing(
+    db: AsyncSession,
+    key: str,
+    value: str,
+    *,
+    category: str | None = None,
+) -> bool:
+    """Insert a Setting row only when no row with that key exists; returns True if inserted."""
+    row = (await db.execute(select(Setting).where(Setting.key == key))).scalar_one_or_none()
+    if row:
+        return False
+    db.add(Setting(key=key, value=value, category=category))
+    return True
+
+
+async def _persist_initial_setup_settings(db: AsyncSession, request: SetupCompleteRequest) -> None:
+    """Persist DNS server, admin password, setup.complete flag, and master API token."""
     import secrets
-    res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
-    if not res_token.scalar_one_or_none():
-        master_token = secrets.token_hex(32)
-        logger.info("Setup: Initializing secure Master API Token (masked for security).")
-        db.add(Setting(key="api.master_token", value=master_token))
+    from app.services.auth_service import hash_password
 
-    # 2. Commit basic settings and token now so the user can login even if migration takes long
+    if request.dns_server:
+        await _upsert_setting(
+            db,
+            "dns.server",
+            request.dns_server,
+            category="scan",
+            description="Custom DNS server for hostname resolution",
+        )
+        await db.flush()
+
+    if request.admin_password:
+        await _upsert_setting(
+            db,
+            "api.admin_password",
+            hash_password(request.admin_password),
+            category="system",
+            description="Administrator password for dashboard login",
+        )
+        await db.flush()
+
+    await _upsert_setting(db, "setup.complete", "true", category="system")
+    if request.restored:
+        await _insert_setting_if_missing(db, "scanner.initial_scan_done", "true", category="scan")
+
+    if await _insert_setting_if_missing(db, "api.master_token", secrets.token_hex(32)):
+        logger.info("Setup: Initializing secure Master API Token (masked for security).")
+
+    # Commit basic settings and token now so the user can login even if migration takes long
     await db.commit()
 
-    # Sign the admin in right away: the wizard ends in the dashboard without a second login request
-    if request.admin_password:
-        from app.api.auth import issue_session_cookie
-        issue_session_cookie(response, http_request.headers.get("user-agent"))
 
-    # 3. Register the scanned networks as scan subnets (one overview tab each), then add the
-    # discovered online hosts to the dashboard. Both are best-effort: settings are already
-    # committed, so a failure here must not turn into a 500 (the session cookie would be lost
-    # and a retry ends in "Setup already completed").
-    if request.restored:
-        # The backup brought its own subnets and devices; nothing was scanned to adopt
-        return {"status": "ok", "devices_adopted": 0}
-
+async def _finalize_scanned_setup(db: AsyncSession, request: SetupCompleteRequest) -> int:
+    """Best-effort registration of scanned subnets and adoption of discovered hosts."""
     try:
         from app.scanner.utils import get_local_subnets
         await _register_scan_subnets(db, request.subnets, get_local_subnets())
@@ -326,13 +340,43 @@ async def mark_setup_complete(
     try:
         adopted = await _adopt_discovered_hosts(db, request.dns_server, request.subnets)
         if adopted > 0:
-            res_initial = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
-            if not res_initial.scalar_one_or_none():
-                db.add(Setting(key="scanner.initial_scan_done", value="true", category="scan"))
+            await _insert_setting_if_missing(db, "scanner.initial_scan_done", "true", category="scan")
         await db.commit()
+        return adopted
     except Exception:
         logger.exception("Setup: adopting discovered hosts failed; settings are saved, devices can be added later")
         await db.rollback()
-        adopted = 0
+        return 0
 
+
+@router.post("/complete")
+async def mark_setup_complete(
+    request: SetupCompleteRequest,
+    http_request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Mark the initial setup as completed, sign the admin in and adopt discovered hosts."""
+    logger.info(f"mark_setup_complete called: has_password={request.admin_password is not None}")
+
+    # 0. Idempotency check: don't allow setup to run again if already complete
+    if await _setup_done(db):
+        raise HTTPException(status_code=400, detail="Setup already completed. Use Settings UI to change configuration.")
+
+    await _persist_initial_setup_settings(db, request)
+
+    # Sign the admin in right away: the wizard ends in the dashboard without a second login request
+    if request.admin_password:
+        from app.api.auth import issue_session_cookie
+        issue_session_cookie(response, http_request.headers.get("user-agent"))
+
+    # Register the scanned networks as scan subnets (one overview tab each), then add the
+    # discovered online hosts to the dashboard. Both are best-effort: settings are already
+    # committed, so a failure here must not turn into a 500 (the session cookie would be lost
+    # and a retry ends in "Setup already completed").
+    if request.restored:
+        # The backup brought its own subnets and devices; nothing was scanned to adopt
+        return {"status": "ok", "devices_adopted": 0}
+
+    adopted = await _finalize_scanned_setup(db, request)
     return {"status": "ok", "devices_adopted": adopted}

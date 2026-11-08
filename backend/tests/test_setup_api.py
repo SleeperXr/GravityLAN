@@ -155,6 +155,7 @@ async def test_complete_overwrites_stored_dns_and_password_and_an_unfinished_fla
         Setting(key="setup.complete", value="false"),
         Setting(key="dns.server", value="1.1.1.1"),
         Setting(key="api.admin_password", value="old-hash"),
+        Setting(key="api.master_token", value="existing-master-token"),
     ])
     await db.commit()
 
@@ -167,9 +168,14 @@ async def test_complete_overwrites_stored_dns_and_password_and_an_unfinished_fla
     values = {s.key: s.value for s in (await db.execute(select(Setting))).scalars().all()}
     assert values["setup.complete"] == "true"
     assert values["dns.server"] == "192.168.100.2"
+    assert values["api.master_token"] == "existing-master-token"
     assert verify_password("supersecretpassword123", values["api.admin_password"])
     rows = (await db.execute(select(Setting).where(Setting.key.in_(["setup.complete", "dns.server"])))).scalars().all()
     assert len(rows) == 2  # updated in place, no second row
+
+    # Calling complete again when already completed is rejected with 400
+    again = await client.post("/api/setup/complete", json={"admin_password": "otherpassword123"})
+    assert again.status_code == 400
 
 
 @pytest.mark.asyncio
