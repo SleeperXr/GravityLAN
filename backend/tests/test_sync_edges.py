@@ -164,6 +164,23 @@ async def test_rejected_ip_match_moves_the_mac_owner_and_removes_the_stale_recor
     assert [(r.id, r.ip) for r in rows] == [(owner_id, "192.0.2.41")]
 
 
+async def test_occupied_address_stands_when_the_mac_owner_is_live_in_another_subnet(db, scan):
+    """A second row at the address broke the unique IP and lost the whole scan batch."""
+    router = DiscoveredHost(ip="192.0.2.1", mac=MAC_A, is_online=True)
+    occupant = DiscoveredHost(ip="198.51.100.5", mac=MAC_B, custom_name="Old printer", is_online=False)
+    await add(db, router, occupant)
+
+    results = await scan({"ip": "198.51.100.5", "mac": MAC_A}, {"ip": "192.0.2.77", "mac": "00:11:22:33:44:cc"})
+
+    assert sorted(r.ip for r in results) == ["192.0.2.77", "198.51.100.5"]
+    await db.refresh(router)
+    await db.refresh(occupant)
+    assert (router.ip, router.mac) == ("192.0.2.1", MAC_A)
+    assert (occupant.ip, occupant.mac, occupant.custom_name, occupant.is_online) == ("198.51.100.5", MAC_B, "Old printer", True)
+    rows = (await db.execute(select(DiscoveredHost.ip).order_by(DiscoveredHost.ip))).scalars().all()
+    assert rows == ["192.0.2.1", "192.0.2.77", "198.51.100.5"]
+
+
 async def test_several_devices_behind_one_mac_are_no_mac_match(db, scan):
     await add(
         db,
