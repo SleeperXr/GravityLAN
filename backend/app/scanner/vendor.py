@@ -241,7 +241,7 @@ def _fetch_vendor_from_api(mac_query: str) -> str:
     try:
         with urllib.request.urlopen(req, timeout=5) as response:
             if response.status == 200:
-                body = response.read().decode("utf-8")
+                body = response.read().decode("utf-8", errors="replace")
                 return _parse_api_response(body)
             if response.status == 429:
                 _handle_rate_limit_exceeded()
@@ -250,8 +250,10 @@ def _fetch_vendor_from_api(mac_query: str) -> str:
             _handle_rate_limit_exceeded(f"HTTP {e.code}")
         elif e.code != 404:  # 404 is "Not Found", which is expected for unknown OUIs
             logger.debug("API vendor lookup HTTP error: %d", e.code)
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
         logger.debug("API vendor lookup network failure: %s", e)
+    except Exception as e:
+        logger.debug("API vendor lookup unexpected failure: %s", e)
 
     return ""
 
