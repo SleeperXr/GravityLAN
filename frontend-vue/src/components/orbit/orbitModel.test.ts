@@ -210,6 +210,46 @@ describe('orbitModel hierarchy and mechanics', () => {
   });
 });
 
+describe('body kinds at their edges', () => {
+  const star = makeDevice({ id: 1, ip: '192.168.1.1', device_type: 'router' });
+  const hub = makeDevice({ id: 2, ip: '192.168.1.2', device_type: 'switch' });
+  const uplink = { id: 1, source_id: 1, target_id: 2, link_type: '1GbE' } as OrbitLink;
+  const leaves = (count: number) => Array.from({ length: count }, (_, i) => makeDevice({ id: 10 + i, ip: `192.168.1.${10 + i}` }));
+  const toHub = (devices: Device[]) => devices.map((d) => ({ id: 100 + d.id, source_id: 2, target_id: d.id, link_type: '1GbE' }) as OrbitLink);
+
+  it('keeps a chosen moon without children a moon, even for network gear', () => {
+    const body = resolveOrbitSystem([star, hub], [uplink], new Set([1]), { '2': 'moon' }).get(2)!;
+    expect([body.kind, body.dwarf]).toEqual(['moon', false]);
+  });
+
+  it('lets a chosen moon override the two links that would make it a planet', () => {
+    const server = makeDevice({ id: 3, ip: '192.168.1.3' });
+    const twoLinks = [uplink, { id: 2, source_id: 1, target_id: 3 } as OrbitLink, { id: 3, source_id: 2, target_id: 3 } as OrbitLink];
+    expect(resolveOrbitSystem([star, hub, server], twoLinks, new Set([1])).get(3)?.kind).toBe('planet');
+    expect(resolveOrbitSystem([star, hub, server], twoLinks, new Set([1]), { '3': 'moon' }).get(3)?.kind).toBe('moon');
+  });
+
+  it.each([
+    [3, 'dwarf'],
+    [4, 'planet'],
+  ])('draws a switch carrying %i devices as a %s', (count, role) => {
+    const moons = leaves(count);
+    const bodies = resolveOrbitSystem([star, hub, ...moons], [uplink, ...toHub(moons)], new Set([1]));
+    expect(roleOf(bodies.get(2)!)).toBe(role);
+  });
+
+  it('does not count self-links or links to unknown devices as links', () => {
+    const server = makeDevice({ id: 3, ip: '192.168.1.3' });
+    const broken = [
+      { id: 2, source_id: 3, target_id: 3 } as OrbitLink,
+      { id: 3, source_id: 3, target_id: 99 } as OrbitLink,
+      { id: 4, source_id: 98, target_id: 3 } as OrbitLink,
+    ];
+    const body = resolveOrbitSystem([star, server], broken, new Set([1])).get(3)!;
+    expect([body.kind, body.parentId, body.parentLinkId]).toEqual(['moon', 1, null]);
+  });
+});
+
 describe('link types and port limits', () => {
   const ends = [
     { source_id: 1, target_id: 2 },
