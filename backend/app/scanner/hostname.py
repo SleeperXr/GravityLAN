@@ -142,16 +142,20 @@ def _parse_ping_hostname(stdout: str, ip: str) -> Optional[str]:
 def _resolve_ping_win32(ip: str) -> Optional[str]:
     """Try Windows 'ping -a' for reverse resolution."""
     try:
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        kwargs: dict[str, Any] = {}
+        if hasattr(subprocess, "STARTUPINFO"):
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            kwargs["startupinfo"] = startupinfo
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
         res = subprocess.run(
             ["ping", "-a", "-n", "1", "-w", "200", ip],
             capture_output=True,
             text=True,
             encoding="cp850",
-            startupinfo=startupinfo,
-            creationflags=subprocess.CREATE_NO_WINDOW,
             timeout=2.0,
+            **kwargs,
         )
         return _parse_ping_hostname(res.stdout, ip)
     except (subprocess.SubprocessError, OSError) as e:

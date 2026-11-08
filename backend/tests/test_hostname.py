@@ -1,5 +1,10 @@
 """Tests for hostname resolution helpers (app/scanner/hostname.py)."""
 
+import asyncio
+from datetime import datetime, timedelta, timezone
+import sys
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -112,9 +117,6 @@ def test_resolve_shell_win32_delegates(monkeypatch):
 
 # --- cache: found names for an hour, misses only until the next quick scan ---
 
-from datetime import datetime, timedelta, timezone
-
-
 @pytest.fixture
 def fresh_lookup(monkeypatch):
     """Every real lookup answers 'fresh-name' and is counted; the cache starts empty."""
@@ -152,9 +154,6 @@ async def test_use_cache_false_always_looks_again(fresh_lookup):
 
 
 # --- the lookup chain: Win32 API, direct DNS, OS resolver, shell tools --------
-
-from types import SimpleNamespace
-
 
 class _FakeResolver:
     """dns.resolver.Resolver double: answers ``answer`` or raises it."""
@@ -252,8 +251,6 @@ async def test_resolve_hostnames_fills_in_what_it_finds(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_resolve_hostnames_stops_when_cancelled(monkeypatch):
-    import asyncio
-
     async def must_not_run(*_args):
         raise AssertionError("looked up despite cancellation")
 
@@ -291,15 +288,14 @@ def test_win32_api_is_only_used_on_windows(monkeypatch):
 
 # --- additional coverage: Windows helpers, error paths, HostnameResolveOptions ---
 
-from unittest.mock import AsyncMock
-
-
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-specific Win32 ping")
 def test_resolve_ping_win32_success(monkeypatch):
     stdout = "Pinging win-pc [192.168.1.50] with 32 bytes of data:\nReply from 192.168.1.50: bytes=32\n"
     monkeypatch.setattr(hostname.subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=0, stdout=stdout))
     assert hostname._resolve_ping_win32("192.168.1.50") == "win-pc"
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-specific Win32 ping")
 def test_resolve_ping_win32_error(monkeypatch):
     def fake_run(*a, **kw):
         raise hostname.subprocess.SubprocessError("timeout")
@@ -308,6 +304,7 @@ def test_resolve_ping_win32_error(monkeypatch):
     assert hostname._resolve_ping_win32("192.168.1.50") is None
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-specific Win32 API")
 def test_resolve_win32_success(monkeypatch):
     monkeypatch.setattr(hostname.sys, "platform", "win32")
     import ctypes
@@ -320,6 +317,7 @@ def test_resolve_win32_success(monkeypatch):
     assert hostname._resolve_win32("192.168.1.10") == "desktop.lan"
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-specific Win32 API")
 def test_resolve_win32_exception(monkeypatch):
     monkeypatch.setattr(hostname.sys, "platform", "win32")
     import ctypes
