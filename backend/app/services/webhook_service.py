@@ -221,24 +221,6 @@ def _record_failure(entry: NotificationOutbox, error_msg: str) -> None:
         entry.next_attempt_at = _utc_now() + timedelta(seconds=backoff)
 
 
-async def _resolve_subscription(
-    db,
-    entry: NotificationOutbox,
-    subscription: WebhookSubscription | None = None,
-    subscription_resolved: bool = False,
-) -> WebhookSubscription | None:
-    """Resolve and validate the subscription for an outbox entry."""
-    sub = subscription
-    if not subscription_resolved and sub is None and entry.subscription_id:
-        sub = await db.get(WebhookSubscription, entry.subscription_id)
-
-    if sub is None or not sub.is_active:
-        entry.status = "failed"
-        entry.last_error = "Subscription removed"
-        return None
-    return sub
-
-
 async def _execute_and_record_delivery(
     client: httpx.AsyncClient,
     eff_url: str,
@@ -290,19 +272,18 @@ async def _execute_and_record_delivery(
 
 
 async def _deliver_single_entry(
-    db,
     client: httpx.AsyncClient,
     entry: NotificationOutbox,
-    subscription: WebhookSubscription | None = None,
-    subscription_resolved: bool = False,
+    sub: WebhookSubscription | None,
 ) -> bool:
     """Deliver a single outbox entry, updating its status, attempts, error, and next attempt time.
 
     The token stays on the subscription, so a deleted or disabled subscription sends nothing more.
     Returns True if successfully delivered, False otherwise.
     """
-    sub = await _resolve_subscription(db, entry, subscription, subscription_resolved)
-    if sub is None:
+    if sub is None or not sub.is_active:
+        entry.status = "failed"
+        entry.last_error = "Subscription removed"
         return False
 
     raw_token = _decrypt_token(sub)
@@ -433,11 +414,11 @@ async def _send_webhook_post(
         raise
 
 
-async def _attempt_delivery(db, client: httpx.AsyncClient, entry: NotificationOutbox, sub: WebhookSubscription | None) -> bool:
+async def _attempt_delivery(client: httpx.AsyncClient, entry: NotificationOutbox, sub: WebhookSubscription | None) -> bool:
     """Deliver one entry. Anything that goes wrong is a failed attempt, or the entry would stay
     pending at the head of the queue and stop every notification behind it."""
     try:
-        return await _deliver_single_entry(db, client, entry, subscription=sub, subscription_resolved=True)
+        return await _deliver_single_entry(client, entry, sub)
     except Exception as exc:
         logger.error("Notification Outbox: Delivery of entry %s failed: %s", entry.id, type(exc).__name__)
         _record_failure(entry, str(exc))
@@ -482,7 +463,7 @@ async def deliver_pending_outbox(db=None) -> int:
         client = await _get_client()
         for entry in entries:
             sub = subs_by_id.get(entry.subscription_id) if entry.subscription_id else None
-            if await _attempt_delivery(db, client, entry, sub):
+            if await _attempt_delivery(client, entry, sub):
                 delivered_count += 1
             # Per entry: a crash in this pass must not send the earlier ones again
             await db.commit()
