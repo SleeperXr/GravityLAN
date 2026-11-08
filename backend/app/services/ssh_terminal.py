@@ -75,6 +75,11 @@ def clamp_size(cols: int, rows: int) -> tuple[int, int]:
     return max(MIN_SIZE, min(int(cols), MAX_COLS)), max(MIN_SIZE, min(int(rows), MAX_ROWS))
 
 
+def _requested_size(control: dict) -> tuple[int, int]:
+    """The size a browser resize message asks for, within limits."""
+    return clamp_size(control.get("cols", 80), control.get("rows", 24))
+
+
 def _open_socket(host: str, port: int) -> socket.socket:
     """Open the TCP connection; only the Docker host itself is retried on the bridge gateway (#46)."""
     try:
@@ -117,13 +122,7 @@ class TerminalSession:
         transport = self._require_transport()
         target = self.target
         try:
-            if target.private_key:
-                pkey = load_private_key(target.private_key, target.passphrase)
-                transport.auth_publickey(target.username, pkey)
-            elif target.password is not None:
-                transport.auth_password(target.username, target.password, fallback=True)
-            else:
-                raise TerminalError("No key or password configured for this connection.")
+            self._send_credentials(transport)
         except SSHKeyPassphraseRequired as exc:
             raise TerminalError("The stored key needs a passphrase (missing or wrong).") from exc
         except ValueError as exc:
@@ -138,6 +137,16 @@ class TerminalSession:
         if not transport.is_authenticated():
             raise TerminalError("The server requires additional authentication steps (e.g. 2FA), which are not supported yet.")
         transport.set_keepalive(30)
+
+    def _send_credentials(self, transport: paramiko.Transport) -> None:
+        target = self.target
+        if target.private_key:
+            pkey = load_private_key(target.private_key, target.passphrase)
+            transport.auth_publickey(target.username, pkey)
+        elif target.password is not None:
+            transport.auth_password(target.username, target.password, fallback=True)
+        else:
+            raise TerminalError("No key or password configured for this connection.")
 
     def open_shell(self, cols: int, rows: int) -> None:
         transport = self._require_transport()
@@ -267,7 +276,7 @@ async def _receive_control(websocket: WebSocket, expected: set[str], size: dict)
         except json.JSONDecodeError:
             continue
         if control.get("type") == "resize":
-            size["cols"], size["rows"] = clamp_size(control.get("cols", 80), control.get("rows", 24))
+            size["cols"], size["rows"] = _requested_size(control)
         elif control.get("type") in expected:
             return control
 
@@ -308,6 +317,33 @@ async def _verify_host_key(
     return True
 
 
+async def _apply_text_frame(session: TerminalSession, text: str) -> None:
+    """A control message while the shell runs; only a resize means anything then."""
+    try:
+        control = json.loads(text)
+    except json.JSONDecodeError:
+        return
+    if control.get("type") == "resize":
+        cols, rows = _requested_size(control)
+        await asyncio.to_thread(session.resize, cols, rows)
+
+
+async def _forward_input(websocket: WebSocket, session: TerminalSession) -> str:
+    """Browser to shell until the browser leaves or stays silent too long; returns the reason."""
+    idle_timeout = settings.ssh_idle_timeout_minutes * 60 or None
+    while True:
+        try:
+            message = await asyncio.wait_for(websocket.receive(), timeout=idle_timeout)
+        except asyncio.TimeoutError:
+            return "idle"
+        if message.get("type") == "websocket.disconnect":
+            return "client"
+        if message.get("bytes"):
+            await asyncio.to_thread(session.send, message["bytes"])
+        elif message.get("text"):
+            await _apply_text_frame(session, message["text"])
+
+
 async def _pump(websocket: WebSocket, session: TerminalSession) -> str:
     """Bridge shell output and user input until one side ends; returns the reason."""
     loop = asyncio.get_running_loop()
@@ -337,27 +373,7 @@ async def _pump(websocket: WebSocket, session: TerminalSession) -> str:
             except Exception:
                 return "client"
 
-    async def forward_input() -> str:
-        idle_timeout = settings.ssh_idle_timeout_minutes * 60 or None
-        while True:
-            try:
-                message = await asyncio.wait_for(websocket.receive(), timeout=idle_timeout)
-            except asyncio.TimeoutError:
-                return "idle"
-            if message.get("type") == "websocket.disconnect":
-                return "client"
-            if message.get("bytes"):
-                await asyncio.to_thread(session.send, message["bytes"])
-            elif message.get("text"):
-                try:
-                    control = json.loads(message["text"])
-                except json.JSONDecodeError:
-                    continue
-                if control.get("type") == "resize":
-                    cols, rows = clamp_size(control.get("cols", 80), control.get("rows", 24))
-                    await asyncio.to_thread(session.resize, cols, rows)
-
-    tasks = {asyncio.create_task(forward_output()), asyncio.create_task(forward_input())}
+    tasks = {asyncio.create_task(forward_output()), asyncio.create_task(_forward_input(websocket, session))}
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     for task in pending:
         task.cancel()
@@ -368,6 +384,30 @@ async def _pump(websocket: WebSocket, session: TerminalSession) -> str:
             return "client"
         raise finished.exception()
     return finished.result()
+
+
+async def _run_session(
+    websocket: WebSocket, session: TerminalSession, target: ConnectionTarget, known_hosts: KnownHostStore, size: dict,
+) -> None:
+    """Handshake, host key check, login and shell; returns when the session is over."""
+    await _send_control(websocket, {"type": "status", "stage": "connecting"})
+    info = await asyncio.to_thread(session.connect)
+    if not await _verify_host_key(websocket, known_hosts, target, info, size):
+        return
+    await _send_control(websocket, {"type": "status", "stage": "authenticating"})
+    await asyncio.to_thread(session.authenticate)
+    await asyncio.to_thread(session.open_shell, size["cols"], size["rows"])
+
+    started_at = time.monotonic()
+    logger.info("SSH terminal opened: %s@%s:%s (%s)", target.username, target.host, target.port, target.label)
+    await _send_control(websocket, {"type": "status", "stage": "connected", "fingerprint": info.fingerprint})
+    try:
+        reason = await _pump(websocket, session)
+    finally:
+        logger.info("SSH terminal closed: %s@%s:%s after %ds", target.username, target.host, target.port,
+                    int(time.monotonic() - started_at))
+    if reason in ("remote", "idle"):
+        await _send_control(websocket, {"type": "closed", "reason": reason})
 
 
 async def run_terminal(
@@ -390,23 +430,8 @@ async def run_terminal(
     size = {"cols": cols, "rows": rows}
     session = session_factory(target)
     _active_sessions.add(session)
-    started_at: Optional[float] = None
     try:
-        await _send_control(websocket, {"type": "status", "stage": "connecting"})
-        info = await asyncio.to_thread(session.connect)
-        if not await _verify_host_key(websocket, known_hosts, target, info, size):
-            return
-        await _send_control(websocket, {"type": "status", "stage": "authenticating"})
-        await asyncio.to_thread(session.authenticate)
-        await asyncio.to_thread(session.open_shell, size["cols"], size["rows"])
-
-        started_at = time.monotonic()
-        logger.info("SSH terminal opened: %s@%s:%s (%s)", target.username, target.host, target.port, target.label)
-        await _send_control(websocket, {"type": "status", "stage": "connected", "fingerprint": info.fingerprint})
-
-        reason = await _pump(websocket, session)
-        if reason in ("remote", "idle"):
-            await _send_control(websocket, {"type": "closed", "reason": reason})
+        await _run_session(websocket, session, target, known_hosts, size)
     except TerminalError as exc:
         await _send_control(websocket, {"type": "error", "message": str(exc)})
     except WebSocketDisconnect:
@@ -417,9 +442,6 @@ async def run_terminal(
     finally:
         _active_sessions.discard(session)
         await asyncio.to_thread(session.close)
-        if started_at is not None:
-            logger.info("SSH terminal closed: %s@%s:%s after %ds", target.username, target.host, target.port,
-                        int(time.monotonic() - started_at))
         try:
             await websocket.close()
         except Exception:
