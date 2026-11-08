@@ -288,8 +288,10 @@ class RemoteTimeoutError(RemoteCommandError):
 
 
 # sudo's "password needed" in English and the German translations seen in the field
-_SUDO_PASSWORD_NEEDED = ("a password is required", "passwort erforderlich", "es wurde kein passwort angegeben", "ein passwort ist notwendig")
-_SUDO_PASSWORD_WRONG = ("incorrect password", "falsches passwort", "nicht funktioniert", "fehlversuch")
+_SUDO_PROMPT_PHRASES = ("a password is required", "passwort erforderlich", "es wurde kein passwort angegeben", "ein passwort ist notwendig")
+_SUDO_REJECT_PHRASES = ("incorrect password", "falsches passwort", "nicht funktioniert", "fehlversuch")
+_SUDO_PASSWORD_NEEDED = _SUDO_PROMPT_PHRASES
+_SUDO_PASSWORD_WRONG = _SUDO_REJECT_PHRASES
 
 
 def _feed_sudo_password(stdin, command: str, sudo_pass: Optional[str]) -> None:
@@ -337,11 +339,11 @@ def _check_exit(exit_code: int, out: str, err: str) -> str:
         return out
 
     err_lower = (err or out).lower()
-    if any(term in err_lower for term in _SUDO_PASSWORD_NEEDED):
+    if any(term in err_lower for term in _SUDO_PROMPT_PHRASES):
         raise SudoPasswordError(
             "sudo needs a password for this user. Enter the user's password; it is used for sudo and not stored."
         )
-    if any(term in err_lower for term in _SUDO_PASSWORD_WRONG):
+    if any(term in err_lower for term in _SUDO_REJECT_PHRASES):
         raise SudoPasswordError(
             "Sudo password rejected by remote host. Please check your SSH / sudo password."
         )

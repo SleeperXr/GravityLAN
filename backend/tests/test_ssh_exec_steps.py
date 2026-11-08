@@ -58,10 +58,10 @@ def test_other_failures_name_the_last_error_line():
         su._check_exit(3, "", "")
 
 
-def test_detects_sudo_password_rejected():
-    for phrase in su._SUDO_PASSWORD_WRONG:
-        with pytest.raises(su.SudoPasswordError, match="Sudo password rejected"):
-            su._check_exit(1, "", f"sudo: {phrase}")
+@pytest.mark.parametrize("phrase", ["incorrect password", "falsches passwort", "nicht funktioniert", "fehlversuch"])
+def test_detects_sudo_password_rejected(phrase):
+    with pytest.raises(su.SudoPasswordError, match="Sudo password rejected"):
+        su._check_exit(1, "", f"sudo: {phrase}")
 
 
 def test_wait_for_exit_waits_until_channel_ready(monkeypatch):
