@@ -233,8 +233,9 @@ async def update_agent_config(
     if update.enable_scanner_relay is not None:
         config.enable_scanner_relay = update.enable_scanner_relay
         
-    # Increment version so the agent knows to update its local config.json
-    config.version += 1
+    # Increment version so the agent knows to update its local config.json; a config created
+    # just above has no version yet (the column default applies on insert), so it starts at 1
+    config.version = (config.version or 1) + 1
     
     await db.commit()
     await db.refresh(config)
