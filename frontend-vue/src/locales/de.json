@@ -9,7 +9,8 @@
       "label": "Farbschema",
       "system": "System",
       "light": "Hell",
-      "dark": "Dunkel"
+      "dark": "Dunkel",
+      "aurora": "Aurora"
     },
     "state": {
       "load_failed": "Daten konnten nicht geladen werden",

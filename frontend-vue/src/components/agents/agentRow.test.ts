@@ -1,3 +1,5 @@
+import { slotStatus } from '@/components/common/statusMonitor';
+import { AGENT_HOUR_FULL_PCT } from './agentRow';
 import { describe, expect, it } from 'vitest';
 import { loadTone, matchesAgent, osLabelOf, type AgentRow } from './agentRow';
 
@@ -41,5 +43,14 @@ describe('agentRow', () => {
     expect(matchesAgent(agent(), '100.10')).toBe(true);
     expect(matchesAgent(agent(), '  ')).toBe(true);
     expect(matchesAgent(agent(), 'unraid')).toBe(false);
+  });
+});
+
+describe('AGENT_HOUR_FULL_PCT', () => {
+  it('counts an hour with a few late reports as complete, not one with real gaps', () => {
+    expect(slotStatus(99.2, AGENT_HOUR_FULL_PCT)).toBe('normal');
+    expect(slotStatus(90, AGENT_HOUR_FULL_PCT)).toBe('normal');
+    expect(slotStatus(89, AGENT_HOUR_FULL_PCT)).toBe('warning');
+    expect(slotStatus(0, AGENT_HOUR_FULL_PCT)).toBe('error');
   });
 });

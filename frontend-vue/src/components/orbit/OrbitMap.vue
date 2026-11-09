@@ -1239,9 +1239,9 @@ useResizeObserver(svgRef, initialFit);
 .cosmic-canvas {
   background-color: var(--gl-canvas);
   background-image:
-    radial-gradient(ellipse 65% 50% at 50% 35%, rgba(46, 196, 166, 0.045) 0%, transparent 70%),
-    radial-gradient(circle at 82% 18%, rgba(90, 169, 255, 0.04) 0%, transparent 50%),
-    radial-gradient(circle at 18% 75%, rgba(255, 159, 67, 0.03) 0%, transparent 50%);
+    radial-gradient(ellipse 65% 50% at 50% 35%, var(--gl-orbit-glow-1) 0%, transparent 70%),
+    radial-gradient(circle at 82% 18%, var(--gl-orbit-glow-2) 0%, transparent 50%),
+    radial-gradient(circle at 18% 75%, var(--gl-orbit-glow-3) 0%, transparent 50%);
 }
 
 :root[data-theme='light'] .cosmic-canvas {
@@ -1255,7 +1255,7 @@ useResizeObserver(svgRef, initialFit);
 .cosmic-canvas.is-editing {
   background-image:
     radial-gradient(var(--gl-line-strong) 1px, transparent 1px),
-    radial-gradient(ellipse 65% 50% at 50% 35%, rgba(46, 196, 166, 0.045) 0%, transparent 70%);
+    radial-gradient(ellipse 65% 50% at 50% 35%, var(--gl-orbit-glow-1) 0%, transparent 70%);
   background-size: 28px 28px, 100% 100%;
 }
 

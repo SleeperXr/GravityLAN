@@ -13,7 +13,7 @@ import StatusDot from '@/components/common/StatusDot.vue';
 import AgentDetail from '@/components/agents/AgentDetail.vue';
 import GlobalMetricsDialog from '@/components/agents/GlobalMetricsDialog.vue';
 import AgentUpdateCenter from '@/components/dashboard/AgentUpdateCenter.vue';
-import { loadTone, matchesAgent, osLabelOf, type AgentRow } from '@/components/agents/agentRow';
+import { AGENT_HOUR_FULL_PCT, loadTone, matchesAgent, osLabelOf, type AgentRow } from '@/components/agents/agentRow';
 import { isAgentOutdated } from '@/lib/agent';
 import { useNetworkStore } from '@/stores/network';
 import { confirmAction } from '@/composables/useConfirm';
@@ -194,7 +194,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
 
             <span class="flex items-center gap-2.5">
               <span class="w-14 shrink-0 font-mono text-xs font-semibold tabular" :class="uptimeText(agent.uptime_pct)">{{ agent.uptime_pct.toFixed(1) }} %</span>
-              <StatusMonitor class="flex-1" compact :focusable="false" :up-at="100" :bars="hours(agent)" :span-hours="24" :uptime="agent.uptime_pct" :title="agent.hostname" />
+              <StatusMonitor class="flex-1" compact :focusable="false" :up-at="AGENT_HOUR_FULL_PCT" :bars="hours(agent)" :span-hours="24" :uptime="agent.uptime_pct" :title="agent.hostname" />
             </span>
 
             <span class="font-mono text-xs text-fg-muted lg:text-right">

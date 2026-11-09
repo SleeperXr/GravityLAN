@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { AlertTriangle, Check, FileText, Monitor, Moon, Sun } from 'lucide-vue-next';
+import { AlertTriangle, Check, FileText, Monitor, Moon, Sparkles, Sun } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import Button from '@/components/ui/Button.vue';
@@ -100,6 +100,7 @@ const themeOptions = computed<{ value: ThemePreference; label: string; icon: typ
   { value: 'system', label: t('gv.theme.system'), icon: Monitor },
   { value: 'light', label: t('gv.theme.light'), icon: Sun },
   { value: 'dark', label: t('gv.theme.dark'), icon: Moon },
+  { value: 'aurora', label: t('gv.theme.aurora'), icon: Sparkles },
 ]);
 const languages: { value: Locale; key: string }[] = [
   { value: 'de', key: 'settings.language_de' },
@@ -192,8 +193,8 @@ const languages: { value: Locale; key: string }[] = [
         <GroupsSection />
 
         <SettingsSection id="appearance" :title="t('gv.settings.appearance')" :description="t('settings.section_language_desc')">
-          <div class="grid gap-4 sm:grid-cols-2">
-            <fieldset>
+          <div class="flex flex-wrap gap-4">
+            <fieldset class="min-w-0 flex-1 basis-40">
               <legend class="mb-1.5 text-xs font-medium text-fg">{{ t('settings.language') }}</legend>
               <div class="flex rounded-md border border-line bg-sunken p-0.5">
                 <button
@@ -210,7 +211,7 @@ const languages: { value: Locale; key: string }[] = [
                 </button>
               </div>
             </fieldset>
-            <fieldset>
+            <fieldset class="min-w-0 flex-[2] basis-80">
               <legend class="mb-1.5 text-xs font-medium text-fg">{{ t('gv.theme.label') }}</legend>
               <div class="flex rounded-md border border-line bg-sunken p-0.5">
                 <button
