@@ -333,7 +333,11 @@ def _install_systemd_service(deployment: _Deployment, python_path: str) -> bool:
 
 
 def _install_syno_rc(deployment: _Deployment, python_path: str) -> None:
-    """Install Synology rc.d startup script."""
+    """Install Synology rc.d startup script.
+
+    The agent must not inherit the SSH channel's output: the channel would stay open as long as the
+    agent runs, the deploy would time out, and the new token would never be stored.
+    """
     remote_agent_path = deployment.agent_path
     rc_script_path = "/usr/local/etc/rc.d/S99gravitylan-agent.sh"
     rc_content = f"""#!/bin/sh
@@ -341,7 +345,8 @@ def _install_syno_rc(deployment: _Deployment, python_path: str) -> None:
 
 case "$1" in
     start)
-        {python_path} {remote_agent_path} &
+        cd {deployment.base_dir} || exit 1
+        {python_path} {remote_agent_path} > {deployment.base_dir}/gravitylan-agent.log 2>&1 < /dev/null &
         ;;
     stop)
         pkill -f {remote_agent_path}

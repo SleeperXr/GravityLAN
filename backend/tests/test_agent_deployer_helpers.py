@@ -1,6 +1,8 @@
 """Helpers of the SSH agent deployment (app/services/agent_deployer.py): probes, install paths, nohup fallback,
 error messages and the local agent file."""
 
+import shutil
+import subprocess
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -128,10 +130,22 @@ def test_synology_install_writes_the_rc_script(staged):
     runner.run_sudo_batch = lambda cmds: runner.batches.append(cmds)
     dep._install_syno_rc(_deploy_ctx(runner=runner, device_id=3), "/bin/python3")
     script = staged["/tmp/gravitylan_rc_3.sh"]
-    assert "/bin/python3 /opt/a/agent.py &" in script
+    assert "cd /opt/a || exit 1" in script
+    assert "/bin/python3 /opt/a/agent.py > /opt/a/gravitylan-agent.log 2>&1 < /dev/null &" in script
     assert "pkill -f /opt/a/agent.py" in script
     assert "{start|stop|restart}" in script
     assert runner.batches[0][-1] == "/usr/local/etc/rc.d/S99gravitylan-agent.sh restart || true"
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
+def test_synology_start_does_not_keep_the_ssh_output_open(staged, tmp_path):
+    """The channel only ends once nobody holds its output: an attached agent made every deploy time out."""
+    runner = SimpleNamespace(run_sudo_batch=lambda cmds: None)
+    # A short sleep stands in for the agent, which keeps running after the script returns
+    dep._install_syno_rc(_deploy_ctx(runner=runner, device_id=3, base_dir=tmp_path.as_posix(), agent_path="8"), "sleep")
+    script = tmp_path / "rc.sh"
+    script.write_bytes(staged["/tmp/gravitylan_rc_3.sh"].encode())
+    subprocess.run(["sh", script.as_posix(), "start"], capture_output=True, timeout=4, check=True)
 
 
 def test_agent_config_json():
