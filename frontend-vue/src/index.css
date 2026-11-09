@@ -46,6 +46,9 @@
   --color-danger-fg: var(--gl-danger-fg);
   --color-danger-text: var(--gl-danger-text);
   --color-neutral-dot: var(--gl-neutral-dot);
+  --color-badge: var(--gl-badge);
+  --color-badge-text: var(--gl-badge-text);
+  --color-badge-line: var(--gl-badge-line);
 
   --radius-sm: 0.375rem;
   --radius-md: 0.625rem;
@@ -92,6 +95,11 @@
 
   --gl-shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.025) inset;
   --gl-shadow-pop: 0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04);
+
+  /* The neutral badge; follows the theme's own surfaces unless a theme gives it a colour */
+  --gl-badge: var(--gl-raised);
+  --gl-badge-text: var(--gl-fg-muted);
+  --gl-badge-line: var(--gl-line);
 
   /* The faint glow behind the orbit map */
   --gl-orbit-glow-1: rgb(46 196 166 / 0.045);
@@ -156,53 +164,61 @@
   --line-10: #e0644a;
 }
 
-/* Aurora: the night network on deep indigo, with northern-light mint and a more saturated palette */
+/*
+ * Aurora: a neon night. The ground stays neutral and nearly black; the colour sits on the things
+ * themselves: neon accent and states, cyan and blue instead of grey for secondary text, blue
+ * hairlines, pink neutral badges and a faint cyan glow under cards.
+ */
 :root[data-theme="aurora"] {
   color-scheme: dark;
-  --gl-canvas: #100d24;
-  --gl-chrome: #0c0a1c;
-  --gl-surface: #181433;
-  --gl-raised: #201b40;
-  --gl-sunken: #130f2a;
-  --gl-control: #201b40;
-  --gl-control-hover: #2a2450;
-  --gl-line: #2b2650;
-  --gl-line-strong: #3f3870;
-  --gl-fg: #f2f0fb;
-  --gl-fg-muted: #bdb7da;
-  --gl-fg-subtle: #a39cc6;
-  --gl-station: #130f2a;
+  --gl-canvas: #08090d;
+  --gl-chrome: #050609;
+  --gl-surface: #0e1017;
+  --gl-raised: #161927;
+  --gl-sunken: #0a0b11;
+  --gl-control: #161927;
+  --gl-control-hover: #1f2338;
+  --gl-line: #1f2a44;
+  --gl-line-strong: #35508f;
+  --gl-fg: #f5f7ff;
+  --gl-fg-muted: #a9e4ff;
+  --gl-fg-subtle: #8fa8ff;
+  --gl-station: #0a0b11;
 
-  --gl-accent: #34e0b0;
-  --gl-accent-hover: #5eebc4;
-  --gl-accent-fg: #04231b;
-  --gl-accent-text: #5ceabf;
-  --gl-info: #6fb1ff;
-  --gl-info-text: #a3cdff;
-  --gl-warn: #ffbe4d;
-  --gl-warn-text: #ffd184;
-  --gl-danger: #ff6f91;
-  --gl-danger-fg: #2c0612;
-  --gl-danger-text: #ff9bb2;
-  --gl-neutral-dot: #7a73a0;
+  --gl-accent: #00f5a0;
+  --gl-accent-hover: #5dffc4;
+  --gl-accent-fg: #00261a;
+  --gl-accent-text: #3dffb8;
+  --gl-info: #29c5ff;
+  --gl-info-text: #7ddcff;
+  --gl-warn: #ffd60a;
+  --gl-warn-text: #ffe14d;
+  --gl-danger: #ff3d71;
+  --gl-danger-fg: #2b0010;
+  --gl-danger-text: #ff7d9f;
+  --gl-neutral-dot: #6d7bb5;
 
-  --gl-shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset;
-  --gl-shadow-pop: 0 24px 48px -12px rgb(5 2 20 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --gl-badge: color-mix(in oklab, #ff3dbb 14%, var(--gl-surface));
+  --gl-badge-text: #ff8fd6;
+  --gl-badge-line: color-mix(in oklab, #ff3dbb 40%, var(--gl-surface));
 
-  --gl-orbit-glow-1: rgb(52 224 176 / 0.09);
-  --gl-orbit-glow-2: rgb(168 85 247 / 0.14);
-  --gl-orbit-glow-3: rgb(255 111 181 / 0.07);
+  --gl-shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 0 32px -18px rgb(41 197 255 / 0.55);
+  --gl-shadow-pop: 0 24px 48px -12px rgb(0 0 0 / 0.75), 0 0 0 1px rgb(41 197 255 / 0.18), 0 0 40px -16px rgb(41 197 255 / 0.5);
 
-  --line-1: #34e0b0;
-  --line-2: #ff9a3d;
-  --line-3: #6fa8ff;
-  --line-4: #ffd93d;
-  --line-5: #ff6fb5;
-  --line-6: #a3e635;
-  --line-7: #38d6ff;
-  --line-8: #c79bff;
-  --line-9: #d2cce8;
-  --line-10: #ff7a5c;
+  --gl-orbit-glow-1: rgb(0 245 160 / 0.07);
+  --gl-orbit-glow-2: rgb(41 197 255 / 0.07);
+  --gl-orbit-glow-3: rgb(255 61 187 / 0.05);
+
+  --line-1: #00f5a0;
+  --line-2: #ff8a00;
+  --line-3: #3d9bff;
+  --line-4: #ffe600;
+  --line-5: #ff3dbb;
+  --line-6: #a6ff00;
+  --line-7: #00e5ff;
+  --line-8: #b56bff;
+  --line-9: #e6e6ff;
+  --line-10: #ff5a3d;
 }
 
 @layer base {

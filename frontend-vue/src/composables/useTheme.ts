@@ -11,7 +11,7 @@ const STORAGE_KEY = 'gravityui.theme';
 const media = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: light)') : null;
 
 /** Browser bar colour per theme: the theme's --gl-canvas (white for the daytime map) */
-const BROWSER_BAR: Record<ResolvedTheme, string> = { dark: '#0c0f14', light: '#ffffff', aurora: '#100d24' };
+const BROWSER_BAR: Record<ResolvedTheme, string> = { dark: '#0c0f14', light: '#ffffff', aurora: '#08090d' };
 
 function readPreference(): ThemePreference {
   try {

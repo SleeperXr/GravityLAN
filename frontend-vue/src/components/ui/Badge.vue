@@ -10,7 +10,7 @@ const props = withDefaults(defineProps<{ tone?: BadgeTone; mono?: boolean; class
 });
 
 const tones: Record<BadgeTone, string> = {
-  neutral: 'bg-raised text-fg-muted border-line',
+  neutral: 'bg-badge text-badge-text border-badge-line',
   accent: 'bg-accent/10 text-accent-text border-accent/25',
   info: 'bg-info/10 text-info-text border-info/25',
   warn: 'bg-warn/10 text-warn-text border-warn/30',
