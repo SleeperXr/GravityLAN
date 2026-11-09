@@ -2,11 +2,11 @@
 
 /*
  * GravityUI design tokens: the network as a transit map. Night network (dark) is the default,
- * the white daytime map is the light theme. Components use semantic names only, never hex.
- * Line colours (one per subnet/VLAN) live in --line-1 ... --line-10 and can be overridden by
- * the user (Settings > Language & appearance). See frontend-vue/DESIGN.md.
+ * the white daytime map is the light theme, aurora is a more colourful night. Components use
+ * semantic names only, never hex. Line colours (one per subnet/VLAN) live in --line-1 ... --line-10
+ * and can be overridden by the user (Settings > Language & appearance). See frontend-vue/DESIGN.md.
  */
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, [data-theme="aurora"], [data-theme="aurora"] *));
 
 @theme {
   --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -93,6 +93,11 @@
   --gl-shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.025) inset;
   --gl-shadow-pop: 0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04);
 
+  /* The faint glow behind the orbit map */
+  --gl-orbit-glow-1: rgb(46 196 166 / 0.045);
+  --gl-orbit-glow-2: rgb(90 169 255 / 0.04);
+  --gl-orbit-glow-3: rgb(255 159 67 / 0.03);
+
   /* Line palette: one hue per network, the same on the map, chips and the gateway list */
   --line-1: #2ec4a6;
   --line-2: #ff9f43;
@@ -149,6 +154,55 @@
   --line-8: #b9773f;
   --line-9: #8a94a3;
   --line-10: #e0644a;
+}
+
+/* Aurora: the night network on deep indigo, with northern-light mint and a more saturated palette */
+:root[data-theme="aurora"] {
+  color-scheme: dark;
+  --gl-canvas: #100d24;
+  --gl-chrome: #0c0a1c;
+  --gl-surface: #181433;
+  --gl-raised: #201b40;
+  --gl-sunken: #130f2a;
+  --gl-control: #201b40;
+  --gl-control-hover: #2a2450;
+  --gl-line: #2b2650;
+  --gl-line-strong: #3f3870;
+  --gl-fg: #f2f0fb;
+  --gl-fg-muted: #bdb7da;
+  --gl-fg-subtle: #a39cc6;
+  --gl-station: #130f2a;
+
+  --gl-accent: #34e0b0;
+  --gl-accent-hover: #5eebc4;
+  --gl-accent-fg: #04231b;
+  --gl-accent-text: #5ceabf;
+  --gl-info: #6fb1ff;
+  --gl-info-text: #a3cdff;
+  --gl-warn: #ffbe4d;
+  --gl-warn-text: #ffd184;
+  --gl-danger: #ff6f91;
+  --gl-danger-fg: #2c0612;
+  --gl-danger-text: #ff9bb2;
+  --gl-neutral-dot: #7a73a0;
+
+  --gl-shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset;
+  --gl-shadow-pop: 0 24px 48px -12px rgb(5 2 20 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06);
+
+  --gl-orbit-glow-1: rgb(52 224 176 / 0.09);
+  --gl-orbit-glow-2: rgb(168 85 247 / 0.14);
+  --gl-orbit-glow-3: rgb(255 111 181 / 0.07);
+
+  --line-1: #34e0b0;
+  --line-2: #ff9a3d;
+  --line-3: #6fa8ff;
+  --line-4: #ffd93d;
+  --line-5: #ff6fb5;
+  --line-6: #a3e635;
+  --line-7: #38d6ff;
+  --line-8: #c79bff;
+  --line-9: #d2cce8;
+  --line-10: #ff7a5c;
 }
 
 @layer base {

@@ -9,7 +9,8 @@
       "label": "Color scheme",
       "system": "System",
       "light": "Light",
-      "dark": "Dark"
+      "dark": "Dark",
+      "aurora": "Aurora"
     },
     "state": {
       "load_failed": "Could not load data",

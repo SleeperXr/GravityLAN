@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { LogOut, Monitor, Moon, Sun } from 'lucide-vue-next';
+import { LogOut, Monitor, Moon, Sparkles, Sun } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import { useTheme, type ThemePreference } from '@/composables/useTheme';
 import { locale, setLocale, t, type Locale } from '@/i18n';
@@ -12,6 +12,7 @@ const themes = computed<{ value: ThemePreference; label: string; icon: typeof Su
   { value: 'system', label: t('gv.theme.system'), icon: Monitor },
   { value: 'light', label: t('gv.theme.light'), icon: Sun },
   { value: 'dark', label: t('gv.theme.dark'), icon: Moon },
+  { value: 'aurora', label: t('gv.theme.aurora'), icon: Sparkles },
 ]);
 const locales: { value: Locale; label: string }[] = [
   { value: 'de', label: 'DE' },
