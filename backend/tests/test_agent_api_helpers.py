@@ -220,6 +220,10 @@ def test_is_agent_active_no_last_seen():
     assert agent_module._is_agent_active(_fake_token(last_seen=None), datetime.now(timezone.utc)) is False
 
 
+def _report(when: datetime) -> SimpleNamespace:
+    return SimpleNamespace(timestamp=when.replace(tzinfo=None))
+
+
 def test_compute_uptime_pct_just_born_no_heartbeats():
     # created == now -> window clamped to 60s -> expected=2 heartbeats -> 0/2 = 0%
     now = datetime.now(timezone.utc)
@@ -232,7 +236,22 @@ def test_compute_uptime_pct_below_100_with_fewer_heartbeats():
     created = now - timedelta(hours=1)
     token = _fake_token(created_at=created)
     # expected = 3600/30 = 120; 60 present -> 50%
-    assert agent_module._compute_uptime_pct(token, now, now - timedelta(hours=24), list(range(60))) == 50.0
+    reports = [_report(created + timedelta(seconds=i)) for i in range(60)]
+    assert agent_module._compute_uptime_pct(token, now, now - timedelta(hours=24), reports) == 50.0
+
+
+def test_compute_uptime_pct_ignores_reports_from_before_the_install():
+    now = datetime.now(timezone.utc)
+    created = now - timedelta(hours=1)
+    reports = [_report(created - timedelta(minutes=i + 1)) for i in range(500)] + [_report(created + timedelta(seconds=i)) for i in range(60)]
+    assert agent_module._compute_uptime_pct(_fake_token(created_at=created), now, now - timedelta(hours=24), reports) == 50.0
+
+
+def test_compute_uptime_pct_follows_the_agents_interval():
+    now = datetime.now(timezone.utc)
+    created = now - timedelta(hours=1)
+    reports = [_report(created + timedelta(seconds=i)) for i in range(60)]
+    assert agent_module._compute_uptime_pct(_fake_token(created_at=created), now, now - timedelta(hours=24), reports, 60) == 100.0
 
 
 def test_compute_uptime_history_length_24():
@@ -240,6 +259,28 @@ def test_compute_uptime_history_length_24():
     token = _fake_token(created_at=now - timedelta(days=1))
     history = agent_module._compute_uptime_history(token, now, now - timedelta(hours=24), [])
     assert len(history) == 24
+
+
+def _history_of(reports_per_hour: int, interval=None, born_hours_ago: int = 25):
+    now = datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc)
+    cutoff = now - timedelta(hours=24)
+    reports = [_report(cutoff + timedelta(hours=h, seconds=i)) for h in range(24) for i in range(reports_per_hour)]
+    return agent_module._compute_uptime_history(_fake_token(created_at=now - timedelta(hours=born_hours_ago)), now, cutoff, reports, interval)
+
+
+def test_compute_uptime_history_counts_against_the_default_interval():
+    assert _history_of(60) == [50.0] * 24
+    assert _history_of(120) == [100.0] * 24
+
+
+def test_compute_uptime_history_follows_the_agents_interval():
+    assert _history_of(60, interval=60) == [100.0] * 24
+
+
+def test_compute_uptime_history_assumes_up_before_the_install():
+    history = _history_of(0, born_hours_ago=2)
+    assert history[:22] == [100.0] * 22
+    assert history[22:] == [0.0, 0.0]
 
 
 # --- downsample_metrics edge cases ------------------------------------------
