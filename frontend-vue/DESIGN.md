@@ -40,29 +40,32 @@ colors:
   line-9: "#c3cad4"
   line-10: "#f2856d"
   # Tagmodus (hell)
-  canvas-day: "#f4f5f7"
-  chrome-day: "#ffffff"
-  surface-day: "#ffffff"
-  raised-day: "#f2f4f7"
-  sunken-day: "#eef0f3"
-  control-day: "#ffffff"
-  control-hover-day: "#f2f4f7"
-  hairline-day: "#e2e5ea"
-  hairline-strong-day: "#c9ced6"
+  canvas-day: "#eceef2"
+  chrome-day: "#f5f6f8"
+  surface-day: "#f9fafb"
+  raised-day: "#eff1f4"
+  sunken-day: "#e8ebef"
+  control-day: "#f9fafb"
+  control-hover-day: "#eff1f4"
+  hairline-day: "#dde1e6"
+  hairline-strong-day: "#c2c8d1"
   fg-day: "#10141b"
   fg-muted-day: "#4a5462"
   fg-subtle-day: "#5d6776"
-  station-day: "#ffffff"
+  station-day: "#f9fafb"
+  mark-ok-day: "#2fa38d"
+  mark-warn-day: "#e9a23b"
+  mark-danger-day: "#e25563"
   accent-day: "#087a65"
   accent-hover-day: "#066654"
   accent-fg-day: "#ffffff"
   accent-text-day: "#066a57"
   info-day: "#1f6fd1"
-  info-text-day: "#1a5fb4"
+  info-text-day: "#17579f"
   warn-day: "#d97706"
   warn-text-day: "#8f4c00"
   danger-day: "#dc3545"
-  danger-text-day: "#b42332"
+  danger-text-day: "#a91f2e"
   danger-fg-day: "#ffffff"
   neutral-dot-day: "#a3aab5"
   line-1-day: "#12a88b"
@@ -235,7 +238,7 @@ Passend zum Namen GravityLAN wird das Heimnetz als gravitatives Sonnensystem gel
 - **Zustand doppelt kodiert:** Ausgefallene Himmelskörper verlieren ihre geschlossene Umlaufbahn (unterbrochener Orbit-Ring, rot umrandet, durchgestrichen und Text-Badge „Offline“); gestörte Dienste zeigen einen Bernstein-Ring plus `!`-Indikator.
 - **Netz-Identität:** Jedes Subnetz bzw. VLAN hat genau eine Farbe (`networkColor()`, überschreibbar über `ui.line_colors`). Sie trägt den Atmosphärenring des Objekts, die Orbit-Bahn, das runde Netz-Schild (`LineBullet`), das Statusboard, die Betriebsmeldungen, IP-Kacheln und Rack-Einschübe.
 
-Der Standard ist der dunkle Nachtmodus (`canvas` `#0c0f14`), das helle Thema (`#f4f5f7`) arbeitet mit derselben Farblogik und eigens abgedunkelten Palettenwerten, sodass alle Texte in beiden Themen mindestens 4,5:1 Kontrast erreichen. Keine Seite nutzt generische KPI-Kachelreihen: Health und Agents fassen ihre Kennzahlen in einer kompakten Statusleiste direkt über der Tabelle zusammen.
+Der Standard ist der dunkle Nachtmodus (`canvas` `#0c0f14`), das helle Thema (`#eceef2`, Karten `#f9fafb`, kein reines Weiß) arbeitet mit derselben Farblogik und eigens abgedunkelten Palettenwerten, sodass alle Texte in beiden Themen mindestens 4,5:1 Kontrast erreichen. Keine Seite nutzt generische KPI-Kachelreihen: Health und Agents fassen ihre Kennzahlen in einer kompakten Statusleiste direkt über der Tabelle zusammen.
 
 **Key Characteristics:**
 - Gravitationshierarchie: Stern (Gateway) → Planeten (Switch, AP, Host) → Monde (Clients, WLAN, VMs/Container).
@@ -262,7 +265,8 @@ Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden 
 ### Neutral
 - **Nachtgrund** (`canvas`): Seitenhintergrund. **Nachtleiste** (`chrome`): Seitenleiste und mobile Tab-Leiste. **Kartenfläche** (`surface`): Karten, Dialoge, Popover. **Innenfläche** (`raised`): Unterkarten, aktive Navigation, Hover von Zeilen. **Senke** (`sunken`): Eingabefelder, Segmentschalter, Rack-Innenraum, Orbit-Grund im Dunkeln. **Bedienfläche** (`control`/`control-hover`): Sekundär-Buttons.
 - **Haarlinien** (`hairline` = `--gl-line`, `hairline-strong`): Rahmen, Trenner, Hover-Rahmen, Scrollbalken.
-- **Textstufen** (`fg`, `fg-muted`, `fg-subtle`): Inhalt, Beschreibung, Metadaten. Im hellen Thema wurden alle Textstufen so abgedunkelt, dass sie auf ihren eigenen 10–15-%-Tönungen über Weiß 4,5:1 erreichen.
+- **Textstufen** (`fg`, `fg-muted`, `fg-subtle`): Inhalt, Beschreibung, Metadaten. Im hellen Thema wurden alle Textstufen so abgedunkelt, dass sie auf ihren eigenen 10–15-%-Tönungen über jeder hellen Fläche 4,5:1 erreichen.
+- **Datenmarken** (`mark-ok`, `mark-warn`, `mark-danger`, Klassen `bg-mark-*`): Füllung von Auslastungsbalken und Verfügbarkeitsstreifen. Im Dunkeln gleich den Zustandsfarben, im Hellen weicher (`#2fa38d`, `#e9a23b`, `#e25563`), damit eine Tabelle voller Balken nicht lauter ist als Buttons und Text. Buttons, Punkte und Text nutzen weiter `accent`/`warn`/`danger`.
 - **Körperkern** (`station`): Füllung der Himmelskörper im Orbit-Netzplan. **Schildtinte** (`sign-ink`, `#0c0f14`): fester Text auf Netzschildern und aktiven Navigationsschildern, in beiden Themen.
 
 ### Named Rules

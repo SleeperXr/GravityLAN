@@ -47,9 +47,9 @@ const barsEl = ref<HTMLElement | null>(null);
 const tip = ref<{ x: number; y: number; below: boolean } | null>(null);
 
 const look: Record<SlotStatus, { bar: string; text: string; icon: typeof CheckCircle2 }> = {
-  normal: { bar: 'bg-accent', text: 'text-accent-text', icon: CheckCircle2 },
-  warning: { bar: 'bg-warn', text: 'text-warn-text', icon: AlertTriangle },
-  error: { bar: 'bg-danger', text: 'text-danger-text', icon: XCircle },
+  normal: { bar: 'bg-mark-ok', text: 'text-accent-text', icon: CheckCircle2 },
+  warning: { bar: 'bg-mark-warn', text: 'text-warn-text', icon: AlertTriangle },
+  error: { bar: 'bg-mark-danger', text: 'text-danger-text', icon: XCircle },
   empty: { bar: 'bg-line', text: 'text-fg-subtle', icon: CircleOff },
 };
 

@@ -80,7 +80,7 @@ async function adopt(agent: AgentRow) {
 }
 
 const toneText = { ok: 'text-fg-muted', warn: 'text-warn-text', danger: 'text-danger-text' } as const;
-const toneBar = { ok: 'bg-accent', warn: 'bg-warn', danger: 'bg-danger' } as const;
+const toneBar = { ok: 'bg-mark-ok', warn: 'bg-mark-warn', danger: 'bg-mark-danger' } as const;
 const uptimeText = (pct: number) => (pct < 80 ? 'text-danger-text' : pct < 95 ? 'text-warn-text' : 'text-accent-text');
 const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.uptime_history : Array<number | null>(24).fill(null));
 </script>
