@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
@@ -22,7 +22,8 @@ async def list_notifications(
     since: datetime | None = None,
     unread: bool | None = None,
     device_id: int | None = None,
-    limit: int = 50,
+    # A negative limit used to lift the cap (SQLite reads LIMIT -1 as "no limit")
+    limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_admin: str = Depends(get_current_admin)
 ) -> list[NotificationResponse]:
@@ -45,7 +46,7 @@ async def list_notifications(
             since = since.replace(tzinfo=timezone.utc)
         query = query.where(DeviceHistory.timestamp >= since)
 
-    query = query.order_by(DeviceHistory.timestamp.desc()).limit(min(limit, 200))
+    query = query.order_by(DeviceHistory.timestamp.desc()).limit(limit)
 
     result = await db.execute(query)
     history_entries = result.scalars().all()
