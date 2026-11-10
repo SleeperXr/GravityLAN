@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - Agent 0.3.14: hardened error handling across metric collectors and probes by narrowing broad exceptions and replacing swallowed exceptions with debug logging and contextlib suppression.
 
 ### Fixed
+- Agent install and update: when the SSH handshake fails, the message now says what SSH reported (for example "Error reading SSH protocol banner") instead of only "SSH connection failed". That tells a host that refuses or cuts off the server (fail2ban, a router IPS) apart from one that is down.
 - Health probe: a service that misses one check is tried once more with a longer timeout before it counts as down, so a single slow answer no longer flips it to down and the device to critical.
 - Scans skip a subnet larger than a /16 with a message in the scan progress instead of only the server log, and leave the devices known in it alone. Before, they could be marked gone although nothing in that subnet was scanned.
 - GravityUI notices: confirming an IP change is a button of its own next to the row (it sat inside the row's button), and a failed confirmation keeps the notice and says so instead of hiding it.

@@ -283,3 +283,12 @@ def test_client_for_pinned_and_tofu_and_blocking_error_paths(monkeypatch):
     assert dep._remove_agent_blocking(
         host_ip="h", ssh_user="u", ssh_password="pw", ssh_key=None, ssh_port=22,
     ) == (False, "Deinstallation failed due to an unexpected internal error.")
+
+
+@pytest.mark.parametrize("error, shown", [
+    (paramiko.SSHException("Error reading SSH protocol banner"), "(Error reading SSH protocol banner)"),
+    (paramiko.SSHException(""), "(SSHException)"),
+])
+def test_a_failed_handshake_says_what_paramiko_saw(error, shown):
+    ok, msg = dep._map_ssh_error(error, "192.0.2.7")
+    assert ok is False and msg.startswith("SSH connection failed") and shown in msg

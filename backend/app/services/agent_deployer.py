@@ -262,7 +262,10 @@ def _map_ssh_error(exc: Exception, host_ip: str) -> tuple[bool, str] | None:
             if settings.ssh_strict_mode:
                 msg += " (SSH Strict Mode is active. You must pre-register the host key in the server's known_hosts file, or disable GRAVITYLAN_SSH_STRICT_MODE.)"
             return False, msg
-        return False, "SSH connection failed. Please check host availability and port."
+        # paramiko's own words ("Error reading SSH protocol banner", "No existing session") tell a
+        # refused or cut-off handshake (fail2ban, an IPS, MaxStartups) apart from a host that is down
+        reason = err_str.strip().rstrip(".")[:160] or type(exc).__name__
+        return False, f"SSH connection failed ({reason}). Please check host availability and port."
     # Written for the user and free of the command text (see RemoteCommandError)
     if isinstance(exc, RemoteCommandError):
         return False, str(exc)
