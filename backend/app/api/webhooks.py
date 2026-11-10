@@ -3,8 +3,8 @@
 import logging
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from sqlalchemy import select, update
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_bearer_admin, get_current_admin
@@ -87,15 +87,34 @@ async def delete_webhook(
 
 @router.get("/outbox", response_model=list[NotificationOutboxResponse])
 async def list_outbox_notifications(
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """List recent notification outbox delivery entries (newest first)."""
     result = await db.execute(
-        select(NotificationOutbox).order_by(NotificationOutbox.created_at.desc()).limit(min(limit, 200))
+        select(NotificationOutbox).order_by(NotificationOutbox.created_at.desc()).limit(limit)
     )
     return result.scalars().all()
+
+
+def is_orphaned(entry: NotificationOutbox) -> bool:
+    """A webhook entry whose subscription was deleted: there is nobody left to deliver it to."""
+    return entry.service_type == "webhook" and entry.subscription_id is None
+
+
+@router.delete("/outbox/failed")
+async def clear_failed_outbox(
+    request: Request,
+    token: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove every failed delivery from the outbox; pending and delivered entries stay."""
+    result = await db.execute(delete(NotificationOutbox).where(NotificationOutbox.status == "failed"))
+    await db.commit()
+    removed = result.rowcount or 0
+    await audit(request, "webhook.outbox_clear", target=str(removed))
+    return {"status": "ok", "removed": removed}
 
 
 @router.post("/outbox/{outbox_id}/retry", dependencies=[Depends(require_step_up("credentials"))])
@@ -112,6 +131,8 @@ async def retry_outbox_notification(
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Outbox entry not found")
+    if is_orphaned(entry):
+        raise HTTPException(status_code=409, detail="The webhook of this entry was deleted, so it cannot be sent again.")
 
     entry.status = "pending"
     entry.attempts = 0

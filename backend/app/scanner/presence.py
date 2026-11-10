@@ -133,8 +133,10 @@ async def mark_device_offline(dev, db):
         message=f"Device {dev.display_name or dev.hostname or dev.ip} went offline"
     ))
 
-    from app.services.webhook_service import trigger_webhooks
-    await trigger_webhooks(
+    # Sent once the scan's transaction holds the offline state, not while it may still roll back
+    from app.services.webhook_service import trigger_webhooks_after_commit
+    trigger_webhooks_after_commit(
+        db,
         event_type="device.offline",
         data={
             "device_id": dev.id,

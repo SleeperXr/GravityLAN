@@ -304,6 +304,41 @@ async def trigger_webhooks(event_type: str, data: dict):
     return task
 
 
+_PENDING_EVENTS_KEY = "gravitylan_pending_webhooks"
+
+
+def _fire_pending_events(session) -> None:
+    # after_commit is synchronous: hand each event to trigger_webhooks on the running loop
+    for event_type, data in session.info.pop(_PENDING_EVENTS_KEY, []):
+        task = asyncio.get_running_loop().create_task(trigger_webhooks(event_type=event_type, data=data))
+        _background_webhook_tasks.add(task)
+        task.add_done_callback(_background_webhook_tasks.discard)
+
+
+def _drop_pending_events(session, _previous_transaction=None) -> None:
+    session.info.pop(_PENDING_EVENTS_KEY, None)
+
+
+def trigger_webhooks_after_commit(db, event_type: str, data: dict) -> None:
+    """Send an event only once ``db`` commits the change it reports, and never if it rolls back.
+
+    For events about state the caller is still writing (a device going offline): sent before the
+    commit, a failed or retried transaction would report a change that never happened, or report it twice.
+    """
+    from sqlalchemy import event as sa_event
+
+    sync_session = db.sync_session
+    # Tie the event to a transaction: without one, rollback() is a no-op that fires no event,
+    # and the next commit would send what the caller meant to discard
+    if not sync_session.in_transaction():
+        sync_session.begin()
+    sync_session.info.setdefault(_PENDING_EVENTS_KEY, []).append((event_type, data))
+    if not sa_event.contains(sync_session, "after_commit", _fire_pending_events):
+        sa_event.listen(sync_session, "after_commit", _fire_pending_events)
+        # after_soft_rollback fires on every rollback(), after_rollback only when a transaction was open
+        sa_event.listen(sync_session, "after_soft_rollback", _drop_pending_events)
+
+
 def _filter_by_event_type(
     subscriptions: list[WebhookSubscription],
     event_type: str,

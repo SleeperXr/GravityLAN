@@ -163,6 +163,26 @@ async function retryOutboxEntry(entry: NotificationOutboxResponse) {
   }
 }
 
+/** A failed entry can be sent again unless its webhook was deleted (the server refuses that too). */
+const canRetry = (entry: NotificationOutboxResponse) =>
+  entry.status === 'failed' && !(entry.service_type === 'webhook' && entry.subscription_id == null);
+
+const hasFailed = computed(() => outbox.value.some((entry) => entry.status === 'failed'));
+const clearing = ref(false);
+
+async function clearFailed() {
+  clearing.value = true;
+  try {
+    const { removed } = await api.clearFailedOutbox();
+    showToast('success', t('common.success'), t('gv.webhooks.outbox_cleared', { count: removed }));
+    await load();
+  } catch (err) {
+    showToast('error', t('common.error'), (err as Error).message);
+  } finally {
+    clearing.value = false;
+  }
+}
+
 function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
   if (type === 'ntfy') return 'accent';
   if (type === 'gotify') return 'info';
@@ -325,6 +345,10 @@ function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
           <Clock class="size-3.5" aria-hidden="true" />
           {{ t('gv.webhooks.outbox_title') }}
         </h3>
+        <Button v-if="hasFailed" size="sm" variant="ghost" :loading="clearing" data-test="outbox-clear-failed" @click="clearFailed">
+          <Trash2 v-if="!clearing" aria-hidden="true" />
+          {{ t('gv.webhooks.outbox_clear_failed') }}
+        </Button>
       </div>
 
       <div v-if="outbox.length === 0" class="text-xs text-fg-muted italic py-2">
@@ -371,7 +395,7 @@ function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
                 <RelativeTime :date="item.created_at" />
               </span>
               <Button
-                v-if="item.status === 'failed'"
+                v-if="canRetry(item)"
                 size="sm"
                 variant="secondary"
                 :loading="retryingId === item.id"
