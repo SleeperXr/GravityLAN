@@ -239,18 +239,16 @@ async def _execute_and_record_delivery(
             logger.warning("Notification Outbox: Refused to post to blocked target '%s'", eff_url)
             return False
 
-        status_code = getattr(resp, "status_code", 200)
-        if not isinstance(status_code, int):
-            status_code = 200
-
-        if status_code < 400:
+        status_code = getattr(resp, "status_code", None)
+        # Only a real 1xx-3xx status counts as delivered; anything unreadable is a failed attempt
+        if isinstance(status_code, int) and status_code < 400:
             _record_success(entry)
             logger.debug("Notification Outbox: Successfully delivered event %s to %s", entry.event_type, eff_url)
             return True
 
         text = getattr(resp, "text", "")[:200]
         logger.warning(
-            "Notification Outbox: %s returned %d (attempt %d/%d)",
+            "Notification Outbox: %s returned %s (attempt %d/%d)",
             eff_url, status_code, entry.attempts + 1, entry.max_attempts,
         )
         _record_failure(entry, f"HTTP {status_code}: {text}")
