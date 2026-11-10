@@ -21,6 +21,9 @@ All notable changes to this project will be documented in this file.
 - Agent 0.3.14: hardened error handling across metric collectors and probes by narrowing broad exceptions and replacing swallowed exceptions with debug logging and contextlib suppression.
 
 ### Fixed
+- Health probe: a service that misses one check is tried once more with a longer timeout before it counts as down, so a single slow answer no longer flips it to down and the device to critical.
+- Scans skip a subnet larger than a /16 with a message in the scan progress instead of only the server log, and leave the devices known in it alone. Before, they could be marked gone although nothing in that subnet was scanned.
+- GravityUI notices: confirming an IP change is a button of its own next to the row (it sat inside the row's button), and a failed confirmation keeps the notice and says so instead of hiding it.
 - Webhooks: "device offline" goes out only once the scan has saved the offline state. Before, it was sent while the scan could still fail and roll back, so it could report a change that never happened, or report it twice.
 - Notification outbox: an entry whose webhook was deleted no longer offers "Retry" (the server refuses it too), and a new "Remove failed" button clears the failed deliveries. Pending and delivered ones stay.
 - The notification and outbox lists only accept a limit from 1 to 200; a negative limit used to return every entry. The shared HTTP client of webhook deliveries is closed on shutdown.

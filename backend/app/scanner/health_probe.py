@@ -34,13 +34,18 @@ logger = logging.getLogger(__name__)
 
 # Concurrency limit for background latency/health probes
 MAX_PROBE_CONCURRENCY = 15
+SERVICE_PROBE_TIMEOUT = 0.8
+SERVICE_RETRY_TIMEOUT = 2.0
 
 
 async def _probe_single_service(
     ip: str, hostname: str | None, svc, now: datetime
 ) -> tuple[int, float | None, int | None, bool]:
     """Probe a single service port for TCP RTT and (every 6h) SSL certificate expiry."""
-    rtt = await measure_tcp_latency_ms(ip, svc.port, timeout=0.8)
+    rtt = await measure_tcp_latency_ms(ip, svc.port, timeout=SERVICE_PROBE_TIMEOUT)
+    if rtt is None:
+        # One slow answer (a busy NAS, a sleeping disk) is no outage: a second, more patient try decides
+        rtt = await measure_tcp_latency_ms(ip, svc.port, timeout=SERVICE_RETRY_TIMEOUT)
     ssl_days = None
     ssl_checked = False
 

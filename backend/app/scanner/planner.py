@@ -215,6 +215,15 @@ async def run_arp_only_scan():
     return len(hosts_to_sync)
 
 
+def _skip_reason(subnet: str) -> str:
+    """Why the scan leaves a subnet out (the validation message, e.g. 'too large to scan')."""
+    try:
+        scan_target_ips(subnet)
+    except ValueError as e:
+        return str(e)
+    return "no addresses to scan"
+
+
 def _target_count(subnet: str) -> int:
     """Host addresses the scan sweeps in a subnet, 0 for one it skips (invalid or too large, #43)."""
     try:
@@ -303,6 +312,16 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
 
     valid_subnets = [s for s in subnets if not s.startswith("169.254.")]
     targets = {s: _target_count(s) for s in valid_subnets}
+    # A subnet the scan cannot sweep (larger than a /16, or not IPv4) is said so in the scan's own
+    # progress, not just the server log, and stays out of the offline cleanup: nothing in it was looked at
+    skipped = [s for s in valid_subnets if targets[s] == 0]
+    for subnet in skipped:
+        reason = _skip_reason(subnet)
+        logger.warning("Planner: Skipping subnet %s: %s", subnet, reason)
+        if progress_callback:
+            await progress_callback(f"Scanner: Skipping {subnet}: {reason}")
+    subnets = [s for s in subnets if s not in skipped]
+    valid_subnets = [s for s in valid_subnets if s not in skipped]
     hosts_total = sum(targets.values())
     hosts_scanned = 0
 

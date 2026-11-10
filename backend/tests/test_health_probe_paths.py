@@ -123,3 +123,45 @@ async def test_an_unreachable_device_with_services_and_no_agent_counts_a_miss(pr
     monkeypatch.setattr(hp, "register_miss", register_miss)
     assert await hp.run_health_probe_pass() == 1
     assert misses == [dev.id]
+
+
+# --- a slow service gets a second try --------------------------------------------------------------
+
+def _svc():
+    return SimpleNamespace(id=21, port=8080, protocol="http", ignore_ssl=True, ssl_checked_at=None)
+
+
+@pytest.mark.asyncio
+async def test_a_service_that_misses_once_is_tried_again_more_patiently(monkeypatch):
+    timeouts = []
+
+    async def tcp(ip, port, timeout):
+        timeouts.append(timeout)
+        return None if len(timeouts) == 1 else 12.0
+
+    monkeypatch.setattr(hp, "measure_tcp_latency_ms", tcp)
+    assert await hp._probe_single_service("192.0.2.10", None, _svc(), NOW) == (21, 12.0, None, False)
+    assert timeouts == [hp.SERVICE_PROBE_TIMEOUT, hp.SERVICE_RETRY_TIMEOUT]
+
+
+@pytest.mark.asyncio
+async def test_a_service_that_misses_twice_is_down_and_an_answer_needs_no_retry(monkeypatch):
+    calls = []
+
+    async def silent(ip, port, timeout):
+        calls.append(timeout)
+        return None
+
+    monkeypatch.setattr(hp, "measure_tcp_latency_ms", silent)
+    assert (await hp._probe_single_service("192.0.2.10", None, _svc(), NOW))[1] is None
+    assert len(calls) == 2
+
+    calls.clear()
+
+    async def quick(ip, port, timeout):
+        calls.append(timeout)
+        return 3.0
+
+    monkeypatch.setattr(hp, "measure_tcp_latency_ms", quick)
+    assert (await hp._probe_single_service("192.0.2.10", None, _svc(), NOW))[1] == 3.0
+    assert len(calls) == 1
