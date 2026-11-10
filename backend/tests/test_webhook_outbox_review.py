@@ -99,3 +99,32 @@ async def test_shutdown_closes_the_shared_webhook_client(monkeypatch):
     client = await ws._get_client()
     await main._shutdown(type("App", (), {"state": type("State", (), {})()})())
     assert client.is_closed and ws._shared_client is None
+
+
+@pytest.mark.asyncio
+async def test_shutdown_lets_running_deliveries_finish_first(monkeypatch):
+    finished = []
+
+    async def delivery(name, delay):
+        await asyncio.sleep(delay)
+        finished.append(name)
+        if name == "first":  # a delivery that starts another while the drain waits
+            spawn(ws, "second", 0.01)
+
+    def spawn(module, name, delay):
+        task = asyncio.get_running_loop().create_task(delivery(name, delay))
+        module._background_webhook_tasks.add(task)
+        task.add_done_callback(module._background_webhook_tasks.discard)
+
+    spawn(ws, "first", 0.01)
+    assert await ws.drain_webhook_tasks(timeout=2) == 0
+    assert finished == ["first", "second"]
+
+
+@pytest.mark.asyncio
+async def test_a_delivery_that_outlasts_the_drain_is_cancelled():
+    task = asyncio.get_running_loop().create_task(asyncio.sleep(10))
+    ws._background_webhook_tasks.add(task)
+    task.add_done_callback(ws._background_webhook_tasks.discard)
+    assert await ws.drain_webhook_tasks(timeout=0.05) == 1
+    assert task.cancelled()

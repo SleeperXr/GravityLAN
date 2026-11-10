@@ -238,8 +238,9 @@ async def _shutdown(app: FastAPI) -> None:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    # The shared HTTP client of webhook deliveries holds open connections
-    from app.services.webhook_service import close_webhook_client
+    # Deliveries still running get a moment to finish before their shared HTTP client is closed
+    from app.services.webhook_service import close_webhook_client, drain_webhook_tasks
+    await drain_webhook_tasks()
     await close_webhook_client()
 
     logger.info("GravityLAN shutting down.")

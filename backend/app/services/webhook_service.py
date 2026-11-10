@@ -37,6 +37,28 @@ async def _get_client() -> httpx.AsyncClient:
     return _shared_client
 
 
+async def drain_webhook_tasks(timeout: float = 5.0) -> int:
+    """Let running enqueue/delivery tasks finish (also those they start meanwhile) for up to ``timeout``.
+
+    Returns how many were still running at the deadline. Those are cancelled: an event they had
+    already written to the outbox is sent by the retry loop after the next start.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while _background_webhook_tasks:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            break
+        await asyncio.wait(set(_background_webhook_tasks), timeout=remaining)
+    left = list(_background_webhook_tasks)
+    for task in left:
+        task.cancel()
+    if left:
+        await asyncio.gather(*left, return_exceptions=True)
+        logger.warning("Webhook: %d deliveries still running at shutdown were cancelled", len(left))
+    return len(left)
+
+
 async def close_webhook_client():
     """Close the shared client on application shutdown."""
     global _shared_client

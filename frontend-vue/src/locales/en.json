@@ -717,7 +717,7 @@
       "outbox_empty": "No recent deliveries in the outbox.",
       "outbox_show_all": "Show all {{count}}",
       "outbox_clear_failed": "Remove failed",
-      "outbox_cleared": "Removed {count} failed deliveries",
+      "outbox_cleared": "Removed {{count}} failed deliveries",
       "outbox_show_less": "Show less",
       "status_delivered": "Delivered",
       "status_pending": "Pending",

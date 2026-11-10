@@ -167,7 +167,8 @@ async function retryOutboxEntry(entry: NotificationOutboxResponse) {
 const canRetry = (entry: NotificationOutboxResponse) =>
   entry.status === 'failed' && !(entry.service_type === 'webhook' && entry.subscription_id == null);
 
-const hasFailed = computed(() => outbox.value.some((entry) => entry.status === 'failed'));
+// Offered whenever the outbox has entries: failed ones may be older than the newest few loaded here
+const hasEntries = computed(() => outbox.value.length > 0);
 const clearing = ref(false);
 
 async function clearFailed() {
@@ -345,7 +346,7 @@ function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
           <Clock class="size-3.5" aria-hidden="true" />
           {{ t('gv.webhooks.outbox_title') }}
         </h3>
-        <Button v-if="hasFailed" size="sm" variant="ghost" :loading="clearing" data-test="outbox-clear-failed" @click="clearFailed">
+        <Button v-if="hasEntries" size="sm" variant="ghost" :loading="clearing" data-test="outbox-clear-failed" @click="clearFailed">
           <Trash2 v-if="!clearing" aria-hidden="true" />
           {{ t('gv.webhooks.outbox_clear_failed') }}
         </Button>

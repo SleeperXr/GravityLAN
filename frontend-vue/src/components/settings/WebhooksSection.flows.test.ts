@@ -248,9 +248,20 @@ describe('delivery status', () => {
     expect(loads()).toBe(2);
   });
 
-  it('offers removing only when something failed', async () => {
+  it('offers removing whenever the outbox has entries, since older failures may not be loaded', async () => {
     mocked.getOutbox.mockResolvedValue([entry('delivered'), entry('pending', { id: 10 })]);
+    expect(button(await render(), t('gv.webhooks.outbox_clear_failed'))).toBeDefined();
+    mocked.getOutbox.mockResolvedValue([]);
     expect(button(await render(), t('gv.webhooks.outbox_clear_failed'))).toBeUndefined();
+  });
+
+  it('shows the number of removed entries, not a placeholder', async () => {
+    mocked.getOutbox.mockResolvedValue([entry('failed')]);
+    mocked.clearFailedOutbox.mockResolvedValue({ status: 'ok', removed: 3 });
+    await click(await render(), t('gv.webhooks.outbox_clear_failed'));
+    const message = showToast.mock.calls.at(-1)?.[2] as string;
+    expect(message).toContain('3');
+    expect(message).not.toContain('{');
   });
 
   it('reports a failed retry', async () => {
