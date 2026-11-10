@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { LightBeam, Point } from './orbitModel';
+import { orbitInk, type LightBeam, type Point } from './orbitModel';
 import { beamPath } from './orbitLayout';
 import { t } from '@/i18n';
 
@@ -28,7 +28,9 @@ const paths = computed(() =>
 );
 const traceById = computed(() => new Map(paths.value.map((p) => [p.beam.id, p.d])));
 const traceD = (seg: { key: number; from: number; to: number }) => traceById.value.get(seg.key) ?? `M${props.pos(seg.from).x},${props.pos(seg.from).y} L${props.pos(seg.to).x},${props.pos(seg.to).y}`;
-const colourOf = (beam: LightBeam) => (beam.interrupted ? 'var(--gl-danger)' : beam.failover ? 'var(--gl-warn)' : beam.color);
+const colourOf = (beam: LightBeam) => orbitInk(beam.interrupted ? 'var(--gl-danger)' : beam.failover ? 'var(--gl-warn)' : beam.color);
+/** Beam widths follow the theme: a light ground needs a heavier line (`--gl-orbit-stroke`) */
+const width = (px: number) => ({ strokeWidth: `calc(${px}px * var(--gl-orbit-stroke))` });
 /** A backup that took over is drawn as a live beam, an idle one thin and dashed */
 const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
 </script>
@@ -49,7 +51,7 @@ const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
         :d="d"
         fill="none"
         :stroke="colourOf(beam)"
-        :stroke-width="selectedId === beam.id ? 9 : beam.isPrimaryBridge ? 6 : 4"
+        :style="width(selectedId === beam.id ? 9 : beam.isPrimaryBridge ? 6 : 4)"
         :stroke-opacity="selectedId === beam.id ? 0.38 : beam.failover ? 0.32 : beam.interrupted || beam.isBackup ? 0.08 : 0.2"
         stroke-linecap="round"
       />
@@ -58,7 +60,7 @@ const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
         :d="d"
         fill="none"
         :stroke="colourOf(beam)"
-        :stroke-width="selectedId === beam.id ? 3.2 : beam.failover ? 2.4 : beam.isBackup ? 1.3 : beam.isPrimaryBridge ? 2.2 : 1.4"
+        :style="width(selectedId === beam.id ? 3.2 : beam.failover ? 2.4 : beam.isBackup ? 1.3 : beam.isPrimaryBridge ? 2.2 : 1.4)"
         :stroke-dasharray="beam.interrupted ? '2 9' : idleBackup(beam) ? '3 7' : beam.isWireless ? '6 6' : undefined"
         :stroke-opacity="beam.interrupted ? 0.65 : idleBackup(beam) ? 0.6 : 0.9"
         stroke-linecap="round"

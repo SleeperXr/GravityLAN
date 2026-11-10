@@ -13,7 +13,7 @@ import { t } from '@/i18n';
 const props = withDefaults(defineProps<{ deviceId: number; compact?: boolean; enabled?: boolean }>(), { compact: true, enabled: true });
 const { metrics } = useLiveMetrics(toRef(props, 'deviceId'), toRef(props, 'enabled'));
 
-const fills: Record<MeterTone, string> = { ok: 'bg-accent', warn: 'bg-warn', danger: 'bg-danger' };
+const fills: Record<MeterTone, string> = { ok: 'bg-mark-ok', warn: 'bg-mark-warn', danger: 'bg-mark-danger' };
 const texts: Record<MeterTone, string> = { ok: 'text-fg', warn: 'text-warn-text', danger: 'text-danger-text' };
 
 interface Meter {

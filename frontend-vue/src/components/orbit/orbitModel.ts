@@ -24,6 +24,13 @@ export type OrbitLink = TopologyLink & {
 
 export const isBackupLink = (link: Pick<OrbitLink, 'role'>): boolean => link.role === 'backup';
 
+/**
+ * A colour as a thin line on the orbit map. The theme says how much of it stays (`--gl-orbit-ink`):
+ * all of it on the night ground, less on a light ground, where the rest is text colour so that a
+ * pale network or link colour still reads as a line.
+ */
+export const orbitInk = (colour: string): string => `color-mix(in oklab, ${colour} var(--gl-orbit-ink), var(--gl-fg))`;
+
 export const LINK_TYPES = ['10GbE', '2.5GbE', '1GbE', '100Mb', 'WLAN', 'Fiber'] as const;
 
 /** Types offered for a link: the known ones, plus its own type if that is none of them (older or imported data). */

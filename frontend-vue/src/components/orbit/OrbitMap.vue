@@ -21,6 +21,7 @@ import {
   moveWithDescendants,
   portLimitReached,
   isOnOrbit,
+  orbitInk,
   resolveOrbitSystem,
   snapToOrbitRing,
   type LightBeam,
@@ -944,10 +945,10 @@ useResizeObserver(svgRef, initialFit);
             :cy="posOf(ring.centerId).y"
             :r="ring.radius"
             fill="none"
-            :stroke="ring.style === 'broken' ? 'var(--gl-danger)' : ring.color"
+            :stroke="orbitInk(ring.style === 'broken' ? 'var(--gl-danger)' : ring.color)"
             :stroke-width="activeClusterCenterId === ring.centerId || editing ? 1.6 : 1.1"
             :stroke-dasharray="ring.style === 'broken' ? '4 10' : ring.style === 'dashed' ? '6 6' : undefined"
-            :stroke-opacity="activeClusterCenterId === ring.centerId ? 0.6 : ring.style === 'broken' ? 0.35 : 0.22"
+            :style="{ strokeOpacity: activeClusterCenterId === ring.centerId ? 'var(--gl-orbit-ring-active)' : ring.style === 'broken' ? 0.35 : 'var(--gl-orbit-ring)' }"
             class="transition-[stroke-opacity] duration-300"
           />
           <circle
@@ -1237,19 +1238,11 @@ useResizeObserver(svgRef, initialFit);
 
 <style scoped>
 .cosmic-canvas {
-  background-color: var(--gl-canvas);
+  background-color: var(--gl-orbit-canvas);
   background-image:
     radial-gradient(ellipse 65% 50% at 50% 35%, var(--gl-orbit-glow-1) 0%, transparent 70%),
     radial-gradient(circle at 82% 18%, var(--gl-orbit-glow-2) 0%, transparent 50%),
     radial-gradient(circle at 18% 75%, var(--gl-orbit-glow-3) 0%, transparent 50%);
-}
-
-:root[data-theme='light'] .cosmic-canvas {
-  background-color: var(--gl-surface);
-  background-image:
-    radial-gradient(ellipse 65% 50% at 50% 35%, rgba(8, 122, 101, 0.035) 0%, transparent 70%),
-    radial-gradient(circle at 82% 18%, rgba(31, 111, 209, 0.03) 0%, transparent 50%),
-    radial-gradient(circle at 18% 75%, rgba(240, 138, 36, 0.025) 0%, transparent 50%);
 }
 
 .cosmic-canvas.is-editing {

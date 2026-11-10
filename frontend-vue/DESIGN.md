@@ -40,29 +40,33 @@ colors:
   line-9: "#c3cad4"
   line-10: "#f2856d"
   # Tagmodus (hell)
-  canvas-day: "#f4f5f7"
-  chrome-day: "#ffffff"
-  surface-day: "#ffffff"
-  raised-day: "#f2f4f7"
-  sunken-day: "#eef0f3"
-  control-day: "#ffffff"
-  control-hover-day: "#f2f4f7"
-  hairline-day: "#e2e5ea"
-  hairline-strong-day: "#c9ced6"
+  canvas-day: "#e6e9ee"
+  chrome-day: "#eff1f4"
+  surface-day: "#f4f6f8"
+  raised-day: "#e9ecf0"
+  sunken-day: "#e2e6eb"
+  control-day: "#f4f6f8"
+  control-hover-day: "#e9ecf0"
+  hairline-day: "#d5dae1"
+  hairline-strong-day: "#b8bfc9"
   fg-day: "#10141b"
-  fg-muted-day: "#4a5462"
-  fg-subtle-day: "#5d6776"
+  fg-muted-day: "#434d5b"
+  fg-subtle-day: "#556070"
   station-day: "#ffffff"
+  orbit-canvas-day: "#d9dfe7"
+  mark-ok-day: "#2fa38d"
+  mark-warn-day: "#e9a23b"
+  mark-danger-day: "#e25563"
   accent-day: "#087a65"
   accent-hover-day: "#066654"
   accent-fg-day: "#ffffff"
-  accent-text-day: "#066a57"
+  accent-text-day: "#055f4e"
   info-day: "#1f6fd1"
-  info-text-day: "#1a5fb4"
+  info-text-day: "#154f93"
   warn-day: "#d97706"
-  warn-text-day: "#8f4c00"
+  warn-text-day: "#824500"
   danger-day: "#dc3545"
-  danger-text-day: "#b42332"
+  danger-text-day: "#9e1b29"
   danger-fg-day: "#ffffff"
   neutral-dot-day: "#a3aab5"
   line-1-day: "#12a88b"
@@ -235,7 +239,7 @@ Passend zum Namen GravityLAN wird das Heimnetz als gravitatives Sonnensystem gel
 - **Zustand doppelt kodiert:** Ausgefallene Himmelskörper verlieren ihre geschlossene Umlaufbahn (unterbrochener Orbit-Ring, rot umrandet, durchgestrichen und Text-Badge „Offline“); gestörte Dienste zeigen einen Bernstein-Ring plus `!`-Indikator.
 - **Netz-Identität:** Jedes Subnetz bzw. VLAN hat genau eine Farbe (`networkColor()`, überschreibbar über `ui.line_colors`). Sie trägt den Atmosphärenring des Objekts, die Orbit-Bahn, das runde Netz-Schild (`LineBullet`), das Statusboard, die Betriebsmeldungen, IP-Kacheln und Rack-Einschübe.
 
-Der Standard ist der dunkle Nachtmodus (`canvas` `#0c0f14`), das helle Thema (`#f4f5f7`) arbeitet mit derselben Farblogik und eigens abgedunkelten Palettenwerten, sodass alle Texte in beiden Themen mindestens 4,5:1 Kontrast erreichen. Als drittes Thema gibt es **Aurora** (`canvas` `#08090d`): ein Neon-Dunkel. Der Grund bleibt neutral und fast schwarz, die Farbe sitzt auf den Elementen: Neongrün, Cyan, Gelb und Pink für Akzent und Zustände, Cyan und Blau statt Grau für Nebentext (`fg-muted`, `fg-subtle`), blaue Haarlinien, pinke neutrale Badges, eine Neon-Netzpalette und ein schwacher Cyan-Schein unter Karten; es nutzt dieselben Tokens und erreicht ebenfalls mindestens 4,5:1. Keine Seite nutzt generische KPI-Kachelreihen: Health und Agents fassen ihre Kennzahlen in einer kompakten Statusleiste direkt über der Tabelle zusammen.
+Der Standard ist der dunkle Nachtmodus (`canvas` `#0c0f14`), das helle Thema (`#e6e9ee`, Karten `#f4f6f8`, kein reines Weiß) arbeitet mit derselben Farblogik und eigens abgedunkelten Palettenwerten, sodass alle Texte in beiden Themen mindestens 4,5:1 Kontrast erreichen. Als drittes Thema gibt es **Aurora** (`canvas` `#08090d`): ein Neon-Dunkel. Der Grund bleibt neutral und fast schwarz, die Farbe sitzt auf den Elementen: Neongrün, Cyan, Gelb und Pink für Akzent und Zustände, Cyan und Blau statt Grau für Nebentext (`fg-muted`, `fg-subtle`), blaue Haarlinien, pinke neutrale Badges, eine Neon-Netzpalette und ein schwacher Cyan-Schein unter Karten; es nutzt dieselben Tokens und erreicht ebenfalls mindestens 4,5:1. Keine Seite nutzt generische KPI-Kachelreihen: Health und Agents fassen ihre Kennzahlen in einer kompakten Statusleiste direkt über der Tabelle zusammen.
 
 **Key Characteristics:**
 - Gravitationshierarchie: Stern (Gateway) → Planeten (Switch, AP, Host) → Monde (Clients, WLAN, VMs/Container).
@@ -262,7 +266,9 @@ Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden 
 ### Neutral
 - **Nachtgrund** (`canvas`): Seitenhintergrund. **Nachtleiste** (`chrome`): Seitenleiste und mobile Tab-Leiste. **Kartenfläche** (`surface`): Karten, Dialoge, Popover. **Innenfläche** (`raised`): Unterkarten, aktive Navigation, Hover von Zeilen. **Senke** (`sunken`): Eingabefelder, Segmentschalter, Rack-Innenraum, Orbit-Grund im Dunkeln. **Bedienfläche** (`control`/`control-hover`): Sekundär-Buttons.
 - **Haarlinien** (`hairline` = `--gl-line`, `hairline-strong`): Rahmen, Trenner, Hover-Rahmen, Scrollbalken.
-- **Textstufen** (`fg`, `fg-muted`, `fg-subtle`): Inhalt, Beschreibung, Metadaten. Im hellen Thema wurden alle Textstufen so abgedunkelt, dass sie auf ihren eigenen 10–15-%-Tönungen über Weiß 4,5:1 erreichen.
+- **Textstufen** (`fg`, `fg-muted`, `fg-subtle`): Inhalt, Beschreibung, Metadaten. Im hellen Thema wurden alle Textstufen so abgedunkelt, dass sie auf ihren eigenen 10–15-%-Tönungen über jeder hellen Fläche 4,5:1 erreichen.
+- **Datenmarken** (`mark-ok`, `mark-warn`, `mark-danger`, Klassen `bg-mark-*`): Füllung von Auslastungsbalken und Verfügbarkeitsstreifen. Im Dunkeln gleich den Zustandsfarben, im Hellen weicher (`#2fa38d`, `#e9a23b`, `#e25563`), damit eine Tabelle voller Balken nicht lauter ist als Buttons und Text. Buttons, Punkte und Text nutzen weiter `accent`/`warn`/`danger`.
+- **Orbit-Grund und Linientinte** (`--gl-orbit-canvas`, `--gl-orbit-ring`, `--gl-orbit-ring-active`, `--gl-orbit-ink`, `--gl-orbit-stroke`): Im Dunkeln liegt der Orbit-Netzplan auf `canvas`, Linien behalten ihre Farbe ganz. Im Hellen liegt er auf kühlem Grau (`#d9dfe7`) mit weißen Körpern; Ringe sind deckender (0,6 statt 0,22), Light-Beams 1,6-fach breit, und jede Linienfarbe wird über `orbitInk()` zu 32 % mit der Textfarbe gemischt, damit auch helle Netz- und Verbindungsfarben als Linie tragen. Wer im Orbit eine Linie zeichnet, nimmt `orbitInk(farbe)`.
 - **Körperkern** (`station`): Füllung der Himmelskörper im Orbit-Netzplan. **Schildtinte** (`sign-ink`, `#0c0f14`): fester Text auf Netzschildern und aktiven Navigationsschildern, in beiden Themen.
 
 ### Named Rules

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { OrbitBody, Point } from './orbitModel';
+import { orbitInk, type OrbitBody, type Point } from './orbitModel';
 import { radiusOf, type LabelPlacement } from './orbitLayout';
 import { deviceLabel } from '@/lib/networks';
 import { t } from '@/i18n';
@@ -34,8 +34,10 @@ const emit = defineEmits<{
 
 const r = computed(() => radiusOf(props.body));
 const name = computed(() => deviceLabel(props.body.device));
-const stroke = computed(() => (props.body.state === 'offline' ? 'var(--gl-danger)' : props.body.state === 'degraded' ? 'var(--gl-warn)' : props.body.color));
-const halo = 'paint-order: stroke; stroke: var(--gl-canvas); stroke-linejoin: round';
+const stroke = computed(() => orbitInk(props.body.state === 'offline' ? 'var(--gl-danger)' : props.body.state === 'degraded' ? 'var(--gl-warn)' : props.body.color));
+/** The body's own colour as a line: atmosphere ring, WLAN beacon */
+const ink = computed(() => orbitInk(props.body.color));
+const halo = 'paint-order: stroke; stroke: var(--gl-orbit-canvas); stroke-linejoin: round';
 const stateText = computed(() => (props.body.state === 'offline' ? t('gv.orbit.state_offline') : props.body.state === 'degraded' ? t('gv.orbit.state_degraded') : ''));
 const ariaLabel = computed(() => `${name.value} (${props.body.device.ip})${stateText.value ? `, ${stateText.value}` : ''}`);
 </script>
@@ -80,10 +82,10 @@ const ariaLabel = computed(() => `${name.value} (${props.body.device.ip})${state
     <!-- Planet: atmosphere ring (dashed for access points) -->
     <template v-else-if="body.kind === 'planet'">
       <circle :r="r + 7" :fill="body.color" fill-opacity="0.1" />
-      <circle :r="r + 4" fill="none" :stroke="body.color" stroke-width="1.2" :stroke-dasharray="body.device.is_ap ? '4 3' : undefined" stroke-opacity="0.65" />
+      <circle :r="r + 4" fill="none" :stroke="ink" stroke-width="1.2" :stroke-dasharray="body.device.is_ap ? '4 3' : undefined" stroke-opacity="0.65" />
     </template>
     <!-- WLAN moon: satellite beacon -->
-    <circle v-else-if="body.device.is_wlan && body.state === 'online'" :r="r + 4" fill="none" :stroke="body.color" stroke-width="1" stroke-dasharray="3 3" stroke-opacity="0.45" />
+    <circle v-else-if="body.device.is_wlan && body.state === 'online'" :r="r + 4" fill="none" :stroke="ink" stroke-width="1" stroke-dasharray="3 3" stroke-opacity="0.45" />
 
     <circle v-if="selected" :r="r + 9" fill="none" stroke="var(--gl-fg)" stroke-width="2" />
     <circle :r="r" :fill="body.kind === 'star' ? body.color : 'var(--gl-station)'" :stroke="stroke" :stroke-width="body.kind === 'star' ? 3.2 : body.kind === 'planet' ? 3 : 2.5" />

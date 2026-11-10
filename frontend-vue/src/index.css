@@ -33,6 +33,9 @@
   --color-fg-muted: var(--gl-fg-muted);
   --color-fg-subtle: var(--gl-fg-subtle);
   --color-station: var(--gl-station);
+  --color-mark-ok: var(--gl-mark-ok);
+  --color-mark-warn: var(--gl-mark-warn);
+  --color-mark-danger: var(--gl-mark-danger);
 
   --color-accent: var(--gl-accent);
   --color-accent-hover: var(--gl-accent-hover);
@@ -92,6 +95,17 @@
   --gl-danger-fg: #2a0608;
   --gl-danger-text: #ff8f8f;
   --gl-neutral-dot: #6b7686;
+  /* Fills of data marks (meters, availability strips); the state colours unless a theme softens them */
+  --gl-mark-ok: var(--gl-accent);
+  --gl-mark-warn: var(--gl-warn);
+  --gl-mark-danger: var(--gl-danger);
+  /* Orbit map: its ground and how strongly the orbit rings show (resting / inspected hub) */
+  --gl-orbit-canvas: var(--gl-canvas);
+  --gl-orbit-ring: 0.22;
+  --gl-orbit-ring-active: 0.6;
+  /* Lines on the map: how much of their own colour they keep, and a factor on beam widths */
+  --gl-orbit-ink: 100%;
+  --gl-orbit-stroke: 1;
 
   --gl-shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.025) inset;
   --gl-shadow-pop: 0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04);
@@ -121,33 +135,48 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --gl-canvas: #f4f5f7;
-  --gl-chrome: #ffffff;
-  --gl-surface: #ffffff;
-  --gl-raised: #f2f4f7;
-  --gl-sunken: #eef0f3;
-  --gl-control: #ffffff;
-  --gl-control-hover: #f2f4f7;
-  --gl-line: #e2e5ea;
-  --gl-line-strong: #c9ced6;
+  /* No pure white: a soft grey ground and off-white cards, so a full page does not glare */
+  --gl-canvas: #e6e9ee;
+  --gl-chrome: #eff1f4;
+  --gl-surface: #f4f6f8;
+  --gl-raised: #e9ecf0;
+  --gl-sunken: #e2e6eb;
+  --gl-control: #f4f6f8;
+  --gl-control-hover: #e9ecf0;
+  --gl-line: #d5dae1;
+  --gl-line-strong: #b8bfc9;
   --gl-fg: #10141b;
-  --gl-fg-muted: #4a5462;
-  --gl-fg-subtle: #5d6776;
+  --gl-fg-muted: #434d5b;
+  --gl-fg-subtle: #556070;
+  /* White bodies on a cool grey map ground: thin coloured rings need something to stand out from */
   --gl-station: #ffffff;
+  --gl-orbit-canvas: #d9dfe7;
+  --gl-orbit-ring: 0.6;
+  --gl-orbit-ring-active: 0.95;
+  --gl-orbit-ink: 68%;
+  --gl-orbit-stroke: 1.6;
+  --gl-orbit-glow-1: rgb(8 122 101 / 0.035);
+  --gl-orbit-glow-2: rgb(31 111 209 / 0.03);
+  --gl-orbit-glow-3: rgb(240 138 36 / 0.025);
 
-  /* Text tones are measured against their own 10–15 % tints on white: all reach 4.5:1 */
+  /* Text tones are measured against their own 10–15 % tints on every surface: all reach 4.5:1 */
   --gl-accent: #087a65;
   --gl-accent-hover: #066654;
   --gl-accent-fg: #ffffff;
-  --gl-accent-text: #066a57;
+  --gl-accent-text: #055f4e;
   --gl-info: #1f6fd1;
-  --gl-info-text: #1a5fb4;
+  --gl-info-text: #154f93;
   --gl-warn: #d97706;
-  --gl-warn-text: #8f4c00;
+  --gl-warn-text: #824500;
   --gl-danger: #dc3545;
   --gl-danger-fg: #ffffff;
-  --gl-danger-text: #b42332;
+  --gl-danger-text: #9e1b29;
   --gl-neutral-dot: #a3aab5;
+
+  /* Softer than the button and text tones: a table full of bars should not be the loudest thing on the page */
+  --gl-mark-ok: #2fa38d;
+  --gl-mark-warn: #e9a23b;
+  --gl-mark-danger: #e25563;
 
   --gl-shadow-card: 0 1px 2px rgb(16 20 27 / 0.04);
   --gl-shadow-pop: 0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06);
