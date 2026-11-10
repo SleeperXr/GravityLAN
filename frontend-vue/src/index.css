@@ -96,6 +96,13 @@
   --gl-mark-ok: var(--gl-accent);
   --gl-mark-warn: var(--gl-warn);
   --gl-mark-danger: var(--gl-danger);
+  /* Orbit map: its ground and how strongly the orbit rings show (resting / inspected hub) */
+  --gl-orbit-canvas: var(--gl-canvas);
+  --gl-orbit-ring: 0.22;
+  --gl-orbit-ring-active: 0.6;
+  /* Lines on the map: how much of their own colour they keep, and a factor on beam widths */
+  --gl-orbit-ink: 100%;
+  --gl-orbit-stroke: 1;
 
   --gl-shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.025) inset;
   --gl-shadow-pop: 0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04);
@@ -116,32 +123,38 @@
 :root[data-theme="light"] {
   color-scheme: light;
   /* No pure white: a soft grey ground and off-white cards, so a full page does not glare */
-  --gl-canvas: #eceef2;
-  --gl-chrome: #f5f6f8;
-  --gl-surface: #f9fafb;
-  --gl-raised: #eff1f4;
-  --gl-sunken: #e8ebef;
-  --gl-control: #f9fafb;
-  --gl-control-hover: #eff1f4;
-  --gl-line: #dde1e6;
-  --gl-line-strong: #c2c8d1;
+  --gl-canvas: #e6e9ee;
+  --gl-chrome: #eff1f4;
+  --gl-surface: #f4f6f8;
+  --gl-raised: #e9ecf0;
+  --gl-sunken: #e2e6eb;
+  --gl-control: #f4f6f8;
+  --gl-control-hover: #e9ecf0;
+  --gl-line: #d5dae1;
+  --gl-line-strong: #b8bfc9;
   --gl-fg: #10141b;
-  --gl-fg-muted: #4a5462;
-  --gl-fg-subtle: #5d6776;
-  --gl-station: #f9fafb;
+  --gl-fg-muted: #434d5b;
+  --gl-fg-subtle: #556070;
+  /* White bodies on a cool grey map ground: thin coloured rings need something to stand out from */
+  --gl-station: #ffffff;
+  --gl-orbit-canvas: #d9dfe7;
+  --gl-orbit-ring: 0.6;
+  --gl-orbit-ring-active: 0.95;
+  --gl-orbit-ink: 68%;
+  --gl-orbit-stroke: 1.6;
 
   /* Text tones are measured against their own 10–15 % tints on every surface: all reach 4.5:1 */
   --gl-accent: #087a65;
   --gl-accent-hover: #066654;
   --gl-accent-fg: #ffffff;
-  --gl-accent-text: #066a57;
+  --gl-accent-text: #055f4e;
   --gl-info: #1f6fd1;
-  --gl-info-text: #17579f;
+  --gl-info-text: #154f93;
   --gl-warn: #d97706;
-  --gl-warn-text: #8f4c00;
+  --gl-warn-text: #824500;
   --gl-danger: #dc3545;
   --gl-danger-fg: #ffffff;
-  --gl-danger-text: #a91f2e;
+  --gl-danger-text: #9e1b29;
   --gl-neutral-dot: #a3aab5;
 
   /* Softer than the button and text tones: a table full of bars should not be the loudest thing on the page */
