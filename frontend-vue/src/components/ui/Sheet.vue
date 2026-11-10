@@ -2,7 +2,7 @@
 import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui';
 import { X } from 'lucide-vue-next';
 import { cn } from '@/lib/utils';
-import { keepOpenForToasts } from '@/lib/overlay';
+import { keepOpenForPopups } from '@/lib/overlay';
 import { t } from '@/i18n';
 
 /** Side drawer for detail views (device editor, health detail). Full screen on phones. */
@@ -19,7 +19,9 @@ const widths = { md: 'md:max-w-md', lg: 'md:max-w-2xl', xl: 'md:max-w-4xl' };
     <DialogPortal>
       <DialogOverlay class="gl-overlay fixed inset-0 z-50 bg-black/50" />
       <DialogContent
-        @interact-outside="keepOpenForToasts"
+        :disable-outside-pointer-events="false"
+        @interact-outside="keepOpenForPopups"
+        @pointer-down-outside="keepOpenForPopups"
         :class="cn('gl-sheet fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-line bg-surface shadow-pop focus:outline-none', widths[props.width], props.class)"
       >
         <header class="flex items-start gap-3 border-b border-line bg-surface px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-4">
