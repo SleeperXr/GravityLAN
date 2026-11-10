@@ -33,8 +33,8 @@ def main() -> None:
     try:
         diff_output = git("diff", "--name-only", f"{base}...HEAD", "--", "agent/")
     except subprocess.CalledProcessError:
-        print(f"Base ref {base} cannot be diffed against HEAD, skipping agent version check.")
-        return
+        # Fail closed: without a diff nobody can tell whether the agent changed
+        sys.exit(f"Base ref {base} cannot be diffed against HEAD, so the agent version cannot be checked.")
     changed = [
         path for path in diff_output.split()
         if not path.endswith((".log", ".pyc")) and "__pycache__" not in path

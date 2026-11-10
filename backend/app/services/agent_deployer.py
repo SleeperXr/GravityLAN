@@ -137,13 +137,15 @@ def _verify_remote_sha256(client, remote_path: str, expected_sha256: str) -> boo
         f"elif command -v shasum >/dev/null 2>&1; then shasum -a 256 {remote_path} | cut -d ' ' -f 1; "
         f"else python3 -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' {remote_path}; fi"
     )
+    # Fail closed: a digest that cannot be read counts as a mismatch, never as a match
     try:
         _, stdout, _ = client.exec_command(cmd, timeout=10)
     except ValueError:
-        return True
+        logger.warning("Checksum of %s could not be read on the target host", remote_path)
+        return False
     raw = stdout.read()
     if not isinstance(raw, (bytes, str)):
-        return True
+        return False
     actual = (raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw).strip()
     return actual == expected_sha256
 

@@ -15,6 +15,7 @@ vi.mock('@/api/client', () => ({
     deleteWebhook: vi.fn(),
     testWebhook: vi.fn(),
     retryOutbox: vi.fn(),
+    clearFailedOutbox: vi.fn(),
   },
 }));
 vi.mock('@/composables/useToast', () => ({ useToast: () => ({ showToast }) }));
@@ -25,8 +26,8 @@ const mocked = vi.mocked(api);
 const sub = (extra: Record<string, unknown> = {}) =>
   ({ id: 1, name: 'alerts', url: 'https://example.com/hook', service_type: 'webhook', has_token: false, events: ['device.offline'], ...extra }) as unknown as WebhookSubscriptionResponse;
 
-const entry = (status: string) =>
-  ({ id: 9, event_type: 'scan.complete', target_url: 'http://192.0.2.1/hook', service_type: 'webhook', attempts: 3, max_attempts: 3, status, last_error: null, created_at: '2026-11-05T10:00:00Z' }) as unknown as NotificationOutboxResponse;
+const entry = (status: string, extra: Record<string, unknown> = {}) =>
+  ({ id: 9, subscription_id: 1, event_type: 'scan.complete', target_url: 'http://192.0.2.1/hook', service_type: 'webhook', attempts: 3, max_attempts: 3, status, last_error: null, created_at: '2026-11-05T10:00:00Z', ...extra }) as unknown as NotificationOutboxResponse;
 
 async function render() {
   const wrapper = mount(WebhooksSection);
@@ -225,6 +226,42 @@ describe('delivery status', () => {
     await click(w, t('gv.webhooks.btn_retry'));
     expect(mocked.retryOutbox).toHaveBeenCalledWith(9);
     expect(loads()).toBe(2);
+  });
+
+  it('offers no retry when the webhook of the entry was deleted', async () => {
+    mocked.getOutbox.mockResolvedValue([entry('failed', { subscription_id: null })]);
+    expect(button(await render(), t('gv.webhooks.btn_retry'))).toBeUndefined();
+  });
+
+  it('still offers a retry for a preset, which never has a subscription', async () => {
+    mocked.getOutbox.mockResolvedValue([entry('failed', { subscription_id: null, service_type: 'ntfy' })]);
+    expect(button(await render(), t('gv.webhooks.btn_retry'))).toBeDefined();
+  });
+
+  it('removes failed deliveries and reloads', async () => {
+    mocked.getOutbox.mockResolvedValue([entry('failed')]);
+    mocked.clearFailedOutbox.mockResolvedValue({ status: 'ok', removed: 1 });
+    const w = await render();
+    await click(w, t('gv.webhooks.outbox_clear_failed'));
+    expect(mocked.clearFailedOutbox).toHaveBeenCalledOnce();
+    expect(showToast).toHaveBeenCalledWith('success', t('common.success'), t('gv.webhooks.outbox_cleared', { count: 1 }));
+    expect(loads()).toBe(2);
+  });
+
+  it('offers removing whenever the outbox has entries, since older failures may not be loaded', async () => {
+    mocked.getOutbox.mockResolvedValue([entry('delivered'), entry('pending', { id: 10 })]);
+    expect(button(await render(), t('gv.webhooks.outbox_clear_failed'))).toBeDefined();
+    mocked.getOutbox.mockResolvedValue([]);
+    expect(button(await render(), t('gv.webhooks.outbox_clear_failed'))).toBeUndefined();
+  });
+
+  it('shows the number of removed entries, not a placeholder', async () => {
+    mocked.getOutbox.mockResolvedValue([entry('failed')]);
+    mocked.clearFailedOutbox.mockResolvedValue({ status: 'ok', removed: 3 });
+    await click(await render(), t('gv.webhooks.outbox_clear_failed'));
+    const message = showToast.mock.calls.at(-1)?.[2] as string;
+    expect(message).toContain('3');
+    expect(message).not.toContain('{');
   });
 
   it('reports a failed retry', async () => {

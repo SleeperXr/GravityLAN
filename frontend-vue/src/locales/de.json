@@ -716,6 +716,8 @@
       "outbox_title": "Outbox & Zustell-Status",
       "outbox_empty": "Keine kürzlichen Zustellungen in der Outbox.",
       "outbox_show_all": "Alle {{count}} anzeigen",
+      "outbox_clear_failed": "Fehlgeschlagene entfernen",
+      "outbox_cleared": "{{count}} fehlgeschlagene Zustellungen entfernt",
       "outbox_show_less": "Weniger anzeigen",
       "status_delivered": "Zugestellt",
       "status_pending": "Wartend",

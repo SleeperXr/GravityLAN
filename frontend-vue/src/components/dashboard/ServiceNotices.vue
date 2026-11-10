@@ -6,6 +6,7 @@ import type { Device } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
 import { lineLabelFor, networkColor } from '@/lib/networks';
+import { useToast } from '@/composables/useToast';
 import { t } from '@/i18n';
 import { buildNotices, type Notice } from './serviceNotices';
 
@@ -38,13 +39,23 @@ function open(n: Notice) {
   else if (n.device) emit('openDevice', n.device);
 }
 
-async function ackNotice(e: Event, n: Notice) {
-  e.stopPropagation();
-  if (!n.device) return;
+const { showToast } = useToast();
+const acking = ref<string | null>(null);
+
+/** Confirm an IP change; the notice only goes away once the server stored that. */
+async function ackNotice(n: Notice) {
+  if (!n.device || acking.value) return;
   const dev = n.device;
-  await api.updateDevice(dev.id, { old_ip: null, ip_changed_at: null }).catch(() => {});
-  dev.old_ip = null;
-  dev.ip_changed_at = null;
+  acking.value = n.key;
+  try {
+    await api.updateDevice(dev.id, { old_ip: null, ip_changed_at: null });
+    dev.old_ip = null;
+    dev.ip_changed_at = null;
+  } catch (err) {
+    showToast('error', t('common.error'), (err as Error).message);
+  } finally {
+    acking.value = null;
+  }
 }
 </script>
 
@@ -60,8 +71,9 @@ async function ackNotice(e: Event, n: Notice) {
       <p class="text-xs text-fg-subtle">{{ t('gv.notices.all_clear_hint') }}</p>
     </div>
     <ul v-else class="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
-      <li v-for="n in shown" :key="n.key">
-        <button type="button" class="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-raised" @click="open(n)">
+      <!-- The confirm button sits next to the row button, not inside it: buttons must not nest -->
+      <li v-for="n in shown" :key="n.key" class="group flex items-start transition-colors hover:bg-raised">
+        <button type="button" class="flex min-w-0 flex-1 items-start gap-3 py-3 pl-4 text-left" :class="n.key.startsWith('ip-') && n.device ? 'pr-2' : 'pr-4'" @click="open(n)">
           <!-- The badge of the network orbit the device belongs to; fleet-wide notices get a neutral sign -->
           <LineBullet
             v-if="n.device"
@@ -78,17 +90,23 @@ async function ackNotice(e: Event, n: Notice) {
             <span class="mt-0.5 block truncate font-mono text-xs text-fg-subtle">{{ n.detail }}</span>
             <span v-if="n.since" class="mt-0.5 block text-xs text-fg-subtle"><RelativeTime :date="n.since" /></span>
           </span>
-          <button
-            v-if="n.key.startsWith('ip-') && n.device"
-            type="button"
-            class="ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle opacity-70 transition-opacity hover:bg-control-hover hover:text-fg hover:opacity-100 [@media(hover:none)]:opacity-100"
-            :title="t('dashboard.ip_changed_ack')"
-            :aria-label="t('dashboard.ip_changed_ack')"
-            @click="ackNotice($event, n)"
-          >
-            <Check class="size-4" aria-hidden="true" />
-          </button>
-          <ArrowRight v-else class="mt-1 size-4 shrink-0 text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+          <ArrowRight
+            v-if="!(n.key.startsWith('ip-') && n.device)"
+            class="mt-1 size-4 shrink-0 text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100"
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          v-if="n.key.startsWith('ip-') && n.device"
+          type="button"
+          class="my-3 mr-4 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle opacity-70 transition-opacity hover:bg-control-hover hover:text-fg hover:opacity-100 disabled:opacity-40 [@media(hover:none)]:opacity-100"
+          :title="t('dashboard.ip_changed_ack')"
+          :aria-label="t('dashboard.ip_changed_ack')"
+          :disabled="acking === n.key"
+          data-test="ack-ip-change"
+          @click="ackNotice(n)"
+        >
+          <Check class="size-4" aria-hidden="true" />
         </button>
       </li>
     </ul>
