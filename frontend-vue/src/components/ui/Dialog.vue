@@ -45,7 +45,6 @@ function focusAutofocusField(event: Event) {
     <DialogPortal>
       <DialogOverlay class="gl-overlay fixed inset-0 bg-black/55 backdrop-blur-[2px]" :class="props.top ? 'z-[55]' : 'z-50'" />
       <DialogContent
-        :disable-outside-pointer-events="false"
         @interact-outside="keepOpenForPopups"
         @pointer-down-outside="keepOpenForPopups"
         :class="
