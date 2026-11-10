@@ -108,7 +108,7 @@ function statusText(status: RowStatus) {
           <Input :id="id" v-model="sshUser" autocomplete="username" :placeholder="t('agent.ssh_user_placeholder')" />
         </Field>
         <Field v-slot="{ id }" :label="t('agent.ssh_password')">
-          <Input :id="id" v-model="sshPassword" type="password" autocomplete="current-password" :placeholder="t('agent.password_placeholder')" />
+          <Input :id="id" v-model="sshPassword" type="password" name="gravitylan_agent_ssh_password" autocomplete="new-password" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other" :placeholder="t('agent.password_placeholder')" />
         </Field>
       </div>
     </section>

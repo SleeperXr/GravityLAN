@@ -87,19 +87,41 @@ function addDiskPath() {
             <Select :id="id" v-model="form.profile_id" :options="profileOptions" :aria-describedby="describedBy" />
           </Field>
           <Field v-slot="{ id, describedBy }" :label="t('agent.sudo_password')" :hint="t('agent.sudo_password_hint')">
-            <Input :id="id" v-model="form.sudo_password" type="password" autocomplete="off" :aria-describedby="describedBy" />
+            <Input
+              :id="id"
+              v-model="form.sudo_password"
+              type="password"
+              name="gravitylan_agent_sudo_password"
+              autocomplete="new-password"
+              data-bwignore="true"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-form-type="other"
+              :aria-describedby="describedBy"
+            />
           </Field>
         </template>
         <div v-else class="grid gap-3 sm:grid-cols-[1fr_6rem]">
           <Field v-slot="{ id }" :label="t('agent.ssh_user')">
-            <Input :id="id" v-model="form.ssh_user" autocomplete="username" />
+            <Input :id="id" v-model="form.ssh_user" autocomplete="username" data-bwignore="true" data-1p-ignore="true" />
           </Field>
           <Field v-slot="{ id }" :label="t('agent.ssh_port')">
             <Input :id="id" :model-value="form.ssh_port" type="number" mono @update:model-value="(v) => (form.ssh_port = parseInt(String(v), 10) || 22)" />
           </Field>
           <div class="sm:col-span-2">
             <Field v-slot="{ id }" :label="t('agent.ssh_password')">
-              <Input :id="id" v-model="form.ssh_password" type="password" autocomplete="current-password" :placeholder="t('agent.password_placeholder')" />
+              <Input
+                :id="id"
+                v-model="form.ssh_password"
+                type="password"
+                name="gravitylan_agent_ssh_password"
+                autocomplete="new-password"
+                data-bwignore="true"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-form-type="other"
+                :placeholder="t('agent.password_placeholder')"
+              />
             </Field>
           </div>
         </div>

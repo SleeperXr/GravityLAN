@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - Agent 0.3.14: hardened error handling across metric collectors and probes by narrowing broad exceptions and replacing swallowed exceptions with debug logging and contextlib suppression.
 
 ### Fixed
+- GravityUI: using a password manager's popup (Bitwarden, 1Password and others) no longer closes the device editor or the dialog underneath. The SSH and sudo password fields of the agent forms are no longer filled in or offered for saving by password managers.
 - Agents page: the availability bars no longer show hours as partly reachable when no report went missing. An hour counted as complete only with exactly 120 reports, which an agent practically never reaches, and the 24-hour figure also counted reports from before the agent's last update. Both now follow the agent's own reporting interval, and an hour with at least 90 % of its reports counts as complete.
 - Agent Update Center on Synology systems without systemd: installing or updating the agent no longer ends in a timeout with the agent reported offline. The start script kept the SSH connection open, so the update counted as failed and the agent's new key was never saved. Run the update once more on an affected NAS.
 - Agent 0.3.15: a metric reader that fails no longer costs the whole report. The agent sends everything else and logs which reader failed. Package updates, disks and neighbours are also read correctly on hosts whose tools or mount names are not UTF-8.

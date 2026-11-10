@@ -341,7 +341,7 @@ const tabs = computed(() => [
                   <Select :id="id" v-model="authType" :options="authOptions" />
                 </Field>
                 <Field v-if="authType === 'password'" v-slot="{ id }" :label="t('agent_detail.auth_password')">
-                  <Input :id="id" v-model="sshPassword" type="password" :placeholder="t('agent_detail.password_placeholder')" autocomplete="new-password" />
+                  <Input :id="id" v-model="sshPassword" type="password" :placeholder="t('agent_detail.password_placeholder')" name="gravitylan_agent_ssh_password" autocomplete="new-password" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other" />
                 </Field>
                 <div v-else-if="authType === 'stored_key'" class="space-y-2">
                   <Field v-slot="{ id }" :label="t('agent_detail.select_key')">
@@ -354,7 +354,7 @@ const tabs = computed(() => [
                 </Field>
               </div>
               <Field v-if="authType !== 'password'" v-slot="{ id, describedBy }" :label="t('agent.sudo_password')" :hint="t('agent.sudo_password_hint')">
-                <Input :id="id" v-model="sudoPassword" type="password" autocomplete="new-password" :aria-describedby="describedBy" />
+                <Input :id="id" v-model="sudoPassword" type="password" autocomplete="new-password" name="gravitylan_agent_sudo_password" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other" :aria-describedby="describedBy" />
               </Field>
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <label class="flex items-center gap-2 text-xs text-fg-muted">

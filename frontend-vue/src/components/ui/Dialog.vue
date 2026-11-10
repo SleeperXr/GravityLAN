@@ -2,7 +2,7 @@
 import { DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui';
 import { X } from 'lucide-vue-next';
 import { cn } from '@/lib/utils';
-import { keepOpenForToasts } from '@/lib/overlay';
+import { keepOpenForPopups } from '@/lib/overlay';
 import { t } from '@/i18n';
 
 /**
@@ -45,7 +45,9 @@ function focusAutofocusField(event: Event) {
     <DialogPortal>
       <DialogOverlay class="gl-overlay fixed inset-0 bg-black/55 backdrop-blur-[2px]" :class="props.top ? 'z-[55]' : 'z-50'" />
       <DialogContent
-        @interact-outside="keepOpenForToasts"
+        :disable-outside-pointer-events="false"
+        @interact-outside="keepOpenForPopups"
+        @pointer-down-outside="keepOpenForPopups"
         :class="
           cn(
             props.top ? 'z-[55]' : 'z-50',
