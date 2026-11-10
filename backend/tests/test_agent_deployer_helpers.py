@@ -80,10 +80,11 @@ def test_remote_checksum_matches_mismatches_and_unknown_answers():
         def exec_command(self, cmd, timeout=None):
             raise ValueError("old client without timeout")
 
-    assert dep._verify_remote_sha256(NoTimeout(), "/tmp/a", "abc") is True
+    # Fail closed: a digest that cannot be read is no match
+    assert dep._verify_remote_sha256(NoTimeout(), "/tmp/a", "abc") is False
     odd = FakeClient()
     odd.exec_command = lambda cmd, timeout=None: (None, SimpleNamespace(read=lambda: MagicMock()), None)
-    assert dep._verify_remote_sha256(odd, "/tmp/a", "abc") is True
+    assert dep._verify_remote_sha256(odd, "/tmp/a", "abc") is False
 
 
 # --- install paths -----------------------------------------------------------------------------

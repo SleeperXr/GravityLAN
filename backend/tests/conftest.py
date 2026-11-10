@@ -123,6 +123,18 @@ async def admin_token(db):
     await db.commit()
     return token
 
+def pytest_sessionfinish(session, exitstatus):
+    """Close the app's own database engine before the test data directory goes away.
+
+    A few code paths open ``gravitylan.db`` in that directory through ``app.database.engine``
+    instead of the test engine; its pooled connection kept the file open, so on Windows
+    deleting the directory at exit failed with PermissionError (WinError 32).
+    """
+    from app.database import engine as app_engine
+
+    asyncio.run(app_engine.dispose())
+
+
 @pytest_asyncio.fixture
 async def db_session(db):
     """Alias for db fixture to support legacy tests."""

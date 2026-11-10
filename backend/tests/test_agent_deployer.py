@@ -167,6 +167,8 @@ def fake_remote(monkeypatch):
     monkeypatch.setattr(agent_deployer, "RemoteRunner", lambda *a, **k: runner)
     monkeypatch.setattr(agent_deployer, "_probe_platform", lambda client, ip: (False, False))
     monkeypatch.setattr(agent_deployer, "_stage_file", lambda *a, **k: None)
+    # The staged copy arrived intact (the MagicMock client would answer garbage, which now fails closed)
+    monkeypatch.setattr(agent_deployer, "_verify_remote_sha256", lambda *a, **k: True)
     monkeypatch.setattr(agent_deployer, "_probe_python", lambda client: "python3")
     monkeypatch.setattr(agent_deployer, "_is_agent_running", lambda client, path: False)
     monkeypatch.setattr(agent_deployer, "_nohup_fallback", lambda *a, **k: (True, "Agent started (Nohup fallback)"))
