@@ -455,3 +455,26 @@ async def test_run_arp_only_scan_prunes_stale_ips(monkeypatch, patch_async_sessi
     assert total == 1
     synced_ips = [h["ip"] for h in sync_mock.await_args.args[0]]
     assert synced_ips == ["192.168.1.10"]
+
+
+@pytest.mark.asyncio
+async def test_a_subnet_too_large_to_scan_is_reported_and_left_alone(monkeypatch, patch_async_session, db, no_tcp_fallback):
+    """A /8 is not swept: the scan says so in its progress, and hosts known in it are not marked gone."""
+    db.add(DiscoveredHost(ip="10.1.2.3", is_online=True, is_monitored=False))
+    await db.commit()
+    discover = AsyncMock(return_value=[])
+    monkeypatch.setattr(planner, "discover_hosts_simple", discover)
+    monkeypatch.setattr("app.scanner.sync.sync_hosts_batch", AsyncMock())
+    monkeypatch.setattr("app.services.webhook_service.trigger_webhooks", AsyncMock())
+    docker_service = MagicMock()
+    docker_service.is_available.return_value = False
+    monkeypatch.setattr("app.services.docker_service.docker_service", docker_service)
+    progress = AsyncMock()
+
+    assert await planner.run_planner_scan(["10.0.0.0/8"], progress_callback=progress) == 0
+
+    messages = [call.args[0] for call in progress.await_args_list]
+    assert any("Skipping 10.0.0.0/8" in m and "too large to scan" in m for m in messages)
+    discover.assert_not_awaited()
+    remaining = (await db.execute(select(DiscoveredHost))).scalars().all()
+    assert [(h.ip, h.is_online) for h in remaining] == [("10.1.2.3", True)]
