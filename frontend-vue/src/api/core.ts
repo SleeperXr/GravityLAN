@@ -369,6 +369,7 @@ export const api = {
     request<{ status: string; message: string }>('/api/webhooks/test', { method: 'POST', body: JSON.stringify({ event, data }) }),
   getOutbox: (limit = 50) => request<import('../types').NotificationOutboxResponse[]>(`/api/webhooks/outbox?limit=${limit}`),
   retryOutbox: (id: number) => request<{ status: string; message: string }>(`/api/webhooks/outbox/${id}/retry`, { method: 'POST' }),
+  clearFailedOutbox: () => request<{ status: string; removed: number }>('/api/webhooks/outbox/failed', { method: 'DELETE' }),
 
   // SSH terminal
   getSshStatus: () => request<import('../types').SshStatus>('/api/ssh/status'),

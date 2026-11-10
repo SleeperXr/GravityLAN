@@ -37,6 +37,28 @@ async def _get_client() -> httpx.AsyncClient:
     return _shared_client
 
 
+async def drain_webhook_tasks(timeout: float = 5.0) -> int:
+    """Let running enqueue/delivery tasks finish (also those they start meanwhile) for up to ``timeout``.
+
+    Returns how many were still running at the deadline. Those are cancelled: an event they had
+    already written to the outbox is sent by the retry loop after the next start.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while _background_webhook_tasks:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            break
+        await asyncio.wait(set(_background_webhook_tasks), timeout=remaining)
+    left = list(_background_webhook_tasks)
+    for task in left:
+        task.cancel()
+    if left:
+        await asyncio.gather(*left, return_exceptions=True)
+        logger.warning("Webhook: %d deliveries still running at shutdown were cancelled", len(left))
+    return len(left)
+
+
 async def close_webhook_client():
     """Close the shared client on application shutdown."""
     global _shared_client
@@ -239,18 +261,16 @@ async def _execute_and_record_delivery(
             logger.warning("Notification Outbox: Refused to post to blocked target '%s'", eff_url)
             return False
 
-        status_code = getattr(resp, "status_code", 200)
-        if not isinstance(status_code, int):
-            status_code = 200
-
-        if status_code < 400:
+        status_code = getattr(resp, "status_code", None)
+        # Only a real 1xx-3xx status counts as delivered; anything unreadable is a failed attempt
+        if isinstance(status_code, int) and status_code < 400:
             _record_success(entry)
             logger.debug("Notification Outbox: Successfully delivered event %s to %s", entry.event_type, eff_url)
             return True
 
         text = getattr(resp, "text", "")[:200]
         logger.warning(
-            "Notification Outbox: %s returned %d (attempt %d/%d)",
+            "Notification Outbox: %s returned %s (attempt %d/%d)",
             eff_url, status_code, entry.attempts + 1, entry.max_attempts,
         )
         _record_failure(entry, f"HTTP {status_code}: {text}")
@@ -302,6 +322,41 @@ async def trigger_webhooks(event_type: str, data: dict):
     _background_webhook_tasks.add(task)
     task.add_done_callback(_background_webhook_tasks.discard)
     return task
+
+
+_PENDING_EVENTS_KEY = "gravitylan_pending_webhooks"
+
+
+def _fire_pending_events(session) -> None:
+    # after_commit is synchronous: hand each event to trigger_webhooks on the running loop
+    for event_type, data in session.info.pop(_PENDING_EVENTS_KEY, []):
+        task = asyncio.get_running_loop().create_task(trigger_webhooks(event_type=event_type, data=data))
+        _background_webhook_tasks.add(task)
+        task.add_done_callback(_background_webhook_tasks.discard)
+
+
+def _drop_pending_events(session, _previous_transaction=None) -> None:
+    session.info.pop(_PENDING_EVENTS_KEY, None)
+
+
+def trigger_webhooks_after_commit(db, event_type: str, data: dict) -> None:
+    """Send an event only once ``db`` commits the change it reports, and never if it rolls back.
+
+    For events about state the caller is still writing (a device going offline): sent before the
+    commit, a failed or retried transaction would report a change that never happened, or report it twice.
+    """
+    from sqlalchemy import event as sa_event
+
+    sync_session = db.sync_session
+    # Tie the event to a transaction: without one, rollback() is a no-op that fires no event,
+    # and the next commit would send what the caller meant to discard
+    if not sync_session.in_transaction():
+        sync_session.begin()
+    sync_session.info.setdefault(_PENDING_EVENTS_KEY, []).append((event_type, data))
+    if not sa_event.contains(sync_session, "after_commit", _fire_pending_events):
+        sa_event.listen(sync_session, "after_commit", _fire_pending_events)
+        # after_soft_rollback fires on every rollback(), after_rollback only when a transaction was open
+        sa_event.listen(sync_session, "after_soft_rollback", _drop_pending_events)
 
 
 def _filter_by_event_type(
