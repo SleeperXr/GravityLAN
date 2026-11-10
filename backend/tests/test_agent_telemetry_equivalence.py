@@ -119,8 +119,8 @@ def _old_assemble(device_ids, device_map, token_map, all_24h_metrics, total_coun
         is_active = at._is_agent_active(token, now, (intervals or {}).get(device_id))
         if is_active:
             active_count += 1
-        uptime_pct = at._compute_uptime_pct(token, now, cutoff_24h, device_metrics_24h)
-        uptime_history = at._compute_uptime_history(token, now, cutoff_24h, device_metrics_24h)
+        uptime_pct = at._compute_uptime_pct(token, now, cutoff_24h, device_metrics_24h, (intervals or {}).get(device_id))
+        uptime_history = at._compute_uptime_history(token, now, cutoff_24h, device_metrics_24h, (intervals or {}).get(device_id))
         if last_m:
             total_cpu += last_m.cpu_percent
             total_ram += last_m.ram_percent

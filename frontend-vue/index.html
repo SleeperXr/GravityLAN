@@ -13,7 +13,7 @@
         try {
           var pref = localStorage.getItem('gravityui.theme') || 'dark';
           var dark = pref === 'dark' || (pref === 'system' && !window.matchMedia('(prefers-color-scheme: light)').matches);
-          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+          document.documentElement.setAttribute('data-theme', pref === 'aurora' ? 'aurora' : dark ? 'dark' : 'light');
         } catch (e) {}
       })();
     </script>

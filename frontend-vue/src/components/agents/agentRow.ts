@@ -25,3 +25,6 @@ export function matchesAgent(agent: AgentRow, search: string): boolean {
   const q = search.trim().toLowerCase();
   return !q || agent.hostname.toLowerCase().includes(q) || agent.ip.includes(q);
 }
+
+/** An hour counts as complete from here: an agent's reports arrive a little later than its interval, as collecting takes time. */
+export const AGENT_HOUR_FULL_PCT = 90;

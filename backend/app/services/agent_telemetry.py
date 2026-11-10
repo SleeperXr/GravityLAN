@@ -20,7 +20,7 @@ from app.models.device import Device
 from app.models.setting import Setting
 from app.scanner.utils import ensure_utc
 from app.schemas.agent import AgentSummary, GlobalMetricPoint
-from app.services.agent_activity import active_window
+from app.services.agent_activity import DEFAULT_INTERVAL, active_window
 from app.services.agent_deployer import LATEST_AGENT_VERSION
 from app.services.telemetry_query import MetricPoint, metric_point_from_row
 
@@ -374,21 +374,26 @@ def _is_agent_active(token: AgentToken, now: datetime, interval: int | None = No
     return bool(last_seen and (now - last_seen).total_seconds() < active_window(interval))
 
 
-def _compute_uptime_pct(token: AgentToken, now: datetime, cutoff_24h: datetime, device_metrics_24h: list) -> float:
-    """Uptime % for the last 24h based on expected heartbeat count."""
-    created_at = ensure_utc(token.created_at)
-    time_known = now - (created_at or cutoff_24h)
-    relevant_window = min(timedelta(hours=24), time_known)
+def _compute_uptime_pct(
+    token: AgentToken, now: datetime, cutoff_24h: datetime, device_metrics_24h: list, interval: int | None = None,
+) -> float:
+    """Uptime % for the last 24h: the reports since the agent was installed against what its interval promises."""
+    agent_birth = ensure_utc(token.created_at) or cutoff_24h
+    relevant_window = min(timedelta(hours=24), now - agent_birth)
     window_seconds = max(60, relevant_window.total_seconds())
-    expected = window_seconds / 30.0
-    day_count = len(device_metrics_24h)
-    return min(100.0, (day_count / expected) * 100.0) if expected > 0 else 100.0
+    expected = window_seconds / (interval or DEFAULT_INTERVAL)
+    since = agent_birth.replace(tzinfo=None)
+    day_count = sum(1 for m in device_metrics_24h if m.timestamp >= since)
+    return min(100.0, (day_count / expected) * 100.0)
 
 
-def _compute_uptime_history(token: AgentToken, now: datetime, cutoff_24h: datetime, device_metrics_24h: list) -> list[float]:
+def _compute_uptime_history(
+    token: AgentToken, now: datetime, cutoff_24h: datetime, device_metrics_24h: list, interval: int | None = None,
+) -> list[float]:
     """Hourly uptime history computed in Python from pre-fetched data (0 extra queries)."""
     created_at = ensure_utc(token.created_at)
     agent_birth = created_at or cutoff_24h
+    expected = 3600 / (interval or DEFAULT_INTERVAL)
     uptime_history: list[float] = []
     for h in range(24):
         h_start = cutoff_24h + timedelta(hours=h)
@@ -397,7 +402,7 @@ def _compute_uptime_history(token: AgentToken, now: datetime, cutoff_24h: dateti
             uptime_history.append(100.0)  # unknown period → assume up
             continue
         h_count = sum(1 for m in device_metrics_24h if h_start.replace(tzinfo=None) <= m.timestamp < h_end.replace(tzinfo=None))
-        uptime_history.append(min(100.0, (h_count / 120.0) * 100.0))
+        uptime_history.append(min(100.0, (h_count / expected) * 100.0))
     return uptime_history
 
 
@@ -477,8 +482,9 @@ def assemble_agents_overview_data(
         is_active = _is_agent_active(token, now, intervals.get(device_id))
         active_count += is_active
 
-        uptime_pct = _compute_uptime_pct(token, now, cutoff_24h, device_metrics_24h)
-        uptime_history = _compute_uptime_history(token, now, cutoff_24h, device_metrics_24h)
+        interval = intervals.get(device_id)
+        uptime_pct = _compute_uptime_pct(token, now, cutoff_24h, device_metrics_24h, interval)
+        uptime_history = _compute_uptime_history(token, now, cutoff_24h, device_metrics_24h, interval)
         agents_list.append(
             _build_agent_summary(device_map[device_id], token, last_m, m_count, is_active, uptime_pct, uptime_history)
         )

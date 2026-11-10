@@ -131,6 +131,6 @@ Das Demo blockiert echte LAN-Scans und SSH (Antwort 403). Das SSH-Terminal lande
 
 - `npm run lint` und `typecheck` vor jedem Commit. `eslint.config.js` ist geschützt und darf nicht verändert werden.
 - Der Netzplan in der Übersicht nutzt `flow-id="dashboard-plan"`, die Topologie `flow-id="topology"`. Getrennte IDs sind nötig.
-- `useTheme.ts`: Die Vorgabe ist dunkel, `data-theme` sitzt auf `<html>`. Die GravityLAN-Farben im Terminal und die Palettenvorschau hängen vom aufgelösten Thema ab.
+- `useTheme.ts`: Die Vorgabe ist dunkel, `data-theme` sitzt auf `<html>` (`dark`, `light` oder `aurora`; „System“ wählt nur zwischen hell und dunkel). Die GravityLAN-Farben im Terminal und die Palettenvorschau hängen vom aufgelösten Thema ab.
 - Bei Farben: Text auf getönten Flächen immer in der `*-text`-Variante. Auf vollen Linienfarben nur die dunkle Tinte `#0c0f14`. Gefüllte Danger-Flächen nutzen `text-danger-fg`, gefüllte Info-Flächen `text-canvas`. Neue Farben in beiden Themen auf 4,5:1 prüfen.
 - Die Übergabe-Notizen der Claude-Sitzungen liegen außerhalb des Repos und sind für Gemini nicht nötig; alles Wichtige steht hier.
