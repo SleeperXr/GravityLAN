@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-11
+
 ### Removed
 - The classic React interface. GravityUI is the only web interface now: the start address `/` and old bookmarks of the classic view (such as `/devices`) open GravityUI at `/frontend-vue/`. The interface switch in the sidebar and on the login page, the link on the About page and Settings → System → Default interface are gone; `/?ui=react` and a stored choice no longer change anything, and `ui.default_frontend` is ignored by `POST /api/settings` (an old tab saving its settings form still works). The image is smaller and builds faster without the React stage.
 

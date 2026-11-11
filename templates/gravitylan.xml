@@ -67,6 +67,9 @@ Features:
 
 Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
   <Changes>
+### 0.7.1
+- The classic React interface is gone: GravityUI is the only interface, with a third colour scheme (Aurora) and a calmer light mode. A second DNS server with a per-device choice of which name counts, and an assistant that arranges the orbit map. Agent 0.3.15: one failing reader no longer costs the whole report. Fixes for agent updates on Synology without systemd, the availability bars on the Agents page, password manager popups closing dialogs, webhooks sent before a scan was saved, health probe retries and subnets larger than a /16.
+
 ### 0.7.0
 - GravityUI is the default interface; the classic React view stays one more release as a fallback and is removed after that. Audit log under Logs, and a password confirmation before terminals, agent actions, credential changes and backups. Persistent notification outbox with ntfy/Gotify presets, plus new-device and IP-change events with read tracking. Agent installer and SSH deploy verify SHA-256 checksums. Choose which devices are on the orbit map. Backups contain rack equipment, ports and cables. A backup can be restored in the setup wizard, and older databases and backups deduplicate and receive missing unique indexes automatically, with a copy of the database first. Images are built and published by CI. New tutorial for HTTPS with a reverse proxy.
 
