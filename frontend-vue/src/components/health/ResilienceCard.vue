@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { EyeOff, ShieldAlert, ShieldCheck } from 'lucide-vue-next';
+import { Calculator, EyeOff, ShieldAlert, ShieldCheck } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { TopologyLink } from '@/types';
 import { useNetworkStore } from '@/stores/network';
@@ -65,6 +65,9 @@ const byId = computed(() => new Map(store.devices.map((d) => [d.id, d])));
       <div class="min-w-0">
         <h2 class="text-sm font-bold text-fg">{{ t('gv.orbit.resilience_title') }}</h2>
         <p class="text-xs leading-relaxed text-fg-subtle">{{ t('gv.orbit.resilience_hint') }}</p>
+        <p class="mt-1 flex items-start gap-1.5 text-xs leading-relaxed text-fg-muted" data-testid="resilience-computed-hint">
+          <Calculator class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />{{ t('gv.orbit.computed_hint') }}
+        </p>
       </div>
       <button
         type="button"
