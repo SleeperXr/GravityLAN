@@ -39,7 +39,7 @@ GravityLAN ist ein selbst gehostetes Netzwerk-Radar und Homelab-Inventar: scannt
 - Topologie-Karte, Racks und eine IP-Karte jedes Subnetzes.[br]
 - Optionaler Linux-Agent: CPU, RAM, Laufwerke, Temperatur, Paket-Updates per SSH, dazu ein SSH-Terminal im Browser mit verschlüsseltem Key-Store.[br]
 - Schreibgeschützte API-Token, Swagger UI unter /docs und ein Python-Client; ein schreibgeschütztes Token eignet sich für KI-Assistenten und Agenten (es bekommt nie SSH, Agent-Konfiguration oder Admin-Endpunkte).[br]
-- Zwei Weboberflächen: die klassische React-Ansicht und GravityUI, eine Vorschau der neuen Oberfläche (in Entwicklung), umschaltbar in der Seitenleiste oder unter Einstellungen → Standard-Oberfläche.[br][br]
+- GravityUI, die Weboberfläche: Übersicht, Orbit-Karte, Racks, IP-Karte, Health und Einstellungen, in den Farbschemata Hell, Dunkel und Aurora.[br][br]
 [b]Unraid-Vorgaben[/b][br]
 PUID 99 und PGID 100 (nobody:users): Beim Start macht der Container den Appdata-Ordner für diesen Benutzer beschreibbar. Kein Privileged-Modus nötig.[br][br]
 [b]Welcher Netzwerktyp?[/b][br]
@@ -63,10 +63,13 @@ Features:
 - In-Browser SSH Terminal: Fast multi-tab web terminal with saved credentials and encrypted vault.
 - Linux Agent (optional): Single-script monitoring for CPU, RAM, disks, temperatures, and pending package updates.
 - API: Read-only tokens, Swagger UI and a Python client, suited to AI assistants and agents.
-- GravityUI: preview of the new interface, next to the classic view.
+- GravityUI: the web interface, with light, dark and Aurora colour schemes.
 
 Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
   <Changes>
+### 0.7.1
+- The classic React interface is gone: GravityUI is the only interface, with a third colour scheme (Aurora) and a calmer light mode. A second DNS server with a per-device choice of which name counts, and an assistant that arranges the orbit map. Agent 0.3.15: one failing reader no longer costs the whole report. Fixes for agent updates on Synology without systemd, the availability bars on the Agents page, password manager popups closing dialogs, webhooks sent before a scan was saved, health probe retries and subnets larger than a /16.
+
 ### 0.7.0
 - GravityUI is the default interface; the classic React view stays one more release as a fallback and is removed after that. Audit log under Logs, and a password confirmation before terminals, agent actions, credential changes and backups. Persistent notification outbox with ntfy/Gotify presets, plus new-device and IP-change events with read tracking. Agent installer and SSH deploy verify SHA-256 checksums. Choose which devices are on the orbit map. Backups contain rack equipment, ports and cables. A backup can be restored in the setup wizard, and older databases and backups deduplicate and receive missing unique indexes automatically, with a copy of the database first. Images are built and published by CI. New tutorial for HTTPS with a reverse proxy.
 
