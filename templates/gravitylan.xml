@@ -39,7 +39,7 @@ GravityLAN ist ein selbst gehostetes Netzwerk-Radar und Homelab-Inventar: scannt
 - Topologie-Karte, Racks und eine IP-Karte jedes Subnetzes.[br]
 - Optionaler Linux-Agent: CPU, RAM, Laufwerke, Temperatur, Paket-Updates per SSH, dazu ein SSH-Terminal im Browser mit verschlüsseltem Key-Store.[br]
 - Schreibgeschützte API-Token, Swagger UI unter /docs und ein Python-Client; ein schreibgeschütztes Token eignet sich für KI-Assistenten und Agenten (es bekommt nie SSH, Agent-Konfiguration oder Admin-Endpunkte).[br]
-- Zwei Weboberflächen: die klassische React-Ansicht und GravityUI, eine Vorschau der neuen Oberfläche (in Entwicklung), umschaltbar in der Seitenleiste oder unter Einstellungen → Standard-Oberfläche.[br][br]
+- GravityUI, die Weboberfläche: Übersicht, Orbit-Karte, Racks, IP-Karte, Health und Einstellungen, in den Farbschemata Hell, Dunkel und Aurora.[br][br]
 [b]Unraid-Vorgaben[/b][br]
 PUID 99 und PGID 100 (nobody:users): Beim Start macht der Container den Appdata-Ordner für diesen Benutzer beschreibbar. Kein Privileged-Modus nötig.[br][br]
 [b]Welcher Netzwerktyp?[/b][br]
@@ -63,7 +63,7 @@ Features:
 - In-Browser SSH Terminal: Fast multi-tab web terminal with saved credentials and encrypted vault.
 - Linux Agent (optional): Single-script monitoring for CPU, RAM, disks, temperatures, and pending package updates.
 - API: Read-only tokens, Swagger UI and a Python client, suited to AI assistants and agents.
-- GravityUI: preview of the new interface, next to the classic view.
+- GravityUI: the web interface, with light, dark and Aurora colour schemes.
 
 Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
   <Changes>
