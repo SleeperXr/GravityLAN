@@ -1,8 +1,9 @@
 /**
  * Redundancy on the orbit map, from the same records as the map itself (devices and topology links):
  *
- * - Failover (live): which backup links carry traffic right now, because a device lost its primary path
- *   to a star but is still reached over a backup link.
+ * - Failover (current state, calculated): which backup links have to take over now, because a device lost
+ *   its primary path to a star but is still connected over a backup link. Inferred from the documented
+ *   links and the online states only; whether traffic actually uses the backup is never measured.
  * - Single points of failure (planning): which devices, if they failed, would cut others off from the
  *   stars, counting primary and backup links alike.
  *
@@ -50,13 +51,16 @@ function reach(graph: Graph, starIds: Iterable<number>, blocked: (id: number) =>
 }
 
 export interface FailoverState {
-  /** Backup links carrying traffic now: a device behind them lost its primary path but is still reached */
+  /** Backup links that have to take over: a device behind them lost its primary path but is still connected (not measured) */
   activeBackupIds: Set<number>;
-  /** Online devices no path reaches any more (primary or backup) */
+  /** Online devices no documented path reaches any more (primary or backup) */
   cutOffIds: Set<number>;
 }
 
-/** The live picture: offline devices are gone, primary paths first, backups only where they are needed. */
+/**
+ * The current picture as far as the records tell: offline devices are gone, primary paths first, backups
+ * only where they are needed. Calculated, not measured.
+ */
 export function failoverState(devices: Device[], links: OrbitLink[], starIds: Iterable<number>): FailoverState {
   const online = new Set(devices.filter((d) => d.is_online).map((d) => d.id));
   const down = (id: number) => !online.has(id);

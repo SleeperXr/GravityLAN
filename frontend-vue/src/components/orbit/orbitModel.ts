@@ -116,7 +116,10 @@ export interface LightBeam {
   isPrimaryBridge: boolean;
   /** A standby/fallback path: drawn thin and dashed, without photons */
   isBackup: boolean;
-  /** A backup path carrying traffic now because the primary one failed (see orbitResilience) */
+  /**
+   * A backup path that has to take over because the primary one is broken, inferred from the links and the
+   * online states (see orbitResilience). Not measured: GravityLAN does not see whether traffic uses it.
+   */
   failover: boolean;
 }
 

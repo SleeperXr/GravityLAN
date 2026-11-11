@@ -201,7 +201,10 @@ const posOf = (id: number): Point => positions.value.get(id) ?? { x: 0, y: 0 };
 
 const orbitRings = computed(() => computeOrbitRings(bodies.value, positions.value));
 const starIds = computed(() => bodyList.value.filter((b) => b.kind === 'star').map((b) => b.id));
-/** Live: backup links that took over for a failed primary path, and online devices nothing reaches */
+/**
+ * Calculated from the links and online states, not measured: backup links that have to take over for a
+ * broken primary path, and online devices no link on the map reaches
+ */
 const failover = computed(() => failoverState(orbitUniverse.value, links.value, starIds.value));
 /** Planning: devices whose failure would cut others off, and who hangs on whom alone */
 const resilience = computed(() => analyseResilience(orbitUniverse.value, links.value, starIds.value));

@@ -31,8 +31,20 @@ const traceD = (seg: { key: number; from: number; to: number }) => traceById.val
 const colourOf = (beam: LightBeam) => orbitInk(beam.interrupted ? 'var(--gl-danger)' : beam.failover ? 'var(--gl-warn)' : beam.color);
 /** Beam widths follow the theme: a light ground needs a heavier line (`--gl-orbit-stroke`) */
 const width = (px: number) => ({ strokeWidth: `calc(${px}px * var(--gl-orbit-stroke))` });
-/** A backup that took over is drawn as a live beam, an idle one thin and dashed */
+/**
+ * A backup that has to take over is only inferred from the map's links and online states, never measured:
+ * it is drawn in warn colour but stays dashed and gets no photon, so it never looks like observed traffic.
+ * An idle backup is thin and dashed.
+ */
 const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
+const dashOf = (beam: LightBeam) =>
+  beam.interrupted ? '2 9' : beam.failover ? '10 5' : beam.isBackup ? '3 7' : beam.isWireless ? '6 6' : undefined;
+/** Photons travel only along beams that are not backups: a backup's traffic is never measured */
+const showPhoton = (beam: LightBeam) => !beam.interrupted && !beam.isBackup;
+const labelOf = (beam: LightBeam) =>
+  beam.failover ? `${t('gv.plan.backup_needed')} · ${beam.linkType}` : beam.isBackup ? `${t('gv.plan.backup')} · ${beam.linkType}` : beam.linkType;
+/** The pill grows with its label (11 px mono, about 6.7 px per character) */
+const pillWidth = (beam: LightBeam) => Math.max(44, Math.round(labelOf(beam).length * 6.7 + 14));
 </script>
 
 <template>
@@ -44,6 +56,7 @@ const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
       :style="{ opacity: dim(beam.id) }"
       @click="emit('select', beam.id, $event)"
     >
+      <title v-if="beam.failover">{{ t('gv.plan.backup_needed_title') }}</title>
       <!-- Wide hit target -->
       <path :d="d" fill="none" stroke="transparent" stroke-width="20" />
       <!-- Glow -->
@@ -61,13 +74,13 @@ const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
         fill="none"
         :stroke="colourOf(beam)"
         :style="width(selectedId === beam.id ? 3.2 : beam.failover ? 2.4 : beam.isBackup ? 1.3 : beam.isPrimaryBridge ? 2.2 : 1.4)"
-        :stroke-dasharray="beam.interrupted ? '2 9' : idleBackup(beam) ? '3 7' : beam.isWireless ? '6 6' : undefined"
+        :stroke-dasharray="dashOf(beam)"
         :stroke-opacity="beam.interrupted ? 0.65 : idleBackup(beam) ? 0.6 : 0.9"
         stroke-linecap="round"
       />
       <!-- Photon travelling along live beams -->
       <path
-        v-if="!beam.interrupted && !idleBackup(beam) && animated"
+        v-if="showPhoton(beam) && animated"
         :d="d"
         fill="none"
         stroke="var(--gl-fg)"
@@ -79,9 +92,9 @@ const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
       <!-- Link type at the middle of the beam -->
       <g v-if="beam.linkType && (beam.isPrimaryBridge || beam.failover || selectedId === beam.id)" :transform="`translate(${mid.x}, ${mid.y})`">
         <rect
-          :x="beam.failover ? -52 : beam.isBackup ? -40 : -22"
+          :x="-pillWidth(beam) / 2"
           y="-9"
-          :width="beam.failover ? 104 : beam.isBackup ? 80 : 44"
+          :width="pillWidth(beam)"
           height="18"
           rx="9"
           fill="var(--gl-surface)"
@@ -89,7 +102,7 @@ const idleBackup = (beam: LightBeam) => beam.isBackup && !beam.failover;
           stroke-width="1"
           :stroke-dasharray="idleBackup(beam) ? '3 3' : undefined"
         />
-        <text x="0" y="3.5" text-anchor="middle" :fill="beam.failover ? 'var(--gl-warn-text)' : 'var(--gl-fg-muted)'" class="pointer-events-none font-mono text-micro font-medium">{{ beam.failover ? `${t('gv.plan.backup_active')} · ${beam.linkType}` : beam.isBackup ? `${t('gv.plan.backup')} · ${beam.linkType}` : beam.linkType }}</text>
+        <text x="0" y="3.5" text-anchor="middle" :fill="beam.failover ? 'var(--gl-warn-text)' : 'var(--gl-fg-muted)'" class="pointer-events-none font-mono text-micro font-medium">{{ labelOf(beam) }}</text>
       </g>
     </g>
 

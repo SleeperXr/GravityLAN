@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { ChevronRight, ShieldAlert, ShieldCheck, X } from 'lucide-vue-next';
+import { Calculator, ChevronRight, ShieldAlert, ShieldCheck, X } from 'lucide-vue-next';
 import { t } from '@/i18n';
 
 /**
  * Resilience view of the orbit map: the devices whose failure would cut others off, biggest impact first,
- * plus backup links carrying traffic right now and devices nothing reaches any more. Those unreachable
+ * plus backup links that have to take over and devices no documented link reaches any more. All of it is
+ * calculated from the map's links and the online states, never measured, and the panel says so. Those unreachable
  * devices open into a list; a device whose only problem is a missing link on the map is told apart from
  * one cut off by a device that is down.
  */
@@ -41,6 +42,9 @@ const toggle = (kind: GroupKind) => (expanded.value = expanded.value === kind ? 
         <p class="text-sm font-semibold text-fg">{{ t('gv.orbit.resilience_title') }}</p>
         <p class="text-xs leading-snug text-fg-subtle">{{ t('gv.orbit.resilience_hint') }}</p>
         <p class="mt-1 text-xs leading-snug text-fg-subtle">{{ t('gv.orbit.core_hint') }}</p>
+        <p class="mt-1 flex items-start gap-1.5 text-xs leading-snug text-fg-muted" data-testid="resilience-computed-hint">
+          <Calculator class="mt-px size-3.5 shrink-0" aria-hidden="true" />{{ t('gv.orbit.computed_hint') }}
+        </p>
       </div>
       <button type="button" class="-m-1 inline-flex size-7 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover" :aria-label="t('common.close')" @click="emit('close')">
         <X class="size-4" />
