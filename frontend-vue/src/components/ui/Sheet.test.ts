@@ -16,7 +16,9 @@ function render(panel: typeof Sheet | typeof Dialog) {
       h('button', { id: 'page' }, 'Page'),
       h('section', { [TOAST_REGION_ATTR]: '' }, [h('button', { id: 'toast-close' }, 'x')]),
       h('div', { class: 'bitwarden-notification-bar' }, [h('button', { id: 'bw-close' }, 'x')]),
-      h(panel, { open: open.value, 'onUpdate:open': (v: boolean) => (open.value = v), title: 'Device' }, () => h('p', 'body')),
+      h(panel, { open: open.value, 'onUpdate:open': (v: boolean) => (open.value = v), title: 'Device' }, () =>
+        h('input', { id: 'inside', 'aria-label': 'Name' }),
+      ),
     ],
   });
   wrapper = mount(Host, { attachTo: document.body });
@@ -55,6 +57,14 @@ describe.each([
     render(panel);
     await settle();
     await pointerDown('bw-close');
+    expect(open.value).toBe(true);
+  });
+
+  it('stays open on a click into its own content', async () => {
+    // Regression: with outside pointer events left on, every click in the device editor closed it
+    render(panel);
+    await settle();
+    await pointerDown('inside');
     expect(open.value).toBe(true);
   });
 
