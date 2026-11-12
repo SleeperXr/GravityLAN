@@ -511,8 +511,8 @@
       "backup": {
         "title": "Backup und Wiederherstellung",
         "summary": "Geräte, Gruppen und Einstellungen als JSON sichern und zurückspielen.",
-        "steps": "Einstellungen → Backup & Wiederherstellung → Export lädt eine JSON-Datei herunter.\nZiehe vor jedem Update ein Backup.\nDer Import spielt Geräte, Gruppen und Einstellungen zurück.\nAdmin-Passwort, Master-Token und Setup-Status bleiben beim Import unangetastet.",
-        "hint": "SSH-Schlüssel, gespeicherte Passwörter und Agent-Tokens sind nicht im Backup. Sichere data/ssh_vault.key separat."
+        "steps": "Einstellungen → Backup & Wiederherstellung → Export lädt eine JSON-Datei mit Geräten, Gruppen, Racks, Topologie und Einstellungen herunter.\nDer Import spielt sie zurück, etwa auf einem neuen Host. Admin-Passwort, Master-Token und Setup-Status bleiben beim Import unangetastet.\nVor einem Update stoppst du den Container und kopierst das ganze Datenverzeichnis. Zurück geht es mit der vorherigen Image-Version und dieser Kopie; dafür ist die JSON-Datei nicht gedacht.",
+        "hint": "Nicht in der JSON-Datei: SSH-Schlüssel, gespeicherte Verbindungen und bekannte Hosts, API-Tokens, Webhooks, Agent-Tokens, Admin-Passwort und Master-Token. Eine Kopie des Datenverzeichnisses enthält all das, auch die gespeicherten SSH-Schlüssel; bewahre sie so sicher auf wie den Server."
       },
       "unraid": {
         "title": "Unraid, PUID und PGID",

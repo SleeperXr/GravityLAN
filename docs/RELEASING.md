@@ -81,8 +81,8 @@ Tick it in the release candidate's GitHub pre-release (or the release, for a pat
 - [ ] **Upgrade with real data:** a copy of a real data directory from the previous release starts, migrates and shows
       the same devices, racks, topology and agents.
 - [ ] **Backup and restore on a fresh host:** export a backup, import it into a new instance, and check devices,
-      racks, settings and saved SSH connections. (Saved SSH keys only work there with the same vault key, see
-      [SECURITY.md](../SECURITY.md).)
+      racks, topology and settings. SSH keys and connections, API tokens, webhooks and agent tokens are not part of
+      a backup (see the README), so they are not expected there.
 - [ ] **What changed:** every CHANGELOG entry of the release tried once.
 - [ ] **Agents:** an agent of the previous version keeps reporting; if the agent version changed, the update from the
       UI works.

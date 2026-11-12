@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Docs: README and the backup tutorial now say how to update and roll back: stop the container, copy the data directory, and go back with the previous image tag and that copy. The JSON backup is meant for moving to a new host; they list what it leaves out (SSH keys and connections, known hosts, API tokens, webhooks, router import sources, agent tokens, measurement data, audit log). The release checklist no longer expects saved SSH connections after restoring a backup.
+
 ## [0.7.1] - 2026-11-11
 
 ### Removed
