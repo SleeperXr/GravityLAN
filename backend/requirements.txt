@@ -1,5 +1,6 @@
-# Exact versions: the Docker image, CI and local setups install the same set. Dependabot proposes updates
-# as pull requests, so a new release (e.g. FastAPI 0.162 grouping routers in app.routes) arrives tested.
+# Exact versions: the Docker image, CI and local setups install the same set. Dependabot only reads uv.lock
+# and only proposes security fixes; tests/test_dependency_pins.py fails until both files name the same versions,
+# so copy a Dependabot PR's versions here (and run `uv lock --upgrade-package <name>==<version>` after editing).
 fastapi==0.162.1
 # FastAPI's web layer, pinned on its own so a FastAPI bump cannot pull in an untested Starlette
 starlette==1.10.0
