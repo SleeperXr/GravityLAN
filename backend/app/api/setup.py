@@ -294,7 +294,7 @@ async def _insert_setting_if_missing(
 async def _persist_initial_setup_settings(db: AsyncSession, request: SetupCompleteRequest) -> None:
     """Persist DNS server, admin password, setup.complete flag, and master API token."""
     import secrets
-    from app.services.auth_service import hash_password
+    from app.services.auth_service import hash_master_token, hash_password
 
     if request.dns_server:
         await _upsert_setting(
@@ -320,7 +320,8 @@ async def _persist_initial_setup_settings(db: AsyncSession, request: SetupComple
     if request.restored:
         await _insert_setting_if_missing(db, "scanner.initial_scan_done", "true", category="scan")
 
-    if await _insert_setting_if_missing(db, "api.master_token", secrets.token_hex(32)):
+    # Only the hash is stored; the plaintext is not shown anywhere, so nobody holds it
+    if await _insert_setting_if_missing(db, "api.master_token", hash_master_token(secrets.token_hex(32))):
         logger.info("Setup: Initializing secure Master API Token (masked for security).")
 
     # Commit basic settings and token now so the user can login even if migration takes long

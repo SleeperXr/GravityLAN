@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Security: the master token is stored only as a SHA-256 hash, like API and agent tokens. Until now it sat in the database as plain text, so a copied database file or volume backup held a working admin credential for the API, and the stored value itself was accepted as the token. Existing instances convert it on the next start; a client that knows the token keeps working. SECURITY.md now says what the master token can do, what the encryption of stored SSH keys protects against (and that it does not when the whole data directory is copied), how to keep the vault key out of the data volume, and how to limit the SSH keys GravityLAN holds.
+- Security: a backup export no longer contains the master token, the admin password hash or the setup state. Until now every JSON backup carried them, on earlier versions the master token as plain text, so a backup file stored in a cloud folder gave full API access. An import already ignored these values, so restoring works as before.
+
 ## [0.7.1] - 2026-11-11
 
 ### Removed
