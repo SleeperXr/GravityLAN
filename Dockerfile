@@ -91,6 +91,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD python3 -c "import urllib.request, os, sys; port = os.environ.get('GRAVITYLAN_PORT', '8000'); urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=5)"
 
 # Start server
-# Using 1 worker for stability and predictability in homelab environments.
-# For larger deployments, increase workers or use a task queue for heavy jobs.
+# Exactly 1 worker per instance; this is the only supported mode. Sessions, step-up
+# grants, SSH tickets, the scan state and the background scheduler live in this
+# process. Do not raise --workers and do not run a second instance on the same
+# database or data directory. A restart ends all browser sessions.
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${GRAVITYLAN_PORT:-8000} --workers 1"]
