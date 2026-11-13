@@ -14,7 +14,7 @@ GravityLAN provides an official Unraid Community Applications Docker template.
 |---|---|---|
 | **Network Mode** | `host` | Essential for Layer-2 ARP sweeps, mDNS discovery, and Nmap subnet scans. |
 | **Capabilities** | `NET_RAW`, `NET_ADMIN` | Configured via `<ExtraParams>` for raw socket scanning without `--privileged=true`. |
-| **App Data** | `/mnt/user/appdata/gravitylan` | Mapped to `/app/data` inside the container for SQLite DB, backups, and vault. |
+| **App Data** | `/mnt/user/appdata/gravitylan` | Mapped to `/app/data` inside the container for SQLite DB, backups, and vault. One container per directory: GravityLAN runs as a single process, so a second container on the same path is not supported. |
 | **WebUI Port** | `8000` | Default listening port (`http://[IP]:8000`). |
 | **PUID / PGID** | `99` / `100` | IDs the server runs as (`nobody:users`, the Unraid appdata default). On start the container hands `/app/data` to this owner. |
 
