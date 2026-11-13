@@ -153,7 +153,7 @@ async def test_setup_complete_rejects_invalid_dns_server(client, db):
 
 @pytest.mark.asyncio
 async def test_setup_complete_stores_normalized_dns_server(client, db):
-    response = await client.post("/api/setup/complete", json={"dns_server": " 192.168.1.1 "})
+    response = await client.post("/api/setup/complete", json={"dns_server": " 192.168.1.1 ", "admin_password": "supersecretpassword123"})
     assert response.status_code == 200
     dns = (await db.execute(select(Setting).where(Setting.key == "dns.server"))).scalar_one()
     assert dns.value == "192.168.1.1"

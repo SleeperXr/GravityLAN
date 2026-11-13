@@ -150,7 +150,10 @@ const finishPercent = ref(0);
 const finishStatus = ref('');
 const finishError = ref<string | null>(null);
 const mismatch = computed(() => password.value !== '' && confirm.value !== '' && password.value !== confirm.value);
-const canFinish = computed(() => password.value !== '' && password.value === confirm.value);
+// Same minimum as the backend and a later password change
+const PASSWORD_MIN_LENGTH = 8;
+const tooShort = computed(() => password.value !== '' && password.value.length < PASSWORD_MIN_LENGTH);
+const canFinish = computed(() => password.value.length >= PASSWORD_MIN_LENGTH && password.value === confirm.value);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function stage(value: number, key: string) {
@@ -407,7 +410,17 @@ const features = [
             </div>
             <div class="space-y-1.5">
               <label for="setup-password" class="text-xs font-medium text-fg">{{ t('setup.admin_password') }}</label>
-              <Input id="setup-password" v-model="password" type="password" autocomplete="new-password" :placeholder="t('setup.password_placeholder')" />
+              <Input
+                id="setup-password"
+                v-model="password"
+                type="password"
+                autocomplete="new-password"
+                :minlength="PASSWORD_MIN_LENGTH"
+                :placeholder="t('setup.password_placeholder')"
+                :invalid="tooShort"
+                :aria-describedby="tooShort ? 'setup-password-short' : undefined"
+              />
+              <p v-if="tooShort" id="setup-password-short" class="text-xs text-danger-text" role="alert">{{ t('settings.password.too_short', { count: PASSWORD_MIN_LENGTH }) }}</p>
             </div>
             <div class="space-y-1.5">
               <label for="setup-password-confirm" class="text-xs font-medium text-fg">{{ t('setup.confirm_password') }}</label>
