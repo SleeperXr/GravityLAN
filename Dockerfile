@@ -1,6 +1,6 @@
 # HomeLan Docker Image — Multi-Stage Build
 # Stage 1: Build GravityUI (Vue 3 + shadcn-vue)
-FROM node:20-alpine AS frontend-vue-build
+FROM node:22-alpine AS frontend-vue-build
 WORKDIR /build/frontend-vue
 COPY frontend-vue/package*.json ./
 RUN npm ci --no-audit
