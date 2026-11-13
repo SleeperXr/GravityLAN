@@ -22,7 +22,9 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-from app.services.auth_service import hash_password, verify_password, looks_hashed, secure_compare
+from app.services.auth_service import (
+    MASTER_TOKEN_PREFIX, hash_password, looks_hashed, master_token_matches, secure_compare, verify_password,
+)
 from app.services.session_service import session_store
 from app.services.agent_telemetry import _setting_cache
 
@@ -179,7 +181,7 @@ async def _authenticate_query_param(db: AsyncSession, token: str, conn: HTTPConn
     else:
         res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
         master_setting = res_token.scalar_one_or_none()
-        if master_setting and secure_compare(token, master_setting.value):
+        if master_setting and master_token_matches(token, master_setting.value):
             return token
     raise HTTPException(status_code=401, detail="Invalid or expired token")
 
@@ -222,7 +224,7 @@ async def _authenticate_cookie(db: AsyncSession, conn: HTTPConnection, cookie_to
         return cookie_token
 
     master_token = await _load_master_token(db)
-    if master_token and secure_compare(cookie_token, master_token):
+    if master_token and master_token_matches(cookie_token, master_token):
         logger.warning(
             "DEPRECATION WARNING: Master-Token used in browser cookie. "
             "This legacy authentication path is deprecated and will be removed in a future release."
@@ -268,7 +270,7 @@ async def _authenticate_bearer(db: AsyncSession, authorization: str, conn: HTTPC
     # A. Check Master-Token
     res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
     master_setting = res_token.scalar_one_or_none()
-    if master_setting and secure_compare(token_val, master_setting.value):
+    if master_setting and master_token_matches(token_val, master_setting.value):
         return token_val
 
     # B. Check Read-Only API Tokens
@@ -399,7 +401,7 @@ class _WsHandshake:
 async def _auth_logs_query(handshake: _WsHandshake, query_token: str) -> dict | None:
     """Query-token auth for the logs channel (Master-Token only)."""
     master_token = await _load_master_token(handshake.db)
-    if master_token and secure_compare(query_token, master_token):
+    if master_token and master_token_matches(query_token, master_token):
         return _auth_result("master", query_token)
     return await _auth_reject(handshake.websocket, "Invalid master token in query params for logs route.")
 
@@ -411,7 +413,7 @@ async def _auth_agent_query(handshake: _WsHandshake, query_token: str) -> dict |
 
     db = handshake.db
     master_token = await _load_master_token(db)
-    if master_token and secure_compare(query_token, master_token):
+    if master_token and master_token_matches(query_token, master_token):
         return _auth_result("master", query_token)
 
     if handshake.device_id is not None:
@@ -430,7 +432,7 @@ async def _auth_agent_query(handshake: _WsHandshake, query_token: str) -> dict |
 async def _auth_scanner_query(handshake: _WsHandshake, query_token: str) -> dict | None:
     """Query-token auth for the scanner channel (Master-Token only)."""
     master_token = await _load_master_token(handshake.db)
-    if master_token and secure_compare(query_token, master_token):
+    if master_token and master_token_matches(query_token, master_token):
         return _auth_result("master", query_token)
     return await _auth_reject(handshake.websocket, "Invalid master token in query params for scanner route.")
 
@@ -511,7 +513,7 @@ async def _ws_legacy_cookie(handshake: _WsHandshake, cookie_token: str | None) -
     """Deprecated: the master token in the cookie. Anything else counts as missing credentials."""
     if cookie_token:
         master_token = await _load_master_token(handshake.db)
-        if master_token and secure_compare(cookie_token, master_token):
+        if master_token and master_token_matches(cookie_token, master_token):
             logger.warning(
                 "DEPRECATION WARNING: Master-Token used in browser cookie for WebSocket auth. "
                 "This legacy path is deprecated and will be removed in a future release."
@@ -627,6 +629,9 @@ def _stored_password(master_setting: Setting | None, admin_setting: Setting | No
 
 def _password_matches(password: str, stored: str) -> bool:
     """Check against a hash, or against a legacy plaintext value that is not migrated yet."""
+    if stored.startswith(MASTER_TOKEN_PREFIX):
+        # No admin password yet: the (hashed) master token counts
+        return master_token_matches(password, stored)
     return verify_password(password, stored) if looks_hashed(stored) else secure_compare(password, stored)
 
 

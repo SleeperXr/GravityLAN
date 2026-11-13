@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Security: before the first-run setup is completed, the wizard's scan (which needs no login) only accepts private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10); other targets, and a scan that names no networks at all, get 403, so an unconfigured instance can no longer be made to scan public addresses for someone else on the network. After setup nothing changes. Completing the setup now needs an admin password of at least 8 characters, the same minimum as a later password change; the wizard says so under the field. Before, the API accepted a one-letter or no password at all.
+- Security: the master token is stored only as a SHA-256 hash, like API and agent tokens. Until now it sat in the database as plain text, so a copied database file or volume backup held a working admin credential for the API, and the stored value itself was accepted as the token. Existing instances convert it on the next start; a client that knows the token keeps working. SECURITY.md now says what the master token can do, what the encryption of stored SSH keys protects against (and that it does not when the whole data directory is copied), how to keep the vault key out of the data volume, and how to limit the SSH keys GravityLAN holds.
+- Security: a backup export no longer contains the master token, the admin password hash or the setup state. Until now every JSON backup carried them, on earlier versions the master token as plain text, so a backup file stored in a cloud folder gave full API access. An import already ignored these values, so restoring works as before.
 
 ## [0.7.1] - 2026-11-11
 
