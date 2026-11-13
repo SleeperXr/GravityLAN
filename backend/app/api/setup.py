@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import PASSWORD_MIN_LENGTH
 from app.database import get_db
 from app.models.device import Device
 from app.models.setting import Setting
@@ -59,7 +60,9 @@ MAX_SETUP_SUBNETS = 64
 
 class SetupCompleteRequest(BaseModel):
     dns_server: str | None = None
-    admin_password: str | None = None
+    # Required, with the same minimum as a later password change: without it only the
+    # master token (shown nowhere) could log in, and a one-letter password was accepted
+    admin_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=256)
     # Subnets the wizard scanned. Their hosts are adopted even when the subnet is routed
     # (another VLAN) and therefore not bound to a local interface.
     subnets: list[str] | None = Field(default=None, max_length=MAX_SETUP_SUBNETS)

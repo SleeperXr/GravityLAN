@@ -29,7 +29,7 @@ The GravityLAN Docker container requires specific capabilities to function corre
 The GravityLAN Agent deployment feature uses SSH to install the monitoring script on remote hosts.
 - SSH credentials (passwords or private keys) entered for a deployment or package update are used in memory for that request only.
 - **They are not stored in the database or written to disk.**
-- Unknown host keys are accepted with a warning by default (homelab convenience). Set `GRAVITYLAN_SSH_STRICT_MODE=true` to reject them, or deploy the agent manually with the provided install script.
+- Host keys are trusted on first use (homelab convenience): the first deployment, removal or package update learns the host's key without asking and pins it; later, a different key aborts the connection before any credential is sent. Someone who intercepts that very first connection would receive the credentials typed in for it. The SSH terminal instead shows an unknown key for confirmation. Set `GRAVITYLAN_SSH_STRICT_MODE=true` to reject unknown keys for deployments and updates (keys already pinned, for example confirmed in the terminal, keep working), or deploy the agent manually with the provided install script.
 
 ## SSH Terminal
 

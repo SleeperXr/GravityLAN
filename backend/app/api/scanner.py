@@ -22,6 +22,7 @@ from app.models.device import DiscoveredHost
 from app.models.setting import Setting
 from app.models.network import Subnet
 from app.schemas.device import DiscoveredHostResponse, DiscoveredHostUpdate
+from app.schemas.network import is_setup_scan_target
 from app.schemas.scan import ScanProgress, ScanRequest, ScanStatus, SubnetInfo
 from app.scanner.planner import run_planner_scan
 from app.scanner.dashboard import run_dashboard_scan
@@ -278,9 +279,19 @@ async def start_dashboard_scan_api(request: ScanRequest, background_tasks: Backg
     state.task = asyncio.create_task(run_dashboard_task())
     return {"status": "ok", "message": "Dashboard scan started"}
 
-@router.post("/start", dependencies=[Depends(get_current_admin)])
-async def start_scan(request: ScanRequest) -> Dict[str, str]:
+@router.post("/start")
+async def start_scan(request: ScanRequest, admin: str = Depends(get_current_admin)) -> Dict[str, str]:
     """Trigger a Network Planner scan."""
+    if admin == "setup_mode":
+        # An empty list would fall back to the auto-detected subnets, which skip this check
+        if not request.subnets:
+            raise HTTPException(status_code=403, detail="Before the setup is completed the networks to scan must be named")
+        refused = [cidr for cidr in request.subnets if not is_setup_scan_target(cidr)]
+        if refused:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Before the setup is completed only private networks can be scanned: {', '.join(refused)}",
+            )
     if await state.get_active():
         return {"status": "error", "message": "Scan already in progress"}
 
