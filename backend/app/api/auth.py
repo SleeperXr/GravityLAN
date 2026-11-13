@@ -613,6 +613,34 @@ def issue_session_cookie(response: Response, user_agent: str | None) -> None:
     )
 
 
+_insecure_cookie_warned = False
+
+
+def served_over_https(request: Request) -> bool:
+    """Whether the browser reached GravityLAN over HTTPS, directly or through a reverse proxy.
+
+    X-Forwarded-Proto is read from any client on purpose: it only decides whether a hint is shown,
+    never anything about access.
+    """
+    if request.url.scheme == "https":
+        return True
+    forwarded = request.headers.get("x-forwarded-proto", "")
+    return forwarded.split(",")[0].strip().lower() == "https"
+
+
+def warn_if_cookie_insecure(request: Request) -> None:
+    """Log once per process when a session cookie goes out over HTTPS without the Secure flag."""
+    global _insecure_cookie_warned
+    if settings.secure_cookies or _insecure_cookie_warned or not served_over_https(request):
+        return
+    _insecure_cookie_warned = True
+    logger.warning(
+        "Session cookie issued over HTTPS without the Secure flag: GRAVITYLAN_SECURE_COOKIES is not set, so "
+        "browsers would also send the cookie over plain HTTP. Set GRAVITYLAN_SECURE_COOKIES=true if GravityLAN "
+        "is only reached over HTTPS."
+    )
+
+
 async def _password_settings(db: AsyncSession) -> tuple[Setting | None, Setting | None]:
     """The master-token row and the admin-password row; either may not exist yet."""
     master_setting = (await db.execute(select(Setting).where(Setting.key == "api.master_token"))).scalar_one_or_none()
@@ -684,6 +712,7 @@ async def login(
         logger.info("Migrating legacy plaintext password to hash")
         await _save_admin_password(db, admin_setting, password)
 
+    warn_if_cookie_insecure(request)
     issue_session_cookie(response, request.headers.get("user-agent"))
     await audit(request, "auth.login", actor="session")
     return {"status": "ok", "message": "Login successful"}
@@ -810,6 +839,12 @@ async def step_up_status(request: Request, token: str = Depends(get_current_admi
         "grants": stepup.store.remaining(session_id) if session_id else {},
         "minutes": await stepup.grant_minutes(db),
     }
+
+
+@router.get("/cookie-security")
+async def cookie_security(request: Request, token: str = Depends(get_current_admin)):
+    """Whether session cookies carry the Secure flag, and whether this request came over HTTPS."""
+    return {"secure_cookies": settings.secure_cookies, "https": served_over_https(request)}
 
 
 @router.post("/check")
