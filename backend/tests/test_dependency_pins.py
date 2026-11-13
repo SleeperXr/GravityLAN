@@ -55,3 +55,34 @@ def test_drift_is_reported():
 
 def test_a_package_missing_from_the_lock_is_drift():
     assert drift("docker==7.2.0\n", '[[package]]\nname = "fastapi"\nversion = "1"\n') == {"docker": ("7.2.0", None)}
+
+
+def exported_pins(text: str) -> dict[str, str]:
+    """requirements.lock.txt: one pin per line, maybe with an environment marker after ';'."""
+    pins = {}
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].split(";", 1)[0].strip()
+        if not line:
+            continue
+        match = PIN.fullmatch(line)
+        assert match, f"requirements.lock.txt: '{line}' is not pinned with =="
+        pins[_normalize(match.group(1))] = match.group(2)
+    return pins
+
+
+def test_lock_export_matches_uv_lock_and_requirements():
+    requirements = pinned_requirements((BACKEND / "requirements.txt").read_text(encoding="utf-8"))
+    locked = locked_versions((BACKEND / "uv.lock").read_text(encoding="utf-8"))
+    exported = exported_pins((BACKEND / "requirements.lock.txt").read_text(encoding="utf-8"))
+    stale = {name: (version, locked.get(name)) for name, version in exported.items() if locked.get(name) != version}
+    missing = {name: (version, exported.get(name)) for name, version in requirements.items()
+               if exported.get(name) != version}
+    assert not stale and not missing, (
+        f"requirements.lock.txt is out of date (export, uv.lock): {stale}; direct pins not in it: {missing}. "
+        "Run in backend/: uv export --frozen --no-dev --no-hashes --no-emit-project > requirements.lock.txt"
+    )
+
+
+def test_exported_pins_skip_comments_and_markers():
+    text = "\n".join(["# header", "aiosqlite==0.22.1", "    # via x", "colorama==0.4.6 ; sys_platform == 'win32'"])
+    assert exported_pins(text) == {"aiosqlite": "0.22.1", "colorama": "0.4.6"}

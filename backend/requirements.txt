@@ -1,6 +1,10 @@
-# Exact versions: the Docker image, CI and local setups install the same set. Dependabot only reads uv.lock
-# and only proposes security fixes; tests/test_dependency_pins.py fails until both files name the same versions,
-# so copy a Dependabot PR's versions here (and run `uv lock --upgrade-package <name>==<version>` after editing).
+# The direct dependencies, pinned. The image and CI install requirements.lock.txt instead: every package,
+# transitive ones included, exported from uv.lock. Dependabot only reads uv.lock and only proposes security fixes.
+# tests/test_dependency_pins.py fails until this file, uv.lock and requirements.lock.txt agree.
+# After editing a pin:      uv lock --upgrade-package <name>==<version>
+# After a Dependabot PR:    copy its versions here.
+# Then refresh the export (CI checks it):
+#   uv export --frozen --no-dev --no-hashes --no-emit-project > requirements.lock.txt
 fastapi==0.162.1
 # FastAPI's web layer, pinned on its own so a FastAPI bump cannot pull in an untested Starlette
 starlette==1.10.0
