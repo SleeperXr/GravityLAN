@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Settings → Access can replace the master token. It needs a logged-in browser session and the password confirmation for credentials; the master token cannot replace itself. The new token is shown once and only its hash is stored, clients with the old token stop working at once, browser sessions stay signed in, and the audit log records it under credentials. Until now only a database reset gave a new master token.
 - Signing in over HTTPS while `GRAVITYLAN_SECURE_COOKIES` is off now logs a warning once per start, and Settings → Access shows a hint: without the flag a browser would also send the login cookie over plain HTTP. HTTPS is recognised directly or from a reverse proxy's `X-Forwarded-Proto`; the flag itself stays off by default, so existing HTTP installations are unchanged.
 
 ### Changed

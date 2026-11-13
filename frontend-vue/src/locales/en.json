@@ -248,6 +248,7 @@
       "action": {
         "auth_login": "Login",
         "auth_password": "Password changed",
+        "auth_master_token_rotate": "Master token replaced",
         "auth_token_create": "API token created",
         "auth_token_delete": "API token revoked",
         "webhook_create": "Webhook created",

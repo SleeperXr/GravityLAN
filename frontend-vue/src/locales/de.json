@@ -248,6 +248,7 @@
       "action": {
         "auth_login": "Anmeldung",
         "auth_password": "Passwort geändert",
+        "auth_master_token_rotate": "Master-Token ersetzt",
         "auth_token_create": "API-Token angelegt",
         "auth_token_delete": "API-Token widerrufen",
         "webhook_create": "Webhook angelegt",
