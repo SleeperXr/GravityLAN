@@ -83,6 +83,18 @@ async def test_export_skips_a_missing_table(client, auth, backup_db):
     assert [d["ip"] for d in res.json()["devices"]] == ["192.0.2.1"]
 
 
+async def test_export_leaves_out_the_instance_credentials(client, auth, backup_db):
+    # A backup file must not carry a working master token or the password hash
+    execute(backup_db, "INSERT INTO app_settings(key, value, category) VALUES "
+                       "('api.master_token', 'synthetic-master', 'general'), "
+                       "('api.admin_password', '$argon2id$synthetic', 'system'), "
+                       "('setup.complete', 'true', 'system')")
+    res = await client.get("/api/backup/export", headers=auth)
+    assert res.status_code == 200
+    keys = {row["key"] for row in res.json()["settings"]}
+    assert keys == {"scan_interval"}
+
+
 async def test_export_failure_is_a_500(client, auth, backup_db):
     with patch("app.api.backup.audit", new=AsyncMock(side_effect=RuntimeError("audit down"))):
         res = await client.get("/api/backup/export", headers=auth)

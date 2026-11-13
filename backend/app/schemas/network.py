@@ -56,6 +56,20 @@ def validate_scan_cidr(value: str) -> str:
     return cidr
 
 
+# Before the setup is completed anyone who reaches the port may start the wizard's scan,
+# so it is limited to private (RFC 1918) and carrier-grade NAT (RFC 6598) ranges: an
+# unconfigured instance must not scan public addresses for a stranger.
+SETUP_SCAN_NETWORKS = tuple(
+    ipaddress.ip_network(net) for net in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10")
+)
+
+
+def is_setup_scan_target(cidr: str) -> bool:
+    """True when a normalized scan subnet lies entirely inside a range the setup wizard may scan."""
+    network = ipaddress.ip_network(cidr)
+    return any(network.subnet_of(allowed) for allowed in SETUP_SCAN_NETWORKS)
+
+
 def normalize_gateway_ip(value: str | None) -> str | None:
     """Return a gateway as a plain IPv4 address, or None when unset (then it is detected/suggested)."""
     if value is None:

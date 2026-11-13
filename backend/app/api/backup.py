@@ -103,7 +103,11 @@ async def export_backup(request: Request):
         for key, table in ALLOWED_TABLE_MAP.items():
             try:
                 cursor.execute(f"SELECT * FROM {table}")
-                data[key] = [dict(row) for row in cursor.fetchall()]
+                rows = [dict(row) for row in cursor.fetchall()]
+                if key == "settings":
+                    # The instance's credentials stay out of the file; an import ignores them anyway
+                    rows = [r for r in rows if r.get("key") not in PROTECTED_SETTING_KEYS]
+                data[key] = rows
             except sqlite3.OperationalError as e:
                 logger.warning(f"Backup: Table {table} skipped ({e})")
         conn.close()

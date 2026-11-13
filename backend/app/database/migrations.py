@@ -410,6 +410,7 @@ def _repair_steps() -> list[tuple]:
     return [
         # Tag stored agent token hashes (sha256:) and hash leftover plaintext tokens
         (normalize_agent_tokens, "upgrading agent tokens"),
+        (_hash_master_token, "hashing the master token"),
         (_clear_unsafe_service_links, "clearing unsafe service links"),
         (_retire_phone_system_items, "retiring phone system rack items"),
         (_add_missing_unique_indexes, "adding unique indexes"),
@@ -435,6 +436,19 @@ async def run_migrations(db: AsyncSession):
         await _run_step(db, what, step)
 
     logger.info("Schema migration complete.")
+
+
+async def _hash_master_token(db: AsyncSession) -> None:
+    """Replace a plaintext master token with its tagged SHA-256; a stored hash stays as it is."""
+    from app.models.setting import Setting
+    from app.services.auth_service import MASTER_TOKEN_PREFIX, hash_master_token
+
+    row = (await db.execute(select(Setting).where(Setting.key == "api.master_token"))).scalar_one_or_none()
+    if row is None or not row.value or row.value.startswith(MASTER_TOKEN_PREFIX):
+        return
+    row.value = hash_master_token(row.value)
+    await db.commit()
+    logger.info("Migration: Master token is now stored as a hash")
 
 
 async def _drop_outbox_token_copies(db: AsyncSession):

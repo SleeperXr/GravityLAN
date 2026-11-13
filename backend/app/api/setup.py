@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import PASSWORD_MIN_LENGTH
 from app.database import get_db
 from app.models.device import Device
 from app.models.setting import Setting
@@ -59,7 +60,9 @@ MAX_SETUP_SUBNETS = 64
 
 class SetupCompleteRequest(BaseModel):
     dns_server: str | None = None
-    admin_password: str | None = None
+    # Required, with the same minimum as a later password change: without it only the
+    # master token (shown nowhere) could log in, and a one-letter password was accepted
+    admin_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=256)
     # Subnets the wizard scanned. Their hosts are adopted even when the subnet is routed
     # (another VLAN) and therefore not bound to a local interface.
     subnets: list[str] | None = Field(default=None, max_length=MAX_SETUP_SUBNETS)
@@ -294,7 +297,7 @@ async def _insert_setting_if_missing(
 async def _persist_initial_setup_settings(db: AsyncSession, request: SetupCompleteRequest) -> None:
     """Persist DNS server, admin password, setup.complete flag, and master API token."""
     import secrets
-    from app.services.auth_service import hash_password
+    from app.services.auth_service import hash_master_token, hash_password
 
     if request.dns_server:
         await _upsert_setting(
@@ -320,7 +323,8 @@ async def _persist_initial_setup_settings(db: AsyncSession, request: SetupComple
     if request.restored:
         await _insert_setting_if_missing(db, "scanner.initial_scan_done", "true", category="scan")
 
-    if await _insert_setting_if_missing(db, "api.master_token", secrets.token_hex(32)):
+    # Only the hash is stored; the plaintext is not shown anywhere, so nobody holds it
+    if await _insert_setting_if_missing(db, "api.master_token", hash_master_token(secrets.token_hex(32))):
         logger.info("Setup: Initializing secure Master API Token (masked for security).")
 
     # Commit basic settings and token now so the user can login even if migration takes long
