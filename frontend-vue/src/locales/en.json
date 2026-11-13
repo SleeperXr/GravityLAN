@@ -511,8 +511,8 @@
       "backup": {
         "title": "Backup and restore",
         "summary": "Save devices, groups and settings as JSON and restore them.",
-        "steps": "Settings → Backup & restore → Export downloads a JSON file.\nTake a backup before every update.\nImport restores devices, groups and settings.\nThe admin password, the master token and the setup state are never touched by an import.",
-        "hint": "SSH keys, stored passwords and agent tokens are not in the backup. Back up data/ssh_vault.key on its own."
+        "steps": "Settings → Backup & restore → Export downloads a JSON file with devices, groups, racks, topology and settings.\nImport restores them, for example on a new host. The admin password, the master token and the setup state are never touched by an import.\nBefore an update, stop the container and copy the whole data directory (with GRAVITYLAN_DATABASE_URL, back up that database too). To go back, restore that database if you use one and start the previous image version with the copy; the JSON file is not meant for that.",
+        "hint": "Not in the JSON file: SSH keys, saved connections and known hosts, API tokens, webhooks, agent tokens, the admin password and the master token. A copy of the data directory holds all of it, stored SSH keys included, so keep it as safe as the server."
       },
       "unraid": {
         "title": "Unraid, PUID and PGID",
