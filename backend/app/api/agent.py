@@ -1,15 +1,7 @@
 """Agent API — Handles incoming metrics from deployed agents and provides real-time status."""
 
-import asyncio
-import hashlib
-import inspect
-import json
 import logging
-import secrets
-import shlex
-import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
 
 
 from app.services.audit import device_label, record as audit
@@ -28,12 +20,10 @@ from fastapi import (
 )
 from fastapi.responses import PlainTextResponse, FileResponse
 from sqlalchemy import delete, desc, select, func
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import settings  # noqa: F401 - patched as agent_module.settings in tests
-from app.database import async_session, get_db
+from app.database import get_db
 from app.models.agent import AgentConfig, DeviceMetrics, AgentToken
 from app.models.device import Device
 from app.models.ssh import SshKnownHost
@@ -43,7 +33,6 @@ from app.schemas.agent import (
     AgentReportPayload,
     AgentReportResponse,
     AgentStatusResponse,
-    AgentDeployRequest,
     AgentDeployResponse,
     AgentEnrollmentResponse,
     AgentInstallRequest,
@@ -52,8 +41,6 @@ from app.schemas.agent import (
     AgentConfigResponse,
     MetricsHistoryResponse,
     AgentsOverviewResponse,
-    AgentSummary,
-    GlobalMetricPoint,
     GlobalMetricsResponse,
 )
 from app.services.agent_activity import active_window, load_intervals
@@ -70,8 +57,8 @@ from app.services.ssh_credentials import StoredLoginError, resolve_key_profile, 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
-# Telemetry and time-series services re-exported for backwards-compatibility
-from app.services.agent_telemetry import (
+# Telemetry and time-series services re-exported for backwards-compatibility; tests reach them through this module
+from app.services.agent_telemetry import (  # noqa: F401
     _latest_metrics,
     _ws_subscribers,
     _setting_cache,
@@ -95,7 +82,7 @@ from app.services.agent_telemetry import (
     assemble_agents_overview_data,
     aggregate_global_metrics_buckets,
 )
-from app.services.agent_scripts import (
+from app.services.agent_scripts import (  # noqa: F401 - re-exported, see above
     INSTALL_CODE_REJECTED_SCRIPT,
     _PREFERRED_IFACE_KEYWORDS,
     _AVOID_IFACE_KEYWORDS,
@@ -797,7 +784,7 @@ async def adopt_agent_token(device_id: int, db: AsyncSession = Depends(get_db), 
 # Linux Package Patching Endpoints (Delegated to app.api.agent_patches)
 # ---------------------------------------------------------------------------
 
-from app.api.agent_patches import (
+from app.api.agent_patches import (  # noqa: F401 - re-exported, see above
     patch_router,
     _temp_patch_tokens,
     PATCH_TOKEN_TTL_SECONDS,
@@ -810,6 +797,6 @@ from app.api.agent_patches import (
     _clear_device_patch_state,
     run_patches_websocket,
 )
-from app.services.patch_service import list_device_updates, run_ssh_command_stream
+from app.services.patch_service import list_device_updates, run_ssh_command_stream  # noqa: F401 - re-exported
 
 router.include_router(patch_router)
