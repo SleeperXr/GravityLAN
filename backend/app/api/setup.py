@@ -371,7 +371,8 @@ async def mark_setup_complete(
 
     # Sign the admin in right away: the wizard ends in the dashboard without a second login request
     if request.admin_password:
-        from app.api.auth import issue_session_cookie
+        from app.api.auth import issue_session_cookie, warn_if_cookie_insecure
+        warn_if_cookie_insecure(http_request)
         issue_session_cookie(response, http_request.headers.get("user-agent"))
 
     # Register the scanned networks as scan subnets (one overview tab each), then add the

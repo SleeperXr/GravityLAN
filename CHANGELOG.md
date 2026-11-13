@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Signing in over HTTPS while `GRAVITYLAN_SECURE_COOKIES` is off now logs a warning once per start, and Settings → Access shows a hint: without the flag a browser would also send the login cookie over plain HTTP. HTTPS is recognised directly or from a reverse proxy's `X-Forwarded-Proto`; the flag itself stays off by default, so existing HTTP installations are unchanged.
+
 ### Changed
 - Docs: GravityLAN runs as exactly one application worker per instance, and the README (English and German) now says so under "Security and operation": no second instance on the same database or data directory, and a backend restart ends browser sessions. The Dockerfile comment no longer suggests raising the worker count. Runtime behaviour is unchanged.
 - Docs: the README now lists everything that crosses the network unencrypted over plain HTTP (passwords, session cookie, SSH credentials, uploaded keys, terminal input, backups), separates a first start over HTTP from lasting use over HTTPS or a VPN, and says to leave `GRAVITYLAN_SECURE_COOKIES` off while GravityLAN is opened over HTTP. SECURITY.md no longer says unknown SSH host keys are "accepted with a warning": since 0.5.5 deployments and updates learn the key on first use and pin it.

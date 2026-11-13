@@ -596,6 +596,7 @@
       "repeat": "Repeat new password",
       "hint": "At least {{count}} characters.",
       "too_short": "The new password needs at least {{count}} characters.",
+      "cookie_insecure": "You use GravityLAN over HTTPS, but the login cookie is not marked Secure, so a browser would also send it over plain HTTP. Set GRAVITYLAN_SECURE_COOKIES=true for the container and restart it. Only do this if GravityLAN is always reached over HTTPS: over plain HTTP, logging in then no longer works.",
       "mismatch": "The two new passwords do not match.",
       "wrong_current": "The current password is wrong.",
       "same_as_current": "The new password must differ from the current one.",

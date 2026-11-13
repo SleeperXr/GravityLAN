@@ -592,6 +592,7 @@
       "repeat": "Neues Passwort wiederholen",
       "hint": "Mindestens {{count}} Zeichen.",
       "too_short": "Das neue Passwort braucht mindestens {{count}} Zeichen.",
+      "cookie_insecure": "Du nutzt GravityLAN über HTTPS, aber das Anmelde-Cookie ist nicht als Secure markiert, ein Browser würde es also auch über reines HTTP senden. Setze GRAVITYLAN_SECURE_COOKIES=true für den Container und starte ihn neu. Nur tun, wenn GravityLAN immer über HTTPS erreicht wird: Über reines HTTP klappt die Anmeldung danach nicht mehr.",
       "mismatch": "Die beiden neuen Passwörter stimmen nicht überein.",
       "wrong_current": "Das aktuelle Passwort ist falsch.",
       "same_as_current": "Das neue Passwort muss sich vom aktuellen unterscheiden.",

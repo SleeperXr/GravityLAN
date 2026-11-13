@@ -499,7 +499,7 @@ def _fake_verify(password: str, stored: str) -> bool:
 
 
 def _password_request():
-    return SimpleNamespace(client=SimpleNamespace(host=CLIENT_IP), headers={"user-agent": "UA1"})
+    return SimpleNamespace(client=SimpleNamespace(host=CLIENT_IP), url=SimpleNamespace(scheme="http"), headers={"user-agent": "UA1"})
 
 
 @pytest.fixture
