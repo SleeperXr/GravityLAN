@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from typing import Any, Dict
 
 from fastapi import HTTPException, WebSocket
-from sqlalchemy import desc, select
+from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
