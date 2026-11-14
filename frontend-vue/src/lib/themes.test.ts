@@ -27,7 +27,7 @@ describe('theme registry', () => {
     expect(isThemeId('starlight')).toBe(true);
     expect(isThemeId('system')).toBe(false);
     expect(isThemeId('nope')).toBe(false);
-    expect(themeInfo('paper').scheme).toBe('light');
+    expect(themeInfo('light').scheme).toBe('light');
     expect(themeInfo('nope' as never).id).toBe('dark');
   });
 });

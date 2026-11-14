@@ -18,8 +18,9 @@
       (function () {
         try {
           // The designs of src/lib/themes.ts; anything else falls back to the night theme
-          var known = ['dark', 'starlight', 'aurora', 'light', 'paper'];
+          var known = ['dark', 'starlight', 'aurora', 'light'];
           var pref = localStorage.getItem('gravityui.theme') || 'dark';
+          if (pref === 'paper') pref = 'light'; // the Day map was paper in a test build
           var theme = pref === 'system' ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : known.indexOf(pref) >= 0 ? pref : 'dark';
           document.documentElement.setAttribute('data-theme', theme);
         } catch (e) {}

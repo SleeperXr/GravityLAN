@@ -14,6 +14,7 @@ const media = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-
 function readPreference(): ThemePreference {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'paper') return 'light'; // the Day map was "paper" in a test build
     return stored === 'system' || isThemeId(stored) ? stored : 'dark';
   } catch {
     return 'dark';
