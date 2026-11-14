@@ -154,7 +154,10 @@
       "updates_total_other": "{{count}} updates in total",
       "reboot": "reboot required",
       "show_all": "Show all ({{count}} more)",
-      "show_less": "Show fewer"
+      "show_less": "Show fewer",
+      "agent_silent": "{{name}}: agent not reporting",
+      "agent_silent_detail": "Device answers, but no agent report – metrics and updates go stale",
+      "agent_never": "Agent installed but has never reported"
     },
     "health": {
       "period": "Period",

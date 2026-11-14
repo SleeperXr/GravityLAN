@@ -15,6 +15,7 @@ from app.models.device import Device, DeviceGroup, Service
 from app.models.agent import AgentToken
 from app.scanner.vendor import get_vendor
 from app.services.cache_service import topology_cache, dashboard_cache
+from app.services.agent_activity import load_intervals
 from app.dns_answers import stored_dns_answers
 from app.scanner.hostname import HOSTNAME_SOURCES, choose_hostname, lookup_dns_names, resolve_hostname, is_ip_like
 from app.services.interface_service import annotate_primary_subnets, device_for_interface_ip
@@ -39,9 +40,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/devices", tags=["devices"], dependencies=[Depends(get_current_admin)])
 
 
-def _annotate_agent(device, token: AgentToken | None) -> None:
+def _agent_reporting(token: AgentToken, interval: int | None, now: datetime) -> bool | None:
+    """Whether the agent reports within the window of its interval.
+
+    None when there is nothing to judge: a revoked token, or one installed so recently that its
+    first report is not due yet. An agent that never reported counts as silent once that is due.
+    """
+    from app.services.agent_activity import active_window
+    from app.scanner.utils import ensure_utc
+
+    if not token.is_active:
+        return None
+    window = active_window(interval)
+    last_seen = ensure_utc(token.last_seen)
+    if last_seen is not None:
+        return (now - last_seen).total_seconds() < window
+    created = ensure_utc(token.created_at)
+    if created is None or (now - created).total_seconds() < window:
+        return None
+    return False
+
+
+def _annotate_agent(device, token: AgentToken | None, intervals: dict[int, int] | None = None) -> None:
     """has_agent, has_pending_token and agent_info of a device from its agent token (None: no agent)."""
     from app.api.agent import LATEST_AGENT_VERSION, _latest_metrics
+    from app.scanner.utils import ensure_utc
     from app.version import normalize_version
 
     device.has_agent = token is not None
@@ -51,6 +74,8 @@ def _annotate_agent(device, token: AgentToken | None) -> None:
             "agent_version": normalize_version(token.agent_version),
             "latest_version": normalize_version(LATEST_AGENT_VERSION),
             "latest_metrics": _latest_metrics.get(device.id),
+            "last_report": ensure_utc(token.last_seen),
+            "reporting": _agent_reporting(token, (intervals or {}).get(device.id), datetime.now(timezone.utc)),
         }
 
 
@@ -143,8 +168,9 @@ async def list_devices(
 
     devices = list((await db.execute(query)).scalars().all())
     token_map = await _load_agent_tokens(db, devices)
+    intervals = await load_intervals(db)
     for device in devices:
-        _annotate_agent(device, token_map.get(device.id))
+        _annotate_agent(device, token_map.get(device.id), intervals)
 
     await _annotate_parent_names(db, devices)
     await annotate_primary_subnets(db, devices)
@@ -837,9 +863,10 @@ async def get_group_details(
         
     # Populate agent details
     tokens_by_device = await _load_agent_tokens(db, group.devices)
+    intervals = await load_intervals(db)
     devices_list = []
     for d in group.devices:
-        _annotate_agent(d, tokens_by_device.get(d.id))
+        _annotate_agent(d, tokens_by_device.get(d.id), intervals)
         devices_list.append(DeviceResponse.model_validate(d))
         
     return GroupWithDevicesResponse(
