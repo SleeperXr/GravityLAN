@@ -6,7 +6,7 @@ import os
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.config import settings
@@ -103,7 +103,11 @@ async def export_backup(request: Request):
         for key, table in ALLOWED_TABLE_MAP.items():
             try:
                 cursor.execute(f"SELECT * FROM {table}")
-                data[key] = [dict(row) for row in cursor.fetchall()]
+                rows = [dict(row) for row in cursor.fetchall()]
+                if key == "settings":
+                    # The instance's credentials stay out of the file; an import ignores them anyway
+                    rows = [r for r in rows if r.get("key") not in PROTECTED_SETTING_KEYS]
+                data[key] = rows
             except sqlite3.OperationalError as e:
                 logger.warning(f"Backup: Table {table} skipped ({e})")
         conn.close()

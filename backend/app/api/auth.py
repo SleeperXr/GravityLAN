@@ -22,9 +22,12 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-from app.services.auth_service import hash_password, verify_password, looks_hashed, secure_compare
+from app.services.auth_service import (
+    MASTER_TOKEN_PREFIX, hash_master_token, hash_password, looks_hashed, master_token_matches, secure_compare,
+    verify_password,
+)
 from app.services.session_service import session_store
-from app.services.agent_telemetry import _setting_cache
+from app.services.agent_telemetry import _setting_cache  # noqa: F401 - tests reset it through this module
 
 _READ_METHODS = ("GET", "HEAD")
 
@@ -179,7 +182,7 @@ async def _authenticate_query_param(db: AsyncSession, token: str, conn: HTTPConn
     else:
         res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
         master_setting = res_token.scalar_one_or_none()
-        if master_setting and secure_compare(token, master_setting.value):
+        if master_setting and master_token_matches(token, master_setting.value):
             return token
     raise HTTPException(status_code=401, detail="Invalid or expired token")
 
@@ -222,7 +225,7 @@ async def _authenticate_cookie(db: AsyncSession, conn: HTTPConnection, cookie_to
         return cookie_token
 
     master_token = await _load_master_token(db)
-    if master_token and secure_compare(cookie_token, master_token):
+    if master_token and master_token_matches(cookie_token, master_token):
         logger.warning(
             "DEPRECATION WARNING: Master-Token used in browser cookie. "
             "This legacy authentication path is deprecated and will be removed in a future release."
@@ -268,7 +271,7 @@ async def _authenticate_bearer(db: AsyncSession, authorization: str, conn: HTTPC
     # A. Check Master-Token
     res_token = await db.execute(select(Setting).where(Setting.key == "api.master_token"))
     master_setting = res_token.scalar_one_or_none()
-    if master_setting and secure_compare(token_val, master_setting.value):
+    if master_setting and master_token_matches(token_val, master_setting.value):
         return token_val
 
     # B. Check Read-Only API Tokens
@@ -399,7 +402,7 @@ class _WsHandshake:
 async def _auth_logs_query(handshake: _WsHandshake, query_token: str) -> dict | None:
     """Query-token auth for the logs channel (Master-Token only)."""
     master_token = await _load_master_token(handshake.db)
-    if master_token and secure_compare(query_token, master_token):
+    if master_token and master_token_matches(query_token, master_token):
         return _auth_result("master", query_token)
     return await _auth_reject(handshake.websocket, "Invalid master token in query params for logs route.")
 
@@ -411,7 +414,7 @@ async def _auth_agent_query(handshake: _WsHandshake, query_token: str) -> dict |
 
     db = handshake.db
     master_token = await _load_master_token(db)
-    if master_token and secure_compare(query_token, master_token):
+    if master_token and master_token_matches(query_token, master_token):
         return _auth_result("master", query_token)
 
     if handshake.device_id is not None:
@@ -430,7 +433,7 @@ async def _auth_agent_query(handshake: _WsHandshake, query_token: str) -> dict |
 async def _auth_scanner_query(handshake: _WsHandshake, query_token: str) -> dict | None:
     """Query-token auth for the scanner channel (Master-Token only)."""
     master_token = await _load_master_token(handshake.db)
-    if master_token and secure_compare(query_token, master_token):
+    if master_token and master_token_matches(query_token, master_token):
         return _auth_result("master", query_token)
     return await _auth_reject(handshake.websocket, "Invalid master token in query params for scanner route.")
 
@@ -511,7 +514,7 @@ async def _ws_legacy_cookie(handshake: _WsHandshake, cookie_token: str | None) -
     """Deprecated: the master token in the cookie. Anything else counts as missing credentials."""
     if cookie_token:
         master_token = await _load_master_token(handshake.db)
-        if master_token and secure_compare(cookie_token, master_token):
+        if master_token and master_token_matches(cookie_token, master_token):
             logger.warning(
                 "DEPRECATION WARNING: Master-Token used in browser cookie for WebSocket auth. "
                 "This legacy path is deprecated and will be removed in a future release."
@@ -611,6 +614,34 @@ def issue_session_cookie(response: Response, user_agent: str | None) -> None:
     )
 
 
+_insecure_cookie_warned = False
+
+
+def served_over_https(request: Request) -> bool:
+    """Whether the browser reached GravityLAN over HTTPS, directly or through a reverse proxy.
+
+    X-Forwarded-Proto is read from any client on purpose: it only decides whether a hint is shown,
+    never anything about access.
+    """
+    if request.url.scheme == "https":
+        return True
+    forwarded = request.headers.get("x-forwarded-proto", "")
+    return forwarded.split(",")[0].strip().lower() == "https"
+
+
+def warn_if_cookie_insecure(request: Request) -> None:
+    """Log once per process when a session cookie goes out over HTTPS without the Secure flag."""
+    global _insecure_cookie_warned
+    if settings.secure_cookies or _insecure_cookie_warned or not served_over_https(request):
+        return
+    _insecure_cookie_warned = True
+    logger.warning(
+        "Session cookie issued over HTTPS without the Secure flag: GRAVITYLAN_SECURE_COOKIES is not set, so "
+        "browsers would also send the cookie over plain HTTP. Set GRAVITYLAN_SECURE_COOKIES=true if GravityLAN "
+        "is only reached over HTTPS."
+    )
+
+
 async def _password_settings(db: AsyncSession) -> tuple[Setting | None, Setting | None]:
     """The master-token row and the admin-password row; either may not exist yet."""
     master_setting = (await db.execute(select(Setting).where(Setting.key == "api.master_token"))).scalar_one_or_none()
@@ -627,6 +658,9 @@ def _stored_password(master_setting: Setting | None, admin_setting: Setting | No
 
 def _password_matches(password: str, stored: str) -> bool:
     """Check against a hash, or against a legacy plaintext value that is not migrated yet."""
+    if stored.startswith(MASTER_TOKEN_PREFIX):
+        # No admin password yet: the (hashed) master token counts
+        return master_token_matches(password, stored)
     return verify_password(password, stored) if looks_hashed(stored) else secure_compare(password, stored)
 
 
@@ -679,6 +713,7 @@ async def login(
         logger.info("Migrating legacy plaintext password to hash")
         await _save_admin_password(db, admin_setting, password)
 
+    warn_if_cookie_insecure(request)
     issue_session_cookie(response, request.headers.get("user-agent"))
     await audit(request, "auth.login", actor="session")
     return {"status": "ok", "message": "Login successful"}
@@ -805,6 +840,39 @@ async def step_up_status(request: Request, token: str = Depends(get_current_admi
         "grants": stepup.store.remaining(session_id) if session_id else {},
         "minutes": await stepup.grant_minutes(db),
     }
+
+
+@router.get("/cookie-security")
+async def cookie_security(request: Request, token: str = Depends(get_current_admin)):
+    """Whether session cookies carry the Secure flag, and whether this request came over HTTPS."""
+    return {"secure_cookies": settings.secure_cookies, "https": served_over_https(request)}
+
+
+@router.post("/master-token/rotate", dependencies=[Depends(require_step_up("credentials"))])
+async def rotate_master_token(
+    request: Request,
+    token: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace the master token; the new one is returned once and only its hash is stored.
+
+    Only a logged-in browser session with a password confirmation may do this, so the master token
+    cannot replace itself. Clients using the old token stop working at once; browser sessions stay.
+    """
+    if not _is_valid_browser_session(token):
+        await audit(request, "auth.master_token.rotate", "denied", detail="not a browser session")
+        raise HTTPException(status_code=403, detail="Only a logged-in browser session can replace the master token.")
+
+    master_setting, _ = await _password_settings(db)
+    if not master_setting:
+        raise HTTPException(status_code=500, detail="System not initialized. Run setup first.")
+
+    new_token = secrets.token_hex(32)
+    master_setting.value = hash_master_token(new_token)
+    await db.commit()
+    logger.info("Master token replaced")
+    await audit(request, "auth.master_token.rotate")
+    return {"token": new_token}
 
 
 @router.post("/check")

@@ -48,9 +48,10 @@ def scan(monkeypatch):
 # --- helpers ----------------------------------------------------------------
 
 def test_subnets_are_normalized_and_none_stays_none():
-    assert setup.SetupCompleteRequest(subnets=[" 10.0.0.5/24 "]).subnets == ["10.0.0.0/24"]
-    assert setup.SetupCompleteRequest().subnets is None
-    assert setup.SetupCompleteRequest(subnets=None).subnets is None  # an explicit null from the wizard
+    pw = "supersecretpassword123"
+    assert setup.SetupCompleteRequest(admin_password=pw, subnets=[" 10.0.0.5/24 "]).subnets == ["10.0.0.0/24"]
+    assert setup.SetupCompleteRequest(admin_password=pw).subnets is None
+    assert setup.SetupCompleteRequest(admin_password=pw, subnets=None).subnets is None  # an explicit null from the wizard
 
 
 def test_adoption_networks_prefer_the_scanned_subnets():

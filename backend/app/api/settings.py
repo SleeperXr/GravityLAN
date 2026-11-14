@@ -1,15 +1,14 @@
-import hmac
 import json
 import re
 from urllib.parse import urlparse
 from pydantic import RootModel
-from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, select, text, update as sa_update
+from sqlalchemy import select, text, update as sa_update
 from app.services.stepup import require_step_up
 from app.database import get_db
-from app.models.device import Device, Service, DeviceGroup
+from app.models.device import Device
 from app.models.setting import Setting
 from app.schemas.network import normalize_dns_server
 from app.scanner.subnets import merge_subnets
@@ -333,9 +332,6 @@ async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
         except (asyncio.TimeoutError, RuntimeError, OSError) as se:
             logger.warning(f"Scheduler stop failed/timed out: {se}")
 
-        from app.models.device import DeviceHistory, DiscoveredHost, Device, Service, DeviceGroup
-        from app.models.agent import AgentToken, DeviceMetrics, AgentConfig
-        from app.models.topology import TopologyLink, Rack
 
         # 2. Wipe tables (Nuclear Option: sync_wipe with PRAGMA foreign_keys=OFF)
         logger.info("Wiping database tables...")

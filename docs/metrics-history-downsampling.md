@@ -95,7 +95,7 @@ Um Widersprüche zwischen den angebotenen Zeitbereichen in der Benutzeroberfläc
 Ein häufiges Problem bei neuen Datenbank-Indizes ist, dass sie bei existierenden Homelab-Installationen nicht automatisch erzeugt werden, wenn die Tabelle bereits existiert (da SQLAlchemy's `create_all` bestehende Tabellen ignoriert).
 
 Um eine völlig reibungslose, wartungsfreie und benutzerfreundliche Inbetriebnahme zu garantieren, wurde ein **Self-Healing-Mechanismus** implementiert:
-- Beim Starten der FastAPI-Anwendung wird in `init_db()` ([__init__.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/database/__init__.py)) nach dem Standard-Schema-Aufbau folgendes raw SQL-Kommando abgesetzt:
+- Beim Starten der FastAPI-Anwendung wird in `init_db()` ([__init__.py](../backend/app/database/__init__.py)) nach dem Standard-Schema-Aufbau folgendes raw SQL-Kommando abgesetzt:
   ```sql
   CREATE INDEX IF NOT EXISTS idx_device_metrics_device_timestamp ON device_metrics (device_id, timestamp)
   ```

@@ -4,8 +4,8 @@ This directory serves as a guide for running tests in GravityLAN.
 
 To keep the repository clean and structured, the testing suites are located within their respective components:
 
-*   **Backend Tests**: Located in [backend/tests/](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/tests). These are automated tests for the FastAPI endpoints, authentication, database migrations, scanner, and agent adoption.
-*   **CI/CD Workflow**: Configured in [.github/workflows/ci.yml](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/.github/workflows/ci.yml) to automatically run linting and pytest suites on every push and pull request.
+*   **Backend Tests**: Located in [backend/tests/](../backend/tests). These are automated tests for the FastAPI endpoints, authentication, database migrations, scanner, and agent adoption.
+*   **CI/CD Workflow**: Configured in [.github/workflows/ci.yml](../.github/workflows/ci.yml) to automatically run linting and pytest suites on every push and pull request.
 
 ---
 
@@ -43,3 +43,15 @@ To verify that GravityUI builds and compiles without TypeScript errors:
    ```bash
    npm run typecheck
    ```
+
+## Running the Browser Smoke Tests
+
+Two Playwright tests in `frontend-vue/e2e/` walk a fresh install through the setup wizard and sign in and out. They start the demo backend (`scripts/dev_demo.py --fresh`: no scans, no SSH, 127.0.0.1 only) and the Vite dev server themselves, and stop if port 8000 or 5174 is already in use, so they never touch a real instance. CI runs them in the `e2e` job.
+
+```bash
+cd frontend-vue
+npx playwright install chromium   # once
+GRAVITYLAN_E2E_PYTHON=../.venv/bin/python npm run test:e2e
+```
+
+`GRAVITYLAN_E2E_PYTHON` names a Python with the backend dependencies (default: `python`).

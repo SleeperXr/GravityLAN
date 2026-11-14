@@ -24,7 +24,7 @@ Scan the network, keep an inventory of every device, see it as a living orbit ma
 </p>
 
 > [!NOTE]
-> **Pre-release.** GravityLAN is in active development and features may change between versions. Export a backup (Settings → Backup & restore) before you upgrade.
+> **Pre-release.** GravityLAN is in active development and features may change between versions. Copy the data directory before you upgrade (see **Updating and rolling back** under Quick start).
 
 <a id="english"></a>
 
@@ -84,7 +84,7 @@ All screenshots show the company network of the [demo backend](#development) (`-
 | **SSH terminal** | Shells on your devices in the browser, also on phones: tabs that keep running while you use the rest of GravityLAN, saved and recent connections, host key check, copy, paste and "copy last command", fonts and colour schemes, and an **Agent update** button. Keys (OpenSSH, PEM, PuTTY `.ppk`) are stored encrypted on the server; known hosts are managed on the same page. |
 | **Device editor** | Five tabs: general (name, group, physical host, rack and units, tile size, 24/7 monitoring, notes), services and ports, interfaces with merge suggestions, history and status with an availability monitor and timeline, and the agent (install, update, uninstall, configuration, Layer-2 probe). |
 | **Logs** | The live backend log, split into time, level, logger and message, with a filter for warnings and errors, search, pause, copy and **Jump to newest**. It reconnects on its own after a backend restart. A second tab, **Audit**, shows who did what: terminals, agent installs and updates, changes to keys, connections, API tokens and webhooks, backups, resets and logins, with time, caller, source IP, target and result, kept 90 days and never with a secret. |
-| **Settings** | Scan schedule, offline threshold and DNS server; the scan subnets (add, pause, remove, take a network detected on the host, import from the router); system (retention, log level, start page, default interface, server URL); measurement data; groups; language and appearance (theme, language, a colour per network and per link type); password, API tokens, backup and restore, database reset. |
+| **Settings** | Scan schedule, offline threshold and DNS server; the scan subnets (add, pause, remove, take a network detected on the host, import from the router); system (retention, log level, start page, default interface, server URL); measurement data; groups; language and appearance (theme, language, a colour per network and per link type); password, master token, API tokens, backup and restore, database reset. |
 | **Setup, Tutorials, About** | A setup wizard on first start. Fourteen tutorials with steps, examples and diagrams: setup and scan subnets, HTTPS with a reverse proxy, overview and groups, IP addresses and VLANs, router import, topology and racks, installing the agent, package updates, SSH, Health, measurement data, API tokens and webhooks, backup, Unraid. About shows the server and agent version, the MIT licence with third-party notices and the project links. |
 | **Everywhere** | Dark (the default), light or the system's theme; English and German; on phones a bottom tab bar, 44 px touch targets and pinch-to-zoom; keyboard access and screen reader labels on the orbit map; animations stop when the system asks for reduced motion. |
 
@@ -100,7 +100,7 @@ All screenshots show the company network of the [demo backend](#development) (`-
 | **Agent rollout** | Install or update agents over SSH (with a saved key connection or credentials you type in), with a one-line installer carrying a one-time code, for all outdated agents at once in the Agent Update Center, or straight from an open terminal. |
 | **Measurement data** | Health probes and agent metrics live in their own `telemetry.db`, so they don't bloat the inventory or backups. Raw values are kept 48 h, then folded into hourly (30 days) and daily values (365 days); charts pick the right tier for the time window. Settings → Measurement data shows the sizes and clears old data per device or in full. |
 | **API & integrations** | REST API with Swagger UI at `/docs`, a Python client ([`gravitylan_api`](gravitylan_api)), read-only API tokens (finer scopes through the API) and webhooks for `device.offline` and `scan.complete`. A read-only token is a good fit for [AI assistants and agents](#ai-assistants-and-agents). |
-| **Backup & restore** | Export and import devices, groups, interfaces and settings as JSON. An import never touches the admin password, the master token or the setup state. |
+| **Backup & restore** | Export and import the inventory (devices, groups, interfaces, services, subnets, topology, racks with cabling) and the settings as JSON, for example to move to a new host. An import never touches the admin password, the master token or the setup state. It is not a full copy: see **Updating and rolling back**. |
 
 ## Quick start
 
@@ -130,6 +130,8 @@ Open `http://<your-host>:8000` and go through the setup wizard: it detects your 
 **Data directory permissions.** The container starts as root only to prepare `/app/data`: it gives its internal user the IDs from `PUID` and `PGID` (default `1000`/`1000`, the Unraid template sets `99`/`100`), hands the data directory to that user and then starts the server as it. A fresh host directory that belongs to root works without `chown`; other mounts below `/app/data` are left alone. Started with `--user`, the container changes nothing and stops with a clear message if it can't write to the data directory.
 
 **Unraid.** The template in [`templates/gravitylan.xml`](templates/gravitylan.xml) sets `PUID=99` and `PGID=100` (Unraid's `nobody:users`), keeps appdata under `/mnt/user/appdata/gravitylan` and needs no privileged mode: `NET_RAW` and `NET_ADMIN` are enough for scanning. It explains which network type to pick (host, or a custom `br0` network with its own address). More: [docs/unraid-template.md](docs/unraid-template.md).
+
+**Updating and rolling back.** Before an update, stop the container and copy the whole data directory (the `gravitylan-data` volume or the appdata folder, with `gravitylan.db`, `telemetry.db` and `ssh_vault.key`; with `GRAVITYLAN_DATABASE_URL`, back up that database too). The new version migrates the database on its first start, and running an older version on a migrated database is not supported. As a safety net, GravityLAN itself copies `gravitylan.db` to `data/backups/` before a new version migrates it and keeps the last three copies (not the measurement data, and not an external database). To go back, start the previous image tag (for example `sleeperxr/gravitylan:0.7.0` instead of `:latest`) with the copied directory; with `GRAVITYLAN_DATABASE_URL`, restore that database from its backup first. The JSON backup from Settings is for moving to a new host, not for rolling back: it has no SSH keys, saved connections or known hosts, no API tokens, webhooks or router import sources, no agent tokens (agents have to be enrolled again), no measurement data or audit log, and neither the admin password nor the master token.
 
 The image is multi-stage (Vite build of GravityUI, then a slim Python runtime) and the server runs as a non-root user; Nmap gets only the capabilities it needs. To build it yourself: `docker build -t gravitylan:local .`
 
@@ -199,7 +201,7 @@ Most options live in the database and are changed in the setup wizard and on the
 | `GRAVITYLAN_DATABASE_URL` | Full SQLAlchemy URL, if you don't want SQLite in the data directory | empty |
 | `GRAVITYLAN_PORT` / `GRAVITYLAN_HOST` | Listen port and address | `8000` / `0.0.0.0` |
 | `GRAVITYLAN_DEBUG` | Verbose logging | `false` |
-| `GRAVITYLAN_SECURE_COOKIES` | Mark the session cookie `Secure`; turn on behind HTTPS | `false` |
+| `GRAVITYLAN_SECURE_COOKIES` | Mark the session cookie `Secure`; turn on behind HTTPS. If it is off while you sign in over HTTPS, the log warns once and Settings → Access shows a hint | `false` |
 | `GRAVITYLAN_SSH_STRICT_MODE` | Refuse unknown SSH host keys when deploying agents or installing updates | `false` |
 | `GRAVITYLAN_ALLOW_INSECURE_INSTALL` | Let the manual install command run over plain HTTP without `ALLOW_INSECURE=1` on the device (agent and token travel unencrypted) | `false` |
 | `GRAVITYLAN_DOCKER_HOST_IP` | LAN IP of the machine running the container. Only SSH logins to this address may retry over the Docker bridge gateway (when the container can't reach its own host, e.g. with macvlan) | empty |
@@ -214,7 +216,7 @@ Most options live in the database and are changed in the setup wizard and on the
 
 ## Security and operation
 
-GravityLAN assumes a **trusted home network**. For access from outside, use a VPN or your usual reverse proxy with HTTPS, and set `GRAVITYLAN_SECURE_COOKIES=true`. Over plain HTTP, terminal keystrokes cross the network unencrypted.
+GravityLAN assumes a **trusted home network**. For access from outside, use a VPN or your usual reverse proxy with HTTPS, and set `GRAVITYLAN_SECURE_COOKIES=true`. Over plain HTTP everything crosses the network unencrypted: the admin password at login and when confirming an action, the session cookie, SSH and sudo passwords typed in for agent installs and updates, private keys you upload, terminal keystrokes and backups. Plain HTTP is fine for a first start in a trusted network; for lasting use, reach GravityLAN over HTTPS or a VPN. Leave `GRAVITYLAN_SECURE_COOKIES` off as long as you open it over plain HTTP: the browser would not keep the session cookie and the login would not stick.
 
 - **Login**: `httpOnly` session cookie, Argon2 password hashes. After 5 failed attempts within a minute from one address, logins are refused for the rest of that minute. Behind a reverse proxy on another machine, all attempts count against the proxy's address.
 - **API tokens** are stored hashed and are read-only unless given other scopes; the scopes also apply to WebSocket connections, and downloading an agent's config needs `agent:write`. Each agent has its own token, stored as a SHA-256 hash as well, and an unknown agent has to be adopted on its device card.
@@ -222,7 +224,8 @@ GravityLAN assumes a **trusted home network**. For access from outside, use a VP
 - **SSH**: keys and stored passwords are encrypted on the server and never sent back to the browser. Only logged-in browser sessions can open shells or use saved keys, not API or master tokens. A host whose key changed is blocked until you remove the old entry; package updates also remember a host's key on first contact and refuse a different one later. Details: [ADR 002](docs/adr/002-ssh-keystore.md).
 - **Agent install**: the agent's config is readable by root only, its service runs with a private `/tmp` and read-only home directories, and install codes are masked in the request log. The server URL written into the installer has to be a plain `http(s)://host[:port][/path]`.
 - **Webhooks** can't target the GravityLAN host itself, link-local addresses or cloud metadata services; the target is checked again before every delivery. LAN addresses work.
-- **Backups** don't contain SSH keys, stored passwords or agent tokens, and importing one never replaces the admin password, the master token or the setup state. Keep `data/ssh_vault.key` (or `GRAVITYLAN_VAULT_KEY`) safe on its own: without it, stored keys can't be decrypted.
+- **Backups** (the JSON export) don't contain SSH keys, stored passwords, API or agent tokens, the admin password or the master token, and importing one never replaces the admin password, the master token or the setup state. A copy of the data directory does contain everything: with `data/ssh_vault.key` in it, the stored SSH keys can be decrypted, so keep such copies as safe as the server. If you use `GRAVITYLAN_VAULT_KEY` instead, keep that key as well: without it, stored keys can't be decrypted.
+- **One process**: run exactly one application worker per instance (the image starts uvicorn with `--workers 1`; keep it that way). Sessions, login confirmations, terminal tickets and the scan scheduler live in that process. Don't run two GravityLAN instances on the same database or data directory. Restarting the backend ends all browser sessions, so everyone has to log in again.
 
 More: [SECURITY.md](SECURITY.md) · [Threat model](docs/threat-model.md) · [Container hardening](docs/container-hardening.md) · [Security baseline](docs/security-baseline.md)
 
@@ -264,7 +267,7 @@ Architecture decisions are recorded in [docs/adr/](docs/adr).
 ```bash
 # Backend (Python 3.12+, Nmap installed)
 cd backend
-pip install -r requirements.txt
+pip install -r requirements.lock.txt
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # GravityUI (Node 20+), in a second terminal: http://localhost:5174/frontend-vue/, proxies /api to :8000
@@ -362,7 +365,7 @@ Alle Screenshots zeigen das Firmennetz des [Demo-Backends](#entwicklung) (`--com
 | **SSH-Terminal** | Shells auf deine Geräte im Browser, auch am Handy: Tabs, die weiterlaufen, während du den Rest von GravityLAN nutzt, gespeicherte und zuletzt genutzte Verbindungen, Host-Key-Prüfung, Kopieren, Einfügen und „Letzten Befehl kopieren“, Schriften und Farbschemata und eine Schaltfläche **Agent-Update**. Keys (OpenSSH, PEM, PuTTY `.ppk`) liegen verschlüsselt auf dem Server; bekannte Hosts verwaltest du auf derselben Seite. |
 | **Geräte-Editor** | Fünf Tabs: Allgemein (Name, Gruppe, physischer Host, Rack und Höheneinheiten, Kachelgröße, 24/7-Überwachung, Notizen), Dienste und Ports, Schnittstellen mit Vorschlägen zum Zusammenführen, Verlauf und Status mit Verfügbarkeitsmonitor und Zeitleiste sowie der Agent (installieren, aktualisieren, deinstallieren, Konfiguration, Layer-2-Probe). |
 | **Logs** | Das Live-Log des Backends, aufgeteilt in Zeit, Level, Logger und Meldung, mit Filter für Warnungen und Fehler, Suche, Pause, Kopieren und **Zu den neuesten**. Nach einem Neustart des Backends verbindet es sich von selbst wieder. Ein zweiter Reiter, **Audit**, zeigt, wer was getan hat: Terminals, Agent-Installationen und Updates, Änderungen an Schlüsseln, Verbindungen, API-Tokens und Webhooks, Backups, Resets und Anmeldungen, mit Zeit, Aufrufer, Quell-IP, Ziel und Ergebnis, 90 Tage lang und nie mit einem Geheimnis. |
-| **Einstellungen** | Scan-Zeitplan, Offline-Schwelle und DNS-Server; die Scan-Subnetze (hinzufügen, pausieren, entfernen, ein auf dem Host erkanntes Netz übernehmen, vom Router importieren); System (Aufbewahrung, Log-Level, Startseite, Standard-Oberfläche, Server-URL); Messdaten; Gruppen; Sprache und Darstellung (Theme, Sprache, eine Farbe pro Netz und pro Verbindungstyp); Passwort, API-Token, Backup und Wiederherstellung, Datenbank-Reset. |
+| **Einstellungen** | Scan-Zeitplan, Offline-Schwelle und DNS-Server; die Scan-Subnetze (hinzufügen, pausieren, entfernen, ein auf dem Host erkanntes Netz übernehmen, vom Router importieren); System (Aufbewahrung, Log-Level, Startseite, Standard-Oberfläche, Server-URL); Messdaten; Gruppen; Sprache und Darstellung (Theme, Sprache, eine Farbe pro Netz und pro Verbindungstyp); Passwort, Master-Token, API-Token, Backup und Wiederherstellung, Datenbank-Reset. |
 | **Einrichtung, Tutorials, Über** | Ein Setup-Wizard beim ersten Start. Vierzehn Tutorials mit Schritten, Beispielen und Diagrammen: Einrichtung und Scan-Subnetze, HTTPS mit Reverse Proxy, Übersicht und Gruppen, IP-Adressen und VLANs, Router-Import, Topologie und Racks, Agent installieren, Paket-Updates, SSH, Health, Messdaten, API-Token und Webhooks, Backup, Unraid. „Über“ zeigt Server- und Agent-Version, die MIT-Lizenz mit Hinweisen zu Drittanbietern und die Projekt-Links. |
 | **Überall** | Dunkel (Standard), hell oder wie das System; Deutsch und Englisch; am Handy eine Tab-Leiste unten, 44-px-Bedienelemente und Zoomen mit zwei Fingern; Tastaturbedienung und Screenreader-Beschriftungen im Orbit-Netzplan; Animationen halten an, wenn das System reduzierte Bewegung wünscht. |
 
@@ -378,7 +381,7 @@ Alle Screenshots zeigen das Firmennetz des [Demo-Backends](#entwicklung) (`--com
 | **Agent-Verteilung** | Agenten per SSH installieren oder aktualisieren (mit gespeicherter Key-Verbindung oder eingegebenen Zugangsdaten), per Einzeiler mit Einmal-Code, alle veralteten auf einmal im Agent-Update-Center oder direkt aus einem offenen Terminal. |
 | **Messdaten** | Health-Proben und Agent-Metriken liegen in einer eigenen `telemetry.db` und blähen weder Inventar noch Backups auf. Rohwerte bleiben 48 Stunden, danach werden sie zu Stundenwerten (30 Tage) und Tageswerten (365 Tage) verdichtet; Diagramme wählen die passende Stufe zum Zeitraum. Einstellungen → Messdaten zeigt die Größen und löscht alte Daten pro Gerät oder komplett. |
 | **API & Integrationen** | REST-API mit Swagger UI unter `/docs`, ein Python-Client ([`gravitylan_api`](gravitylan_api)), schreibgeschützte API-Token (feinere Scopes über die API) und Webhooks für `device.offline` und `scan.complete`. Ein schreibgeschütztes Token eignet sich gut für [KI-Assistenten und Agenten](#ki-assistenten-und-agenten). |
-| **Backup & Wiederherstellung** | Geräte, Gruppen, Schnittstellen und Einstellungen als JSON exportieren und importieren. Ein Import ändert nie Admin-Passwort, Master-Token oder Setup-Status. |
+| **Backup & Wiederherstellung** | Das Inventar (Geräte, Gruppen, Schnittstellen, Dienste, Subnetze, Topologie, Racks mit Verkabelung) und die Einstellungen als JSON exportieren und importieren, etwa für den Umzug auf einen neuen Host. Ein Import ändert nie Admin-Passwort, Master-Token oder Setup-Status. Eine vollständige Kopie ist das nicht: siehe **Update und Rückkehr**. |
 
 ### Schnellstart
 
@@ -408,6 +411,8 @@ docker run -d --name gravitylan \
 **Rechte im Datenordner.** Der Container startet nur als root, um `/app/data` vorzubereiten: Er gibt seinem internen Benutzer die IDs aus `PUID` und `PGID` (Standard `1000`/`1000`, die Unraid-Vorlage setzt `99`/`100`), übergibt ihm den Datenordner und startet dann den Server als dieser Benutzer. Ein frischer Host-Ordner, der root gehört, funktioniert so ohne `chown`; andere Mounts unterhalb von `/app/data` bleiben unberührt. Mit `--user` gestartet, ändert der Container nichts und bricht mit einer klaren Meldung ab, wenn er nicht in den Datenordner schreiben kann.
 
 **Unraid.** Die Vorlage [`templates/gravitylan.xml`](templates/gravitylan.xml) setzt `PUID=99` und `PGID=100` (Unraids `nobody:users`), legt die Daten unter `/mnt/user/appdata/gravitylan` ab und braucht keinen Privileged-Modus: `NET_RAW` und `NET_ADMIN` reichen zum Scannen. Sie erklärt, welcher Netzwerktyp passt (Host oder ein eigenes `br0`-Netz mit eigener Adresse). Mehr: [docs/unraid-template.md](docs/unraid-template.md).
+
+**Update und Rückkehr.** Vor einem Update den Container stoppen und das ganze Datenverzeichnis kopieren (das Volume `gravitylan-data` oder den Appdata-Ordner, mit `gravitylan.db`, `telemetry.db` und `ssh_vault.key`; mit `GRAVITYLAN_DATABASE_URL` auch diese Datenbank sichern). Die neue Version migriert die Datenbank beim ersten Start, und eine ältere Version auf einer migrierten Datenbank zu betreiben wird nicht unterstützt. Als Sicherheitsnetz kopiert GravityLAN selbst `gravitylan.db` nach `data/backups/`, bevor eine neue Version sie migriert, und behält die letzten drei Kopien (ohne Messdaten und ohne externe Datenbank). Zurück geht es mit dem vorherigen Image-Tag (etwa `sleeperxr/gravitylan:0.7.0` statt `:latest`) und dem kopierten Verzeichnis; mit `GRAVITYLAN_DATABASE_URL` vorher auch diese Datenbank aus ihrer Sicherung zurückspielen. Das JSON-Backup aus den Einstellungen ist für den Umzug auf einen neuen Host gedacht, nicht für die Rückkehr: Es enthält keine SSH-Keys, gespeicherten Verbindungen oder bekannten Hosts, keine API-Token, Webhooks oder Router-Importquellen, keine Agent-Token (Agents müssen neu angemeldet werden), keine Messdaten und kein Audit-Log und weder Admin-Passwort noch Master-Token.
 
 Das Image ist mehrstufig gebaut (Vite-Build von GravityUI, dann eine schlanke Python-Laufzeit), und der Server läuft als Nicht-root-Benutzer; Nmap bekommt nur die Capabilities, die es braucht. Selbst bauen: `docker build -t gravitylan:local .`
 
@@ -477,7 +482,7 @@ Die meisten Optionen liegen in der Datenbank und werden im Setup-Wizard und in d
 | `GRAVITYLAN_DATABASE_URL` | Vollständige SQLAlchemy-URL, falls nicht SQLite im Datenordner | leer |
 | `GRAVITYLAN_PORT` / `GRAVITYLAN_HOST` | Port und Adresse | `8000` / `0.0.0.0` |
 | `GRAVITYLAN_DEBUG` | Ausführliche Logs | `false` |
-| `GRAVITYLAN_SECURE_COOKIES` | Session-Cookie als `Secure` markieren; hinter HTTPS einschalten | `false` |
+| `GRAVITYLAN_SECURE_COOKIES` | Session-Cookie als `Secure` markieren; hinter HTTPS einschalten. Ist es aus, während du dich über HTTPS anmeldest, warnt das Log einmal und Einstellungen → Zugriff zeigt einen Hinweis | `false` |
 | `GRAVITYLAN_SSH_STRICT_MODE` | Unbekannte SSH-Host-Keys beim Agent-Deploy und bei Updates ablehnen | `false` |
 | `GRAVITYLAN_ALLOW_INSECURE_INSTALL` | Manuellen Installationsbefehl auch über http:// ohne `ALLOW_INSECURE=1` auf dem Gerät erlauben (Agent und Token laufen unverschlüsselt) | `false` |
 | `GRAVITYLAN_DOCKER_HOST_IP` | LAN-IP des Rechners, auf dem der Container läuft. Nur SSH-Logins auf diese Adresse dürfen es erneut über das Docker-Bridge-Gateway versuchen (wenn der Container den eigenen Host nicht erreicht, z. B. mit macvlan) | leer |
@@ -492,7 +497,7 @@ Die meisten Optionen liegen in der Datenbank und werden im Setup-Wizard und in d
 
 ### Sicherheit und Betrieb
 
-GravityLAN geht von einem **vertrauenswürdigen Heimnetz** aus. Für Zugriff von außen nutze ein VPN oder deinen gewohnten Reverse-Proxy mit HTTPS und setze `GRAVITYLAN_SECURE_COOKIES=true`. Über reines HTTP gehen Terminal-Eingaben unverschlüsselt durchs Netz.
+GravityLAN geht von einem **vertrauenswürdigen Heimnetz** aus. Für Zugriff von außen nutze ein VPN oder deinen gewohnten Reverse-Proxy mit HTTPS und setze `GRAVITYLAN_SECURE_COOKIES=true`. Über reines HTTP geht alles unverschlüsselt durchs Netz: das Admin-Passwort bei der Anmeldung und beim Bestätigen einer Aktion, das Session-Cookie, SSH- und sudo-Passwörter für Agent-Installationen und Updates, hochgeladene private Keys, Terminal-Eingaben und Backups. Für einen ersten Start im vertrauenswürdigen Netz reicht HTTP; für den dauerhaften Betrieb erreiche GravityLAN über HTTPS oder ein VPN. Lass `GRAVITYLAN_SECURE_COOKIES` aus, solange du es über reines HTTP öffnest: Der Browser würde das Session-Cookie sonst nicht behalten, und die Anmeldung hielte nicht.
 
 - **Login**: `httpOnly`-Session-Cookie, Passwörter mit Argon2 gehasht. Nach 5 Fehlversuchen innerhalb einer Minute von einer Adresse werden Anmeldungen für den Rest dieser Minute abgelehnt. Hinter einem Reverse-Proxy auf einem anderen Rechner zählen alle Versuche gegen die Adresse des Proxys.
 - **API-Token** werden gehasht gespeichert und sind schreibgeschützt, solange sie keine anderen Scopes bekommen; die Scopes gelten auch für WebSocket-Verbindungen, und das Herunterladen einer Agent-Konfiguration braucht `agent:write`. Jeder Agent hat sein eigenes Token, ebenfalls als SHA-256-Hash gespeichert, und ein unbekannter Agent muss auf seiner Gerätekarte übernommen werden.
@@ -500,7 +505,8 @@ GravityLAN geht von einem **vertrauenswürdigen Heimnetz** aus. Für Zugriff von
 - **SSH**: Keys und gespeicherte Passwörter liegen verschlüsselt auf dem Server und gehen nie zurück an den Browser. Nur angemeldete Browser-Sitzungen können Shells öffnen oder gespeicherte Keys verwenden, keine API- oder Master-Token. Ein Host mit geändertem Host-Key wird blockiert, bis du den alten Eintrag entfernst; auch Paket-Updates merken sich den Host-Key beim ersten Kontakt und lehnen später einen anderen ab. Details: [ADR 002](docs/adr/002-ssh-keystore.md).
 - **Agent-Installation**: Die Konfiguration des Agenten ist nur für root lesbar, sein Dienst läuft mit eigenem `/tmp` und schreibgeschützten Home-Verzeichnissen, und Installations-Codes werden im Request-Log maskiert. Die Server-URL im Installer muss eine einfache `http(s)://host[:port][/pfad]` sein.
 - **Webhooks** können weder den GravityLAN-Host selbst noch Link-Local-Adressen oder Cloud-Metadatendienste ansprechen; das Ziel wird vor jeder Zustellung erneut geprüft. LAN-Adressen funktionieren.
-- **Backups** enthalten keine SSH-Keys, gespeicherten Passwörter oder Agent-Token, und ein Import ersetzt nie Admin-Passwort, Master-Token oder Setup-Status. Bewahre `data/ssh_vault.key` (oder `GRAVITYLAN_VAULT_KEY`) separat sicher auf: Ohne ihn lassen sich gespeicherte Keys nicht entschlüsseln.
+- **Backups** (der JSON-Export) enthalten keine SSH-Keys, gespeicherten Passwörter, API- oder Agent-Token, kein Admin-Passwort und keinen Master-Token, und ein Import ersetzt nie Admin-Passwort, Master-Token oder Setup-Status. Eine Kopie des Datenverzeichnisses enthält dagegen alles: Mit `data/ssh_vault.key` darin lassen sich die gespeicherten SSH-Keys entschlüsseln, bewahre solche Kopien also so sicher auf wie den Server. Nutzt du stattdessen `GRAVITYLAN_VAULT_KEY`, bewahre auch diesen Schlüssel auf: Ohne ihn lassen sich gespeicherte Keys nicht entschlüsseln.
+- **Ein Prozess**: Pro Instanz läuft genau ein Anwendungs-Worker (das Image startet uvicorn mit `--workers 1`; dabei bleiben). Sitzungen, Anmeldebestätigungen, Terminal-Tickets und der Scan-Scheduler liegen in diesem Prozess. Betreibe keine zwei GravityLAN-Instanzen auf derselben Datenbank oder demselben Datenverzeichnis. Ein Neustart des Backends beendet alle Browser-Sitzungen; danach ist eine erneute Anmeldung nötig.
 
 Mehr: [SECURITY.md](SECURITY.md) · [Bedrohungsmodell](docs/threat-model.md) · [Container-Härtung](docs/container-hardening.md) · [Sicherheits-Baseline](docs/security-baseline.md)
 
@@ -542,7 +548,7 @@ Architekturentscheidungen stehen in [docs/adr/](docs/adr).
 ```bash
 # Backend (Python 3.12+, Nmap installiert)
 cd backend
-pip install -r requirements.txt
+pip install -r requirements.lock.txt
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # GravityUI (Node 20+), in einem zweiten Terminal: http://localhost:5174/frontend-vue/, leitet /api an :8000 weiter

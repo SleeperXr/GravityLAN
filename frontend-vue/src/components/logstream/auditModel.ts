@@ -5,7 +5,7 @@ import type { BadgeTone } from '@/components/ui/Badge.vue';
 export const AUDIT_CATEGORIES = {
   all: [],
   remote: ['agent', 'ssh.terminal'],
-  credentials: ['ssh.key', 'ssh.connection', 'ssh.known_host', 'auth.token', 'auth.password', 'webhook'],
+  credentials: ['ssh.key', 'ssh.connection', 'ssh.known_host', 'auth.token', 'auth.master_token', 'auth.password', 'webhook'],
   instance: ['backup', 'database'],
   logins: ['auth.login'],
 } as const satisfies Record<string, readonly string[]>;

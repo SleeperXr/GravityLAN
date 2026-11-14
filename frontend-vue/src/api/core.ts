@@ -351,6 +351,8 @@ export const api = {
   stepUp: (password: string, scope: string) =>
     request<{ scope: string; expires_in: number }>('/api/auth/step-up', { method: 'POST', body: JSON.stringify({ password, scope }) }),
   getStepUpStatus: () => request<{ grants: Record<string, number>; minutes: number }>('/api/auth/step-up'),
+  rotateMasterToken: () => request<{ token: string }>('/api/auth/master-token/rotate', { method: 'POST' }),
+  getCookieSecurity: () => request<{ secure_cookies: boolean; https: boolean }>('/api/auth/cookie-security'),
   getAuditEvents: (params: { action?: string; result?: string; q?: string; before_id?: number; limit?: number } = {}) => {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') query.set(key, String(value));
