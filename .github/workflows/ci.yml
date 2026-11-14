@@ -110,7 +110,7 @@ jobs:
         cache: 'pip'
 
     - name: Backend dependencies for the demo server
-      run: pip install -r backend/requirements.txt
+      run: pip install -r backend/requirements.lock.txt
 
     - name: Set up Node.js 22
       uses: actions/setup-node@v4
