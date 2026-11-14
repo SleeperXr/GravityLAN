@@ -19,6 +19,14 @@
    */
   --text-micro: 0.6875rem;
   --text-micro--line-height: 1.45;
+  /* Data: a primary value in a table row or tile (SLA, latency, load), 13 px between meta and body */
+  --text-data: 0.8125rem;
+  --text-data--line-height: 1.385;
+  --text-data--font-weight: 500;
+  /* Hero: the one figure a page is about (the network health score), never more than one per page */
+  --text-hero: 1.75rem;
+  --text-hero--line-height: 1.15;
+  --text-hero--font-weight: 600;
 
   --color-canvas: var(--gl-canvas);
   --color-chrome: var(--gl-chrome);

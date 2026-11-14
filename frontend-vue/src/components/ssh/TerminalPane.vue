@@ -425,7 +425,7 @@ onBeforeUnmount(() => {
 
     <div v-if="hostKey" class="absolute inset-0 z-10 grid place-items-center bg-black/50 p-4">
       <div v-if="hostKey.status === 'changed'" class="w-full max-w-lg space-y-3 rounded-lg border border-danger/50 bg-popover p-5 shadow-pop" role="alert">
-        <h3 class="flex items-center gap-2 text-sm font-bold text-danger-text"><AlertTriangle class="size-4" aria-hidden="true" />{{ t('ssh.hostkey.changed_title') }}</h3>
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-danger-text"><AlertTriangle class="size-4" aria-hidden="true" />{{ t('ssh.hostkey.changed_title') }}</h3>
         <p class="text-sm text-fg">{{ t('ssh.hostkey.changed_text', { host: `${hostKey.host}:${hostKey.port}` }) }}</p>
         <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
           <dt class="text-fg-subtle">{{ t('ssh.hostkey.known') }}</dt><dd class="font-mono break-all text-fg">{{ hostKey.known_fingerprint }}</dd>
@@ -435,7 +435,7 @@ onBeforeUnmount(() => {
         <div class="flex justify-end"><Button size="sm" @click="hostKey = null">{{ t('common.close') }}</Button></div>
       </div>
       <div v-else class="w-full max-w-lg space-y-3 rounded-lg border border-warn/50 bg-popover p-5 shadow-pop" role="dialog" aria-modal="false" :aria-label="t('ssh.hostkey.unknown_title')">
-        <h3 class="flex items-center gap-2 text-sm font-bold text-warn-text"><ShieldAlert class="size-4" aria-hidden="true" />{{ t('ssh.hostkey.unknown_title') }}</h3>
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-warn-text"><ShieldAlert class="size-4" aria-hidden="true" />{{ t('ssh.hostkey.unknown_title') }}</h3>
         <p class="text-sm text-fg">{{ t('ssh.hostkey.unknown_text', { host: `${hostKey.host}:${hostKey.port}` }) }}</p>
         <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
           <dt class="text-fg-subtle">{{ t('ssh.hostkey.type') }}</dt><dd class="font-mono text-fg">{{ hostKey.key_type }}</dd>

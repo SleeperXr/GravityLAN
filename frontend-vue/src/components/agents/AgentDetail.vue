@@ -258,7 +258,7 @@ const tabs = computed(() => [
       <div class="space-y-4 pt-4">
         <div class="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h4 class="text-sm font-bold text-fg">{{ t('agent_detail.timeframe_title') }}</h4>
+            <h4 class="text-sm font-semibold text-fg">{{ t('agent_detail.timeframe_title') }}</h4>
             <p class="text-xs text-fg-subtle">
               {{ t('agent_detail.timeframe_desc') }}<template v-if="retentionDays !== null"> · {{ t('agent_detail.retention', { days: retentionDays }) }}</template>
             </p>

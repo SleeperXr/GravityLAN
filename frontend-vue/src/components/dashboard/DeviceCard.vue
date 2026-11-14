@@ -95,7 +95,7 @@ async function clearIpChange() {
       <div class="min-w-0 flex-1">
         <h3 class="truncate text-sm font-semibold text-fg" :class="!device.is_online && 'text-fg-muted'" :title="name">{{ name }}</h3>
         <div class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-subtle">
-          <span class="font-mono">{{ device.ip }}</span>
+          <span class="font-mono text-fg-muted">{{ device.ip }}</span>
           <Badge v-if="role">{{ role }}</Badge>
           <span v-if="device.parent_id" class="truncate">{{ t('dashboard.on_host', { host: device.parent_name || 'Host' }) }}</span>
         </div>

@@ -242,7 +242,7 @@ const statusDot: Record<TerminalStatus, string> = {
   <div class="flex h-full min-h-[32rem] flex-col">
     <header class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 md:px-6">
       <div class="min-w-0">
-        <h1 class="sr-only text-xl font-bold text-fg md:not-sr-only">{{ t('ssh.title') }}</h1>
+        <h1 class="sr-only text-xl font-semibold text-fg md:not-sr-only">{{ t('ssh.title') }}</h1>
         <p class="max-w-prose text-sm text-fg-muted">{{ t('ssh.subtitle') }}</p>
       </div>
       <div class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('ssh.title')">

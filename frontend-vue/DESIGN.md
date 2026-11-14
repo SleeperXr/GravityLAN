@@ -84,9 +84,15 @@ typography:
   display:
     fontFamily: "Hanken Grotesk Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.5rem"
-    fontWeight: 700
+    fontWeight: 600
     lineHeight: 1.33
     letterSpacing: "-0.025em"
+  hero:
+    fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+    fontSize: "1.75rem"
+    fontWeight: 600
+    lineHeight: 1.15
+    fontFeature: "'zero', 'tnum'"
   headline:
     fontFamily: "Hanken Grotesk Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.25rem"
@@ -96,8 +102,14 @@ typography:
   title:
     fontFamily: "Hanken Grotesk Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.875rem"
-    fontWeight: 700
+    fontWeight: 600
     lineHeight: 1.43
+  data:
+    fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+    fontSize: "0.8125rem"
+    fontWeight: 500
+    lineHeight: 1.385
+    fontFeature: "'zero', 'tnum'"
   body:
     fontFamily: "Hanken Grotesk Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.875rem"
@@ -289,9 +301,11 @@ Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden 
 **Character:** Eine sachliche, leicht kantige Grotesk für klare Orientierung, gepaart mit einer technischen Mono für alles, was man abliest oder abtippt.
 
 ### Hierarchy
-- **Display** (700, 1,5 rem, eng gesperrt): nur der Willkommensschritt der Ersteinrichtung.
-- **Headline** (600, 1,25 rem): Seitentitel im `PageHeader`; auf Telefonen nur für Screenreader, weil die App-Leiste den Titel zeigt. Einrichtungsschritte nutzen dieselbe Größe in 700.
-- **Title** (700, 0,875 rem): Karten- und Abschnittstitel, Netzname im Statusboard, Meldungstitel. Dialogtitel 1 rem in 600.
+- **Hero** (Mono 600, 1,75 rem, Utility `text-hero`): die eine Kennzahl, um die es auf einer Seite geht, heute der Netzwerk-Gesundheitswert im Health-Radar. Höchstens eine je Seite.
+- **Display** (600, 1,5 rem, eng gesperrt): nur der Willkommensschritt der Ersteinrichtung.
+- **Headline** (600, 1,25 rem): Seitentitel im `PageHeader`; auf Telefonen nur für Screenreader, weil die App-Leiste den Titel zeigt. Einrichtungsschritte nutzen dieselbe Größe.
+- **Title** (600, 0,875 rem): Karten- und Abschnittstitel, Netzname im Statusboard, Meldungstitel, Gerätenamen in Listen. Dialogtitel 1 rem in 600.
+- **Data** (Mono 500, 13 px, Utility `text-data`): der Hauptwert einer Tabellenzeile oder Kachel: Verfügbarkeit und Latenz im Health-Radar, CPU/RAM und Verfügbarkeit bei Agents, Messwerte auf Gerätekacheln. Nebenwerte daneben (24h-Wert, Ø, ±) bleiben Meta in `fg-subtle`.
 - **Body** (400–500, 0,875 rem): Fließtext, Navigation, Buttons (500, primär 600), Beschreibungen (`max-w-2xl`).
 - **Meta** (0,75 rem): Hilfetexte, Zähler, Zeitangaben.
 - **Label** (600, 0,75 rem, `fg-subtle`, normale Schreibung; Klasse `.gl-eyebrow`): Beschriftung direkt über einem Messwert oder einer Definitionsliste und kleine Listengruppen-Überschriften. Kein Versal-Satz, kein Vorspann über Seiten- oder Abschnittstiteln.
@@ -303,7 +317,9 @@ Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden 
 ### Named Rules
 **The Untergrenze Rule.** Fließtext, Hilfetexte, Beschriftungen, Buttons und Listen-Unterzeilen stehen mindestens in 12 px (`text-xs`); 11 px (`text-micro`) nur für die oben genannten Mikro-Beschriftungen, nie kleiner, keine freien Pixelwerte (`text-[10px]`). Passt eine Größe nicht in ein dichtes Raster (IP-Kacheln, Rack-Zeilen, Port-Leiste), wird Inhalt gekürzt oder ausgeblendet, nicht die Schrift verkleinert.
 
-**The Abgelesen-in-Mono Rule.** Alles, was eine Adresse, ein Zähler oder ein Messwert ist, steht in JetBrains Mono mit Tabellenziffern; Fließtext und Namen nie.
+**The Abgelesen-in-Mono Rule.** Alles, was eine Adresse, ein Zähler oder ein Messwert ist, steht in JetBrains Mono mit Tabellenziffern; Fließtext und Namen nie. Steht ein Wort neben der Zahl, bleibt nur die Zahl Mono und das Wort steht in der Grotesk: in „3 Aktive Probleme" und „2 offline" ist nur die Ziffer Mono, „Online" unter dem Zähler ist Grotesk. Bedienbeschriftungen mit Zahlen („24 Stunden", „7 Tage") sind keine Messwerte und stehen in der Grotesk mit Tabellenziffern.
+
+**The Drei-Gewichte Rule.** Die Oberfläche nutzt 400, 500 und 600. 700 bleibt den SVG-Beschriftungen auf Karten und Diagrammen (Körpernamen und Rollenkürzel im Orbit-Netzplan, Tutorial-Schema) und den 11-px-Schrittnummern der Ersteinrichtung, die gegen einen Halo oder auf kleinem Kreis stehen; 800 nur dem Netzschild. Hierarchie entsteht über Größe, Farbe und Abstand, nicht über ein weiteres Gewicht.
 
 ## Layout
 

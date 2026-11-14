@@ -103,7 +103,7 @@ async function remove(key: SshKey) {
 
     <section class="gl-card space-y-4 p-4" :aria-labelledby="`${id}-add`">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <h2 :id="`${id}-add`" class="text-sm font-bold text-fg">{{ t('ssh.keys.add') }}</h2>
+        <h2 :id="`${id}-add`" class="text-sm font-semibold text-fg">{{ t('ssh.keys.add') }}</h2>
         <div class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('ssh.keys.add')">
           <button
             v-for="opt in [{ v: 'import', icon: Upload, label: t('ssh.keys.import') }, { v: 'generate', icon: Sparkles, label: t('ssh.keys.generate') }] as const"
@@ -171,7 +171,7 @@ async function remove(key: SshKey) {
     </section>
 
     <section class="gl-card p-4" :aria-labelledby="`${id}-list`">
-      <h2 :id="`${id}-list`" class="mb-3 text-sm font-bold text-fg">{{ t('ssh.keys.stored', { count: keys.length }) }}</h2>
+      <h2 :id="`${id}-list`" class="mb-3 text-sm font-semibold text-fg">{{ t('ssh.keys.stored', { count: keys.length }) }}</h2>
       <p v-if="keys.length === 0" class="text-sm text-fg-subtle">{{ t('ssh.keys.empty') }}</p>
       <ul v-else class="divide-y divide-line">
         <li v-for="key in keys" :key="key.id" class="flex items-start gap-3 py-3">

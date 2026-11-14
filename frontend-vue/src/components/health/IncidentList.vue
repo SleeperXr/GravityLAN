@@ -61,7 +61,7 @@ function iconOf(incident: HealthIncident) {
         <component :is="iconOf(incident).icon" class="mt-0.5 size-4 shrink-0" :class="iconOf(incident).cls" aria-hidden="true" />
         <span class="min-w-0 flex-1">
           <span class="flex items-baseline justify-between gap-2">
-            <span class="truncate text-sm font-bold text-fg">{{ incident.device_name }}</span>
+            <span class="truncate text-sm font-semibold text-fg">{{ incident.device_name }}</span>
             <span v-if="ownTime(incident)" class="shrink-0 text-xs text-fg-subtle"><RelativeTime :date="incident.timestamp" /></span>
           </span>
           <span class="mt-0.5 line-clamp-2 block text-xs text-fg-muted">{{ incident.message || incident.status }}</span>

@@ -62,7 +62,7 @@ async function ackNotice(n: Notice) {
 <template>
   <section class="gl-card flex min-h-0 flex-col" aria-labelledby="notices-title">
     <header class="flex items-baseline justify-between border-b border-line px-4 py-3">
-      <h2 id="notices-title" class="text-sm font-bold text-fg">{{ t('gv.notices.title') }}</h2>
+      <h2 id="notices-title" class="text-sm font-semibold text-fg">{{ t('gv.notices.title') }}</h2>
       <span class="font-mono text-xs text-fg-subtle tabular">{{ notices.length }}</span>
     </header>
     <div v-if="notices.length === 0" class="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
@@ -84,7 +84,7 @@ async function ackNotice(n: Notice) {
           />
           <LineBullet v-else color="var(--gl-fg-muted)" label="A" size="sm" class="mt-0.5" />
           <span class="min-w-0 flex-1">
-            <span class="block text-sm leading-5 font-bold" :class="n.tone === 'danger' ? 'text-danger-text' : n.tone === 'warn' ? 'text-warn-text' : 'text-fg'">
+            <span class="block text-sm leading-5 font-semibold" :class="n.tone === 'danger' ? 'text-danger-text' : n.tone === 'warn' ? 'text-warn-text' : 'text-fg'">
               {{ n.title }}
             </span>
             <span class="mt-0.5 block truncate font-mono text-xs text-fg-subtle">{{ n.detail }}</span>

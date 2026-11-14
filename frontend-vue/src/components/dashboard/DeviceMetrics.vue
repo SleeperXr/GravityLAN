@@ -73,7 +73,7 @@ const expandedRows = computed(() => {
       <div v-for="m in compactMeters" :key="m.key" class="min-w-0">
         <div class="mb-1 flex items-baseline justify-between gap-2 text-xs">
           <span class="text-fg-subtle">{{ m.label }}</span>
-          <span class="font-mono font-medium tabular" :class="texts[m.tone]">{{ m.text }}</span>
+          <span class="font-mono text-data tabular" :class="texts[m.tone]">{{ m.text }}</span>
         </div>
         <div
           class="h-1 overflow-hidden rounded-full bg-sunken"

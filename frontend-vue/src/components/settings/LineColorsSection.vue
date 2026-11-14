@@ -92,7 +92,7 @@ async function choose(s: Subnet, color: string | null) {
           </button>
           <label class="relative grid size-6 cursor-pointer place-items-center overflow-hidden rounded-full border border-dashed border-line-strong" :title="t('gv.lines.custom')">
             <span class="sr-only">{{ t('gv.lines.custom') }}</span>
-            <span class="text-xs font-bold text-fg-subtle" aria-hidden="true">+</span>
+            <span class="text-xs font-semibold text-fg-subtle" aria-hidden="true">+</span>
             <input type="color" class="absolute inset-0 cursor-pointer opacity-0" :value="toHex(custom(s))" @change="choose(s, ($event.target as HTMLInputElement).value)" />
           </label>
           <button
