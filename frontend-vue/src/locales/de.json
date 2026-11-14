@@ -816,7 +816,12 @@
         "conflicts_hint": "Diese Adressen melden mehrere Gäste. GravityLAN übernimmt sie nicht, statt einen Namen zu raten.",
         "guests_title": "Gäste",
         "skipped_title": "Übersprungen",
-        "outside_hint": "{{count}} Adressen liegen außerhalb der Scan-Netze ({{subnets}}), z. B. Docker-Bridges oder IPv6. Sie werden nur angezeigt, nicht übernommen."
+        "outside_hint": "{{count}} Adressen liegen außerhalb der Scan-Netze ({{subnets}}), z. B. Docker-Bridges oder IPv6. Sie werden nur angezeigt, nicht übernommen.",
+        "add_all": "Alle neuen hinzufügen ({{count}})",
+        "add_one": "{{name}} ({{ip}}) zum Dashboard hinzufügen",
+        "add_all_title": "{{count}} Gäste zum Dashboard hinzufügen?",
+        "add_all_message": "Jede Adresse wird ein eigenes Gerät, benannt nach dem Gast. Online-Status und Dienste ermittelt danach der Scan.",
+        "added": "Zum Dashboard hinzugefügt ({{count}}): {{names}}"
       },
       "status": {
         "renamed": "Gerät umbenannt",

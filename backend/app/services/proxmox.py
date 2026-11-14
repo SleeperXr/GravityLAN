@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 import httpx
+from fastapi import HTTPException
 from sqlalchemy import select, update
 
 from app.models.device import Device, DiscoveredHost
@@ -274,6 +275,56 @@ async def apply_guests(db, connection: ProxmoxIntegration, guests: list[Guest],
     outside = sum(1 for s in statuses.values() if s == "outside")
     return {"guests": len(guests), "addresses": len(mapping), "updated_devices": renamed,
             "conflicts": len(conflicts), "outside": outside}
+
+
+MAX_ADD_AT_ONCE = 256
+
+
+async def add_guests_to_dashboard(db, ips: list[str]) -> list[dict]:
+    """Put guests of the last sync on the dashboard, named after the guest. Only on request:
+    a sync itself never creates a device.
+
+    Only addresses of the last sync are accepted, so this cannot add arbitrary hosts. The
+    device is created the usual way (MAC and vendor lookup); a display name that is still
+    automatic becomes the guest name right away instead of with the next sync.
+    """
+    from app.api.devices import add_device_from_ip
+
+    async with write_lock:
+        connection = await db.get(ProxmoxIntegration, 1)
+        if not connection or not connection.enabled:
+            raise ProxmoxError("Enable and save the Proxmox connection first.")
+        inventory = _inventory(connection)
+        wanted = list(dict.fromkeys(ips))
+        unknown = [ip for ip in wanted if ip not in inventory]
+        if unknown:
+            raise ProxmoxError(f"Not an address of the last Proxmox sync: {', '.join(unknown[:5])}")
+
+        added = []
+        for ip in wanted:
+            name = inventory[ip].get("name") or ip
+            try:
+                device = await add_device_from_ip(ip, db)
+            except HTTPException:
+                continue  # e.g. an IPv6 address: the dashboard takes IPv4 devices only
+            automatic = {device.ip, device.hostname, (device.hostname or "").split(".")[0]} - {None, ""}
+            if device.display_name != name and _is_automatic(device.display_name, automatic):
+                device.display_name = name
+            await db.execute(update(DiscoveredHost).where(DiscoveredHost.ip == ip).values(
+                is_monitored=True, last_seen=DiscoveredHost.last_seen))
+            await db.commit()
+            added.append({"ip": ip, "id": device.id, "name": device.display_name})
+
+    dashboard_cache.invalidate_all()
+    discovery_cache.invalidate()
+    topology_cache.invalidate()
+    if last_report:
+        done = {a["ip"] for a in added}
+        for guest in last_report["guests"]:
+            for address in guest["addresses"]:
+                if address["ip"] in done:
+                    address["status"] = "device"
+    return added
 
 
 def _target(connection: ProxmoxIntegration) -> tuple:

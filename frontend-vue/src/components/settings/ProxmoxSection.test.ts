@@ -6,7 +6,7 @@ import { api, type ProxmoxSettings } from '@/api/client';
 const { showToast, confirm } = vi.hoisted(() => ({ showToast: vi.fn(), confirm: vi.fn() }));
 
 vi.mock('@/api/client', () => ({
-  api: { getProxmoxSettings: vi.fn(), saveProxmoxSettings: vi.fn(), deleteProxmoxSettings: vi.fn(), syncProxmox: vi.fn(), getProxmoxReport: vi.fn() },
+  api: { getProxmoxSettings: vi.fn(), saveProxmoxSettings: vi.fn(), deleteProxmoxSettings: vi.fn(), syncProxmox: vi.fn(), getProxmoxReport: vi.fn(), addProxmoxGuestsToDashboard: vi.fn() },
 }));
 vi.mock('@/composables/useToast', () => ({ useToast: () => ({ showToast }) }));
 vi.mock('@/composables/useConfirm', () => ({ useConfirm: () => ({ confirm }) }));
@@ -96,5 +96,48 @@ describe('ProxmoxSection', () => {
     expect(report.text()).toContain('docker, other');
     expect(report.text()).toContain('qemu/104');
     expect(report.text()).toContain('172.17.0.1');
+  });
+
+  describe('adding guests to the dashboard', () => {
+    const REPORT = {
+      synced_at: '2026-11-14T01:11:17+00:00',
+      subnets: ['192.168.100.0/24'],
+      guests: [
+        { guest: 'qemu/100', name: 'nas', addresses: [{ ip: '192.168.100.10', status: 'new_host' as const }] },
+        { guest: 'lxc/101', name: 'dns', addresses: [{ ip: '192.168.100.11', status: 'host' as const }] },
+        { guest: 'lxc/102', name: 'known', addresses: [{ ip: '192.168.100.12', status: 'device' as const }] },
+      ],
+      skipped: [],
+      conflicts: [],
+    };
+
+    beforeEach(() => {
+      vi.mocked(api.getProxmoxReport).mockResolvedValue({ report: REPORT });
+      vi.mocked(api.addProxmoxGuestsToDashboard).mockResolvedValue({ added: [{ ip: '192.168.100.10', id: 7, name: 'nas' }] });
+    });
+
+    it('adds one guest with its button, without asking', async () => {
+      const wrapper = await mountWith(STORED);
+      expect(wrapper.find('[data-test="proxmox-add-192.168.100.12"]').exists()).toBe(false); // already a device
+      await wrapper.find('[data-test="proxmox-add-192.168.100.10"]').trigger('click');
+      await flushPromises();
+      expect(confirm).not.toHaveBeenCalled();
+      expect(api.addProxmoxGuestsToDashboard).toHaveBeenCalledWith(['192.168.100.10']);
+      expect(showToast).toHaveBeenCalledWith('success', expect.any(String), expect.stringContaining('nas'));
+    });
+
+    it('asks before adding all new ones and adds nothing when cancelled', async () => {
+      confirm.mockResolvedValue(false);
+      const wrapper = await mountWith(STORED);
+      await wrapper.find('[data-test="proxmox-add-all"]').trigger('click');
+      await flushPromises();
+      expect(confirm).toHaveBeenCalledOnce();
+      expect(api.addProxmoxGuestsToDashboard).not.toHaveBeenCalled();
+
+      confirm.mockResolvedValue(true);
+      await wrapper.find('[data-test="proxmox-add-all"]').trigger('click');
+      await flushPromises();
+      expect(api.addProxmoxGuestsToDashboard).toHaveBeenCalledWith(['192.168.100.10', '192.168.100.11']);
+    });
   });
 });

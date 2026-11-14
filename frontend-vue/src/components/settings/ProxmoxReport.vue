@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { AlertTriangle, ChevronRight } from 'lucide-vue-next';
+import { AlertTriangle, ChevronRight, Plus } from 'lucide-vue-next';
 import type { ProxmoxReport } from '@/api/client';
 import Badge, { type BadgeTone } from '@/components/ui/Badge.vue';
+import Button from '@/components/ui/Button.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
 import { t } from '@/i18n';
 
 /** Settings > Proxmox VE > Last sync: per guest what happened to each address, conflicts, skipped guests. */
-const props = defineProps<{ report: ProxmoxReport }>();
+const props = defineProps<{ report: ProxmoxReport; adding?: boolean }>();
+/** Put addresses on the dashboard; only ever on a click, a sync never adds devices. */
+const emit = defineEmits<{ add: [ips: string[]] }>();
 
 type Status = ProxmoxReport['guests'][number]['addresses'][number]['status'];
 const TONES: Record<Status, BadgeTone> = {
@@ -21,6 +24,9 @@ const TONES: Record<Status, BadgeTone> = {
 
 const empty = computed(() => props.report.guests.length === 0 && props.report.skipped.length === 0);
 const outsideCount = computed(() => props.report.guests.reduce((n, g) => n + g.addresses.filter((a) => a.status === 'outside').length, 0));
+/** Addresses that are not a device yet and can go on the dashboard. */
+const addable = (status: Status) => status === 'host' || status === 'new_host';
+const addableIps = computed(() => props.report.guests.flatMap((g) => g.addresses.filter((a) => addable(a.status)).map((a) => a.ip)));
 // Open by default when something needs a look
 const needsLook = computed(() => empty.value || props.report.conflicts.length > 0);
 </script>
@@ -53,7 +59,12 @@ const needsLook = computed(() => empty.value || props.report.conflicts.length > 
       </div>
 
       <div v-if="report.guests.length" class="space-y-1.5">
-        <p class="gl-eyebrow">{{ t('gv.proxmox.report.guests_title') }}</p>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="gl-eyebrow">{{ t('gv.proxmox.report.guests_title') }}</p>
+          <Button v-if="addableIps.length" size="sm" :loading="adding" data-test="proxmox-add-all" @click="emit('add', addableIps)">
+            <Plus v-if="!adding" aria-hidden="true" />{{ t('gv.proxmox.report.add_all', { count: addableIps.length }) }}
+          </Button>
+        </div>
         <ul class="divide-y divide-line border-y border-line">
           <li v-for="g in report.guests" :key="g.guest" class="flex flex-col gap-1.5 py-2.5 sm:flex-row sm:items-start sm:gap-4">
             <div class="flex min-w-0 items-center gap-2 sm:w-48 sm:shrink-0">
@@ -61,10 +72,22 @@ const needsLook = computed(() => empty.value || props.report.conflicts.length > 
               <code class="font-mono text-xs text-fg-subtle">{{ g.guest }}</code>
             </div>
             <ul class="flex min-w-0 flex-wrap gap-1.5">
-              <li v-for="a in g.addresses" :key="a.ip">
+              <li v-for="a in g.addresses" :key="a.ip" class="flex items-center gap-1">
                 <Badge mono :tone="TONES[a.status]" :class="a.status === 'outside' ? 'opacity-60' : undefined" :title="t(`gv.proxmox.status.${a.status}`)">
                   {{ a.ip }}<span class="font-sans opacity-80">· {{ t(`gv.proxmox.status.${a.status}`) }}</span>
                 </Badge>
+                <Button
+                  v-if="addable(a.status)"
+                  size="icon-sm"
+                  variant="ghost"
+                  :disabled="adding"
+                  :aria-label="t('gv.proxmox.report.add_one', { name: g.name, ip: a.ip })"
+                  :title="t('gv.proxmox.report.add_one', { name: g.name, ip: a.ip })"
+                  :data-test="`proxmox-add-${a.ip}`"
+                  @click="emit('add', [a.ip])"
+                >
+                  <Plus aria-hidden="true" />
+                </Button>
               </li>
             </ul>
           </li>

@@ -816,7 +816,12 @@
         "conflicts_hint": "Several guests report these addresses. GravityLAN leaves them out instead of guessing a name.",
         "guests_title": "Guests",
         "skipped_title": "Skipped",
-        "outside_hint": "{{count}} addresses are outside the scan networks ({{subnets}}), e.g. Docker bridges or IPv6. They are only listed, not used."
+        "outside_hint": "{{count}} addresses are outside the scan networks ({{subnets}}), e.g. Docker bridges or IPv6. They are only listed, not used.",
+        "add_all": "Add all new ({{count}})",
+        "add_one": "Add {{name}} ({{ip}}) to the dashboard",
+        "add_all_title": "Add {{count}} guests to the dashboard?",
+        "add_all_message": "Each address becomes a device of its own, named after the guest. The scan then works out online state and services.",
+        "added": "Added to the dashboard ({{count}}): {{names}}"
       },
       "status": {
         "renamed": "device renamed",
