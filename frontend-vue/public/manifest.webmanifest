@@ -1,0 +1,38 @@
+{
+  "id": "/frontend-vue/",
+  "name": "GravityLAN",
+  "short_name": "GravityLAN",
+  "description": "Self-hosted homelab network radar, inventory, and topology dashboard.",
+  "start_url": "/frontend-vue/",
+  "scope": "/frontend-vue/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0c0f14",
+  "theme_color": "#0c0f14",
+  "icons": [
+    {
+      "src": "/frontend-vue/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/frontend-vue/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/frontend-vue/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/frontend-vue/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
