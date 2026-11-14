@@ -12,6 +12,7 @@ import UnitField from '@/components/settings/UnitField.vue';
 import ActionRow from '@/components/settings/ActionRow.vue';
 import SubnetsSection from '@/components/settings/SubnetsSection.vue';
 import TelemetrySection from '@/components/settings/TelemetrySection.vue';
+import ProxmoxSection from '@/components/settings/ProxmoxSection.vue';
 import GroupsSection from '@/components/settings/GroupsSection.vue';
 import CookieSecurityNotice from '@/components/settings/CookieSecurityNotice.vue';
 import MasterTokenRotate from '@/components/settings/MasterTokenRotate.vue';
@@ -87,6 +88,7 @@ function discard() {
 const sections = computed(() => [
   { id: 'scan', label: t('settings.section_scan') },
   { id: 'subnets', label: t('settings.subnets') },
+  { id: 'proxmox', label: t('gv.proxmox.title') },
   { id: 'system', label: t('settings.section_system') },
   { id: 'telemetry', label: t('telemetry_settings.title') },
   { id: 'groups', label: t('settings.manage_groups') },
@@ -147,6 +149,7 @@ const languages: { value: Locale; key: string }[] = [
         </SettingsSection>
 
         <SubnetsSection />
+        <ProxmoxSection />
 
         <SettingsSection id="system" :title="t('settings.section_system')" :description="t('settings.section_system_desc')">
           <div class="grid gap-4 md:grid-cols-3">

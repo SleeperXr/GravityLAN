@@ -275,7 +275,7 @@
     "stepup": {
       "title": "Passwort bestätigen",
       "scope_remote": "Fernzugriff: Terminal, Agent installieren oder entfernen, Paket-Updates",
-      "scope_credentials": "Zugangsdaten: SSH-Schlüssel und -Verbindungen, Host-Schlüssel, API-Tokens, Webhooks",
+      "scope_credentials": "Zugangsdaten: SSH-Schlüssel und -Verbindungen, Host-Schlüssel, API-Tokens, Webhooks, Proxmox",
       "scope_instance": "Instanz: Backup, Wiederherstellung, Datenbank-Reset, diese Bestätigungsdauer",
       "hint": "Danach gilt die Bestätigung {{minutes}} Minuten für diesen Bereich in diesem Browser.",
       "password": "Admin-Passwort",
@@ -777,6 +777,35 @@
       "reason_server_error_hint": "Der Server konnte die Anfrage nicht beantworten (SERVFAIL), z. B. weil seine eigene Weiterleitung fehlschlug.",
       "reason_error": "Fehler",
       "reason_error_hint": "Die Anfrage ist gescheitert, bevor ein Server antworten konnte. Details stehen im Log."
+    },
+    "proxmox": {
+      "title": "Proxmox VE",
+      "description": "Liest Namen und Adressen von VMs und Containern über die Proxmox-API und benennt passende Geräte damit. GravityLAN fragt nur ab und startet, stoppt oder ändert keine Gäste.",
+      "enabled": "Proxmox-Anbindung aktiv",
+      "enabled_hint": "Danach gleicht GravityLAN die Gäste alle fünf Minuten ab.",
+      "url": "API-Adresse",
+      "url_hint": "Direkte HTTPS-Adresse des Servers oder eines Cluster-Knotens; Weiterleitungen werden nicht befolgt.",
+      "token_id": "Token-ID",
+      "token_id_hint": "In der Form benutzer@realm!token-name. Der Token braucht Leserechte auf die Gäste.",
+      "secret": "Token-Secret",
+      "secret_hint": "Wird verschlüsselt gespeichert und nie wieder angezeigt.",
+      "secret_stored": "Ein Secret ist gespeichert. Leer lassen, um es zu behalten.",
+      "secret_reenter": "Bei geänderter Adresse oder Token-ID das Secret neu eingeben.",
+      "ignore_tls": "Selbstsignierte Zertifikate akzeptieren",
+      "ignore_tls_hint": "Nur für einen vertrauten Server im eigenen Netz: Die Verbindung bleibt verschlüsselt, aber Zertifikat und Hostname werden nicht mehr geprüft.",
+      "save": "Speichern",
+      "saved": "Proxmox-Einstellungen gespeichert.",
+      "save_failed": "Speichern fehlgeschlagen:",
+      "sync": "Jetzt abgleichen",
+      "sync_needs_save": "Erst die Anbindung aktivieren und speichern.",
+      "synced_title": "Abgleich fertig",
+      "synced_body": "{{guests}} Gäste mit {{addresses}} Adressen gelesen, {{updated_devices}} Geräte umbenannt. Übersprungen: {{skipped}}, Adresskonflikte: {{conflicts}}.",
+      "last_sync": "Letzter Abgleich",
+      "disconnect": "Verbindung entfernen",
+      "disconnect_title": "Proxmox-Verbindung entfernen?",
+      "disconnect_message": "Adresse und verschlüsselter Token werden gelöscht. Bereits übernommene Namen bleiben erhalten.",
+      "disconnected": "Proxmox-Verbindung entfernt.",
+      "read_only_note": "VMs liefern ihre Adressen nur über einen laufenden QEMU Guest Agent; Container brauchen keinen. Ein Import setzt kein Gerät auf online, und eigene Namen bleiben erhalten."
     }
   }
 }

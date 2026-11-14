@@ -178,7 +178,7 @@ async def test_start_and_stop_creates_loops(monkeypatch):
 
     await scheduler_obj.start()
     assert scheduler_obj._running is True
-    assert len(created) == 7  # full, quick, ARP, Docker, retention, health probe, outbox
+    assert len(created) == 8  # full, quick, ARP, Docker, retention, health probe, outbox, Proxmox
 
     await scheduler_obj.stop()
     assert scheduler_obj._running is False

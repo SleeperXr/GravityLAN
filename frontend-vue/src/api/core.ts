@@ -77,6 +77,34 @@ function formatErrorDetail(detail: unknown): string {
 }
 
 /** How long each measurement tier is kept (raw rows in hours, rollups in days). */
+/** Settings > Proxmox VE as the server returns it; the token secret never comes back. */
+export interface ProxmoxSettings {
+  enabled: boolean;
+  url: string;
+  token_id: string;
+  verify_tls: boolean;
+  has_token_secret: boolean;
+  last_sync: string | null;
+  last_error: string | null;
+}
+
+/** What the form sends; an empty token_secret keeps the stored one. */
+export interface ProxmoxSettingsUpdate {
+  enabled: boolean;
+  url: string;
+  token_id: string;
+  token_secret?: string;
+  verify_tls: boolean;
+}
+
+export interface ProxmoxSyncResult {
+  guests: number;
+  addresses: number;
+  updated_devices: number;
+  skipped: number;
+  conflicts: number;
+}
+
 export interface TelemetryRetention {
   raw_hours: number;
   hourly_days: number;
@@ -210,6 +238,13 @@ export const api = {
   updateSettings: (settings: Record<string, string>) => 
     request<{ status: string }>('/api/settings', { method: 'POST', body: JSON.stringify(settings) }),
   resetDatabase: () => request<{status: string, message: string}>('/api/settings/reset-db', { method: 'POST' }),
+
+  // Proxmox VE (read-only guest names)
+  getProxmoxSettings: () => request<ProxmoxSettings>('/api/settings/proxmox'),
+  saveProxmoxSettings: (settings: ProxmoxSettingsUpdate) =>
+    request<ProxmoxSettings>('/api/settings/proxmox', { method: 'PUT', body: JSON.stringify(settings) }),
+  deleteProxmoxSettings: () => request<void>('/api/settings/proxmox', { method: 'DELETE' }),
+  syncProxmox: () => request<ProxmoxSyncResult>('/api/settings/proxmox/sync', { method: 'POST' }),
 
   // Measurement data (separate telemetry database)
   getTelemetryStatus: () => request<TelemetryStatus>('/api/settings/telemetry'),

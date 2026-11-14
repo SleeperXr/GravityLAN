@@ -400,6 +400,7 @@ from app.api.interfaces import router as interfaces_router  # noqa: E402
 from app.api.rack_cabling import router as rack_cabling_router  # noqa: E402
 from app.api.router_import import router as router_import_router  # noqa: E402
 from app.api.telemetry import router as telemetry_router  # noqa: E402
+from app.api.proxmox import router as proxmox_router  # noqa: E402
 
 from app.api.auth import get_current_admin
 
@@ -416,6 +417,7 @@ app.include_router(router_services, dependencies=[Depends(get_current_admin)])
 app.include_router(scanner_router, dependencies=[Depends(get_current_admin)])
 app.include_router(settings_router, dependencies=[Depends(get_current_admin)])
 app.include_router(telemetry_router)  # Settings > Measurement data; guards itself with get_current_admin
+app.include_router(proxmox_router)  # Settings > Proxmox VE; guards itself with get_current_admin
 app.include_router(webhooks_router, dependencies=[Depends(get_current_admin)])
 app.include_router(audit_router, dependencies=[Depends(get_current_admin)])
 app.include_router(summary_router, dependencies=[Depends(get_current_admin)])
