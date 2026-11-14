@@ -7,7 +7,7 @@ import ipaddress
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 from fastapi import HTTPException
@@ -47,6 +47,7 @@ class Guest:
     identity: str  # "qemu/100" or "lxc/101"
     name: str
     addresses: list[str]
+    node: str = ""  # the Proxmox node the guest runs on, e.g. "pve2"
 
 
 @dataclass
@@ -154,7 +155,7 @@ class ProxmoxClient:
                     # A missing guest agent or per-guest ACL must not hide the other guests
                     return Skipped(identity, name, "unreadable")
             ips = sorted({ip for value in addresses if isinstance(value, str) and (ip := usable_ip(value))})
-            return Guest(identity, name, ips) if ips else Skipped(identity, name, "no_address")
+            return Guest(identity, name, ips, str(node)) if ips else Skipped(identity, name, "no_address")
 
         try:
             results = await asyncio.wait_for(asyncio.gather(*(read_guest(r) for r in resources)),
@@ -162,6 +163,20 @@ class ProxmoxClient:
         except TimeoutError as exc:
             raise ProxmoxError("Proxmox discovery timed out. Check guest agents and network access.") from exc
         return [r for r in results if isinstance(r, Guest)], [r for r in results if isinstance(r, Skipped)]
+
+    async def nodes(self) -> list[dict]:
+        """The cluster nodes with their address ([{name, ip}]); [] when Proxmox does not tell.
+
+        Optional: without it guests are still named, only not hung on their node.
+        """
+        try:
+            status = await self.get("cluster/status")
+        except ProxmoxError:
+            return []
+        if not isinstance(status, list):
+            return []
+        return [{"name": str(e["name"]), "ip": e.get("ip") if isinstance(e.get("ip"), str) else None}
+                for e in status if isinstance(e, dict) and e.get("type") == "node" and e.get("name")]
 
     async def __aenter__(self):
         return self
@@ -191,8 +206,46 @@ def _is_automatic(name: str | None, automatic: set) -> bool:
     return not name or is_ip_like(name) or name in automatic
 
 
+def _node_devices(nodes: list[dict], devices: dict, url: str) -> dict:
+    """Node name -> the dashboard device of that Proxmox node, or None.
+
+    By the node's address from cluster/status; a single node without one is the API address
+    itself. Failing that, by name (display name or short hostname equals the node name).
+    """
+    by_name: dict = {}
+    for device in devices.values():
+        for name in (device.display_name, (device.hostname or "").split(".")[0]):
+            if name:
+                by_name.setdefault(name.lower(), device)
+    url_host = urlsplit(url or "").hostname
+    found = {}
+    for node in nodes:
+        ip = node.get("ip") or (url_host if len(nodes) == 1 else None)
+        found[node["name"]] = (devices.get(ip) if ip else None) or by_name.get(node["name"].lower())
+    return found
+
+
+async def _hang_on_node(db, device: Device, host: Device | None, previous_host_id) -> bool:
+    """Make the node the guest's physical host, unless a person chose another one.
+
+    Ours to change: no host yet, or still the node the last sync set (the guest migrated).
+    """
+    if host is None or host.id == device.id or device.parent_id == host.id:
+        return False
+    if device.parent_id is not None and device.parent_id != previous_host_id:
+        return False
+    await db.execute(update(Device).where(Device.id == device.id).values(parent_id=host.id, last_seen=device.last_seen))
+    device.parent_id = host.id
+    if not host.is_host:
+        # Only hosts are offered as physical host in the device editor
+        await db.execute(update(Device).where(Device.id == host.id).values(is_host=True, last_seen=host.last_seen))
+        host.is_host = True
+    return True
+
+
 async def apply_guests(db, connection: ProxmoxIntegration, guests: list[Guest],
-                       subnets: list[str] | None = None, skipped: list[Skipped] | None = None) -> dict:
+                       subnets: list[str] | None = None, skipped: list[Skipped] | None = None,
+                       nodes: list[dict] | None = None) -> dict:
     """Name devices and discovered hosts by exact IP and describe what happened.
 
     Only addresses in the scan subnets (or of an existing device) are used; container
@@ -224,9 +277,10 @@ async def apply_guests(db, connection: ProxmoxIntegration, guests: list[Guest],
             for g in owned_by:
                 statuses[(g.identity, ip)] = "conflict"
         else:
-            mapping[ip] = {"name": owned_by[0].name, "guest": owned_by[0].identity}
+            mapping[ip] = {"name": owned_by[0].name, "guest": owned_by[0].identity, "node": owned_by[0].node}
 
-    renamed = 0
+    node_devices = _node_devices(nodes or [], devices, connection.url)
+    renamed = attached = 0
     for ip, entry in mapping.items():
         name = entry["name"]
         old_entry = previous.get(ip) if isinstance(previous.get(ip), dict) else {}
@@ -243,6 +297,11 @@ async def apply_guests(db, connection: ProxmoxIntegration, guests: list[Guest],
                     display_name=name, last_seen=device.last_seen))
                 renamed += 1
                 status = "renamed"
+        node_device = node_devices.get(entry["node"])
+        if node_device is not None:
+            entry["host_id"] = node_device.id  # also used when the guest is added to the dashboard later
+        if device and await _hang_on_node(db, device, node_device, old_entry.get("host_id")):
+            attached += 1
         host = discovered.get(ip)
         if host is None:
             db.add(DiscoveredHost(ip=ip, hostname=name, is_online=False, is_monitored=device is not None))
@@ -266,7 +325,10 @@ async def apply_guests(db, connection: ProxmoxIntegration, guests: list[Guest],
     last_report = {
         "synced_at": now,
         "subnets": subnets,
-        "guests": [{"guest": g.identity, "name": g.name,
+        "nodes": [{"name": n["name"], "ip": n.get("ip"),
+                   "device": node_devices[n["name"]].display_name if node_devices.get(n["name"]) else None}
+                  for n in (nodes or [])],
+        "guests": [{"guest": g.identity, "name": g.name, "node": g.node,
                     "addresses": [{"ip": ip, "status": statuses.get((g.identity, ip), "host")} for ip in g.addresses]}
                    for g in sorted(guests, key=lambda g: g.name.lower())],
         "skipped": [{"guest": s.identity, "name": s.name, "reason": s.reason} for s in (skipped or [])],
@@ -274,7 +336,7 @@ async def apply_guests(db, connection: ProxmoxIntegration, guests: list[Guest],
     }
     outside = sum(1 for s in statuses.values() if s == "outside")
     return {"guests": len(guests), "addresses": len(mapping), "updated_devices": renamed,
-            "conflicts": len(conflicts), "outside": outside}
+            "conflicts": len(conflicts), "outside": outside, "attached": attached}
 
 
 MAX_ADD_AT_ONCE = 256
@@ -310,6 +372,9 @@ async def add_guests_to_dashboard(db, ips: list[str]) -> list[dict]:
             automatic = {device.ip, device.hostname, (device.hostname or "").split(".")[0]} - {None, ""}
             if device.display_name != name and _is_automatic(device.display_name, automatic):
                 device.display_name = name
+            host_id = inventory[ip].get("host_id")
+            if isinstance(host_id, int) and device.parent_id is None:
+                await _hang_on_node(db, device, await db.get(Device, host_id), None)
             await db.execute(update(DiscoveredHost).where(DiscoveredHost.ip == ip).values(
                 is_monitored=True, last_seen=DiscoveredHost.last_seen))
             await db.commit()
@@ -356,6 +421,7 @@ async def sync_proxmox(db) -> dict:
             secret = vault.decrypt(connection.encrypted_secret)
             async with ProxmoxClient(connection.url, connection.token_id, secret, connection.verify_tls) as client:
                 guests, skipped = await client.discover()
+                nodes = await client.nodes()
         except (ProxmoxError, VaultError) as exc:
             # Never expose a response body, request headers or the token in errors and logs
             message = str(exc) if isinstance(exc, ProxmoxError) else "Cannot decrypt the Proxmox token. Check the secret vault key."
@@ -371,6 +437,6 @@ async def sync_proxmox(db) -> dict:
             connection = await _reload(db)
             if not connection or _target(connection) != target:
                 raise ProxmoxError("The Proxmox settings changed during the sync. Synchronize again.")
-            result = await apply_guests(db, connection, guests, subnets, skipped)
+            result = await apply_guests(db, connection, guests, subnets, skipped, nodes)
         result["skipped"] = len(skipped)
         return result

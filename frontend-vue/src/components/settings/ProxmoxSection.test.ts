@@ -56,7 +56,7 @@ describe('ProxmoxSection', () => {
   });
 
   it('syncs only the saved settings and reports the counts', async () => {
-    vi.mocked(api.syncProxmox).mockResolvedValue({ guests: 3, addresses: 4, updated_devices: 1, skipped: 1, conflicts: 0, outside: 2 });
+    vi.mocked(api.syncProxmox).mockResolvedValue({ guests: 3, addresses: 4, updated_devices: 1, skipped: 1, conflicts: 0, outside: 2, attached: 0 });
     const wrapper = await mountWith(STORED);
     await button(wrapper, 'sync').trigger('click');
     await flushPromises();
@@ -73,7 +73,7 @@ describe('ProxmoxSection', () => {
   });
 
   it('explains an empty guest list instead of reporting success', async () => {
-    vi.mocked(api.syncProxmox).mockResolvedValue({ guests: 0, addresses: 0, updated_devices: 0, skipped: 0, conflicts: 0, outside: 0 });
+    vi.mocked(api.syncProxmox).mockResolvedValue({ guests: 0, addresses: 0, updated_devices: 0, skipped: 0, conflicts: 0, outside: 0, attached: 0 });
     const wrapper = await mountWith(STORED);
     await button(wrapper, 'sync').trigger('click');
     await flushPromises();
@@ -139,5 +139,23 @@ describe('ProxmoxSection', () => {
       await flushPromises();
       expect(api.addProxmoxGuestsToDashboard).toHaveBeenCalledWith(['192.168.100.10', '192.168.100.11']);
     });
+  });
+
+  it('names each node and the device its guests hang on', async () => {
+    vi.mocked(api.getProxmoxReport).mockResolvedValue({
+      report: {
+        synced_at: '2026-11-14T01:11:17+00:00',
+        subnets: ['192.168.100.0/24'],
+        nodes: [{ name: 'pve2', ip: '192.168.100.2', device: 'Proxmox' }, { name: 'pve3', ip: null, device: null }],
+        guests: [{ guest: 'qemu/100', name: 'nas', node: 'pve2', addresses: [{ ip: '192.168.100.10', status: 'device' }] }],
+        skipped: [],
+        conflicts: [],
+      },
+    });
+    const wrapper = await mountWith(STORED);
+    const nodes = wrapper.find('[data-test="proxmox-nodes"]').text();
+    expect(nodes).toContain('Proxmox');
+    expect(nodes).toContain('pve3');
+    expect(wrapper.find('[data-test="proxmox-report"]').text()).toContain('pve2');
   });
 });

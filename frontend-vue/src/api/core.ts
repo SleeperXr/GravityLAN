@@ -105,6 +105,8 @@ export interface ProxmoxSyncResult {
   conflicts: number;
   /** Addresses outside the scan subnets (container bridges, IPv6): listed, not used. */
   outside: number;
+  /** Guests hung on their Proxmox node as physical host by this sync. */
+  attached: number;
 }
 
 export type ProxmoxAddressStatus = 'renamed' | 'device' | 'host' | 'new_host' | 'conflict' | 'outside';
@@ -114,7 +116,9 @@ export type ProxmoxSkipReason = 'vm_stopped' | 'unreadable' | 'no_address' | 'in
 export interface ProxmoxReport {
   synced_at: string;
   subnets: string[] | null;
-  guests: { guest: string; name: string; addresses: { ip: string; status: ProxmoxAddressStatus }[] }[];
+  /** Cluster nodes and the dashboard device each one is (null: not on the dashboard). */
+  nodes?: { name: string; ip: string | null; device: string | null }[];
+  guests: { guest: string; name: string; node?: string; addresses: { ip: string; status: ProxmoxAddressStatus }[] }[];
   skipped: { guest: string; name: string; reason: ProxmoxSkipReason }[];
   conflicts: { ip: string; guests: string[] }[];
 }

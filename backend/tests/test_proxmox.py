@@ -20,6 +20,9 @@ import app.services.proxmox as proxmox_service
 from app.services.proxmox import Guest, ProxmoxClient, ProxmoxError, apply_guests, sync_lock, sync_proxmox
 from app.services.secret_vault import vault
 
+# The autouse fixture below stubs nodes() for every test; this is the real one
+REAL_NODES = ProxmoxClient.nodes
+
 
 async def test_discover_vm_lxc_static_and_partial_failure():
     requests = []
@@ -222,7 +225,7 @@ async def test_manual_sync_updates_names_visible_through_device_api(client, db, 
     monkeypatch.setattr(ProxmoxClient, 'discover', discover)
     response = await client.post('/api/settings/proxmox/sync', headers=headers)
     assert response.status_code == 200, response.text
-    assert response.json() == {'guests': 2, 'addresses': 2, 'updated_devices': 1, 'skipped': 1, 'conflicts': 0, 'outside': 0}
+    assert response.json() == {'guests': 2, 'addresses': 2, 'updated_devices': 1, 'skipped': 1, 'conflicts': 0, 'outside': 0, 'attached': 0}
     report = (await client.get('/api/settings/proxmox/report', headers=headers)).json()['report']
     assert report['skipped'] == [{'guest': 'qemu/102', 'name': 'off', 'reason': 'vm_stopped'}]
     assert [a['status'] for g in report['guests'] for a in g['addresses']] == ['new_host', 'renamed']
@@ -362,6 +365,10 @@ def _scan_subnets(monkeypatch):
     async def subnets(db):
         return ['192.168.1.0/24']
     monkeypatch.setattr(proxmox_service, '_scan_subnets', subnets)
+
+    async def no_nodes(self):
+        return []
+    monkeypatch.setattr(ProxmoxClient, 'nodes', no_nodes)
     proxmox_service.clear_report()
 
 
@@ -450,3 +457,76 @@ async def test_add_to_dashboard_keeps_an_existing_device_and_its_name(client, db
     response = await client.post('/api/settings/proxmox/add-to-dashboard', headers=headers, json={'ips': ['192.168.1.10']})
     assert response.json()['added'][0]['name'] == 'My storage'
     assert len((await db.execute(select(Device))).scalars().all()) == 1
+
+
+async def test_guests_hang_on_their_node_unless_a_person_chose_another_host(db):
+    node = Device(ip='192.168.1.2', display_name='Proxmox', is_host=False)
+    other_host = Device(ip='192.168.1.3', display_name='ESXi', is_host=True)
+    vm = Device(ip='192.168.1.10', display_name='192.168.1.10')
+    pinned = Device(ip='192.168.1.11', display_name='pinned')
+    connection = ProxmoxIntegration(id=1, url='https://192.168.1.2:8006')
+    db.add_all([node, other_host, vm, connection])
+    await db.flush()
+    pinned.parent_id = other_host.id
+    db.add(pinned)
+    await db.commit()
+    nodes = [{'name': 'pve2', 'ip': '192.168.1.2'}]
+    result = await apply_guests(db, connection, [Guest('qemu/100', 'nas', ['192.168.1.10'], 'pve2'),
+                                               Guest('lxc/101', 'dns', ['192.168.1.11'], 'pve2')],
+                                ['192.168.1.0/24'], [], nodes)
+    assert result['attached'] == 1
+    assert vm.parent_id == node.id and node.is_host is True
+    assert pinned.parent_id == other_host.id  # a host chosen by hand stays
+    assert proxmox_service.last_report['nodes'] == [{'name': 'pve2', 'ip': '192.168.1.2', 'device': 'Proxmox'}]
+    assert proxmox_service.last_report['guests'][1]['node'] == 'pve2'
+
+    # The VM migrates to another node: the host the sync set follows it
+    node3 = Device(ip='192.168.1.4', display_name='pve3')
+    db.add(node3)
+    await db.commit()
+    result = await apply_guests(db, connection, [Guest('qemu/100', 'nas', ['192.168.1.10'], 'pve3')], ['192.168.1.0/24'], [],
+                                [{'name': 'pve2', 'ip': '192.168.1.2'}, {'name': 'pve3', 'ip': None}])
+    assert vm.parent_id == node3.id  # found by name, as cluster/status gave no address
+    assert result['attached'] == 1
+
+
+async def test_a_single_node_without_an_address_is_the_api_host(db):
+    node = Device(ip='192.168.1.2', display_name='server')
+    vm = Device(ip='192.168.1.10', display_name='vm')
+    connection = ProxmoxIntegration(id=1, url='https://192.168.1.2:8006')
+    db.add_all([node, vm, connection])
+    await db.commit()
+    await apply_guests(db, connection, [Guest('qemu/100', 'vm', ['192.168.1.10'], 'pve')], ['192.168.1.0/24'], [],
+                       [{'name': 'pve', 'ip': None}])
+    assert vm.parent_id == node.id
+
+
+async def test_a_guest_added_to_the_dashboard_hangs_on_its_node(client, db, admin_token, no_lookups):
+    node = Device(ip='192.168.1.2', display_name='Proxmox')
+    connection = ProxmoxIntegration(id=1, enabled=True, url='https://192.168.1.2:8006')
+    db.add_all([node, connection])
+    await db.commit()
+    await apply_guests(db, connection, [Guest('lxc/101', 'dns', ['192.168.1.11'], 'pve2')], ['192.168.1.0/24'], [],
+                       [{'name': 'pve2', 'ip': '192.168.1.2'}])
+    response = await client.post('/api/settings/proxmox/add-to-dashboard',
+                                 headers={'Authorization': f'Bearer {admin_token}'}, json={'ips': ['192.168.1.11']})
+    assert response.status_code == 200, response.text
+    added = await db.get(Device, response.json()['added'][0]['id'])
+    await db.refresh(added)
+    assert added.parent_id == node.id
+
+
+async def test_nodes_come_from_cluster_status_and_failures_are_harmless():
+    def handle(request):
+        if request.url.path.endswith('/cluster/status'):
+            return httpx.Response(200, json={'data': [{'type': 'cluster', 'name': 'lab'},
+                                                      {'type': 'node', 'name': 'pve2', 'ip': '192.168.1.2'}]})
+        return httpx.Response(403)
+    async with ProxmoxClient('https://pve', 'reader@pve!inventory', 'secret') as client:
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(base_url='https://pve/api2/json/', transport=httpx.MockTransport(handle))
+        assert await REAL_NODES(client) == [{'name': 'pve2', 'ip': '192.168.1.2'}]
+    async with ProxmoxClient('https://pve', 'reader@pve!inventory', 'secret') as client:
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(base_url='https://pve/api2/json/', transport=httpx.MockTransport(lambda r: httpx.Response(403)))
+        assert await REAL_NODES(client) == []  # no Sys.Audit: guests are still named, just not hung on a node

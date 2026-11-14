@@ -47,6 +47,18 @@ const needsLook = computed(() => empty.value || props.report.conflicts.length > 
         <AlertTriangle class="mt-0.5 size-4 shrink-0" aria-hidden="true" />{{ t('gv.proxmox.no_guests') }}
       </p>
 
+      <div v-if="report.nodes?.length" class="space-y-1.5" data-test="proxmox-nodes">
+        <p class="gl-eyebrow">{{ t('gv.proxmox.report.nodes_title') }}</p>
+        <ul class="space-y-1 text-sm">
+          <li v-for="n in report.nodes" :key="n.name" class="flex flex-wrap items-baseline gap-x-2">
+            <code class="font-mono text-fg">{{ n.name }}</code>
+            <span v-if="n.ip" class="font-mono text-xs text-fg-subtle">{{ n.ip }}</span>
+            <span v-if="n.device" class="text-xs text-fg-muted">{{ t('gv.proxmox.report.node_device', { device: n.device }) }}</span>
+            <span v-else class="text-xs text-warn-text">{{ t('gv.proxmox.report.node_missing') }}</span>
+          </li>
+        </ul>
+      </div>
+
       <div v-if="report.conflicts.length" class="space-y-1.5">
         <p class="gl-eyebrow text-danger-text">{{ t('gv.proxmox.report.conflicts_title') }}</p>
         <p class="text-xs text-fg-subtle">{{ t('gv.proxmox.report.conflicts_hint') }}</p>
@@ -67,9 +79,12 @@ const needsLook = computed(() => empty.value || props.report.conflicts.length > 
         </div>
         <ul class="divide-y divide-line border-y border-line">
           <li v-for="g in report.guests" :key="g.guest" class="flex flex-col gap-1.5 py-2.5 sm:flex-row sm:items-start sm:gap-4">
-            <div class="flex min-w-0 items-center gap-2 sm:w-48 sm:shrink-0">
-              <span class="truncate text-sm font-medium text-fg" :title="g.name">{{ g.name }}</span>
-              <code class="font-mono text-xs text-fg-subtle">{{ g.guest }}</code>
+            <div class="min-w-0 sm:w-48 sm:shrink-0">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="truncate text-sm font-medium text-fg" :title="g.name">{{ g.name }}</span>
+                <code class="font-mono text-xs text-fg-subtle">{{ g.guest }}</code>
+              </div>
+              <p v-if="g.node" class="text-xs text-fg-subtle">{{ t('gv.proxmox.report.on_node', { node: g.node }) }}</p>
             </div>
             <ul class="flex min-w-0 flex-wrap gap-1.5">
               <li v-for="a in g.addresses" :key="a.ip" class="flex items-center gap-1">
