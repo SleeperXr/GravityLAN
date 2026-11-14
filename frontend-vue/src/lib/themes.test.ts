@@ -20,6 +20,7 @@ describe('theme registry', () => {
 
   it('knows the same designs as the script that sets the theme before the first paint', () => {
     const known = html.match(/var known = \[([^\]]*)\]/)?.[1] ?? '';
+    expect(html).toContain("localStorage.getItem('gravityui.custom_themes')");
     expect(known.split(',').map((s) => s.trim().replace(/'/g, ''))).toEqual(THEMES.map((t) => t.id));
   });
 
