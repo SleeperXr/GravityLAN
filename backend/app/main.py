@@ -200,6 +200,21 @@ def _register_models() -> None:
     from app.models.audit import AuditEvent  # noqa: F401
 
 
+def _backup_before_upgrade() -> None:
+    """Copy the SQLite inventory before this version migrates it; an external database is the operator's."""
+    if settings.database_url:
+        return
+    from app.database.upgrade_backup import backup_before_upgrade
+    backup_before_upgrade(settings.data_dir, settings.data_dir / "gravitylan.db", settings.app_version)
+
+
+def _remember_migrated_version() -> None:
+    if settings.database_url:
+        return
+    from app.database.upgrade_backup import remember_version
+    remember_version(settings.data_dir, settings.app_version)
+
+
 async def _run_startup_migrations() -> None:
     """Schema migrations, the telemetry move, legacy scan subnets and the subnet cleanup, in this order."""
     from app.api.network import cleanup_invalid_subnets
@@ -256,6 +271,8 @@ async def lifespan(app: FastAPI):
                 settings.app_version, loop.__class__.__name__, settings.scan_timeout)
 
     _ensure_writable_data_dir()
+    # Before init_db: creating new tables is already a change to the schema
+    _backup_before_upgrade()
     _register_models()
     await init_db()
     logger.info("Database initialized: %s", settings.effective_database_url)
@@ -264,6 +281,7 @@ async def lifespan(app: FastAPI):
     app.state.background_tasks = set()
 
     await _run_startup_migrations()
+    _remember_migrated_version()
 
     from app.scanner.scheduler import scheduler
     await scheduler.start()

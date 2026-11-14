@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Before a new version migrates the database, GravityLAN copies `gravitylan.db` to `data/backups/gravitylan-<previous version>-<time>.db` and keeps the last three copies. `data/.last_version` records which version last migrated the database; the copy is made only when it changes, so a normal restart makes none. Measurement data and an external database (`GRAVITYLAN_DATABASE_URL`) are not copied, and a failed copy is logged without stopping the start.
 - Signing in over HTTPS while `GRAVITYLAN_SECURE_COOKIES` is off now logs a warning once per start, and Settings → Access shows a hint: without the flag a browser would also send the login cookie over plain HTTP. HTTPS is recognised directly or from a reverse proxy's `X-Forwarded-Proto`; the flag itself stays off by default, so existing HTTP installations are unchanged.
 
 ### Changed
