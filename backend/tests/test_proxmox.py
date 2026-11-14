@@ -57,7 +57,7 @@ async def test_discover_vm_lxc_static_and_partial_failure():
         guests, skipped = await client.discover()
     assert {g.name: g.addresses for g in guests} == {
         'nas': ['192.168.1.10', 'fd00::10'], 'dns': ['192.168.1.11', 'fd00::11'], 'stopped': ['192.168.1.12']}
-    assert skipped == 2
+    assert {(x.identity, x.reason) for x in skipped} == {('qemu/103', 'unreadable'), ('qemu/104', 'vm_stopped')}
     assert all(r.method == 'GET' for r in requests)
     assert not any('/104/' in r.url.path for r in requests)
 
@@ -107,7 +107,7 @@ async def test_real_self_signed_tls_requires_explicit_opt_out(tmp_path):
             with pytest.raises(ProxmoxError, match='TLS'):
                 await client.discover()
         async with ProxmoxClient(f'https://127.0.0.1:{port}', 'reader@pve!inventory', 'secret', verify_tls=False) as client:
-            assert await client.discover() == ([], 0)
+            assert await client.discover() == ([], [])
 
 
 async def test_enrichment_preserves_custom_names_and_reachability(db):
@@ -217,11 +217,15 @@ async def test_manual_sync_updates_names_visible_through_device_api(client, db, 
     assert response.status_code == 200
 
     async def discover(self):
-        return [Guest('qemu/100', 'proxmox-nas', ['192.168.1.10']), Guest('lxc/101', 'proxmox-dns', ['192.168.1.11'])], 1
+        return ([Guest('qemu/100', 'proxmox-nas', ['192.168.1.10']), Guest('lxc/101', 'proxmox-dns', ['192.168.1.11'])],
+                [proxmox_service.Skipped('qemu/102', 'off', 'vm_stopped')])
     monkeypatch.setattr(ProxmoxClient, 'discover', discover)
     response = await client.post('/api/settings/proxmox/sync', headers=headers)
     assert response.status_code == 200, response.text
-    assert response.json() == {'guests': 2, 'addresses': 2, 'updated_devices': 1, 'skipped': 1, 'conflicts': 0}
+    assert response.json() == {'guests': 2, 'addresses': 2, 'updated_devices': 1, 'skipped': 1, 'conflicts': 0, 'outside': 0}
+    report = (await client.get('/api/settings/proxmox/report', headers=headers)).json()['report']
+    assert report['skipped'] == [{'guest': 'qemu/102', 'name': 'off', 'reason': 'vm_stopped'}]
+    assert [a['status'] for g in report['guests'] for a in g['addresses']] == ['new_host', 'renamed']
     devices = (await client.get('/api/devices', headers=headers)).json()
     assert devices[0]['display_name'] == 'proxmox-nas'
     hosts = (await client.get('/api/scanner/discovered', headers=headers)).json()
@@ -311,7 +315,7 @@ async def test_result_is_dropped_when_the_settings_change_during_discovery(db, m
         # Another request points the integration at a different server meanwhile
         connection.url = 'https://other'
         await db.commit()
-        return [Guest('qemu/100', 'nas', ['192.168.1.10'])], 0
+        return [Guest('qemu/100', 'nas', ['192.168.1.10'])], []
     monkeypatch.setattr(ProxmoxClient, 'discover', discover)
     with pytest.raises(ProxmoxError, match='changed during the sync'):
         await sync_proxmox(db)
@@ -327,7 +331,7 @@ async def test_saving_settings_does_not_wait_for_a_running_sync(client, db, admi
     async def slow_discover(self):
         started.set()
         await release.wait()
-        return [], 0
+        return [], []
     monkeypatch.setattr(ProxmoxClient, 'discover', slow_discover)
     sync = asyncio.create_task(sync_proxmox(db))
     await started.wait()
@@ -350,3 +354,54 @@ async def test_saving_and_removing_are_audited_without_the_secret(client, db, ad
     events = (await db.execute(select(AuditEvent).where(AuditEvent.action.like('proxmox.%')))).scalars().all()
     assert [e.action for e in events] == ['proxmox.save', 'proxmox.delete']
     assert all('top-secret' not in f'{e.target} {e.detail}' for e in events)
+
+
+@pytest.fixture(autouse=True)
+def _scan_subnets(monkeypatch):
+    """Tests run with 192.168.1.0/24 as the scanned network, whatever this machine's own LAN is."""
+    async def subnets(db):
+        return ['192.168.1.0/24']
+    monkeypatch.setattr(proxmox_service, '_scan_subnets', subnets)
+    proxmox_service.clear_report()
+
+
+async def test_only_addresses_in_the_scan_subnets_are_used(db):
+    """Docker bridges and IPv6 inside guests are listed, not turned into discovered hosts or conflicts."""
+    connection = ProxmoxIntegration(id=1)
+    db.add_all([connection, Device(ip='10.9.9.9', display_name='10.9.9.9')])
+    await db.commit()
+    result = await apply_guests(db, connection, [
+        Guest('qemu/100', 'docker-a', ['172.17.0.1', '192.168.1.10', 'fd00::10']),
+        Guest('qemu/101', 'docker-b', ['172.17.0.1', '192.168.1.11', '10.9.9.9']),
+    ], ['192.168.1.0/24'])
+    assert result['conflicts'] == 0 and result['outside'] == 3
+    assert set(json.loads(connection.inventory)) == {'192.168.1.10', '192.168.1.11', '10.9.9.9'}  # a known device counts
+    ips = {h.ip for h in (await db.execute(select(DiscoveredHost))).scalars()}
+    assert '172.17.0.1' not in ips and 'fd00::10' not in ips
+    report = proxmox_service.last_report
+    statuses = {a['ip']: a['status'] for g in report['guests'] for a in g['addresses']}
+    assert statuses == {'172.17.0.1': 'outside', '192.168.1.10': 'new_host', 'fd00::10': 'outside',
+                        '192.168.1.11': 'new_host', '10.9.9.9': 'renamed'}
+
+
+async def test_conflicts_name_both_guests_in_the_report(db):
+    connection = ProxmoxIntegration(id=1)
+    db.add(connection)
+    await db.commit()
+    result = await apply_guests(db, connection, [Guest('qemu/100', 'alpha', ['192.168.1.10']),
+                                               Guest('lxc/101', 'beta', ['192.168.1.10', '192.168.1.11'])],
+                                ['192.168.1.0/24'])
+    assert result['conflicts'] == 1
+    assert proxmox_service.last_report['conflicts'] == [{'ip': '192.168.1.10', 'guests': ['alpha', 'beta']}]
+    beta = next(g for g in proxmox_service.last_report['guests'] if g['name'] == 'beta')
+    assert beta['addresses'] == [{'ip': '192.168.1.10', 'status': 'conflict'}, {'ip': '192.168.1.11', 'status': 'new_host'}]
+
+
+async def test_report_is_cleared_when_the_connection_is_removed(client, db, admin_token):
+    headers = {'Authorization': f'Bearer {admin_token}'}
+    proxmox_service.last_report = {'guests': []}
+    assert (await client.get('/api/settings/proxmox/report', headers=headers)).json() == {'report': {'guests': []}}
+    db.add(ProxmoxIntegration(id=1, url='https://pve', token_id='reader@pve!inventory'))
+    await db.commit()
+    assert (await client.delete('/api/settings/proxmox', headers=headers)).status_code == 204
+    assert (await client.get('/api/settings/proxmox/report', headers=headers)).json() == {'report': None}

@@ -103,6 +103,20 @@ export interface ProxmoxSyncResult {
   updated_devices: number;
   skipped: number;
   conflicts: number;
+  /** Addresses outside the scan subnets (container bridges, IPv6): listed, not used. */
+  outside: number;
+}
+
+export type ProxmoxAddressStatus = 'renamed' | 'device' | 'host' | 'new_host' | 'conflict' | 'outside';
+export type ProxmoxSkipReason = 'vm_stopped' | 'unreadable' | 'no_address' | 'incomplete';
+
+/** What the last sync found per guest (Settings > Proxmox VE > Last sync). */
+export interface ProxmoxReport {
+  synced_at: string;
+  subnets: string[] | null;
+  guests: { guest: string; name: string; addresses: { ip: string; status: ProxmoxAddressStatus }[] }[];
+  skipped: { guest: string; name: string; reason: ProxmoxSkipReason }[];
+  conflicts: { ip: string; guests: string[] }[];
 }
 
 export interface TelemetryRetention {
@@ -245,6 +259,7 @@ export const api = {
     request<ProxmoxSettings>('/api/settings/proxmox', { method: 'PUT', body: JSON.stringify(settings) }),
   deleteProxmoxSettings: () => request<void>('/api/settings/proxmox', { method: 'DELETE' }),
   syncProxmox: () => request<ProxmoxSyncResult>('/api/settings/proxmox/sync', { method: 'POST' }),
+  getProxmoxReport: () => request<{ report: ProxmoxReport | null }>('/api/settings/proxmox/report'),
 
   // Measurement data (separate telemetry database)
   getTelemetryStatus: () => request<TelemetryStatus>('/api/settings/telemetry'),

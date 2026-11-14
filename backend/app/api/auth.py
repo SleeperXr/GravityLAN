@@ -449,9 +449,9 @@ async def _auth_query_by_endpoint(handshake: _WsHandshake, query_token: str) -> 
     return None
 
 
-async def _ws_close(websocket: WebSocket, code: int, reason: str, log_message: str) -> dict:
+async def _ws_close(websocket: WebSocket, code: int, reason: str, log_message: str, level: int = logging.WARNING) -> dict:
     """Log why a WebSocket is refused, close it and return a failed auth dict."""
-    logger.warning(log_message)
+    logger.log(level, log_message)
     await websocket.close(code=code, reason=reason)
     return {"authenticated": False}
 
@@ -464,8 +464,12 @@ async def _ws_session_cookie(websocket: WebSocket, cookie_token: str) -> dict:
     """Browser session from the cookie; every channel accepts it (UI clients subscribing)."""
     session = session_store.get_session(cookie_token)
     if not session:
+        # Expected after every restart: sessions live in memory, and an open browser tab
+        # reconnects with its old cookie before the login screen shows. Not worth a warning.
         return await _ws_close(
-            websocket, 4003, "Session expired or invalid", "WebSocket connection rejected: Expired or invalid session cookie."
+            websocket, 4003, "Session expired or invalid",
+            "WebSocket connection rejected: session cookie expired or unknown (normal after a restart; the browser asks to sign in again).",
+            level=logging.INFO,
         )
     _warn_on_user_agent_change(session, websocket.headers, channel="WebSocket Session")
     return _auth_result("session", cookie_token)

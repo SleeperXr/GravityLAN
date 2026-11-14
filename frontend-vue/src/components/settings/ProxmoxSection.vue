@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { AlertTriangle, CheckCircle2, RefreshCw, Server, Trash2 } from 'lucide-vue-next';
-import { api, type ProxmoxSettings } from '@/api/client';
+import { api, type ProxmoxReport as Report, type ProxmoxSettings } from '@/api/client';
+import ProxmoxReport from './ProxmoxReport.vue';
 import SettingsSection from './SettingsSection.vue';
 import Button from '@/components/ui/Button.vue';
 import Field from '@/components/ui/Field.vue';
@@ -20,6 +21,7 @@ const { showToast } = useToast();
 const { confirm } = useConfirm();
 
 const stored = ref<ProxmoxSettings | null>(null);
+const report = ref<Report | null>(null);
 const form = ref({ enabled: false, url: '', token_id: '', token_secret: '', verify_tls: true });
 const saving = ref(false);
 const syncing = ref(false);
@@ -29,8 +31,13 @@ function applyStored(next: ProxmoxSettings) {
   form.value = { enabled: next.enabled, url: next.url, token_id: next.token_id, token_secret: '', verify_tls: next.verify_tls };
 }
 
+function loadReport() {
+  api.getProxmoxReport().then((res) => (report.value = res.report)).catch(() => {});
+}
+
 onMounted(() => {
   api.getProxmoxSettings().then(applyStored).catch(() => {});
+  loadReport();
 });
 
 const configured = computed(() => !!stored.value && (stored.value.has_token_secret || !!stored.value.url));
@@ -65,13 +72,16 @@ async function sync() {
   syncing.value = true;
   try {
     const res = await api.syncProxmox();
-    showToast('success', t('gv.proxmox.synced_title'), t('gv.proxmox.synced_body', { ...res }));
+    // An empty list is usually a token without permissions, not an empty cluster
+    if (res.guests === 0 && res.skipped === 0) showToast('info', t('gv.proxmox.synced_title'), t('gv.proxmox.no_guests'));
+    else showToast('success', t('gv.proxmox.synced_title'), t('gv.proxmox.synced_body', { ...res }));
   } catch (err) {
     showToast('error', t('common.error'), (err as Error).message);
   } finally {
     syncing.value = false;
     // The form may hold unsaved edits by now; only the status line follows the server
     api.getProxmoxSettings().then((next) => (stored.value = next)).catch(() => {});
+    loadReport();
   }
 }
 
@@ -80,6 +90,7 @@ async function disconnect() {
   if (!ok) return;
   try {
     await api.deleteProxmoxSettings();
+    report.value = null;
     applyStored(await api.getProxmoxSettings());
     showToast('success', t('common.success'), t('gv.proxmox.disconnected'));
   } catch (err) {
@@ -151,6 +162,8 @@ async function disconnect() {
         <Button v-if="configured" variant="danger-ghost" class="ml-auto" @click="disconnect"><Trash2 aria-hidden="true" />{{ t('gv.proxmox.disconnect') }}</Button>
       </div>
     </form>
+
+    <ProxmoxReport v-if="report && stored?.enabled" :report="report" />
 
     <p class="flex items-start gap-2 text-xs leading-relaxed text-fg-subtle">
       <Server class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />{{ t('gv.proxmox.read_only_note') }}

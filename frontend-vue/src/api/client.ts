@@ -15,7 +15,7 @@ export {
   createMetricsSocket,
   createSshTerminalSocket,
 } from './core';
-export type { ProxmoxSettings, ProxmoxSettingsUpdate, ProxmoxSyncResult, TelemetryPurge, TelemetryRetention, TelemetryStatus, TelemetryTableStats } from './core';
+export type { ProxmoxReport, ProxmoxSettings, ProxmoxSettingsUpdate, ProxmoxSyncResult, TelemetryPurge, TelemetryRetention, TelemetryStatus, TelemetryTableStats } from './core';
 
 /** Flips to true when any request comes back 401; App.vue then shows the login screen. */
 export const sessionExpired = ref(false);
