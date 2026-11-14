@@ -142,7 +142,7 @@ async function clearIpChange() {
       <Badge v-if="securityUpdates" tone="warn" :title="t('gv.dashboard.security_updates_title', { count: securityUpdates, total: patchState(device)?.available ?? securityUpdates })">
         <ShieldAlert aria-hidden="true" />{{ t('gv.dashboard.security_updates', { count: securityUpdates }) }}
       </Badge>
-      <Badge v-if="agentUpdate" tone="warn" :title="t('common.update_available', { version: device.agent_info?.latest_version })">
+      <Badge v-if="agentUpdate" tone="maint" :title="t('common.update_available', { version: device.agent_info?.latest_version })">
         <RefreshCw aria-hidden="true" />{{ t('dashboard.agent_update') }}
       </Badge>
       <span v-if="pendingKey" class="inline-flex items-center gap-1 rounded-sm border border-danger/30 bg-danger/10 py-0.5 pr-0.5 pl-1.5 text-micro font-medium text-danger-text">

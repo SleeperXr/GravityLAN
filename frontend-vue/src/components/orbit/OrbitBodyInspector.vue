@@ -15,7 +15,7 @@ const props = defineProps<{ device: Device; body: OrbitBody; parents: OrbitBody[
 const emit = defineEmits<{ open: []; close: []; hide: []; assign: [targetId: number]; role: [role: OrbitRole | null]; maxPorts: [value: number] }>();
 
 const roles: OrbitRole[] = ['star', 'planet', 'dwarf', 'moon'];
-const field = 'h-8 rounded-md border border-line bg-sunken px-2 text-xs text-fg focus:border-accent focus:outline-none';
+const field = 'h-8 rounded-md border border-field-line bg-sunken px-2 text-xs text-fg focus:border-accent focus:outline-none';
 
 function onRole(e: Event) {
   const value = (e.target as HTMLSelectElement).value;
@@ -40,7 +40,7 @@ function onMaxPorts(e: Event) {
 </script>
 
 <template>
-  <div class="absolute bottom-3 left-3 z-10 w-[min(22rem,calc(100%-4.5rem))] space-y-2.5 rounded-lg border border-line-strong bg-surface p-3.5 shadow-pop" @pointerdown.stop>
+  <div class="absolute bottom-3 left-3 z-10 w-[min(22rem,calc(100%-4.5rem))] space-y-2.5 rounded-lg border border-line-strong bg-popover p-3.5 shadow-pop" @pointerdown.stop>
     <div class="flex items-center justify-between gap-2">
       <div class="min-w-0">
         <p class="truncate text-sm font-semibold text-fg">{{ deviceLabel(device) }}</p>

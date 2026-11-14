@@ -115,7 +115,7 @@ function onKeydown(event: KeyboardEvent) {
       <PopoverContent
         align="end"
         :side-offset="8"
-        class="z-50 flex max-h-[min(36rem,75dvh)] w-[min(30rem,calc(100vw-1.5rem))] flex-col rounded-lg border border-line bg-surface shadow-pop"
+        class="z-50 flex max-h-[min(36rem,75dvh)] w-[min(30rem,calc(100vw-1.5rem))] flex-col rounded-lg border border-line bg-popover shadow-pop"
         @keydown="onKeydown"
       >
         <div class="border-b border-line px-4 py-3">
@@ -147,7 +147,7 @@ function onKeydown(event: KeyboardEvent) {
               <button
                 data-row
                 type="button"
-                class="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2.5 py-2 text-left hover:bg-raised focus-visible:bg-raised"
+                class="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2.5 py-2 text-left hover:bg-hover focus-visible:bg-hover"
                 :aria-label="t('gateways.row_label', {
                   where: entry.vlan_id != null ? `${entry.subnet_name}, VLAN ${entry.vlan_id}` : entry.subnet_name,
                   ip: entry.gateway_ip ?? '—',
@@ -177,7 +177,7 @@ function onKeydown(event: KeyboardEvent) {
               <button
                 v-if="entry.gateway_ip"
                 type="button"
-                class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-fg-subtle opacity-0 group-hover:opacity-100 hover:bg-raised hover:text-fg focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+                class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-fg-subtle opacity-0 group-hover:opacity-100 hover:bg-hover hover:text-fg focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                 :aria-label="copiedIp === entry.gateway_ip ? t('gateways.copied') : t('gateways.copy_ip', { ip: entry.gateway_ip })"
                 @click="copy(entry.gateway_ip)"
               >
@@ -199,7 +199,7 @@ function onKeydown(event: KeyboardEvent) {
           </button>
           <button
             type="button"
-            class="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-fg-muted hover:bg-raised hover:text-fg"
+            class="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-fg-muted hover:bg-hover hover:text-fg"
             @click="open = false; router.push('/network')"
           >
             <Network class="size-3.5" aria-hidden="true" />{{ t('gateways.manage_subnets') }}

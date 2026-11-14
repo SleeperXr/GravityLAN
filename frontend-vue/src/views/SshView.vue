@@ -350,7 +350,7 @@ const statusDot: Record<TerminalStatus, string> = {
 
     <div
       v-if="menu && menuSession"
-      class="fixed z-50 w-64 rounded-lg border border-line bg-surface p-1 shadow-pop"
+      class="fixed z-50 w-64 rounded-lg border border-line bg-popover p-1 shadow-pop"
       role="menu"
       :style="menuStyle"
       @mousedown.stop

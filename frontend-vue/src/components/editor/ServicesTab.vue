@@ -123,7 +123,7 @@ const showsSsl = (svc: Service) => svc.protocol?.toLowerCase() === 'https' || [4
               <span>Prot.</span>
               <select
                 :value="svc.protocol"
-                class="rounded-sm border border-line bg-sunken px-1 py-0.5 font-mono text-xs text-fg focus:border-info focus:outline-none"
+                class="rounded-sm border border-field-line bg-sunken px-1 py-0.5 font-mono text-xs text-fg focus:border-info focus:outline-none"
                 @change="changeProtocol(svc, ($event.target as HTMLSelectElement).value)"
               >
                 <option v-for="p in PROTOCOLS" :key="p.value" :value="p.value">{{ p.label }}</option>
@@ -134,7 +134,7 @@ const showsSsl = (svc: Service) => svc.protocol?.toLowerCase() === 'https' || [4
               <input
                 type="number"
                 :value="svc.port"
-                class="w-20 rounded-sm border border-line bg-sunken px-1 py-0.5 font-mono text-xs text-fg focus:border-info focus:outline-none"
+                class="w-20 rounded-sm border border-field-line bg-sunken px-1 py-0.5 font-mono text-xs text-fg focus:border-info focus:outline-none"
                 @input="(e) => { const p = parseInt((e.target as HTMLInputElement).value, 10); if (!Number.isNaN(p)) editLocally(svc.id, { port: p }); }"
                 @blur="(e) => { const p = parseInt((e.target as HTMLInputElement).value, 10); if (!Number.isNaN(p)) save(svc, { port: p }); }"
               />

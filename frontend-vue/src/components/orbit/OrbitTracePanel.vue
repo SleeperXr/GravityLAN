@@ -15,7 +15,7 @@ const emit = defineEmits<{ close: [] }>();
 
 <template>
   <div
-    class="absolute bottom-3 left-3 z-10 w-[min(24rem,calc(100%-4.5rem))] space-y-2.5 rounded-lg border border-accent bg-surface/95 p-3.5 shadow-pop backdrop-blur"
+    class="absolute bottom-3 left-3 z-10 w-[min(24rem,calc(100%-4.5rem))] space-y-2.5 rounded-lg border border-accent bg-popover/95 p-3.5 shadow-pop backdrop-blur"
     role="dialog"
     :aria-label="t('gv.orbit.trace')"
     @pointerdown.stop

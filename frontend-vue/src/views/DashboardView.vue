@@ -265,7 +265,7 @@ function clearFilters() {
             v-model="query"
             type="search"
             :placeholder="t('gv.dashboard.search')"
-            class="h-9 w-full rounded-md max-md:h-11 border border-line bg-sunken pr-14 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none"
+            class="h-9 w-full rounded-md max-md:h-11 border border-field-line bg-sunken pr-14 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none"
           />
           <kbd class="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-micro text-fg-subtle sm:inline">
             Ctrl K
@@ -274,7 +274,7 @@ function clearFilters() {
         <GatewaysPopover @open-device="(id, tab) => openDeviceById(id, tab)" />
         <NotificationCenter />
         <!-- Pending agent updates are status, so they keep a button of their own where there is room -->
-        <Button v-if="!isMobile && outdatedAgents > 0" class="border-warn/40 text-warn-text" @click="updateCenterOpen = true">
+        <Button v-if="!isMobile && outdatedAgents > 0" class="border-maint/40 text-maint-text" @click="updateCenterOpen = true">
           <RefreshCw aria-hidden="true" />{{ outdatedAgents }}<span class="hidden sm:inline">{{ t('dashboard.agent_updates') }}</span>
         </Button>
         <!-- View, layout and refresh-all are rare: one menu instead of three more buttons -->

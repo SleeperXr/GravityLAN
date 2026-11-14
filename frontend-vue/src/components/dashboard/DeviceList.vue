@@ -16,7 +16,7 @@ const emit = defineEmits<{ edit: [device: Device] }>();
     <li
       v-for="device in devices"
       :key="device.id"
-      class="group flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-raised md:flex-nowrap"
+      class="group flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-hover md:flex-nowrap"
       @click="emit('edit', device)"
     >
       <StatusDot :state="device.is_online ? 'online' : 'offline'" :label="device.is_online ? t('network.online') : t('network.offline')" />

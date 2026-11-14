@@ -187,7 +187,7 @@ const sortOptions = computed(() => [
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('health_page.search_placeholder') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input v-model="search" type="search" :placeholder="t('health_page.search_placeholder')" class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 max-md:h-11 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-accent focus:outline-none" />
+        <input v-model="search" type="search" :placeholder="t('health_page.search_placeholder')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 max-md:h-11 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
       </label>
       <!-- Wraps on phones: scrolled sideways, "Critical / Offline" sat out of view with no hint it was there -->
       <div class="flex max-w-full flex-wrap rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('gv.health.filter')">
@@ -230,7 +230,7 @@ const sortOptions = computed(() => [
             </tr>
           </thead>
           <tbody class="divide-y divide-line">
-            <tr v-for="d in rows" :key="d.id" class="group cursor-pointer transition-colors hover:bg-raised" :class="selected?.id === d.id && sheetOpen && 'bg-raised'" @click="select(d)">
+            <tr v-for="d in rows" :key="d.id" class="group cursor-pointer transition-colors hover:bg-hover" :class="selected?.id === d.id && sheetOpen && 'bg-raised'" @click="select(d)">
               <td class="px-5 py-3">
                 <div class="flex items-center gap-2">
                   <button type="button" class="min-w-0 truncate text-left text-sm font-bold text-fg group-hover:text-accent-text" @click.stop="select(d)">{{ d.display_name }}</button>

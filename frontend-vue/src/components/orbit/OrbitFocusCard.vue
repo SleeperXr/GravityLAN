@@ -20,7 +20,7 @@ const emit = defineEmits<{ close: []; open: []; toHub: []; centre: []; trace: []
 
 <template>
   <div
-    class="absolute bottom-3 left-3 z-10 w-[min(22rem,calc(100%-4.5rem))] space-y-2.5 rounded-lg border border-line-strong bg-surface/95 p-3.5 shadow-pop backdrop-blur"
+    class="absolute bottom-3 left-3 z-10 w-[min(22rem,calc(100%-4.5rem))] space-y-2.5 rounded-lg border border-line-strong bg-popover/95 p-3.5 shadow-pop backdrop-blur"
     role="dialog"
     :aria-label="deviceLabel(body.device)"
     @pointerdown.stop

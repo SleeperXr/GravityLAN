@@ -990,7 +990,7 @@ const inspectorTitle = computed(() => (cableDetail.value ? t('gv.rack.cable_titl
             @stub="followStub"
             @resize="(units) => patchRack({ units })"
           />
-          <div class="absolute right-3 bottom-3 z-10 flex overflow-hidden rounded-md border border-line bg-surface shadow-pop" role="group" :aria-label="t('gv.rack.density')">
+          <div class="absolute right-3 bottom-3 z-10 flex overflow-hidden rounded-md border border-line bg-popover shadow-pop" role="group" :aria-label="t('gv.rack.density')">
             <button
               v-for="d in ([{ id: 'fit', icon: Shrink }, { id: 'detail', icon: ZoomIn }] as const)"
               :key="d.id"
@@ -1111,7 +1111,7 @@ const inspectorTitle = computed(() => (cableDetail.value ? t('gv.rack.cable_titl
     <!-- What is being dragged, next to the pointer while it is outside the rack -->
     <div
       v-if="dragChip"
-      class="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md border bg-surface px-2.5 py-1.5 text-xs shadow-pop"
+      class="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-pop"
       :class="dragChip.zone === 'store' || dragChip.zone === 'unrack' ? 'border-warn text-warn-text' : 'border-line-strong text-fg'"
       :style="{ left: `${dragChip.x + 14}px`, top: `${dragChip.y + 12}px` }"
       aria-hidden="true"

@@ -151,7 +151,7 @@ const activeSlot = computed(() => (active.value === null ? null : slots.value[ac
         v-if="tip && activeSlot"
         id="gl-status-tip"
         role="tooltip"
-        class="pointer-events-none fixed z-[60] w-max max-w-56 -translate-x-1/2 rounded-md border border-line bg-surface px-2.5 py-2 text-xs shadow-pop"
+        class="pointer-events-none fixed z-[60] w-max max-w-56 -translate-x-1/2 rounded-md border border-line bg-popover px-2.5 py-2 text-xs shadow-pop"
         :class="tip.below ? '' : '-translate-y-full'"
         :style="{ left: `${tip.x}px`, top: `${tip.y}px` }"
       >

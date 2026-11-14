@@ -11,7 +11,7 @@ defineProps<{ label: string; hint?: string; unit: string; step?: number; min?: n
 
 <template>
   <Field v-slot="{ id, describedBy }" :label="label" :hint="hint">
-    <div class="flex h-9 items-center rounded-md border border-line bg-sunken transition-colors focus-within:border-info focus-within:ring-2 focus-within:ring-info/25 hover:border-line-strong">
+    <div class="flex h-9 items-center rounded-md border border-field-line bg-sunken transition-colors focus-within:border-info focus-within:ring-2 focus-within:ring-info/25 hover:border-fg-subtle">
       <input
         :id="id"
         :value="model"

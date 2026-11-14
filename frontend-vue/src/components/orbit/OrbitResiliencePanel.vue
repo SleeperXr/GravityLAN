@@ -31,7 +31,7 @@ const toggle = (kind: GroupKind) => (expanded.value = expanded.value === kind ? 
 
 <template>
   <div
-    class="absolute top-14 left-3 z-10 flex max-h-[calc(100%-7.5rem)] w-[min(19rem,calc(100%-4.5rem))] flex-col rounded-lg border border-line-strong bg-surface/95 shadow-pop backdrop-blur"
+    class="absolute top-14 left-3 z-10 flex max-h-[calc(100%-7.5rem)] w-[min(19rem,calc(100%-4.5rem))] flex-col rounded-lg border border-line-strong bg-popover/95 shadow-pop backdrop-blur"
     role="dialog"
     :aria-label="t('gv.orbit.resilience_title')"
     @pointerdown.stop

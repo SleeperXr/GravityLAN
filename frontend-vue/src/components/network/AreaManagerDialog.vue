@@ -57,7 +57,7 @@ function save() {
       <Input v-model="draft.name" class="col-span-3 sm:col-span-1" :placeholder="t('network.area_name')" :aria-label="t('network.area_name')" />
       <Input :model-value="draft.start || ''" type="number" min="0" max="255" mono :placeholder="t('network.start')" :aria-label="t('network.start')" @update:model-value="(v) => (draft.start = num(v))" />
       <Input :model-value="draft.end || ''" type="number" min="0" max="255" mono :placeholder="t('network.end')" :aria-label="t('network.end')" @update:model-value="(v) => (draft.end = num(v))" />
-      <input v-model="draft.color" type="color" class="h-9 w-full cursor-pointer rounded-md border border-line bg-sunken p-1" :aria-label="t('network.color')" />
+      <input v-model="draft.color" type="color" class="h-9 w-full cursor-pointer rounded-md border border-field-line bg-sunken p-1" :aria-label="t('network.color')" />
       <Button type="submit" variant="primary" size="icon" :aria-label="t('network.add_new')"><Plus aria-hidden="true" /></Button>
     </form>
 
@@ -66,7 +66,7 @@ function save() {
         <Input v-model="area.name" class="col-span-3 sm:col-span-1" :aria-label="t('network.area_name')" />
         <Input :model-value="area.start" type="number" min="0" max="255" mono :aria-label="t('network.start')" @update:model-value="(v) => (area.start = num(v))" />
         <Input :model-value="area.end" type="number" min="0" max="255" mono :aria-label="t('network.end')" @update:model-value="(v) => (area.end = num(v))" />
-        <input v-model="area.color" type="color" class="h-9 w-full cursor-pointer rounded-md border border-line bg-sunken p-1" :aria-label="t('network.color')" />
+        <input v-model="area.color" type="color" class="h-9 w-full cursor-pointer rounded-md border border-field-line bg-sunken p-1" :aria-label="t('network.color')" />
         <Button size="icon" variant="danger-ghost" :aria-label="`${t('common.delete')}: ${area.name}`" @click="local = local.filter((_, i) => i !== idx)"><Trash2 aria-hidden="true" /></Button>
       </li>
     </ul>

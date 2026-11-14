@@ -88,7 +88,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
 <template>
   <div class="mx-auto max-w-[1800px] space-y-5 px-4 py-5 md:px-8 md:py-7">
     <PageHeader :title="t('agents_page.title')" :description="t('agents_page.subtitle', { count: data?.total_agents ?? 0 })">
-      <Button v-if="outdatedCount > 0" class="border-warn/40 text-warn-text" @click="updateCenterOpen = true">
+      <Button v-if="outdatedCount > 0" class="border-maint/40 text-maint-text" @click="updateCenterOpen = true">
         <RefreshCw aria-hidden="true" />{{ outdatedCount }}<span class="hidden sm:inline">{{ t('dashboard.agent_updates') }}</span>
       </Button>
       <Button :disabled="refreshing" @click="load(false)">
@@ -100,7 +100,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('agents_page.search_placeholder') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input v-model="search" type="search" :placeholder="t('agents_page.search_placeholder')" class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-accent focus:outline-none" />
+        <input v-model="search" type="search" :placeholder="t('agents_page.search_placeholder')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
       </label>
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-line bg-surface px-3.5 py-2 text-xs" :aria-label="t('agents_page.title')">
         <span class="flex items-baseline gap-1.5">
@@ -145,7 +145,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
         <li v-for="agent in agents" :key="agent.device_id" :class="expandedId === agent.device_id && 'bg-raised/40'">
           <button
             type="button"
-            class="grid w-full grid-cols-1 gap-3 px-4 py-3 text-left transition-colors hover:bg-raised/60 lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,0.8fr)] lg:items-center lg:gap-4"
+            class="grid w-full grid-cols-1 gap-3 px-4 py-3 text-left transition-colors hover:bg-hover lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,0.8fr)] lg:items-center lg:gap-4"
             :aria-expanded="expandedId === agent.device_id"
             :aria-controls="`agent-detail-${agent.device_id}`"
             @click="expandedId = expandedId === agent.device_id ? null : agent.device_id"
@@ -159,11 +159,11 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
                 <span class="block truncate text-sm font-semibold text-fg">{{ agent.hostname }}</span>
                 <span class="block font-mono text-xs text-fg-subtle">
                   {{ agent.ip }} · v{{ agent.agent_version || '0.0.0' }}
-                  <span v-if="isAgentOutdated(agent.agent_version, agent.latest_version)" class="text-warn-text">→ v{{ agent.latest_version }}</span>
+                  <span v-if="isAgentOutdated(agent.agent_version, agent.latest_version)" class="text-maint-text">→ v{{ agent.latest_version }}</span>
                 </span>
                 <span class="mt-1 flex flex-wrap gap-1">
                   <Badge v-if="osLabelOf(agent)" class="max-w-60" :title="osLabelOf(agent) ?? undefined"><span class="truncate">{{ osLabelOf(agent) }}</span></Badge>
-                  <Badge v-if="isAgentOutdated(agent.agent_version, agent.latest_version)" tone="warn" mono @click.stop="updateCenterOpen = true">
+                  <Badge v-if="isAgentOutdated(agent.agent_version, agent.latest_version)" tone="maint" mono @click.stop="updateCenterOpen = true">
                     <ArrowUpCircle aria-hidden="true" />v{{ agent.latest_version }}
                   </Badge>
                   <Badge v-if="agent.patch_available > 0" :tone="agent.patch_security > 0 ? 'danger' : 'warn'" mono :title="t('agent_detail.updates_badge', { count: agent.patch_available, security: agent.patch_security })">
