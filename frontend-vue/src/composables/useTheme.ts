@@ -22,6 +22,7 @@ export function isCustomPreference(value: unknown): value is CustomPreference {
 function readPreference(): ThemePreference {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'paper') return 'light'; // the Day map was "paper" in a test build
     if (isCustomPreference(stored)) return findCustomTheme(stored.slice(7)) ? stored : 'dark';
     return stored === 'system' || isThemeId(stored) ? stored : 'dark';
   } catch {

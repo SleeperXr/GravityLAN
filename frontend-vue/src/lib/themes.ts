@@ -4,7 +4,7 @@
  * The preview colours are the theme's own values, kept here so a card can show a theme that is
  * not active. Dark ones also belong in the `dark` custom variant at the top of index.css.
  */
-export type ThemeId = 'dark' | 'starlight' | 'aurora' | 'light' | 'paper';
+export type ThemeId = 'dark' | 'starlight' | 'aurora' | 'light';
 export type ThemeScheme = 'dark' | 'light';
 
 export interface ThemePreview {
@@ -60,14 +60,6 @@ export const THEMES: ThemeInfo[] = [
     id: 'light',
     label: 'gv.theme.light',
     description: 'gv.theme.light_desc',
-    scheme: 'light',
-    browserBar: '#ffffff',
-    preview: { canvas: '#e6e9ee', surface: '#f4f6f8', line: '#b8bfc9', text: '#10141b', accent: '#087a65', primary: '#087a65', network: '#1fb3e0' },
-  },
-  {
-    id: 'paper',
-    label: 'gv.theme.paper',
-    description: 'gv.theme.paper_desc',
     scheme: 'light',
     browserBar: '#f4f6f8',
     preview: { canvas: '#f4f6f8', surface: '#ffffff', line: '#a5acb2', text: '#12161d', accent: '#007563', primary: '#007563', network: '#1fb3e0' },

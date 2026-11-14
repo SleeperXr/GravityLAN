@@ -8,20 +8,18 @@
     "theme": {
       "label": "Farbschema",
       "system": "System",
-      "light": "Hell",
+      "light": "Tagkarte",
       "dark": "Dunkel",
       "aurora": "Aurora",
       "menu": "Design",
       "starlight": "Sternlicht",
-      "paper": "Tagkarte",
       "group_dark": "Dunkle Designs",
       "group_light": "Helle Designs",
       "system_desc": "Hell oder dunkel wie das Betriebssystem",
       "dark_desc": "Nachtnetz, Standard",
       "starlight_desc": "Graphit, Aktion in Sternlicht-Weiß",
       "aurora_desc": "Neon-Nacht, viel Farbe",
-      "light_desc": "Weiches Grau, kein grelles Weiß",
-      "paper_desc": "Weiße Karten, hoher Kontrast"
+      "light_desc": "Weiße Karten, hoher Kontrast"
     },
     "state": {
       "load_failed": "Daten konnten nicht geladen werden",

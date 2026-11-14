@@ -176,77 +176,13 @@
   --line-10: #f2856d;
 }
 
-:root[data-theme="light"],
-:root[data-theme="paper"] {
-  color-scheme: light;
-  /* No pure white: a soft grey ground and off-white cards, so a full page does not glare */
-  --gl-canvas: #e6e9ee;
-  --gl-chrome: #eff1f4;
-  --gl-surface: #f4f6f8;
-  --gl-raised: #e9ecf0;
-  --gl-sunken: #e2e6eb;
-  --gl-control: #f4f6f8;
-  --gl-control-hover: #e9ecf0;
-  --gl-line: #d5dae1;
-  --gl-line-strong: #b8bfc9;
-  --gl-popover: #fbfcfd;
-  --gl-hover: #e4e8ed;
-  --gl-field-line: #747b83;
-  --gl-fg: #10141b;
-  --gl-fg-muted: #434d5b;
-  --gl-fg-subtle: #556070;
-  /* White bodies on a cool grey map ground: thin coloured rings need something to stand out from */
-  --gl-station: #ffffff;
-  --gl-orbit-canvas: #d9dfe7;
-  --gl-orbit-ring: 0.6;
-  --gl-orbit-ring-active: 0.95;
-  --gl-orbit-ink: 68%;
-  --gl-orbit-stroke: 1.6;
-  --gl-orbit-glow-1: rgb(8 122 101 / 0.035);
-  --gl-orbit-glow-2: rgb(31 111 209 / 0.03);
-  --gl-orbit-glow-3: rgb(240 138 36 / 0.025);
-
-  /* Text tones are measured against their own 10–15 % tints on every surface: all reach 4.5:1 */
-  --gl-accent: #087a65;
-  --gl-accent-hover: #066654;
-  --gl-accent-fg: #ffffff;
-  --gl-accent-text: #055f4e;
-  --gl-info: #1f6fd1;
-  --gl-info-text: #154f93;
-  --gl-warn: #d97706;
-  --gl-warn-text: #824500;
-  --gl-danger: #dc3545;
-  --gl-danger-fg: #ffffff;
-  --gl-danger-text: #9e1b29;
-  --gl-neutral-dot: #a3aab5;
-
-  /* Softer than the button and text tones: a table full of bars should not be the loudest thing on the page.
-     The normal range rests like in the night theme and reaches 3:1 against the meter track */
-  --gl-mark-ok: #528581;
-  --gl-mark-warn: #e9a23b;
-  --gl-mark-danger: #e25563;
-
-  --gl-shadow-card: 0 1px 2px rgb(16 20 27 / 0.04);
-  --gl-shadow-pop: 0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06);
-
-  --line-1: #1fb3e0;
-  --line-2: #f08a24;
-  --line-3: #6fbf3b;
-  --line-4: #e8589b;
-  --line-5: #e5b800;
-  --line-6: #8a94a3;
-  --line-7: #b9773f;
-  --line-8: #12a88b;
-  --line-9: #2f86e8;
-  --line-10: #e0644a;
-}
-
 /*
- * Paper (Tagkarte): the high-contrast day theme for bright rooms and wall monitors. White cards
- * on a pale ground, dark ink (body text 18:1, dim text 6.9:1). Builds on the light block above
- * and keeps its network palette.
+ * Day map (Tagkarte), the light theme: white cards on a pale ground, dark ink (body text 18:1,
+ * dim text 6.9:1, field border 4.3:1), for bright rooms and wall monitors. The id stays "light",
+ * so "system" and stored choices keep working.
  */
-:root[data-theme="paper"] {
+:root[data-theme="light"] {
+  color-scheme: light;
   --gl-canvas: #f4f6f8;
   --gl-chrome: #eef0f3;
   --gl-surface: #ffffff;
@@ -262,8 +198,18 @@
   --gl-fg: #12161d;
   --gl-fg-muted: #3c434d;
   --gl-fg-subtle: #545b66;
+  /* White bodies on a cool grey map ground: thin coloured rings need something to stand out from */
+  --gl-station: #ffffff;
   --gl-orbit-canvas: #e6eaef;
+  --gl-orbit-ring: 0.6;
+  --gl-orbit-ring-active: 0.95;
+  --gl-orbit-ink: 68%;
+  --gl-orbit-stroke: 1.6;
+  --gl-orbit-glow-1: rgb(8 122 101 / 0.035);
+  --gl-orbit-glow-2: rgb(31 111 209 / 0.03);
+  --gl-orbit-glow-3: rgb(240 138 36 / 0.025);
 
+  /* Text tones are measured against their own 10–15 % tints on every surface: all reach 4.5:1 */
   --gl-accent: #007563;
   --gl-accent-hover: #006252;
   --gl-accent-fg: #ffffff;
@@ -276,10 +222,26 @@
   --gl-danger-fg: #ffffff;
   --gl-danger-text: #a50d1c;
   --gl-neutral-dot: #81878d;
+
+  /* Softer than the button and text tones: a table full of bars should not be the loudest thing on the page.
+     The normal range rests like in the night theme and reaches 3:1 against the meter track */
   --gl-mark-ok: #77818c;
+  --gl-mark-warn: #e9a23b;
+  --gl-mark-danger: #e25563;
 
   --gl-shadow-card: 0 1px 2px rgb(18 22 29 / 0.06);
   --gl-shadow-pop: 0 20px 40px -12px rgb(18 22 29 / 0.22), 0 0 0 1px rgb(18 22 29 / 0.08);
+
+  --line-1: #1fb3e0;
+  --line-2: #f08a24;
+  --line-3: #6fbf3b;
+  --line-4: #e8589b;
+  --line-5: #e5b800;
+  --line-6: #8a94a3;
+  --line-7: #b9773f;
+  --line-8: #12a88b;
+  --line-9: #2f86e8;
+  --line-10: #e0644a;
 }
 
 /*

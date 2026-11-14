@@ -40,36 +40,36 @@ colors:
   line-9: "#5aa9ff"
   line-10: "#f2856d"
   # Tagmodus (hell)
-  canvas-day: "#e6e9ee"
-  chrome-day: "#eff1f4"
-  surface-day: "#f4f6f8"
-  raised-day: "#e9ecf0"
-  sunken-day: "#e2e6eb"
-  control-day: "#f4f6f8"
-  control-hover-day: "#e9ecf0"
-  hairline-day: "#d5dae1"
-  hairline-strong-day: "#b8bfc9"
-  fg-day: "#10141b"
-  fg-muted-day: "#434d5b"
-  fg-subtle-day: "#556070"
+  canvas-day: "#f4f6f8"
+  chrome-day: "#eef0f3"
+  surface-day: "#ffffff"
+  raised-day: "#eef0f3"
+  sunken-day: "#eaedf0"
+  control-day: "#ffffff"
+  control-hover-day: "#e5e8ec"
+  hairline-day: "#d0d5d9"
+  hairline-strong-day: "#a5acb2"
+  fg-day: "#12161d"
+  fg-muted-day: "#3c434d"
+  fg-subtle-day: "#545b66"
   station-day: "#ffffff"
-  orbit-canvas-day: "#d9dfe7"
+  orbit-canvas-day: "#e6eaef"
   mark-ok: "#588b87"
-  mark-ok-day: "#528581"
+  mark-ok-day: "#77818c"
   mark-warn-day: "#e9a23b"
   mark-danger-day: "#e25563"
-  accent-day: "#087a65"
-  accent-hover-day: "#066654"
+  accent-day: "#007563"
+  accent-hover-day: "#006252"
   accent-fg-day: "#ffffff"
-  accent-text-day: "#055f4e"
-  info-day: "#1f6fd1"
-  info-text-day: "#154f93"
-  warn-day: "#d97706"
-  warn-text-day: "#824500"
-  danger-day: "#dc3545"
-  danger-text-day: "#9e1b29"
+  accent-text-day: "#005c4d"
+  info-day: "#0075d4"
+  info-text-day: "#0054a5"
+  warn-day: "#ea9602"
+  warn-text-day: "#804300"
+  danger-day: "#d4212d"
+  danger-text-day: "#a50d1c"
   danger-fg-day: "#ffffff"
-  neutral-dot-day: "#a3aab5"
+  neutral-dot-day: "#81878d"
   line-1-day: "#1fb3e0"
   line-2-day: "#f08a24"
   line-3-day: "#6fbf3b"
@@ -252,7 +252,7 @@ Passend zum Namen GravityLAN wird das Heimnetz als gravitatives Sonnensystem gel
 - **Zustand doppelt kodiert:** Ausgefallene Himmelskörper verlieren ihre geschlossene Umlaufbahn (unterbrochener Orbit-Ring, rot umrandet, durchgestrichen und Text-Badge „Offline“); gestörte Dienste zeigen einen Bernstein-Ring plus `!`-Indikator.
 - **Netz-Identität:** Jedes Subnetz bzw. VLAN hat genau eine Farbe (`networkColor()`, überschreibbar über `ui.line_colors`). Sie trägt den Atmosphärenring des Objekts, die Orbit-Bahn, das runde Netz-Schild (`LineBullet`), das Statusboard, die Betriebsmeldungen, IP-Kacheln und Rack-Einschübe.
 
-Der Standard ist der dunkle Nachtmodus (`canvas` `#0c0f14`), das helle Thema (`#e6e9ee`, Karten `#f4f6f8`, kein reines Weiß) arbeitet mit derselben Farblogik und eigens abgedunkelten Palettenwerten, sodass alle Texte in beiden Themen mindestens 4,5:1 Kontrast erreichen. Als drittes Thema gibt es **Aurora** (`canvas` `#08090d`): ein Neon-Dunkel. Der Grund bleibt neutral und fast schwarz, die Farbe sitzt auf den Elementen: Neongrün, Cyan, Gelb und Pink für Akzent und Zustände, Cyan und Blau statt Grau für Nebentext (`fg-muted`, `fg-subtle`), blaue Haarlinien, pinke neutrale Badges, eine Neon-Netzpalette und ein schwacher Cyan-Schein unter Karten; es nutzt dieselben Tokens und erreicht ebenfalls mindestens 4,5:1. Keine Seite nutzt generische KPI-Kachelreihen: Health und Agents fassen ihre Kennzahlen in einer kompakten Statusleiste direkt über der Tabelle zusammen.
+Der Standard ist der dunkle Nachtmodus (`canvas` `#0c0f14`), das helle Thema, die Tagkarte (`#f4f6f8`, Karten weiß) arbeitet mit derselben Farblogik und eigens abgedunkelten Palettenwerten, sodass alle Texte in beiden Themen mindestens 4,5:1 Kontrast erreichen. Als drittes Thema gibt es **Aurora** (`canvas` `#08090d`): ein Neon-Dunkel. Der Grund bleibt neutral und fast schwarz, die Farbe sitzt auf den Elementen: Neongrün, Cyan, Gelb und Pink für Akzent und Zustände, Cyan und Blau statt Grau für Nebentext (`fg-muted`, `fg-subtle`), blaue Haarlinien, pinke neutrale Badges, eine Neon-Netzpalette und ein schwacher Cyan-Schein unter Karten; es nutzt dieselben Tokens und erreicht ebenfalls mindestens 4,5:1. Keine Seite nutzt generische KPI-Kachelreihen: Health und Agents fassen ihre Kennzahlen in einer kompakten Statusleiste direkt über der Tabelle zusammen.
 
 **Key Characteristics:**
 - Gravitationshierarchie: Stern (Gateway) → Planeten (Switch, AP, Host) → Monde (Clients, WLAN, VMs/Container).
@@ -268,9 +268,9 @@ Ein neutraler, leicht blaustichiger Grund trägt eine Palette aus zehn klaren Ne
 Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden über `@theme` auf Tailwind-Klassen abgebildet (`bg-canvas`, `bg-chrome`, `bg-surface`, `bg-raised`, `bg-sunken`, `bg-control`, `border-line`, `border-line-strong`, `text-fg`, `text-fg-muted`, `text-fg-subtle`, `bg-station`, `bg-accent`/`text-accent-text`, `info`, `warn`, `danger` jeweils mit `*-text`). Komponenten verwenden nur diese semantischen Namen. Das Thema hängt an `data-theme` auf `<html>`; ein Skript in `index.html` setzt es vor dem ersten Paint (Standard dunkel), `useTheme.ts` schaltet zwischen den Designs aus `src/lib/themes.ts` und System um und speichert unter `gravityui.theme`. „System“ folgt dem Betriebssystem nur zwischen hell und dunkel. Ein neues Thema ist ein weiterer `:root[data-theme="…"]`-Block mit allen `--gl-*`- und `--line-*`-Werten (dazu `--gl-orbit-glow-1..3` für den Schein hinter dem Orbit-Netzplan und bei Bedarf `--gl-badge`, `--gl-badge-text`, `--gl-badge-line` für das neutrale Badge, das sonst `raised`, `fg-muted` und `line` folgt), ein Eintrag in `ThemePreference` und in den beiden Auswahllisten; Komponenten bekommen keine Sonderfälle. Dunkle Themen gehören zusätzlich in die `dark`-Variante am Kopf von `index.css`.
 
 ### Designs und Design-Menü
-Fünf Designs, jedes ein `:root[data-theme="…"]`-Block in `index.css` und ein Eintrag in `src/lib/themes.ts` (Name, Beschreibung, hell oder dunkel, Browserleisten-Farbe, Vorschaufarben). Dunkel: **Nachtnetz** (`dark`, Standard), **Sternlicht** (`starlight`), **Aurora** (`aurora`). Hell: **Hell** (`light`), **Tagkarte** (`paper`).
+Vier Designs, jedes ein `:root[data-theme="…"]`-Block in `index.css` und ein Eintrag in `src/lib/themes.ts` (Name, Beschreibung, hell oder dunkel, Browserleisten-Farbe, Vorschaufarben). Dunkel: **Nachtnetz** (`dark`, Standard), **Sternlicht** (`starlight`), **Aurora** (`aurora`). Hell: **Tagkarte** (`light`).
 - **Sternlicht:** unbuntes Graphit (`canvas` `#0b0c0e`, `surface` `#121416`), die Hauptaktion in warmem Sternlicht-Weiß (`primary` `#f0ebd9`, Tinte `#13120d`, 15,7:1), der Akzent als ruhiges Zustandsgrün (`#5edb81`). Farbe gehört damit nur Zustand und Netzen. Engere Radien (4/6/10/14 px), keine Kartenkante. Baut auf dem Nachtnetz-Block auf und übernimmt dessen Netzpalette.
-- **Tagkarte:** weiße Karten auf blassem Grund (`canvas` `#f4f6f8`), dunkle Tinte (`fg` 18:1, `fg-subtle` 6,9:1), Feldrand 4,3:1. Für helle Räume und Wandmonitore. Baut auf dem hellen Block auf und übernimmt dessen Netzpalette.
+- **Tagkarte** (das einzige helle Design, ID `light`, damit „System“ und gespeicherte Wahlen weiter greifen): weiße Karten auf blassem Grund (`canvas` `#f4f6f8`), dunkle Tinte (`fg` 18:1, `fg-subtle` 6,9:1), Feldrand 4,3:1. Für helle Räume und Wandmonitore. Sie ersetzt das frühere weiche Hell (`#e6e9ee`), das ihr zu ähnlich war; eine gespeicherte Wahl `paper` aus einem Testbuild wird zu `light`.
 - **`primary`** (`--gl-primary`, `-hover`, `-fg`; Klassen `bg-primary` usw.) ist die Fläche des Primär-Buttons. In allen Designs außer Sternlicht zeigt er auf `accent`. Der Akzent bleibt Zustands- und Hervorhebungsfarbe (online, gesund, aktive Tabs, Fokus).
 - **Design-Menü** (`ThemePicker.vue`): Karten mit Mini-Vorschau (`ThemeSwatch.vue`: Grund, Karte, Textzeile, Netzlinie, Primär- und Zustandsfarbe), gruppiert nach „Dunkle Designs" und „Helle Designs", davor „System". In den Einstellungen unter Sprache & Darstellung mit Beschreibungen; in der Seitenleiste und im Mehr-Menü als Knopf mit dem aktuellen Design, der das Menü als Popover öffnet.
 - **Eigene Designs** (`src/lib/customThemes.ts`): eine hochgeladene JSON-Datei `{ "format": "gravityui-design", "name": "…", "base": "dark" | "light", "colors": { "surface": "#121416", "line-1": "#4dd4ff", … } }`. Erlaubt sind nur die Farb-Tokens aus `DESIGN_TOKENS` (alle `--gl-*`-Farben plus `line-1` bis `line-10`, keine Schatten und keine Orbit-Zahlenwerte) und reine Hex-Werte (`#rgb`, `#rrggbb`, `#rrggbbaa`); was fehlt, kommt von der Basis. Angewendet wird per `style.setProperty` auf `<html>`, je Variable einzeln, nie als CSS-Text; das Skript in `index.html` prüft beim ersten Paint dieselben Regeln. Gespeichert in diesem Browser unter `gravityui.custom_themes`, höchstens 10, gewählt als `custom:<id>`. „Vorlage herunterladen" schreibt das Design auf dem Schirm mit allen Farben als Startdatei. Fehler nennen den Grund (kein JSON, Name fehlt, Basis falsch, unbekannte Farbnamen, keine Hex-Farbe, Datei zu groß). Ein gelöschtes, gerade aktives Design fällt auf seine Basis zurück.
