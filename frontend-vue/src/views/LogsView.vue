@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useSlashFocus } from '@/composables/useSlashFocus';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowDown, Copy, Pause, Play, ScrollText, Search, Terminal, Trash2 } from 'lucide-vue-next';
 import PageHeader from '@/components/ui/PageHeader.vue';
@@ -22,6 +23,8 @@ const connected = ref(false);
 const paused = ref(false);
 const level = ref<'all' | 'warning' | 'error'>('all');
 const search = ref('');
+const searchInputRef = ref<HTMLInputElement | null>(null);
+useSlashFocus(searchInputRef);
 const follow = ref(true);
 const box = ref<HTMLElement | null>(null);
 let ws: WebSocket | null = null;
@@ -134,7 +137,7 @@ const shortTime = (time: string) => time.slice(11, 19);
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('gv.logs.search') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input v-model="search" type="search" :placeholder="t('gv.logs.search')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
+        <input ref="searchInputRef" v-model="search" type="search" :placeholder="t('gv.logs.search')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
       </label>
       <div class="ml-auto flex gap-1">
         <Button size="icon" variant="ghost" :aria-label="paused ? t('common.resume') : t('common.pause')" :title="paused ? t('common.resume') : t('common.pause')" :aria-pressed="paused" @click="paused = !paused">
