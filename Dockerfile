@@ -21,9 +21,10 @@ WORKDIR /build
 # Create virtual environment to isolate dependencies cleanly
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-COPY backend/requirements.txt ./
+# Every package pinned, transitive ones included (exported from backend/uv.lock)
+COPY backend/requirements.lock.txt ./
 RUN /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.lock.txt && \
     /opt/venv/bin/pip uninstall -y pip setuptools wheel
 
 # Stage 3: Clean Python Runtime
