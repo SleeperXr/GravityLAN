@@ -1,18 +1,21 @@
 import type { Device, Subnet } from '@/types';
 
-import { useAppearance } from '@/stores/appearance';
+import { LINE_REF, useAppearance } from '@/stores/appearance';
 import { useNetworkStore } from '@/stores/network';
 
 /**
  * The line colour of a subnet, the same on the network map, line bullets, device chips and the
- * gateway list: the user's choice (Settings), else the palette slot by subnet id (--line-1..10,
- * which follows light/dark), else a slot hashed from the /24 around the address.
+ * gateway list: the user's choice (Settings; a hex colour or a palette slot "line:N"), else the
+ * palette slot by subnet id (--line-1..10, which follows light/dark), else a slot hashed from the
+ * /24 around the address.
  */
 const LINE_SLOTS = 10;
 
 export function networkColor(subnetId: number | null | undefined, ip?: string | null): string {
   if (subnetId != null) {
     const custom = useAppearance().lineColors[String(subnetId)];
+    const slot = custom ? LINE_REF.exec(custom) : null;
+    if (slot) return `var(--line-${slot[1]})`;
     if (custom) return custom;
     return `var(--line-${((Math.abs(subnetId) - 1 + LINE_SLOTS) % LINE_SLOTS) + 1})`;
   }

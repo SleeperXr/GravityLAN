@@ -29,15 +29,15 @@ colors:
   danger-fg: "#2a0608"
   neutral-dot: "#6b7686"
   sign-ink: "#0c0f14"
-  line-1: "#2ec4a6"
+  line-1: "#4dd4ff"
   line-2: "#ff9f43"
-  line-3: "#5aa9ff"
-  line-4: "#ffd23f"
-  line-5: "#ff7eb6"
-  line-6: "#9be15d"
-  line-7: "#4dd4ff"
-  line-8: "#e0a370"
-  line-9: "#c3cad4"
+  line-3: "#9be15d"
+  line-4: "#ff7eb6"
+  line-5: "#ffd23f"
+  line-6: "#c3cad4"
+  line-7: "#e0a370"
+  line-8: "#2ec4a6"
+  line-9: "#5aa9ff"
   line-10: "#f2856d"
   # Tagmodus (hell)
   canvas-day: "#e6e9ee"
@@ -70,15 +70,15 @@ colors:
   danger-text-day: "#9e1b29"
   danger-fg-day: "#ffffff"
   neutral-dot-day: "#a3aab5"
-  line-1-day: "#12a88b"
+  line-1-day: "#1fb3e0"
   line-2-day: "#f08a24"
-  line-3-day: "#2f86e8"
-  line-4-day: "#e5b800"
-  line-5-day: "#e8589b"
-  line-6-day: "#6fbf3b"
-  line-7-day: "#1fb3e0"
-  line-8-day: "#b9773f"
-  line-9-day: "#8a94a3"
+  line-3-day: "#6fbf3b"
+  line-4-day: "#e8589b"
+  line-5-day: "#e5b800"
+  line-6-day: "#8a94a3"
+  line-7-day: "#b9773f"
+  line-8-day: "#12a88b"
+  line-9-day: "#2f86e8"
   line-10-day: "#e0644a"
 typography:
   display:
@@ -259,7 +259,7 @@ Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden 
 - **Signaltürkis** (`accent`, dunkel `#2ec4a6` / hell `#087a65`): primäre Aktion (Scan, Fertig), Fokusring (2 px, Abstand 2 px), Textcursor, aktive Tab-Unterstreichung, aktive Statusboard-Zeile, „gesund/online“-Punkte, Light-Beam beim Ziehen einer neuen Verbindung im Orbit-Netzplan. Text in Akzentfarbe nutzt immer `accent-text`; Text auf gefülltem Akzent `accent-fg`.
 
 ### Secondary
-- **Netzpalette** (`--line-1` bis `--line-10`, je Thema eigener Satz): Identität der Subnetze/Orbits und der Seiten. Ohne Nutzerwahl bekommt ein Subnetz den Slot `((id − 1) mod 10) + 1`; ohne Subnetz wird der Slot aus dem `/24`-Präfix gehasht (`networkColor` in `src/lib/networks.ts`). Die Nutzerwahl (Hex, pro Subnetz) hat Vorrang und gilt in beiden Themen. Die helle Palette ist dunkler gestimmt, damit Ringe und Light-Beams auf Weiß tragen.
+- **Netzpalette** (`--line-1` bis `--line-10`, je Thema eigener Satz): Identität der Subnetze/Orbits und der Seiten. Ohne Nutzerwahl bekommt ein Subnetz den Slot `((id − 1) mod 10) + 1`; ohne Subnetz wird der Slot aus dem `/24`-Präfix gehasht (`networkColor` in `src/lib/networks.ts`). Die Nutzerwahl pro Subnetz hat Vorrang: ein Palettenplatz (`line:N`, folgt dem Thema wie die Palette selbst) oder ein freier Hex-Wert, der in jedem Thema gleich bleibt. **Reihenfolge:** Cyan, Orange, Grün, Pink, Gelb, Grau, Sand, dann Türkis, Blau und Koralle auf 8–10. Diese drei teilen ihren Farbton mit Akzent, Info und Rot, deshalb kommen sie zuletzt: Bis sieben Netze sieht keines aus wie ein Knopf oder ein Zustand. Jedes Thema hält diese Reihenfolge. Installationen von vor der Umsortierung behalten ihre Netzfarben über eine einmalige Migration, die bestehende Subnetze per `line:N` auf den neuen Platz ihrer alten Farbe setzt. Die helle Palette ist dunkler gestimmt, damit Ringe und Light-Beams auf Weiß tragen.
 
 ### Tertiary
 - **Zustandsfarben**: Info-Blau (`info`) für Eingabefokus und Hinweise, Bernstein (`warn`) für gestörte Dienste, Signalrot (`danger`) für ausgefallene Geräte, Fehler und destruktive Aktionen. Flächen davon nur als Tönung (`/10`, Rand `/25`–`/30`), Text immer in der `*-text`-Variante.
@@ -396,7 +396,7 @@ Das Statusboard (`LineStatusBoard.vue`) zeigt eine Zelle pro Subnetz/Orbit: rund
 - **IP-Kacheln:** belegt und online = Rahmen 55 % und Fläche 14 % in der Netzfarbe; offline rot getönt; frei Haarlinie; reserviert gestrichelt. Adressen in Mono.
 - **Rack:** Einschübe als Hardware-Frontplatten (`raised`, im hellen Thema `surface`): Ohren mit einer Schraube je HE, Netzfarb-Streifen, Betriebs-LED, Buchsen je Port rechtsbündig. Freie Einheiten zu gestrichelten Blöcken zusammengefasst („16 HE frei“). Kabel als Schlaufe zwischen nahen Buchsen, sonst im Kabelkanal rechts, je Kabel Farblinie auf dunklem Mantel; gestrichelt = anderes Ende auf der anderen Seite oder in einem anderen Rack. Verschieben und Einbauen federn nach (Feder statt Kurve, nur `transform`), die Rückseite ist eine Drehung um die Hochachse; unter reduzierter Bewegung springt alles direkt.
 - **Ersteinrichtung:** die vier Schritte entlang einer 5-px-Trajektorie (erledigt Akzent, offen `hairline-strong`), Hintergrund mit Koordinatenraster.
-- **Netzfarben (Einstellungen):** pro Subnetz Netzschild, Palettenvorschläge des aktuellen Themas und freier Farbwähler; Zurücksetzen auf den Palettenslot.
+- **Netzfarben (Einstellungen):** pro Subnetz Netzschild, Palettenvorschläge des aktuellen Themas (gespeichert als `line:N`) und freier Farbwähler (Hex); Zurücksetzen auf den Palettenslot.
 
 ### Leer-, Fehler- und Ladezustände
 `EmptyState`, `ErrorState` (mit Wiederholen) und `Skeleton` in Kartenform; jede Liste und jede Karte hat alle drei.

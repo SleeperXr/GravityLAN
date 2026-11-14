@@ -10,10 +10,14 @@ const VISIBILITY_KEY = 'ui.orbit_visibility';
 const LINK_TYPE_KEY = 'ui.link_type_colors';
 const ROLES: OrbitRole[] = ['star', 'planet', 'dwarf', 'moon'];
 const HEX = /^#[0-9a-f]{6}$/i;
+/** A palette slot as a line colour ("line:3"): it follows the theme like the palette itself. */
+export const LINE_REF = /^line:([1-9]|10)$/;
+const isLineColour = (v: unknown): v is string => typeof v === 'string' && (HEX.test(v) || LINE_REF.test(v));
 
 /**
- * User-chosen line colours per subnet (setting `ui.line_colors`, JSON {subnetId: "#rrggbb"}).
- * Without an entry a subnet takes its palette colour (--line-N), which follows light/dark.
+ * User-chosen line colours per subnet (setting `ui.line_colors`, JSON {subnetId: "#rrggbb" | "line:N"}).
+ * Without an entry a subnet takes its palette colour (--line-N), which follows light/dark. "line:N"
+ * picks another palette slot and follows the theme too; the palette reorder pins existing networks that way.
  */
 export const useAppearance = defineStore('appearance', () => {
   const lineColors = ref<Record<string, string>>({});
@@ -37,7 +41,7 @@ export const useAppearance = defineStore('appearance', () => {
         const settings = await api.getSettings();
         const raw = settings[SETTING_KEY];
         const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-        lineColors.value = Object.fromEntries(Object.entries(parsed).filter(([, v]) => HEX.test(v)));
+        lineColors.value = Object.fromEntries(Object.entries(parsed).filter(([, v]) => isLineColour(v)));
         orbitCustom.value = settings[ORBIT_KEY] === 'custom';
         const roles = settings[ROLES_KEY] ? (JSON.parse(settings[ROLES_KEY]) as Record<string, string>) : {};
         const types = settings[LINK_TYPE_KEY] ? (JSON.parse(settings[LINK_TYPE_KEY]) as Record<string, string>) : {};
@@ -95,7 +99,7 @@ export const useAppearance = defineStore('appearance', () => {
 
   async function setLineColor(subnetId: number, color: string | null) {
     const next = { ...lineColors.value };
-    if (color && HEX.test(color)) next[String(subnetId)] = color;
+    if (isLineColour(color)) next[String(subnetId)] = color;
     else delete next[String(subnetId)];
     lineColors.value = next;
     await api.updateSettings({ [SETTING_KEY]: JSON.stringify(next) });

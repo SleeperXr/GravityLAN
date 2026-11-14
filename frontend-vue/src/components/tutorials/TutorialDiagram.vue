@@ -10,9 +10,9 @@ import type { DiagramKind } from './tutorials';
 defineProps<{ kind: DiagramKind }>();
 const d = (key: string) => t(`gv.tutorials.diagram.${key}`);
 const routes = [
-  { key: 'l2', color: 'var(--line-1)', dash: undefined },
-  { key: 'l3', color: 'var(--line-4)', dash: '6 4' },
-  { key: 'probe', color: 'var(--line-3)', dash: '2 4' },
+  { key: 'l2', color: 'var(--line-8)', dash: undefined },
+  { key: 'l3', color: 'var(--line-5)', dash: '6 4' },
+  { key: 'probe', color: 'var(--line-9)', dash: '2 4' },
 ];
 </script>
 
@@ -81,7 +81,7 @@ const routes = [
         </marker>
       </defs>
       <g v-for="(tier, i) in ['raw', 'hourly', 'daily']" :key="tier" :transform="`translate(${10 + i * 230}, 25)`">
-        <rect width="190" height="70" rx="10" fill="var(--gl-raised)" :stroke="`var(--line-${[1, 4, 3][i]})`" stroke-width="1.5" />
+        <rect width="190" height="70" rx="10" fill="var(--gl-raised)" :stroke="`var(--line-${[8, 5, 9][i]})`" stroke-width="1.5" />
         <text x="95" y="30" text-anchor="middle" font-size="12" font-weight="700" fill="var(--gl-fg)">{{ d(`telemetry_${tier}`) }}</text>
         <text x="95" y="50" text-anchor="middle" font-size="11" fill="var(--gl-fg-muted)">{{ d(`telemetry_${tier}_keep`) }}</text>
       </g>

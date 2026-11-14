@@ -5,7 +5,7 @@ import { api } from '@/api/client';
 import type { Subnet } from '@/types';
 import LineBullet from '@/components/common/LineBullet.vue';
 import { lineLabel, networkColor } from '@/lib/networks';
-import { useAppearance } from '@/stores/appearance';
+import { LINE_REF, useAppearance } from '@/stores/appearance';
 import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
 import { t } from '@/i18n';
@@ -31,7 +31,8 @@ onMounted(async () => {
   }
 });
 
-// The palette as concrete colours of the current theme (a custom colour is stored as #rrggbb)
+// The palette as concrete colours of the current theme. A palette pick is stored as "line:N", so it
+// follows the theme; only the free colour picker stores #rrggbb.
 const { resolved: theme } = useTheme();
 const palette = computed(() => {
   void theme.value; // light and dark have their own palette
@@ -40,7 +41,16 @@ const palette = computed(() => {
 
 const bullet = (s: Subnet) => lineLabel(s);
 const custom = (s: Subnet) => appearance.lineColors[String(s.id)] ?? null;
-const toHex = (color: string | null) => (color && /^#[0-9a-f]{6}$/i.test(color) ? color : '#2ec4a6');
+const slotRef = (i: number) => `line:${i + 1}`;
+const isPicked = (s: Subnet, i: number) => {
+  const c = custom(s)?.toLowerCase();
+  return c === slotRef(i) || c === palette.value[i]?.toLowerCase();
+};
+const toHex = (color: string | null) => {
+  const slot = color ? LINE_REF.exec(color) : null;
+  if (slot) return palette.value[Number(slot[1]) - 1] ?? '#2ec4a6';
+  return color && /^#[0-9a-f]{6}$/i.test(color) ? color : '#2ec4a6';
+};
 
 async function choose(s: Subnet, color: string | null) {
   try {
@@ -75,10 +85,10 @@ async function choose(s: Subnet, color: string | null) {
             class="grid size-6 place-items-center rounded-full ring-offset-2 ring-offset-surface transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-fg"
             :style="{ background: color }"
             :aria-label="t('gv.lines.slot', { n: i + 1 })"
-            :aria-pressed="custom(s)?.toLowerCase() === color.toLowerCase()"
-            @click="choose(s, color)"
+            :aria-pressed="isPicked(s, i)"
+            @click="choose(s, slotRef(i))"
           >
-            <Check v-if="custom(s)?.toLowerCase() === color.toLowerCase()" class="size-3.5 text-[#0c0f14]" :stroke-width="3" aria-hidden="true" />
+            <Check v-if="isPicked(s, i)" class="size-3.5 text-[#0c0f14]" :stroke-width="3" aria-hidden="true" />
           </button>
           <label class="relative grid size-6 cursor-pointer place-items-center overflow-hidden rounded-full border border-dashed border-line-strong" :title="t('gv.lines.custom')">
             <span class="sr-only">{{ t('gv.lines.custom') }}</span>

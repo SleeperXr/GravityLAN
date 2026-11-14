@@ -374,10 +374,10 @@ const fill = computed(() => Math.min(100, (props.overview.occupied / Math.max(1,
 
     <div class="space-y-1.5 border-t border-line pt-4 text-xs text-fg-subtle">
       <p class="flex items-center gap-2">
-        <svg width="28" height="8" aria-hidden="true"><path d="M2 4 H26" stroke="var(--line-1)" stroke-width="3" stroke-linecap="round" /></svg>{{ t('gv.rack.legend_cable') }}
+        <svg width="28" height="8" aria-hidden="true"><path d="M2 4 H26" stroke="var(--line-8)" stroke-width="3" stroke-linecap="round" /></svg>{{ t('gv.rack.legend_cable') }}
       </p>
       <p class="flex items-center gap-2">
-        <svg width="28" height="8" aria-hidden="true"><path d="M2 4 H26" stroke="var(--line-3)" stroke-width="3" stroke-linecap="round" stroke-dasharray="5 4" /></svg>{{ t('gv.rack.legend_stub') }}
+        <svg width="28" height="8" aria-hidden="true"><path d="M2 4 H26" stroke="var(--line-9)" stroke-width="3" stroke-linecap="round" stroke-dasharray="5 4" /></svg>{{ t('gv.rack.legend_stub') }}
       </p>
     </div>
   </section>

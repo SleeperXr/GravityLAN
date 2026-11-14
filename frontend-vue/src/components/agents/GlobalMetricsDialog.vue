@@ -27,8 +27,8 @@ watch(open, async (isOpen) => {
 
 const avg = (key: 'avg_cpu' | 'avg_ram') => (history.value.length ? history.value.reduce((s, p) => s + p[key], 0) / history.value.length : 0);
 const series = computed(() => [
-  { label: t('agent.cpu'), color: 'var(--line-3)', values: history.value.map((p) => p.avg_cpu), suffix: ' %' },
-  { label: t('agent.ram'), color: 'var(--line-1)', values: history.value.map((p) => p.avg_ram), suffix: ' %' },
+  { label: t('agent.cpu'), color: 'var(--line-9)', values: history.value.map((p) => p.avg_cpu), suffix: ' %' },
+  { label: t('agent.ram'), color: 'var(--line-8)', values: history.value.map((p) => p.avg_ram), suffix: ' %' },
 ]);
 </script>
 

@@ -141,16 +141,20 @@
   --gl-orbit-glow-2: rgb(90 169 255 / 0.04);
   --gl-orbit-glow-3: rgb(255 159 67 / 0.03);
 
-  /* Line palette: one hue per network, the same on the map, chips and the gateway list */
-  --line-1: #2ec4a6;
+  /*
+   * Line palette: one hue per network, the same on the map, chips and the gateway list. Teal, blue
+   * and coral share their hue with the accent, info and danger colours, so they come last (8-10):
+   * up to seven networks never look like a button or a state. Every theme keeps this order.
+   */
+  --line-1: #4dd4ff;
   --line-2: #ff9f43;
-  --line-3: #5aa9ff;
-  --line-4: #ffd23f;
-  --line-5: #ff7eb6;
-  --line-6: #9be15d;
-  --line-7: #4dd4ff;
-  --line-8: #e0a370;
-  --line-9: #c3cad4;
+  --line-3: #9be15d;
+  --line-4: #ff7eb6;
+  --line-5: #ffd23f;
+  --line-6: #c3cad4;
+  --line-7: #e0a370;
+  --line-8: #2ec4a6;
+  --line-9: #5aa9ff;
   --line-10: #f2856d;
 }
 
@@ -206,15 +210,15 @@
   --gl-shadow-card: 0 1px 2px rgb(16 20 27 / 0.04);
   --gl-shadow-pop: 0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06);
 
-  --line-1: #12a88b;
+  --line-1: #1fb3e0;
   --line-2: #f08a24;
-  --line-3: #2f86e8;
-  --line-4: #e5b800;
-  --line-5: #e8589b;
-  --line-6: #6fbf3b;
-  --line-7: #1fb3e0;
-  --line-8: #b9773f;
-  --line-9: #8a94a3;
+  --line-3: #6fbf3b;
+  --line-4: #e8589b;
+  --line-5: #e5b800;
+  --line-6: #8a94a3;
+  --line-7: #b9773f;
+  --line-8: #12a88b;
+  --line-9: #2f86e8;
   --line-10: #e0644a;
 }
 
@@ -267,15 +271,15 @@
   --gl-orbit-glow-2: rgb(41 197 255 / 0.07);
   --gl-orbit-glow-3: rgb(255 61 187 / 0.05);
 
-  --line-1: #00f5a0;
+  --line-1: #00e5ff;
   --line-2: #ff8a00;
-  --line-3: #3d9bff;
-  --line-4: #ffe600;
-  --line-5: #ff3dbb;
-  --line-6: #a6ff00;
-  --line-7: #00e5ff;
-  --line-8: #b56bff;
-  --line-9: #e6e6ff;
+  --line-3: #a6ff00;
+  --line-4: #ff3dbb;
+  --line-5: #ffe600;
+  --line-6: #e6e6ff;
+  --line-7: #b56bff;
+  --line-8: #00f5a0;
+  --line-9: #3d9bff;
   --line-10: #ff5a3d;
 }
 

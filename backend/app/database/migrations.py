@@ -417,6 +417,7 @@ def _repair_steps() -> list[tuple]:
         (_drop_outbox_token_copies, "removing token copies from the notification outbox"),
         (_deduplicate_generic_port_services, "deduplicating generic port services"),
         (_repair_infra_alert_offline, "repairing infrastructure alert_offline flags"),
+        (_pin_line_colours_to_reordered_palette, "keeping network colours across the palette reorder"),
     ]
 
 
@@ -532,6 +533,71 @@ async def _repair_infra_alert_offline(db: AsyncSession):
         db.add(Setting(key=marker_key, value="true", category="system"))
         await db.commit()
         logger.info(f"Migration: Re-enabled 24/7 alert_offline monitoring on {repaired} infrastructure/agent device(s)")
+
+
+LINE_PALETTE_MARKER = "migration.line_palette_reordered"
+LINE_SLOTS = 10
+# Where each colour of the old line palette (--line-1..10) sits in the reordered one. The reorder moved
+# teal, blue and coral, which matched the accent, info and danger colours, behind the other seven.
+LINE_SLOT_MOVES = {1: 8, 2: 2, 3: 9, 4: 5, 5: 4, 6: 3, 7: 1, 8: 7, 9: 6, 10: 10}
+
+
+def _old_line_slot(subnet_id: int) -> int:
+    """The palette slot a subnet without a colour of its own took before the reorder (networkColor())."""
+    return ((abs(subnet_id) - 1 + LINE_SLOTS) % LINE_SLOTS) + 1
+
+
+def pinned_line_colours(subnet_ids, colours: dict[str, str]) -> dict[str, str]:
+    """`colours` plus a palette reference ("line:N") for every subnet that still takes its palette colour.
+
+    "line:N" follows the theme like the palette itself, so each network keeps the colour it had in
+    every theme. A subnet whose slot did not move needs no entry; a colour of its own stays as it is.
+    """
+    pinned = dict(colours)
+    for subnet_id in subnet_ids:
+        key = str(subnet_id)
+        if pinned.get(key):
+            continue
+        old = _old_line_slot(subnet_id)
+        new = LINE_SLOT_MOVES[old]
+        if new != old:
+            pinned[key] = f"line:{new}"
+    return pinned
+
+
+async def _pin_line_colours_to_reordered_palette(db: AsyncSession):
+    """Keep every existing network in its colour when the line palette is reordered. Runs once.
+
+    A fresh database has no subnets yet and only gets the marker, so its networks start in the new order.
+    """
+    import json
+
+    from app.models.network import Subnet
+    from app.models.setting import Setting
+
+    marker = (await db.execute(select(Setting).where(Setting.key == LINE_PALETTE_MARKER))).scalar_one_or_none()
+    if marker is not None:
+        return
+
+    subnet_ids = (await db.execute(select(Subnet.id))).scalars().all()
+    row = (await db.execute(select(Setting).where(Setting.key == "ui.line_colors"))).scalar_one_or_none()
+    try:
+        colours = json.loads(row.value) if row is not None and row.value else {}
+    except ValueError:
+        colours = {}
+    if not isinstance(colours, dict):
+        colours = {}
+
+    pinned = pinned_line_colours(subnet_ids, colours)
+    if pinned != colours:
+        value = json.dumps(pinned)
+        if row is None:
+            db.add(Setting(key="ui.line_colors", value=value, category="ui"))
+        else:
+            row.value = value
+        logger.info(f"Migration: Kept the colour of {len(pinned) - len(colours)} network(s) across the palette reorder")
+    db.add(Setting(key=LINE_PALETTE_MARKER, value="true", category="system"))
+    await db.commit()
 
 
 async def _retire_phone_system_items(db: AsyncSession):
