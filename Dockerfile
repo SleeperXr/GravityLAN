@@ -30,6 +30,9 @@ RUN /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # Stage 3: Clean Python Runtime
 FROM python:3.12-slim AS runtime
 
+# tzdata must not ask for a zone during the build; ARG only lives while building
+ARG DEBIAN_FRONTEND=noninteractive
+
 # Upgrade base system packages to patch OS-level CVEs, install runtime-only dependencies,
 # and remove pip/ensurepip from runtime to eliminate package-manager attack surface and vendored CVEs
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
@@ -39,6 +42,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     avahi-utils \
     iproute2 \
     dnsutils \
+    tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && pip uninstall -y pip setuptools wheel \
     && rm -rf /usr/local/lib/python3.12/ensurepip
