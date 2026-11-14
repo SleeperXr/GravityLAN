@@ -333,7 +333,7 @@ Vier Designs, jedes ein `:root[data-theme="…"]`-Block in `index.css` und ein E
 ## Layout
 
 - **Hülle:** Desktop ab 768 px mit fester Seitenleiste (240 px, `chrome`, rechte Haarlinie); darunter eine obere App-Leiste mit Seitentitel und eine untere Tab-Leiste (vier Ziele plus „Mehr“, Mindesthöhe 56 px, `chrome` 95 % mit Unschärfe, Safe-Area-Abstand). „Mehr“ öffnet die volle Navigation als Bottom-Sheet.
-- **Seiten:** `max-w-[1800px]`, zentriert; Rand 16 px mobil / 32 px ab `md`; oben 20 px / 28 px; 24 px zwischen Blöcken. Kopfzeile: Titel und Einzeiler links, globale Suche (`Strg+K`) und Aktionen rechts, umbrechend.
+- **Seiten:** `max-w-[1800px]`, zentriert; Rand 16 px mobil / 32 px ab `md`; oben 20 px / 28 px; 24 px zwischen Blöcken. Kopfzeile: Titel und Einzeiler links, der Seitenfilter (`/`) und Aktionen rechts, umbrechend.
 - **Raster:** 16 px zwischen Karten (12 px in dichten Gerätegittern); Karten-Innenabstand 16 px horizontal, 12–14 px vertikal; Gerätekarten innerhalb einer Gruppe erhalten einheitliche Standardhöhen (`groupDefaultH`).
 - **Statusboard:** eine Zelle pro Subnetz/Orbit, `auto-fit` mit mindestens 16 rem, auf Telefonen gestapelt mit Trennern.
 - **Orbit-Netzplan:** füllt seinen Rahmen, `fitView` mit 16 % Rand, Zoom 0,22–2,6; Bedienknöpfe (Zoom, Einpassen, Lebendigkeit) unten rechts, Inspektor-Panels unten links. Grund: dunkel `sunken`, hell `surface` (Weiß), jeweils mit feinem Koordinatenraster (28 px).
@@ -390,6 +390,8 @@ Sachlich und kompakt.
 - **Seitenleiste:** Einträge 36 px, 10 px Radius. Jede Seite trägt ein 26-px-Schild in ihrer Farbe (`navigation.ts`, `line`): inaktiv 16 % Tönung mit Icon in `lineInk`, aktiv voll gefüllt mit Schildtinte, Eintrag `raised` und 600. Zähler (online/gesamt, SSH-Sitzungen) rechts in Mono.
 - **Mobil:** Tab-Leiste mit 20-px-Icons und 11-px-Beschriftung; aktiv `fg`, Icon in `lineInk` und ein 3-px-Balken in Seitenfarbe an der Oberkante. „Mehr“ öffnet das Navigations-Sheet.
 - **Tabs:** 40 px, `fg-muted`; aktiv `fg` mit 2-px-Unterstreichung in Akzent.
+- **Globale Suche** (`CommandPalette.vue`): `Strg+K` (Mac `Cmd+K`) von jeder Seite oder der Suchknopf oben in der Seitenleiste. Schwebefläche (`popover`), 12 % vom oberen Rand, Eingabe 48 px. Findet Seiten (mit ihrem Seitenschild) und Geräte (Statuspunkt, Name, IP in Mono) über Name, IP, MAC, Hostname und Hersteller; jedes Wort muss passen, Namensanfang vor Namensteil vor anderem Feld, höchstens acht Geräte. ↑ ↓ wählen, Enter öffnet, Esc schließt; Combobox/Listbox mit `aria-activedescendant`. Ein Gerät öffnet seinen Editor über `/?device=<id>`.
+- **Seitenfilter:** `/` fokussiert das Filterfeld der Seite (Übersicht, Health-Radar, Agents, Logs), außer der Fokus steht schon in einem Eingabefeld. Filter stehen in der URL (`useQueryState`): Übersicht `q`, `status`, `net`; Health-Radar `period`, `filter`, `q`, `sort`, `order`; Agents `q`. Der Standardwert fehlt in der URL, Änderungen ersetzen den Verlaufseintrag statt einen je Tastendruck anzulegen.
 
 ### Dialoge und Sheets
 `Dialog` ist ab 640 px zentriert (18 px Radius), darunter ein Bottom-Sheet über volle Breite mit Safe-Area. Kopf mit Titel (1 rem, 600), Schließen-Knopf, Trennlinie; Fuß rechtsbündig. Eintritt 220 ms mit `--ease-out-expo`, Overlay 160 ms ein / 120 ms aus. `Sheet` ist das Seitenpanel (mobil Vollbild). Toasts und Bestätigungen laufen über `useToast`/`useConfirm`.

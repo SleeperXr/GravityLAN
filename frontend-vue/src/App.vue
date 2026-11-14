@@ -7,6 +7,7 @@ import { useNetworkStore } from '@/stores/network';
 import { useAppearance } from '@/stores/appearance';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
 import MobileNav from '@/components/layout/MobileNav.vue';
+import CommandPalette from '@/components/layout/CommandPalette.vue';
 import ToastHost from '@/components/ui/ToastHost.vue';
 import ConfirmHost from '@/components/ui/ConfirmHost.vue';
 import StepUpHost from '@/components/ui/StepUpHost.vue';
@@ -140,6 +141,7 @@ onBeforeUnmount(() => store.disconnectScanStream());
     </div>
 
     <MobileNav />
+    <CommandPalette />
   </div>
 
   <ToastHost />

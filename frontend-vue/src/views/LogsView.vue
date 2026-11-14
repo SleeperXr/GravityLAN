@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useSlashFocus } from '@/composables/useSlashFocus';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowDown, Copy, Pause, Play, ScrollText, Search, Terminal, Trash2 } from 'lucide-vue-next';
 import PageHeader from '@/components/ui/PageHeader.vue';
@@ -22,6 +23,8 @@ const connected = ref(false);
 const paused = ref(false);
 const level = ref<'all' | 'warning' | 'error'>('all');
 const search = ref('');
+const searchInputRef = ref<HTMLInputElement | null>(null);
+useSlashFocus(searchInputRef);
 const follow = ref(true);
 const box = ref<HTMLElement | null>(null);
 let ws: WebSocket | null = null;
@@ -97,7 +100,8 @@ async function copyVisible() {
   showToast(ok ? 'success' : 'error', t('common.copy'), ok ? t('gv.logs.copied', { count: visible.value.length }) : t('gv.logs.copy_failed'));
 }
 
-const levelText: Record<LogLevel, string> = { debug: 'text-fg-subtle', info: 'text-info-text', warning: 'text-warn-text', error: 'text-danger-text' };
+// INFO is most of the log, so it stays quiet; colour and weight go to what needs a look
+const levelText: Record<LogLevel, string> = { debug: 'text-fg-subtle', info: 'text-fg-subtle', warning: 'font-semibold text-warn-text', error: 'font-semibold text-danger-text' };
 const levelRow: Record<LogLevel, string> = { debug: '', info: '', warning: 'bg-warn/[0.06]', error: 'bg-danger/[0.08]' };
 const levelLabel: Record<LogLevel, string> = { debug: 'DEBUG', info: 'INFO', warning: 'WARN', error: 'ERROR' };
 const shortTime = (time: string) => time.slice(11, 19);
@@ -134,7 +138,7 @@ const shortTime = (time: string) => time.slice(11, 19);
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('gv.logs.search') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input v-model="search" type="search" :placeholder="t('gv.logs.search')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
+        <input ref="searchInputRef" v-model="search" type="search" :placeholder="t('gv.logs.search')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
       </label>
       <div class="ml-auto flex gap-1">
         <Button size="icon" variant="ghost" :aria-label="paused ? t('common.resume') : t('common.pause')" :title="paused ? t('common.resume') : t('common.pause')" :aria-pressed="paused" @click="paused = !paused">
@@ -157,8 +161,9 @@ const shortTime = (time: string) => time.slice(11, 19);
         >
           <template v-if="line.time">
             <span class="text-fg-subtle tabular" :title="line.time">{{ shortTime(line.time) }}</span>
-            <span class="font-semibold" :class="line.level ? levelText[line.level] : 'text-fg-subtle'">{{ line.level ? levelLabel[line.level] : '' }}</span>
-            <span class="col-span-2 truncate text-fg-subtle sm:col-span-1" :title="line.correlationId ? `${line.logger} · ${line.correlationId}` : (line.logger ?? undefined)">{{ line.logger }}</span>
+            <span :class="line.level ? levelText[line.level] : 'text-fg-subtle'">{{ line.level ? levelLabel[line.level] : '' }}</span>
+            <!-- Phones: the source took a line of its own on every entry; it stays in the tooltip of wider screens -->
+            <span class="truncate text-fg-subtle max-sm:hidden" :title="line.correlationId ? `${line.logger} · ${line.correlationId}` : (line.logger ?? undefined)">{{ line.logger }}</span>
             <span class="col-span-2 [overflow-wrap:anywhere] whitespace-pre-wrap text-fg sm:col-span-1">{{ line.message }}</span>
           </template>
           <span v-else class="col-span-full [overflow-wrap:anywhere] whitespace-pre-wrap" :class="line.level ? levelText[line.level] : 'text-fg-muted'">{{ line.raw }}</span>

@@ -20,6 +20,8 @@ import DeviceEditor from '@/components/editor/DeviceEditor.vue';
 import { hasAgentWarning, ms, periodHours, scoreText, scoreTone, sslWarnings } from '@/components/health/healthModel';
 import { t } from '@/i18n';
 import ResilienceCard from '@/components/health/ResilienceCard.vue';
+import { queryCodecs, useQueryState } from '@/composables/useQueryState';
+import { useSlashFocus } from '@/composables/useSlashFocus';
 
 /** Health & availability (port of React HealthView): network score, per-device SLA table, incidents. */
 type Period = '24h' | '7d' | '30d';
@@ -31,11 +33,14 @@ const data = ref<HealthOverviewResponse | null>(null);
 const loading = ref(true);
 const refreshing = ref(false);
 const error = ref<string | null>(null);
-const period = ref<Period>('24h');
-const search = ref('');
-const filter = ref<Filter>('all');
-const sortBy = ref<SortKey>('score');
-const sortOrder = ref<'asc' | 'desc'>('asc');
+// Period, filter, search and sort live in the URL, so Back, a reload and a shared link keep the view
+const period = useQueryState<Period>('period', '24h', queryCodecs.oneOf(['24h', '7d', '30d'] as const));
+const search = useQueryState('q', '', queryCodecs.string);
+const filter = useQueryState<Filter>('filter', 'all', queryCodecs.oneOf(['all', 'healthy', 'degraded', 'flapping', 'critical', 'standby'] as const));
+const sortBy = useQueryState<SortKey>('sort', 'score', queryCodecs.oneOf(['score', 'latency', 'name', 'uptime'] as const));
+const sortOrder = useQueryState<'asc' | 'desc'>('order', 'asc', queryCodecs.oneOf(['asc', 'desc'] as const));
+const searchInputRef = ref<HTMLInputElement | null>(null);
+useSlashFocus(searchInputRef);
 const selected = ref<DeviceHealthItem | null>(null);
 const sheetOpen = ref(false);
 const editorDevice = ref<Device | null>(null);
@@ -187,7 +192,7 @@ const sortOptions = computed(() => [
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('health_page.search_placeholder') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input v-model="search" type="search" :placeholder="t('health_page.search_placeholder')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 max-md:h-11 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
+        <input ref="searchInputRef" v-model="search" type="search" :placeholder="t('health_page.search_placeholder')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 max-md:h-11 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
       </label>
       <!-- Wraps on phones: scrolled sideways, "Critical / Offline" sat out of view with no hint it was there -->
       <div class="flex max-w-full flex-wrap rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('gv.health.filter')">
@@ -297,7 +302,7 @@ const sortOptions = computed(() => [
                   <span
                     role="button"
                     tabindex="0"
-                    class="inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 font-sans text-micro font-semibold transition-colors"
+                    class="relative inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 font-sans text-micro font-semibold transition-colors after:absolute after:-inset-x-1.5 after:-inset-y-[11px] after:content-['']"
                     :class="d.alert_offline ? 'border-accent/35 bg-accent/10 text-accent-text' : 'border-line-strong bg-raised text-fg-subtle'"
                     :title="t('health_page.alert_offline_hint')"
                     @click.stop="toggleDeviceAlert(d)"
