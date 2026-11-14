@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 # How often the retention loop checks; _clean_old_history itself prunes at most every 12 h
 RETENTION_CHECK_SECONDS = 3600
+# Proxmox VE guest names (Settings > Proxmox VE)
+PROXMOX_SYNC_SECONDS = 300
 
 def _get_auto_scan_subnets():
     """Backwards-compatible alias for :func:`app.scanner.utils.get_auto_scan_subnets`."""
@@ -55,6 +57,7 @@ class ScanScheduler:
         self._retention_task = None
         self._health_probe_task = None
         self._outbox_task = None
+        self._proxmox_task = None
         self._running = False
         self._last_cleanup_time = None
 
@@ -69,11 +72,12 @@ class ScanScheduler:
         self._retention_task = asyncio.create_task(self._retention_loop())
         self._health_probe_task = asyncio.create_task(self._health_probe_loop())
         self._outbox_task = asyncio.create_task(self._outbox_loop())
+        self._proxmox_task = asyncio.create_task(self._proxmox_loop())
         logger.info("Scan scheduler started (Full + Quick + ARP Turbo + Docker Sync + Retention + Health Probe)")
 
     async def stop(self):
         self._running = False
-        tasks = [self._task, self._quick_task, self._arp_task, self._docker_task, self._retention_task, self._health_probe_task, self._outbox_task]
+        tasks = [self._task, self._quick_task, self._arp_task, self._docker_task, self._retention_task, self._health_probe_task, self._outbox_task, self._proxmox_task]
         for task in tasks:
             if task:
                 task.cancel()
@@ -237,6 +241,32 @@ class ScanScheduler:
                 break
             except Exception:
                 await asyncio.sleep(60)
+
+    async def _proxmox_loop(self) -> None:
+        """Read guest names from Proxmox VE every five minutes, independently of network scans."""
+        from app.models.proxmox import ProxmoxIntegration
+        from app.services import proxmox as proxmox_service
+
+        while self._running:
+            if not await self._is_setup_complete():
+                await asyncio.sleep(10)
+                continue
+            try:
+                async with async_session() as db:
+                    connection = await db.get(ProxmoxIntegration, 1)
+                    if connection and connection.enabled:
+                        await proxmox_service.sync_proxmox(db)
+            except asyncio.CancelledError:
+                break
+            except proxmox_service.ProxmoxError as exc:
+                logger.warning("Proxmox sync: %s", exc)
+            except Exception:
+                # No exception text: it could carry the request and with it the API token
+                logger.warning("Proxmox sync failed; retrying in five minutes.")
+            try:
+                await asyncio.sleep(PROXMOX_SYNC_SECONDS)
+            except asyncio.CancelledError:
+                break
 
     async def _outbox_loop(self):
         """Periodically process retries for pending notification outbox items."""

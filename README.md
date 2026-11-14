@@ -193,6 +193,8 @@ What it can't do, whatever the scopes:
 
 ## Configuration
 
+**Proxmox VE:** under **Settings → Proxmox VE** GravityLAN reads the names and IP addresses of VMs and LXC containers with a read-only API token and names matching devices; self-signed certificates can be accepted. The sync runs every five minutes or on demand, and VMs need the QEMU Guest Agent. [Setup and permissions](docs/proxmox.md).
+
 Most options live in the database and are changed in the setup wizard and on the Settings page. Environment variables (prefix `GRAVITYLAN_`, see [`backend/app/config.py`](backend/app/config.py)):
 
 | Variable | Meaning | Default |
@@ -473,6 +475,8 @@ Was es nicht darf, unabhängig von den Scopes:
 - keine Admin-Endpunkte: keine Token-Verwaltung, kein Backup-Export, kein Datenbank-Reset und ohne Schreib-Scope keine Änderungen.
 
 ### Konfiguration
+
+**Proxmox VE:** Unter **Einstellungen → Proxmox VE** liest GravityLAN mit einem Nur-Lese-API-Token Namen und IP-Adressen von VMs und LXC-Containern und benennt passende Geräte damit; selbstsignierte Zertifikate lassen sich akzeptieren. Der Abgleich läuft alle fünf Minuten oder auf Knopfdruck, VMs brauchen den QEMU Guest Agent. [Einrichtung und Berechtigungen](docs/proxmox.md#deutsch).
 
 Die meisten Optionen liegen in der Datenbank und werden im Setup-Wizard und in den Einstellungen geändert. Umgebungsvariablen (Präfix `GRAVITYLAN_`, siehe [`backend/app/config.py`](backend/app/config.py)):
 

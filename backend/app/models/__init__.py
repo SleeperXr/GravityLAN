@@ -10,10 +10,12 @@ from app.models.api_token import ApiToken
 from app.models.webhook import WebhookSubscription, NotificationOutbox
 from app.models.router_import import RouterImportSource
 from app.models.audit import AuditEvent
+from app.models.proxmox import ProxmoxIntegration
 
 __all__ = [
     "Device", "DeviceGroup", "DeviceInterface", "Service", "DiscoveredHost", "DeviceHistory", "DeviceHealthSample",
     "Setting", "AgentToken", "DeviceMetrics", "AgentConfig", "Subnet",
     "DeviceHealthRollup", "DeviceMetricsRollup",
-    "Rack", "TopologyLink", "ApiToken", "WebhookSubscription", "NotificationOutbox", "RouterImportSource", "AuditEvent"
+    "Rack", "TopologyLink", "ApiToken", "WebhookSubscription", "NotificationOutbox", "RouterImportSource", "AuditEvent",
+    "ProxmoxIntegration",
 ]

@@ -275,7 +275,7 @@
     "stepup": {
       "title": "Confirm your password",
       "scope_remote": "Remote access: terminal, installing or removing agents, package updates",
-      "scope_credentials": "Credentials: SSH keys and connections, host keys, API tokens, webhooks",
+      "scope_credentials": "Credentials: SSH keys and connections, host keys, API tokens, webhooks, Proxmox",
       "scope_instance": "Instance: backup, restore, database reset, this confirmation time",
       "hint": "The confirmation then lasts {{minutes}} minutes for this area in this browser.",
       "password": "Admin password",
@@ -777,6 +777,35 @@
       "reason_server_error_hint": "The server could not answer (SERVFAIL), e.g. because its own forwarding failed.",
       "reason_error": "error",
       "reason_error_hint": "The query failed before a server could answer. The log has the details."
+    },
+    "proxmox": {
+      "title": "Proxmox VE",
+      "description": "Reads the names and addresses of VMs and containers through the Proxmox API and names matching devices with them. GravityLAN only reads; it never starts, stops or changes a guest.",
+      "enabled": "Proxmox integration active",
+      "enabled_hint": "GravityLAN then reads the guests every five minutes.",
+      "url": "API address",
+      "url_hint": "Direct HTTPS address of the server or a cluster node; redirects are not followed.",
+      "token_id": "Token ID",
+      "token_id_hint": "In the form user@realm!token-name. The token needs read access to the guests.",
+      "secret": "Token secret",
+      "secret_hint": "Stored encrypted and never shown again.",
+      "secret_stored": "A secret is stored. Leave empty to keep it.",
+      "secret_reenter": "Enter the secret again after changing the address or token ID.",
+      "ignore_tls": "Accept self-signed certificates",
+      "ignore_tls_hint": "Only for a trusted server on your own network: the connection stays encrypted, but the certificate and host name are no longer checked.",
+      "save": "Save",
+      "saved": "Proxmox settings saved.",
+      "save_failed": "Saving failed:",
+      "sync": "Sync now",
+      "sync_needs_save": "Enable and save the integration first.",
+      "synced_title": "Sync finished",
+      "synced_body": "Read {{guests}} guests with {{addresses}} addresses, renamed {{updated_devices}} devices. Skipped: {{skipped}}, address conflicts: {{conflicts}}.",
+      "last_sync": "Last sync",
+      "disconnect": "Remove connection",
+      "disconnect_title": "Remove the Proxmox connection?",
+      "disconnect_message": "The address and the encrypted token are deleted. Names already taken over stay.",
+      "disconnected": "Proxmox connection removed.",
+      "read_only_note": "VMs report their addresses only through a running QEMU guest agent; containers need none. An import never marks a device online, and your own names stay."
     }
   }
 }
