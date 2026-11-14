@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import shlex
 import socket
 import time
 import uuid
@@ -408,7 +409,13 @@ def _nohup_fallback(deployment: _Deployment, python_path: str) -> tuple[bool, st
 
     client.exec_command(f"rm -f {base_dir}/gravitylan-agent.log || true")
     client.exec_command(f"pkill -f '{_pkill_pattern_for(remote_agent_path)}' || true")
-    client.exec_command(f"cd {base_dir} && nohup {python_path} {remote_agent_path} > {base_dir}/gravitylan-agent.log 2>&1 &")
+    # A detached subshell with its own stdin/stdout, like the Unraid go block: a bare
+    # `cd ... && nohup ... &` kept the SSH channel's stdin and was unquoted
+    log_path = shlex.quote(f"{base_dir}/gravitylan-agent.log")
+    client.exec_command(
+        f"( cd {shlex.quote(base_dir)} && exec nohup {shlex.quote(python_path)} {shlex.quote(remote_agent_path)} "
+        f"> {log_path} 2>&1 ) < /dev/null > /dev/null 2>&1 &"
+    )
 
     time.sleep(3)
 
