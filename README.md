@@ -204,6 +204,7 @@ Most options live in the database and are changed in the setup wizard and on the
 | `GRAVITYLAN_PORT` / `GRAVITYLAN_HOST` | Listen port and address | `8000` / `0.0.0.0` |
 | `GRAVITYLAN_DEBUG` | Verbose logging | `false` |
 | `GRAVITYLAN_SECURE_COOKIES` | Mark the session cookie `Secure`; turn on behind HTTPS. If it is off while you sign in over HTTPS, the log warns once and Settings → Access shows a hint | `false` |
+| `TZ` | Time zone of the container, used for log times (e.g. `Europe/Berlin`). At start the log names the zone in use, and warns if `TZ` cannot take effect | `UTC` |
 | `GRAVITYLAN_SSH_STRICT_MODE` | Refuse unknown SSH host keys when deploying agents or installing updates | `false` |
 | `GRAVITYLAN_ALLOW_INSECURE_INSTALL` | Let the manual install command run over plain HTTP without `ALLOW_INSECURE=1` on the device (agent and token travel unencrypted) | `false` |
 | `GRAVITYLAN_DOCKER_HOST_IP` | LAN IP of the machine running the container. Only SSH logins to this address may retry over the Docker bridge gateway (when the container can't reach its own host, e.g. with macvlan) | empty |
@@ -487,6 +488,7 @@ Die meisten Optionen liegen in der Datenbank und werden im Setup-Wizard und in d
 | `GRAVITYLAN_PORT` / `GRAVITYLAN_HOST` | Port und Adresse | `8000` / `0.0.0.0` |
 | `GRAVITYLAN_DEBUG` | Ausführliche Logs | `false` |
 | `GRAVITYLAN_SECURE_COOKIES` | Session-Cookie als `Secure` markieren; hinter HTTPS einschalten. Ist es aus, während du dich über HTTPS anmeldest, warnt das Log einmal und Einstellungen → Zugriff zeigt einen Hinweis | `false` |
+| `TZ` | Zeitzone des Containers, gilt für die Zeiten im Log (z. B. `Europe/Berlin`). Beim Start nennt das Log die verwendete Zone und warnt, wenn `TZ` nicht greift | `UTC` |
 | `GRAVITYLAN_SSH_STRICT_MODE` | Unbekannte SSH-Host-Keys beim Agent-Deploy und bei Updates ablehnen | `false` |
 | `GRAVITYLAN_ALLOW_INSECURE_INSTALL` | Manuellen Installationsbefehl auch über http:// ohne `ALLOW_INSECURE=1` auf dem Gerät erlauben (Agent und Token laufen unverschlüsselt) | `false` |
 | `GRAVITYLAN_DOCKER_HOST_IP` | LAN-IP des Rechners, auf dem der Container läuft. Nur SSH-Logins auf diese Adresse dürfen es erneut über das Docker-Bridge-Gateway versuchen (wenn der Container den eigenen Host nicht erreicht, z. B. mit macvlan) | leer |

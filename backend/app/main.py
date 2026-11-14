@@ -269,6 +269,8 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     logger.info("GravityLAN v%s starting (Loop: %s, Timeout: %ss)...",
                 settings.app_version, loop.__class__.__name__, settings.scan_timeout)
+    from app.timezone_check import log_timezone
+    log_timezone()
 
     _ensure_writable_data_dir()
     # Before init_db: creating new tables is already a change to the schema
