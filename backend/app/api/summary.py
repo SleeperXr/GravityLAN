@@ -1,7 +1,7 @@
 """Summary API endpoint for GravityLAN."""
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -14,7 +14,6 @@ from app.schemas.summary import SummaryResponse, ActiveIssue
 from app.scanner.utils import ensure_utc
 from app.services.agent_activity import active_window, load_intervals
 from app.api.scanner import state
-from app.schemas.scan import ScanStatus
 
 logger = logging.getLogger(__name__)
 

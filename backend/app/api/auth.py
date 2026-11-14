@@ -27,7 +27,7 @@ from app.services.auth_service import (
     verify_password,
 )
 from app.services.session_service import session_store
-from app.services.agent_telemetry import _setting_cache
+from app.services.agent_telemetry import _setting_cache  # noqa: F401 - tests reset it through this module
 
 _READ_METHODS = ("GET", "HEAD")
 
