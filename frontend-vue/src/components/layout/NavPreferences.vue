@@ -5,14 +5,20 @@ import { ChevronUp, LogOut } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import { useTheme } from '@/composables/useTheme';
 import { themeInfo } from '@/lib/themes';
+import { customPreview } from '@/lib/customThemes';
 import ThemePicker from '@/components/settings/ThemePicker.vue';
 import ThemeSwatch from '@/components/settings/ThemeSwatch.vue';
 import { locale, setLocale, t, type Locale } from '@/i18n';
 
 /** Design menu, language and sign-out: shared by sidebar footer and phone menu. */
-const { preference, resolved } = useTheme();
+const { preference, resolved, activeCustom } = useTheme();
 const designOpen = ref(false);
-const currentLabel = computed(() => (preference.value === 'system' ? `${t('gv.theme.system')} · ${t(themeInfo(resolved.value).label)}` : t(themeInfo(resolved.value).label)));
+const currentLabel = computed(() => {
+  if (activeCustom.value) return activeCustom.value.name;
+  const name = t(themeInfo(resolved.value).label);
+  return preference.value === 'system' ? `${t('gv.theme.system')} · ${name}` : name;
+});
+const currentPreview = computed(() => (activeCustom.value ? customPreview(activeCustom.value) : themeInfo(resolved.value).preview));
 const locales: { value: Locale; label: string }[] = [
   { value: 'de', label: 'DE' },
   { value: 'en', label: 'EN' },
@@ -32,7 +38,7 @@ async function logout() {
           class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-sunken pr-2 pl-1 text-left text-xs transition-colors hover:border-line-strong max-md:h-11"
           :aria-label="`${t('gv.theme.menu')}: ${currentLabel}`"
         >
-          <ThemeSwatch :preview="themeInfo(resolved).preview" small />
+          <ThemeSwatch :preview="currentPreview" small />
           <span class="min-w-0 flex-1 truncate font-medium text-fg">{{ currentLabel }}</span>
           <ChevronUp class="size-3.5 shrink-0 text-fg-subtle" aria-hidden="true" />
         </PopoverTrigger>

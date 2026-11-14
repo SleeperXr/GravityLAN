@@ -865,6 +865,28 @@
       "devices": "Geräte",
       "empty": "Nichts gefunden für „{{query}}“.",
       "hint": "↑ ↓ auswählen · Enter öffnen · Esc schließen"
+    },
+    "design": {
+      "group": "Eigene Designs",
+      "empty": "Noch kein eigenes Design. Lade eine Design-Datei hoch oder nimm die Vorlage als Startpunkt.",
+      "upload": "Design hochladen",
+      "template": "Vorlage herunterladen",
+      "hint": "Eine JSON-Datei mit Name, Basis (dark oder light) und Farben als Hex-Werte; fehlende Farben kommen von der Basis. Die Vorlage enthält das aktuelle Design mit allen Farben. Höchstens {{max}} Designs, gespeichert in diesem Browser.",
+      "based_on_dark": "Eigenes Design, Basis dunkel",
+      "based_on_light": "Eigenes Design, Basis hell",
+      "uploaded": "Design hochgeladen",
+      "upload_failed": "Design nicht übernommen",
+      "remove": "Design entfernen",
+      "remove_title": "Design entfernen?",
+      "remove_message": "„{{name}}“ wird aus diesem Browser gelöscht. Die Datei auf deinem Rechner bleibt.",
+      "error_not_json": "Die Datei ist kein gültiges JSON.",
+      "error_not_object": "Die Datei muss ein JSON-Objekt mit name, base und colors sein.",
+      "error_name": "Es fehlt ein Name (höchstens {{max}} Zeichen).",
+      "error_base": "„base“ muss „dark“ oder „light“ sein.",
+      "error_colors": "Es fehlt „colors“ mit den Farben des Designs.",
+      "error_unknown_keys": "Unbekannte Farbnamen: {{keys}}. Die Vorlage zeigt alle erlaubten.",
+      "error_bad_value": "„{{key}}“ ist keine Hex-Farbe (#rgb, #rrggbb oder #rrggbbaa).",
+      "error_too_large": "Die Datei ist größer als {{max}} KB."
     }
   }
 }

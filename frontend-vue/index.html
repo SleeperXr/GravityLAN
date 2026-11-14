@@ -22,6 +22,21 @@
           var pref = localStorage.getItem('gravityui.theme') || 'dark';
           if (pref === 'paper') pref = 'light'; // the Day map was paper in a test build
           var theme = pref === 'system' ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : known.indexOf(pref) >= 0 ? pref : 'dark';
+          // An uploaded design (src/lib/customThemes.ts): its base block, then its own colours, hex values only
+          if (pref.indexOf('custom:') === 0) {
+            var list = JSON.parse(localStorage.getItem('gravityui.custom_themes') || '[]');
+            for (var i = 0; i < list.length; i++) {
+              if (list[i] && 'custom:' + list[i].id === pref && (list[i].base === 'dark' || list[i].base === 'light')) {
+                theme = list[i].base;
+                var colors = list[i].colors || {};
+                for (var key in colors) {
+                  if (/^[a-z0-9-]{1,20}$/.test(key) && /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(colors[key])) {
+                    document.documentElement.style.setProperty(/^line-\d+$/.test(key) ? '--' + key : '--gl-' + key, colors[key]);
+                  }
+                }
+              }
+            }
+          }
           document.documentElement.setAttribute('data-theme', theme);
         } catch (e) {}
       })();

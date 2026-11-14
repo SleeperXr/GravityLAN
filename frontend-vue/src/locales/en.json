@@ -865,6 +865,28 @@
       "devices": "Devices",
       "empty": "Nothing found for “{{query}}”.",
       "hint": "↑ ↓ select · Enter open · Esc close"
+    },
+    "design": {
+      "group": "Your designs",
+      "empty": "No design of your own yet. Upload a design file, or start from the template.",
+      "upload": "Upload design",
+      "template": "Download template",
+      "hint": "A JSON file with a name, a base (dark or light) and colours as hex values; missing colours come from the base. The template holds the current design with every colour. At most {{max}} designs, stored in this browser.",
+      "based_on_dark": "Your design, dark base",
+      "based_on_light": "Your design, light base",
+      "uploaded": "Design uploaded",
+      "upload_failed": "Design not applied",
+      "remove": "Remove design",
+      "remove_title": "Remove design?",
+      "remove_message": "“{{name}}” is deleted from this browser. The file on your computer stays.",
+      "error_not_json": "The file is not valid JSON.",
+      "error_not_object": "The file must be a JSON object with name, base and colors.",
+      "error_name": "A name is missing (at most {{max}} characters).",
+      "error_base": "“base” must be “dark” or “light”.",
+      "error_colors": "“colors” with the design's colours is missing.",
+      "error_unknown_keys": "Unknown colour names: {{keys}}. The template lists every allowed one.",
+      "error_bad_value": "“{{key}}” is not a hex colour (#rgb, #rrggbb or #rrggbbaa).",
+      "error_too_large": "The file is larger than {{max}} KB."
     }
   }
 }

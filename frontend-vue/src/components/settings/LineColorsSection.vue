@@ -33,7 +33,7 @@ onMounted(async () => {
 
 // The palette as concrete colours of the current theme. A palette pick is stored as "line:N", so it
 // follows the theme; only the free colour picker stores #rrggbb.
-const { resolved: theme } = useTheme();
+const { appliedKey: theme } = useTheme();
 const palette = computed(() => {
   void theme.value; // light and dark have their own palette
   return linePaletteHex();

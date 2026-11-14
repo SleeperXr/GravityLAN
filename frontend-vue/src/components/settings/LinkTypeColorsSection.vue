@@ -17,7 +17,7 @@ const appearance = useAppearance();
 const { showToast } = useToast();
 onMounted(() => void appearance.load());
 
-const { resolved: theme } = useTheme();
+const { appliedKey: theme } = useTheme();
 const palette = computed(() => {
   void theme.value;
   return linePaletteHex();
