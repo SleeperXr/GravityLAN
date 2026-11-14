@@ -13,15 +13,15 @@ export interface NavItem {
 
 /** Same destinations and order as the React sidebar (frontend/src/components/Sidebar.tsx). */
 export const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard', to: '/', icon: LayoutDashboard, label: 'sidebar.dashboard', line: 1 },
-  { id: 'health', to: '/health', icon: Activity, label: 'sidebar.health', line: 5 },
-  { id: 'network', to: '/network', icon: Grid3x3, label: 'sidebar.network_planner', line: 3 },
-  { id: 'topology', to: '/topology', icon: Network, label: 'sidebar.topology', line: 4 },
+  { id: 'dashboard', to: '/', icon: LayoutDashboard, label: 'sidebar.dashboard', line: 8 },
+  { id: 'health', to: '/health', icon: Activity, label: 'sidebar.health', line: 4 },
+  { id: 'network', to: '/network', icon: Grid3x3, label: 'sidebar.network_planner', line: 9 },
+  { id: 'topology', to: '/topology', icon: Network, label: 'sidebar.topology', line: 5 },
   { id: 'agents', to: '/agents', icon: Server, label: 'sidebar.agents', line: 2 },
-  { id: 'ssh', to: '/ssh', icon: SquareTerminal, label: 'sidebar.ssh', line: 6 },
-  { id: 'logs', to: '/logs', icon: ScrollText, label: 'sidebar.logs', line: 9 },
-  { id: 'settings', to: '/settings', icon: Settings, label: 'sidebar.settings', line: 8 },
-  { id: 'tutorials', to: '/tutorials', icon: GraduationCap, label: 'gv.tutorials.title', line: 7 },
+  { id: 'ssh', to: '/ssh', icon: SquareTerminal, label: 'sidebar.ssh', line: 3 },
+  { id: 'logs', to: '/logs', icon: ScrollText, label: 'sidebar.logs', line: 6 },
+  { id: 'settings', to: '/settings', icon: Settings, label: 'sidebar.settings', line: 7 },
+  { id: 'tutorials', to: '/tutorials', icon: GraduationCap, label: 'gv.tutorials.title', line: 1 },
   { id: 'about', to: '/about', icon: Info, label: 'sidebar.about', line: 10 },
 ];
 

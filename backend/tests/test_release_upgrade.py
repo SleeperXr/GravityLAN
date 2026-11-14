@@ -47,6 +47,19 @@ def _columns(db_path: Path) -> dict[str, set[str]]:
         conn.close()
 
 
+# Settings a migration writes on purpose when it upgrades an older database (its run-once marker and
+# what it stores); everything else in app_settings must come through the upgrade exactly as it was.
+MIGRATION_SETTINGS = {"migration.line_palette_reordered", "ui.line_colors"}
+
+
+def _setting_keys(db_path: Path) -> set[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        return {r[0] for r in conn.execute("SELECT key FROM app_settings")}
+    finally:
+        conn.close()
+
+
 def _row_counts(db_path: Path) -> dict[str, int]:
     conn = sqlite3.connect(db_path)
     try:
@@ -90,6 +103,7 @@ async def test_release_database_upgrades_to_current_schema(sql_file, tmp_path, d
     db_path = tmp_path / "gravitylan.db"
     _restore(sql_file, db_path)
     before = _row_counts(db_path)
+    settings_before = _setting_keys(db_path)
 
     with caplog.at_level(logging.ERROR, logger="app.database.migrations"):
         await _start_like_main(db_path, tmp_path / "telemetry.db")
@@ -105,7 +119,13 @@ async def test_release_database_upgrades_to_current_schema(sql_file, tmp_path, d
     assert {t: cols for t, cols in missing.items() if cols} == {}, "model columns without a migration"
 
     after = _row_counts(db_path)
-    assert {t: n for t, n in before.items() if after.get(t) != n} == {}, "the upgrade lost rows"
+    changed = {t: n for t, n in before.items() if t != "app_settings" and after.get(t) != n}
+    assert changed == {}, "the upgrade lost or duplicated rows"
+
+    # Settings: none is lost, and only the ones a migration writes on purpose are added
+    settings_after = _setting_keys(db_path)
+    assert settings_before - settings_after == set(), "the upgrade lost settings"
+    assert settings_after - settings_before <= MIGRATION_SETTINGS, "the upgrade added unexpected settings"
 
 
 def _empty_instance(db_path: Path) -> None:

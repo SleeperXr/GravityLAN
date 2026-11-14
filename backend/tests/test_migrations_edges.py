@@ -24,6 +24,7 @@ REPAIR_STEPS = [
     ("app.database.migrations._drop_outbox_token_copies", "removing token copies from the notification outbox"),
     ("app.database.migrations._deduplicate_generic_port_services", "deduplicating generic port services"),
     ("app.database.migrations._repair_infra_alert_offline", "repairing infrastructure alert_offline flags"),
+    ("app.database.migrations._pin_line_colours_to_reordered_palette", "keeping network colours across the palette reorder"),
 ]
 
 

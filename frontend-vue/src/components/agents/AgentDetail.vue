@@ -70,9 +70,9 @@ watch([range, tab], () => {
 }, { immediate: true });
 
 const stamps = computed(() => history.value.map((h) => h.timestamp));
-const cpuSeries = computed(() => [{ label: 'CPU', color: 'var(--line-3)', values: history.value.map((h) => h.cpu_percent), suffix: ' %' }]);
-const ramSeries = computed(() => [{ label: 'RAM', color: 'var(--line-1)', values: history.value.map((h) => h.ram.percent), suffix: ' %' }]);
-const tempSeries = computed(() => [{ label: 'Temp', color: 'var(--line-5)', values: history.value.map((h) => h.temperature ?? 0), suffix: ' °C' }]);
+const cpuSeries = computed(() => [{ label: 'CPU', color: 'var(--line-9)', values: history.value.map((h) => h.cpu_percent), suffix: ' %' }]);
+const ramSeries = computed(() => [{ label: 'RAM', color: 'var(--line-8)', values: history.value.map((h) => h.ram.percent), suffix: ' %' }]);
+const tempSeries = computed(() => [{ label: 'Temp', color: 'var(--line-4)', values: history.value.map((h) => h.temperature ?? 0), suffix: ' °C' }]);
 const disks = computed(() => history.value[history.value.length - 1]?.disk ?? []);
 const diskTone = (pct: number) => (pct > 90 ? 'bg-mark-danger' : pct > 75 ? 'bg-mark-warn' : 'bg-mark-ok');
 
