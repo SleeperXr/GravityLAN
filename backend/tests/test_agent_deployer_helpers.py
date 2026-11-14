@@ -292,3 +292,13 @@ def test_client_for_pinned_and_tofu_and_blocking_error_paths(monkeypatch):
 def test_a_failed_handshake_says_what_paramiko_saw(error, shown):
     ok, msg = dep._map_ssh_error(error, "192.0.2.7")
     assert ok is False and msg.startswith("SSH connection failed") and shown in msg
+
+
+def test_nohup_fallback_detaches_from_the_ssh_channel(monkeypatch):
+    """The agent must not keep the SSH channel's stdin, and paths go through shlex.quote."""
+    monkeypatch.setattr(dep.time, "sleep", lambda s: None)
+    client = FakeClient({"ps aux": "python3 /opt/a/agent.py"})
+    dep._nohup_fallback(_deploy_ctx(client=client), "python3")
+    start = next(c for c in client.commands if "nohup" in c)
+    assert start.startswith("( cd ") and "exec nohup python3 /opt/a/agent.py" in start
+    assert start.endswith(") < /dev/null > /dev/null 2>&1 &")

@@ -471,3 +471,17 @@ async def test_uninstall_agent_endpoint_failure(client, db, admin_token, monkeyp
 
     # token preserved on failure
     assert await _agent_token(db, device.id) is not None
+
+
+def test_synology_start_script_detaches_the_agent_like_the_other_paths():
+    """`cd X && agent &` without nohup could take the agent down with an SSH session that ran `restart`."""
+    import shutil
+    import subprocess
+    from app.services.agent_scripts import build_install_script
+
+    script = build_install_script("https://192.0.2.1:8000", 7, "enroll-code")
+    line = next(l for l in script.splitlines() if l.lstrip().startswith("start)"))
+    assert "exec nohup" in line and ") < /dev/null > /dev/null 2>&1 &" in line
+    bash = shutil.which("bash")
+    if bash:  # the whole installer must still parse
+        assert subprocess.run([bash, "-n"], input=script.encode(), capture_output=True).returncode == 0

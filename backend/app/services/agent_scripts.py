@@ -238,7 +238,7 @@ elif [ "$START_MODE" = "synology" ]; then
 #!/bin/sh
 # GravityLAN Agent start script for Synology
 case "\\$1" in
-  start) cd $INSTALL_DIR && $PYTHON_BIN $INSTALL_DIR/gravitylan-agent.py > $INSTALL_DIR/gravitylan-agent.log 2>&1 < /dev/null & ;;
+  start) ( cd "$INSTALL_DIR" && exec nohup "$PYTHON_BIN" "$INSTALL_DIR/gravitylan-agent.py" > "$INSTALL_DIR/gravitylan-agent.log" 2>&1 ) < /dev/null > /dev/null 2>&1 & ;;
   stop) pkill -f '[g]ravitylan-agent\\.py' ;;
   restart) "\\$0" stop; sleep 2; "\\$0" start ;;
 esac
