@@ -10,6 +10,7 @@ import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
+from itertools import combinations
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +38,10 @@ class InterfaceError(Exception):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+
+
+def _device_name(device) -> str:
+    return device.display_name or device.hostname or device.ip
 
 
 # --- merge suggestions -------------------------------------------------------
@@ -120,15 +125,17 @@ def _linked(reason: str, a: dict, b: dict) -> bool:
     return not (reason == "subnet_gateway" and a["gw_source"] == b["gw_source"] == "suggested")
 
 
+def _edge_key(a: dict, b: dict) -> tuple:
+    return tuple(sorted(((a["kind"], a["id"]), (b["kind"], b["id"]))))
+
+
 def _edges(buckets: dict) -> dict[tuple, set[str]]:
     """Pairs of entity keys in different subnets with the reasons that link them."""
     edges: dict[tuple, set[str]] = defaultdict(set)
     for (reason, _), members in buckets.items():
-        for i, a in enumerate(members):
-            for b in members[i + 1:]:
-                if _linked(reason, a, b):
-                    key = tuple(sorted(((a["kind"], a["id"]), (b["kind"], b["id"]))))
-                    edges[key].add(reason)
+        for a, b in combinations(members, 2):
+            if _linked(reason, a, b):
+                edges[_edge_key(a, b)].add(reason)
     return edges
 
 
@@ -182,21 +189,40 @@ def _candidate_reasons(edges: dict, target_of: dict) -> dict[tuple, tuple[Device
     return found
 
 
-async def find_merge_suggestions(db: AsyncSession) -> list[dict]:
-    """Devices/addresses that look like further interfaces of another device."""
-    ctx = await load_sync_context(db)
-    devices = (await db.execute(select(Device))).scalars().all()
-    by_id = {d.id: d for d in devices}
+async def _merge_entities(db, devices: list[Device], ctx) -> list[dict]:
+    """Every device and every discovered address that is not taken yet, in one shape."""
     taken = {d.ip for d in devices} | {i.ip for d in devices for i in d.interfaces}
     discovered = [
         h for h in (await db.execute(select(DiscoveredHost))).scalars().all()
         if h.ip not in taken and not h.ip_placeholder
     ]
+    entities = [_entity("device", d, d.display_name or d.hostname, ctx) for d in devices if not d.ip_placeholder]
+    return entities + [_entity("discovered", h, h.custom_name or h.hostname, ctx) for h in discovered]
+
+
+def _suggestion(target: Device, ent: dict, reasons: set[str], ctx) -> dict:
+    sub = ctx.subnet_for(ent["ip"])
+    return {
+        "target_id": target.id,
+        "target_name": _device_name(target),
+        "target_ip": target.ip,
+        "candidate": {
+            "kind": ent["kind"], "id": ent["id"], "ip": ent["ip"], "name": ent["name"],
+            "mac": ent["mac"], "subnet_id": sub.id if sub else None,
+            "subnet_name": sub.name if sub else None, "is_online": ent["is_online"],
+        },
+        "reasons": sorted(reasons),
+    }
+
+
+async def find_merge_suggestions(db: AsyncSession) -> list[dict]:
+    """Devices/addresses that look like further interfaces of another device."""
+    ctx = await load_sync_context(db)
+    devices = (await db.execute(select(Device))).scalars().all()
+    by_id = {d.id: d for d in devices}
+    entities = await _merge_entities(db, devices, ctx)
     agent_ids = set((await db.execute(select(AgentToken.device_id))).scalars().all())
     dismissed = await _load_dismissed(db)
-
-    entities = [_entity("device", d, d.display_name or d.hostname, ctx) for d in devices if not d.ip_placeholder]
-    entities += [_entity("discovered", h, h.custom_name or h.hostname, ctx) for h in discovered]
     ent_by_key = {(e["kind"], e["id"]): e for e in entities}
 
     edges = _edges(_buckets(entities, await _host_key_index(db)))
@@ -206,20 +232,8 @@ async def find_merge_suggestions(db: AsyncSession) -> list[dict]:
     suggestions = []
     for cand_key, (target, reasons) in _candidate_reasons(edges, target_of).items():
         ent = ent_by_key[cand_key]
-        if _dismiss_key(target.id, ent["kind"], ent["ip"]) in dismissed:
-            continue
-        sub = ctx.subnet_for(ent["ip"])
-        suggestions.append({
-            "target_id": target.id,
-            "target_name": target.display_name or target.hostname or target.ip,
-            "target_ip": target.ip,
-            "candidate": {
-                "kind": ent["kind"], "id": ent["id"], "ip": ent["ip"], "name": ent["name"],
-                "mac": ent["mac"], "subnet_id": sub.id if sub else None,
-                "subnet_name": sub.name if sub else None, "is_online": ent["is_online"],
-            },
-            "reasons": sorted(reasons),
-        })
+        if _dismiss_key(target.id, ent["kind"], ent["ip"]) not in dismissed:
+            suggestions.append(_suggestion(target, ent, reasons, ctx))
     suggestions.sort(key=lambda s: (s["target_name"].lower(), s["candidate"]["ip"]))
     return suggestions
 
@@ -325,13 +339,7 @@ async def _repoint_references(db, source: Device, target: Device) -> None:
     await db.execute(delete(AgentConfig).where(AgentConfig.device_id == source.id))
 
 
-async def merge_device_into(db: AsyncSession, target: Device, source: Device) -> DeviceInterface:
-    """Turn the duplicate `source` into an interface of `target` and remove the duplicate.
-
-    Only on the operator's request. History, cables, SSH profiles, child devices and
-    services the target lacks move over to the target, so nothing the operator set up
-    is lost. A source with an agent is refused: its token and metrics are per device.
-    """
+async def _ensure_mergeable(db, target: Device, source: Device) -> None:
     if source.id == target.id:
         raise InterfaceError(400, "A device cannot be merged into itself")
     if (await db.execute(select(AgentToken.id).where(AgentToken.device_id == source.id))).first():
@@ -339,23 +347,35 @@ async def merge_device_into(db: AsyncSession, target: Device, source: Device) ->
     if (await db.execute(select(DeviceInterface.id).where(DeviceInterface.ip == source.ip))).first():
         raise InterfaceError(409, f"{source.ip} is already an interface of a device")
 
-    ctx = await load_sync_context(db)
-    sub = ctx.subnet_for(source.ip)
-    source_id, source_ip = source.id, source.ip
-    source_name = source.display_name or source.hostname or source.ip
-    target_name = target.display_name or target.hostname or target.ip
-    keep_label = source.display_name and source.display_name not in (source.ip, target.display_name)
 
-    iface = DeviceInterface(
+def _interface_from(source: Device, target: Device, subnet) -> DeviceInterface:
+    """The interface `source` becomes; its name stays as the label when it says something."""
+    keep_label = source.display_name and source.display_name not in (source.ip, target.display_name)
+    return DeviceInterface(
         device_id=target.id,
-        ip=source_ip,
+        ip=source.ip,
         mac=source.mac,
-        subnet_id=sub.id if sub else None,
+        subnet_id=subnet.id if subnet else None,
         label=source.display_name if keep_label else None,
         is_online=bool(source.is_online),
         last_seen=source.last_seen,
         first_seen=source.first_seen or datetime.now(timezone.utc),
     )
+
+
+async def merge_device_into(db: AsyncSession, target: Device, source: Device) -> DeviceInterface:
+    """Turn the duplicate `source` into an interface of `target` and remove the duplicate.
+
+    Only on the operator's request. History, cables, SSH profiles, child devices and
+    services the target lacks move over to the target, so nothing the operator set up
+    is lost. A source with an agent is refused: its token and metrics are per device.
+    """
+    await _ensure_mergeable(db, target, source)
+
+    ctx = await load_sync_context(db)
+    source_id, source_ip = source.id, source.ip
+    source_name, target_name = _device_name(source), _device_name(target)
+    iface = _interface_from(source, target, ctx.subnet_for(source.ip))
 
     await _repoint_references(db, source, target)
     db.expunge(source)
@@ -410,13 +430,13 @@ def _gateway_holder(ip: str, devices: dict, ifaces: dict, owners: dict, discs: d
     """Who answers on a gateway address: a device, a device's interface, or a bare discovered host."""
     if ip in devices:
         dev = devices[ip]
-        return dict(device_id=dev.id, device_name=dev.display_name or dev.hostname or dev.ip, is_primary=True,
+        return dict(device_id=dev.id, device_name=_device_name(dev), is_primary=True,
                     is_online=bool(dev.is_online), last_seen=dev.last_seen, mac=dev.mac)
     if ip in ifaces:
         iface = ifaces[ip]
         owner = owners.get(iface.device_id)
         return dict(device_id=iface.device_id, interface_id=iface.id,
-                    device_name=(owner.display_name or owner.hostname or owner.ip) if owner else None,
+                    device_name=_device_name(owner) if owner else None,
                     is_online=bool(iface.is_online), last_seen=iface.last_seen, mac=iface.mac)
     if ip in discs:
         disc = discs[ip]
@@ -425,17 +445,8 @@ def _gateway_holder(ip: str, devices: dict, ifaces: dict, owners: dict, discs: d
     return {}
 
 
-async def list_gateways(db: AsyncSession) -> list[dict]:
-    """The effective gateway of every configured subnet and the device answering there."""
-    subnets = (await db.execute(select(Subnet))).scalars().all()
-    if not subnets:
-        return []
-    # The untagged (main) network first, then by VLAN tag, then by name
-    subnets = sorted(subnets, key=lambda s: (s.vlan_id is not None, s.vlan_id or 0, (s.name or "").lower()))
-    detected = detect_default_gateways()
-    gateways = {s.id: effective_gateway(s, detected) for s in subnets}
-    ips = {gw.ip for gw in gateways.values() if gw}
-
+async def _gateway_holders(db, ips: set[str]) -> tuple[dict, dict, dict, dict]:
+    """Devices, interfaces (with their owners) and discovered hosts at these addresses, by ip."""
     devices = {d.ip: d for d in (await db.execute(select(Device).where(Device.ip.in_(ips)))).scalars().all()}
     ifaces = {
         i.ip: i for i in (await db.execute(select(DeviceInterface).where(DeviceInterface.ip.in_(ips)))).scalars().all()
@@ -447,16 +458,31 @@ async def list_gateways(db: AsyncSession) -> list[dict]:
     discs = {
         h.ip: h for h in (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip.in_(ips)))).scalars().all()
     }
+    return devices, ifaces, owners, discs
 
-    entries = []
-    for sub in subnets:
-        gw = gateways[sub.id]
-        entry = {
-            "subnet_id": sub.id, "subnet_name": sub.name, "cidr": sub.cidr, "vlan_id": sub.vlan_id,
-            "is_enabled": bool(sub.is_enabled),
-            "gateway_ip": gw.ip if gw else None, "source": gw.source if gw else None,
-        }
-        if gw:
-            entry.update(_gateway_holder(gw.ip, devices, ifaces, owners, discs))
-        entries.append(entry)
-    return entries
+
+def _gateway_entry(sub: Subnet, gw, holders: tuple[dict, dict, dict, dict]) -> dict:
+    entry = {
+        "subnet_id": sub.id, "subnet_name": sub.name, "cidr": sub.cidr, "vlan_id": sub.vlan_id,
+        "is_enabled": bool(sub.is_enabled),
+        "gateway_ip": gw.ip if gw else None, "source": gw.source if gw else None,
+    }
+    if gw:
+        entry.update(_gateway_holder(gw.ip, *holders))
+    return entry
+
+
+def _gateway_order(sub: Subnet) -> tuple:
+    """The untagged (main) network first, then by VLAN tag, then by name."""
+    return (sub.vlan_id is not None, sub.vlan_id or 0, (sub.name or "").lower())
+
+
+async def list_gateways(db: AsyncSession) -> list[dict]:
+    """The effective gateway of every configured subnet and the device answering there."""
+    subnets = sorted((await db.execute(select(Subnet))).scalars().all(), key=_gateway_order)
+    if not subnets:
+        return []
+    detected = detect_default_gateways()
+    gateways = {s.id: effective_gateway(s, detected) for s in subnets}
+    holders = await _gateway_holders(db, {gw.ip for gw in gateways.values() if gw})
+    return [_gateway_entry(sub, gateways[sub.id], holders) for sub in subnets]
