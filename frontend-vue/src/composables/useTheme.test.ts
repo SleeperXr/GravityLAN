@@ -46,10 +46,11 @@ describe('useTheme', () => {
   it('cycles through every choice and back to dark', async () => {
     const { preference, cycle } = await load();
     const seen = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       cycle();
       seen.push(preference.value);
     }
-    expect(seen).toEqual(['aurora', 'light', 'system', 'dark']);
+    // The design menu's order, then "system", then round again
+    expect(seen).toEqual(['starlight', 'aurora', 'light', 'system', 'dark']);
   });
 });

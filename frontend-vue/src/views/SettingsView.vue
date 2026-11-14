@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { AlertTriangle, Check, FileText, Monitor, Moon, Sparkles, Sun } from 'lucide-vue-next';
+import { AlertTriangle, Check, FileText } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import Button from '@/components/ui/Button.vue';
@@ -22,7 +22,7 @@ import WebhooksSection from '@/components/settings/WebhooksSection.vue';
 import DataSections from '@/components/settings/DataSections.vue';
 import LineColorsSection from '@/components/settings/LineColorsSection.vue';
 import LinkTypeColorsSection from '@/components/settings/LinkTypeColorsSection.vue';
-import { useTheme, type ThemePreference } from '@/composables/useTheme';
+import ThemePicker from '@/components/settings/ThemePicker.vue';
 import { locale, setLocale, t, type Locale } from '@/i18n';
 
 /** Settings saved together through the save bar, keyed as the backend stores them. */
@@ -46,7 +46,6 @@ const KEYS = Object.keys(DEFAULT_FORM) as (keyof SettingsForm)[];
 const form = ref<SettingsForm>({ ...DEFAULT_FORM });
 const saved = ref<SettingsForm>({ ...DEFAULT_FORM });
 const status = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
-const { preference, setPreference } = useTheme();
 
 function toForm(settings: Record<string, string>): SettingsForm {
   const next = { ...DEFAULT_FORM };
@@ -100,12 +99,6 @@ const sections = computed(() => [
   { id: 'danger', label: t('settings.danger_zone') },
 ]);
 
-const themeOptions = computed<{ value: ThemePreference; label: string; icon: typeof Sun }[]>(() => [
-  { value: 'system', label: t('gv.theme.system'), icon: Monitor },
-  { value: 'light', label: t('gv.theme.light'), icon: Sun },
-  { value: 'dark', label: t('gv.theme.dark'), icon: Moon },
-  { value: 'aurora', label: t('gv.theme.aurora'), icon: Sparkles },
-]);
 const languages: { value: Locale; key: string }[] = [
   { value: 'de', key: 'settings.language_de' },
   { value: 'en', key: 'settings.language_en' },
@@ -216,21 +209,9 @@ const languages: { value: Locale; key: string }[] = [
                 </button>
               </div>
             </fieldset>
-            <fieldset class="min-w-0 flex-[2] basis-80">
-              <legend class="mb-1.5 text-xs font-medium text-fg">{{ t('gv.theme.label') }}</legend>
-              <div class="flex rounded-md border border-line bg-sunken p-0.5">
-                <button
-                  v-for="opt in themeOptions"
-                  :key="opt.value"
-                  type="button"
-                  :aria-pressed="preference === opt.value"
-                  class="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[5px] text-sm transition-colors"
-                  :class="preference === opt.value ? 'bg-control font-medium text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
-                  @click="setPreference(opt.value)"
-                >
-                  <component :is="opt.icon" class="size-4" aria-hidden="true" />{{ opt.label }}
-                </button>
-              </div>
+            <fieldset class="min-w-0 basis-full">
+              <legend class="mb-1.5 text-xs font-medium text-fg">{{ t('gv.theme.menu') }}</legend>
+              <ThemePicker />
             </fieldset>
           </div>
           <LineColorsSection />
