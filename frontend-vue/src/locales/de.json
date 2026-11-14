@@ -832,6 +832,9 @@
         "no_address": "keine nutzbare Adresse (z. B. gestoppter Container mit DHCP)",
         "incomplete": "unvollständig von Proxmox gemeldet"
       }
+    },
+    "auth": {
+      "secure_cookie_over_http": "Die Anmeldung hat geklappt, aber der Browser verwirft das Login-Cookie: GRAVITYLAN_SECURE_COOKIES ist an, und diese Seite ist über http:// geöffnet. Ein als „Secure“ markiertes Cookie speichert der Browser nur über HTTPS. GravityLAN über HTTPS öffnen (z. B. hinter einem Reverse Proxy) oder GRAVITYLAN_SECURE_COOKIES=false setzen und den Container neu starten."
     }
   }
 }

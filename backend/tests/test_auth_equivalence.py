@@ -267,7 +267,7 @@ async def _old_login(request, response, password, db):
             await db.commit()
         auth.issue_session_cookie(response, request.headers.get("user-agent"))
         await auth.audit(request, "auth.login", actor="session")
-        return {"status": "ok", "message": "Login successful"}
+        return {"status": "ok", "message": "Login successful", "secure_cookie_over_http": auth.secure_cookie_dropped(request)}
 
     await auth.audit(request, "auth.login", "failed", detail="wrong password", actor="anonymous")
     raise HTTPException(status_code=401, detail="Invalid password")

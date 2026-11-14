@@ -15,6 +15,7 @@ WARNING = "Session cookie issued over HTTPS without the Secure flag"
 @pytest.fixture(autouse=True)
 def fresh_warning(monkeypatch):
     monkeypatch.setattr(auth, "_insecure_cookie_warned", False)
+    monkeypatch.setattr(auth, "_dropped_cookie_warned", False)
     monkeypatch.setattr(app_config, "secure_cookies", False)
 
 
@@ -75,3 +76,34 @@ async def test_cookie_security_status_reports_flag_and_scheme(client, db):
     assert plain.json() == {"secure_cookies": False, "https": False}
     proxied = await client.get("/api/auth/cookie-security", headers={"X-Forwarded-Proto": "https"})
     assert proxied.json() == {"secure_cookies": False, "https": True}
+
+
+DROPPED = "Session cookie issued with the Secure flag over plain HTTP"
+
+
+@pytest.mark.asyncio
+async def test_secure_cookie_over_plain_http_is_named_in_the_answer_and_logged_once(client, db, caplog, monkeypatch):
+    """The browser drops a Secure cookie over HTTP: the login screen must say so instead of reappearing."""
+    monkeypatch.setattr(app_config, "secure_cookies", True)
+    await _instance(db)
+    with caplog.at_level(logging.WARNING, logger="app.api.auth"):
+        first = await _login(client)
+        await _login(client)
+    assert first.status_code == 200 and first.json()["secure_cookie_over_http"] is True
+    assert sum(DROPPED in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING) == 1
+
+
+@pytest.mark.asyncio
+async def test_secure_cookie_behind_an_https_proxy_is_fine(client, db, monkeypatch):
+    monkeypatch.setattr(app_config, "secure_cookies", True)
+    await _instance(db)
+    assert (await _login(client, "https")).json()["secure_cookie_over_http"] is False
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "gravitylan.localhost"])
+def test_localhost_keeps_secure_cookies_over_http(host, monkeypatch):
+    """Browsers store Secure cookies on localhost over HTTP, so no hint there."""
+    from types import SimpleNamespace
+    monkeypatch.setattr(app_config, "secure_cookies", True)
+    request = SimpleNamespace(url=SimpleNamespace(scheme="http", hostname=host), headers={})
+    assert auth.secure_cookie_dropped(request) is False

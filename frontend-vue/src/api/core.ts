@@ -446,7 +446,7 @@ export const api = {
 
   // Auth
   login: (password: string) =>
-    request<{ status: string; token?: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) })
+    request<{ status: string; token?: string; secure_cookie_over_http?: boolean }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) })
       .then(res => {
         if (res.token) {
           localStorage.setItem('gravitylan_token', res.token);
