@@ -59,4 +59,16 @@ describe('buildNotices', () => {
     const c = dev({ id: 3, is_online: false });
     expect(keys(a, b, c)).toEqual(['off-2', 'off-3', 'ip-1']);
   });
+
+  it('reports an agent that stopped reporting on a device that still answers', () => {
+    const agent = (reporting: boolean | null, last_report: string | null = '2026-11-14T10:00:00+00:00') =>
+      ({ has_agent: true, agent_info: { agent_version: '0.3.12', latest_version: '0.3.12', reporting, last_report } }) as Partial<Device>;
+    expect(buildNotices([dev(agent(false))])[0]).toMatchObject({ key: 'agent-1', rank: 1, tone: 'warn', action: 'device', since: '2026-11-14T10:00:00+00:00' });
+    expect(keys(dev(agent(true)))).toEqual([]);
+    expect(keys(dev(agent(null)))).toEqual([]); // revoked, or the first report is not due yet
+    expect(keys(dev({ ...agent(false), is_online: false }))).toEqual(['off-1']); // the offline notice says it all
+    expect(keys(dev({ ...agent(false), has_pending_token: true }))).toEqual(['key-1']);
+    expect(buildNotices([dev(agent(false, null))])[0].since).toBeNull(); // installed, never reported
+  });
 });
+

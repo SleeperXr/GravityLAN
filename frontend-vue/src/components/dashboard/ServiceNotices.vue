@@ -12,7 +12,7 @@ import { buildNotices, type Notice } from './serviceNotices';
 
 /**
  * Service notices: everything that needs the operator, most urgent first. Offline devices
- * watched 24/7, new agent keys, services down (not for clients in standby), security updates and
+ * watched 24/7, new agent keys, agents that stopped reporting, services down (not for clients in standby), security updates and
  * pending reboots reported by agents, IP changes, agent updates.
  */
 const props = defineProps<{

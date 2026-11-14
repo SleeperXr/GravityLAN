@@ -25,6 +25,23 @@ function newKeyNotice(d: Device, name: string): Notice | null {
   return { key: `key-${d.id}`, rank: 1, device: d, tone: 'danger', title: t('gv.notices.new_key', { name }), detail: t('dashboard.security_alert'), action: 'device' };
 }
 
+/** The host answers, but its agent stopped reporting: metrics, updates and the 24/7 check go stale */
+function agentSilentNotice(d: Device, name: string): Notice | null {
+  // An offline device has its own notice; a new key is the reason the agent is refused
+  if (!d.has_agent || d.has_pending_token || !d.is_online || d.agent_info?.reporting !== false) return null;
+  const last = d.agent_info.last_report ?? null;
+  return {
+    key: `agent-${d.id}`,
+    rank: 1,
+    device: d,
+    tone: 'warn',
+    title: t('gv.notices.agent_silent', { name }),
+    detail: last ? t('gv.notices.agent_silent_detail') : t('gv.notices.agent_never'),
+    since: last,
+    action: 'device',
+  };
+}
+
 function servicesDownNotice(d: Device, name: string): Notice | null {
   // A client with every port closed is asleep (standby), not disrupted
   const down = d.is_online && !isClientStandby(d) ? d.services.filter((s) => !s.is_up) : [];
@@ -47,7 +64,7 @@ function ipChangedNotice(d: Device, name: string): Notice | null {
   return { key: `ip-${d.id}`, rank: 3, device: d, tone: 'info', title: t('gv.notices.ip_changed', { name }), detail: `${d.old_ip} → ${d.ip}`, since: d.ip_changed_at, action: 'device' };
 }
 
-const DEVICE_NOTICES = [offlineNotice, newKeyNotice, servicesDownNotice, patchesNotice, ipChangedNotice];
+const DEVICE_NOTICES = [offlineNotice, newKeyNotice, agentSilentNotice, servicesDownNotice, patchesNotice, ipChangedNotice];
 
 function agentUpdatesNotice(devices: Device[]): Notice | null {
   const outdated = devices.filter((d) => d.has_agent && isAgentOutdated(d.agent_info?.agent_version, d.agent_info?.latest_version));

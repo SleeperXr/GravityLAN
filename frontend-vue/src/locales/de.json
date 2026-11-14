@@ -154,7 +154,10 @@
       "updates_total_other": "{{count}} Updates insgesamt",
       "reboot": "Neustart nötig",
       "show_all": "Alle anzeigen ({{count}} weitere)",
-      "show_less": "Weniger anzeigen"
+      "show_less": "Weniger anzeigen",
+      "agent_silent": "{{name}}: Agent meldet sich nicht",
+      "agent_silent_detail": "Gerät erreichbar, aber kein Agent-Report – Messwerte und Updates veralten",
+      "agent_never": "Agent installiert, hat sich aber noch nie gemeldet"
     },
     "health": {
       "period": "Zeitraum",

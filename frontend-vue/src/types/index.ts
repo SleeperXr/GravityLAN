@@ -49,6 +49,10 @@ export interface Device {
   agent_info?: {
     agent_version: string | null;
     latest_version: string | null;
+    /** When the agent last reported (null: never) */
+    last_report?: string | null;
+    /** Still reporting within its interval; null: nothing to judge (revoked, or first report not due yet) */
+    reporting?: boolean | null;
     metrics?: {
       cpu_usage: number;
       memory_usage: number;

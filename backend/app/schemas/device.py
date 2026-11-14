@@ -113,6 +113,9 @@ class AgentInfo(BaseModel):
     agent_version: str | None = None
     latest_version: str | None = None
     latest_metrics: dict | None = None
+    # When the agent last reported, and whether it still does (None: nothing to judge yet)
+    last_report: datetime | None = None
+    reporting: bool | None = None
 
 
 class DeviceResponse(BaseModel):
