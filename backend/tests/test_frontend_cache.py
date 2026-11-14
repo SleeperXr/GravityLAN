@@ -23,6 +23,20 @@ async def test_gravityui_index_is_served_with_no_cache(gravityui, client):
     assert "GravityUI" in response.text
 
 
+async def test_gravityui_pwa_entry_files_are_served_with_no_cache(gravityui, client):
+    (gravityui / "manifest.webmanifest").write_text('{"name": "GravityLAN"}')
+    (gravityui / "sw.js").write_text("self.addEventListener('install', () => {});")
+
+    manifest_res = await client.get("/frontend-vue/manifest.webmanifest")
+    assert manifest_res.status_code == 200
+    assert manifest_res.headers["cache-control"] == "no-cache"
+    assert manifest_res.headers["content-type"].startswith("application/manifest+json")
+
+    sw_res = await client.get("/frontend-vue/sw.js")
+    assert sw_res.status_code == 200
+    assert sw_res.headers["cache-control"] == "no-cache"
+
+
 @pytest.mark.parametrize("url", ["/", "/?ui=react", "/?ui=vue"])
 async def test_root_always_opens_gravityui(gravityui, client, url):
     """The switch links of the former classic view no longer pick another interface."""

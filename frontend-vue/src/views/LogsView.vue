@@ -100,7 +100,8 @@ async function copyVisible() {
   showToast(ok ? 'success' : 'error', t('common.copy'), ok ? t('gv.logs.copied', { count: visible.value.length }) : t('gv.logs.copy_failed'));
 }
 
-const levelText: Record<LogLevel, string> = { debug: 'text-fg-subtle', info: 'text-info-text', warning: 'text-warn-text', error: 'text-danger-text' };
+// INFO is most of the log, so it stays quiet; colour and weight go to what needs a look
+const levelText: Record<LogLevel, string> = { debug: 'text-fg-subtle', info: 'text-fg-subtle', warning: 'font-semibold text-warn-text', error: 'font-semibold text-danger-text' };
 const levelRow: Record<LogLevel, string> = { debug: '', info: '', warning: 'bg-warn/[0.06]', error: 'bg-danger/[0.08]' };
 const levelLabel: Record<LogLevel, string> = { debug: 'DEBUG', info: 'INFO', warning: 'WARN', error: 'ERROR' };
 const shortTime = (time: string) => time.slice(11, 19);
@@ -160,8 +161,9 @@ const shortTime = (time: string) => time.slice(11, 19);
         >
           <template v-if="line.time">
             <span class="text-fg-subtle tabular" :title="line.time">{{ shortTime(line.time) }}</span>
-            <span class="font-semibold" :class="line.level ? levelText[line.level] : 'text-fg-subtle'">{{ line.level ? levelLabel[line.level] : '' }}</span>
-            <span class="col-span-2 truncate text-fg-subtle sm:col-span-1" :title="line.correlationId ? `${line.logger} · ${line.correlationId}` : (line.logger ?? undefined)">{{ line.logger }}</span>
+            <span :class="line.level ? levelText[line.level] : 'text-fg-subtle'">{{ line.level ? levelLabel[line.level] : '' }}</span>
+            <!-- Phones: the source took a line of its own on every entry; it stays in the tooltip of wider screens -->
+            <span class="truncate text-fg-subtle max-sm:hidden" :title="line.correlationId ? `${line.logger} · ${line.correlationId}` : (line.logger ?? undefined)">{{ line.logger }}</span>
             <span class="col-span-2 [overflow-wrap:anywhere] whitespace-pre-wrap text-fg sm:col-span-1">{{ line.message }}</span>
           </template>
           <span v-else class="col-span-full [overflow-wrap:anywhere] whitespace-pre-wrap" :class="line.level ? levelText[line.level] : 'text-fg-muted'">{{ line.raw }}</span>

@@ -14,3 +14,11 @@ const app = createApp(App);
 app.use(createPinia());
 app.use(router);
 app.mount('#app');
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/frontend-vue/sw.js', { scope: '/frontend-vue/' }).catch(() => {
+      // Service worker registration is non-critical (e.g. insecure HTTP in local lab)
+    });
+  });
+}

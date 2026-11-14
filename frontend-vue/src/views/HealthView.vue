@@ -302,7 +302,7 @@ const sortOptions = computed(() => [
                   <span
                     role="button"
                     tabindex="0"
-                    class="inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 font-sans text-micro font-semibold transition-colors"
+                    class="relative inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 font-sans text-micro font-semibold transition-colors after:absolute after:-inset-x-1.5 after:-inset-y-[11px] after:content-['']"
                     :class="d.alert_offline ? 'border-accent/35 bg-accent/10 text-accent-text' : 'border-line-strong bg-raised text-fg-subtle'"
                     :title="t('health_page.alert_offline_hint')"
                     @click.stop="toggleDeviceAlert(d)"
