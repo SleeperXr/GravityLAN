@@ -588,4 +588,4 @@ Beiträge sind willkommen: siehe [CONTRIBUTING.md](CONTRIBUTING.md). Arbeit an d
 
 ### Lizenz
 
-[MIT](LICENSE). Gebaut mit Antigravity und vielleicht ein bisschen zu viel Spaß am UI von **SleeperXr**.
+[MIT](LICENSE). Gebaut mit Antigravity, Claude und vielleicht ein bisschen zu viel Spaß am UI von **SleeperXr**.
