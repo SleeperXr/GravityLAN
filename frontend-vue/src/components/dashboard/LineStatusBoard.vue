@@ -77,13 +77,13 @@ function statusText(row: LineRow) {
           <LineBullet :color="row.color" :label="row.bullet" size="lg" />
           <span class="min-w-0 flex-1">
             <span class="flex items-baseline gap-2">
-              <span class="truncate text-sm font-bold text-fg">{{ row.name }}</span>
+              <span class="truncate text-sm font-semibold text-fg">{{ row.name }}</span>
               <span class="hidden truncate font-mono text-xs text-fg-subtle 2xl:inline">{{ row.cidr }}</span>
             </span>
             <span class="mt-0.5 block truncate text-sm font-semibold" :class="statusText(row).tone">{{ statusText(row).text }}</span>
           </span>
-          <span class="shrink-0 text-right font-mono text-xs text-fg-muted tabular">
-            <span class="block text-base font-semibold text-fg">{{ row.online }}<span class="text-fg-subtle">/{{ row.total }}</span></span>
+          <span class="shrink-0 text-right text-xs text-fg-muted">
+            <span class="block font-mono text-base font-semibold text-fg tabular">{{ row.online }}<span class="text-fg-subtle">/{{ row.total }}</span></span>
             {{ t('network.online') }}
           </span>
         </button>

@@ -173,7 +173,7 @@ const fill = computed(() => Math.min(100, (props.overview.occupied / Math.max(1,
     <header class="flex items-start gap-3">
       <span class="mt-1 size-3 shrink-0 rounded-full" :style="{ backgroundColor: cable.colour }" aria-hidden="true" />
       <div class="min-w-0 flex-1">
-        <h3 class="truncate text-sm font-bold text-fg">{{ t('gv.rack.cable_title') }}</h3>
+        <h3 class="truncate text-sm font-semibold text-fg">{{ t('gv.rack.cable_title') }}</h3>
         <p class="truncate text-xs text-fg-subtle">{{ cable.cable }}</p>
       </div>
       <Button size="icon-sm" variant="ghost" :aria-label="t('common.close')" @click="emit('close')"><X aria-hidden="true" /></Button>
@@ -216,9 +216,9 @@ const fill = computed(() => Math.min(100, (props.overview.occupied / Math.max(1,
       <component :is="kindOf(entry.itemKind ?? 'other').icon" v-else class="mt-0.5 size-4 shrink-0 text-fg-muted" aria-hidden="true" />
       <div class="min-w-0 flex-1">
         <form v-if="naming" @submit.prevent="saveName">
-          <Input v-model="name" class="h-8 text-sm font-bold" autofocus :aria-label="t('gv.rack.item_name')" @blur="saveName" @keydown.esc.stop="naming = false" />
+          <Input v-model="name" class="h-8 text-sm font-semibold" autofocus :aria-label="t('gv.rack.item_name')" @blur="saveName" @keydown.esc.stop="naming = false" />
         </form>
-        <h3 v-else class="flex min-w-0 items-center gap-1.5 text-sm font-bold text-fg">
+        <h3 v-else class="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-fg">
           <span class="truncate">{{ entry.label }}</span>
           <button v-if="entry.kind === 'item'" type="button" class="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-control-hover hover:text-fg" :aria-label="t('gv.rack.rename')" :title="t('gv.rack.rename')" @click="startNaming">
             <Pencil class="size-3" aria-hidden="true" />
@@ -345,7 +345,7 @@ const fill = computed(() => Math.min(100, (props.overview.occupied / Math.max(1,
   <section v-else class="space-y-5 p-4" :aria-label="overview.name">
     <div class="space-y-2">
       <div class="flex items-baseline justify-between gap-3">
-        <h3 class="truncate text-sm font-bold text-fg">{{ overview.name }}</h3>
+        <h3 class="truncate text-sm font-semibold text-fg">{{ overview.name }}</h3>
         <p class="shrink-0 font-mono text-xs text-fg-muted tabular"><span class="text-base font-semibold text-fg">{{ overview.occupied }}</span> / {{ t('gv.rack.units_label', { count: overview.units }) }}</p>
       </div>
       <div class="h-1.5 overflow-hidden rounded-full bg-sunken" role="progressbar" :aria-label="t('rack.occupied')" aria-valuemin="0" :aria-valuemax="overview.units" :aria-valuenow="overview.occupied">

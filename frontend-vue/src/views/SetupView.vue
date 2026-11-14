@@ -215,7 +215,7 @@ const features = [
 
     <header class="relative flex items-center justify-between gap-3 px-5 py-4 md:px-8">
       <div class="flex items-center gap-2.5">
-        <span class="text-base font-bold tracking-tight text-fg">{{ t('app.title') }}</span>
+        <span class="text-base font-semibold tracking-tight text-fg">{{ t('app.title') }}</span>
         <span class="rounded-sm border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-micro font-semibold text-accent-text">{{ t('setup.first_run') }}</span>
       </div>
       <div class="flex rounded-md border border-line bg-sunken p-0.5" role="group" :aria-label="t('gv.language')">
@@ -269,7 +269,7 @@ const features = [
               <Check v-if="finishPercent >= 100" class="size-6" />
               <Loader2 v-else class="size-6 animate-spin" />
             </span>
-            <h1 id="setup-title" class="text-xl font-bold text-fg">{{ t('setup.welcome_title') }}</h1>
+            <h1 id="setup-title" class="text-xl font-semibold text-fg">{{ t('setup.welcome_title') }}</h1>
             <p class="text-sm text-fg-muted" role="status">{{ finishStatus }}</p>
             <div class="h-2 w-full overflow-hidden rounded-full bg-sunken" role="progressbar" :aria-label="t('setup.finish_progress_label')" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="finishPercent">
               <div class="h-full rounded-full bg-accent transition-transform duration-500 ease-out" :style="{ transform: fillShift(finishPercent) }" />
@@ -279,7 +279,7 @@ const features = [
 
           <!-- 1 · Welcome -->
           <div v-else-if="step === 0" class="space-y-5">
-            <h1 id="setup-title" ref="heading" tabindex="-1" class="text-2xl font-bold tracking-tight text-fg focus:outline-none">{{ t('setup.welcome_title') }}</h1>
+            <h1 id="setup-title" ref="heading" tabindex="-1" class="text-2xl font-semibold tracking-tight text-fg focus:outline-none">{{ t('setup.welcome_title') }}</h1>
             <p class="text-sm leading-relaxed text-fg-muted">{{ t('setup.welcome_description') }}</p>
             <ul class="space-y-3">
               <li v-for="f in features" :key="f.title" class="flex gap-3 rounded-lg border border-line bg-raised p-3">
@@ -306,7 +306,7 @@ const features = [
           <!-- 2 · Networks -->
           <div v-else-if="step === NETWORKS_STEP" class="space-y-5">
             <div>
-              <h1 id="setup-title" ref="heading" tabindex="-1" class="text-xl font-bold text-fg focus:outline-none">{{ t('setup.select_networks_title') }}</h1>
+              <h1 id="setup-title" ref="heading" tabindex="-1" class="text-xl font-semibold text-fg focus:outline-none">{{ t('setup.select_networks_title') }}</h1>
               <p class="mt-1.5 text-sm leading-relaxed text-fg-muted">{{ t('setup.select_networks_desc') }}</p>
             </div>
 
@@ -367,7 +367,7 @@ const features = [
           <!-- 3 · First scan -->
           <div v-else-if="step === SCAN_STEP" class="space-y-5">
             <div>
-              <h1 id="setup-title" ref="heading" tabindex="-1" class="text-xl font-bold text-fg focus:outline-none">{{ t(scanTitle) }}</h1>
+              <h1 id="setup-title" ref="heading" tabindex="-1" class="text-xl font-semibold text-fg focus:outline-none">{{ t(scanTitle) }}</h1>
               <p class="mt-1.5 min-h-5 text-sm text-fg-muted" role="status">{{ scanMessage }}</p>
             </div>
 
@@ -405,7 +405,7 @@ const features = [
           <!-- 4 · Admin password -->
           <form v-else class="space-y-5" novalidate @submit.prevent="finish">
             <div>
-              <h1 id="setup-title" ref="heading" tabindex="-1" class="text-xl font-bold text-fg focus:outline-none">{{ t('setup.security_title') }}</h1>
+              <h1 id="setup-title" ref="heading" tabindex="-1" class="text-xl font-semibold text-fg focus:outline-none">{{ t('setup.security_title') }}</h1>
               <p class="mt-1.5 text-sm leading-relaxed text-fg-muted">{{ t('setup.security_desc') }}</p>
             </div>
             <div class="space-y-1.5">

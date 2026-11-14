@@ -130,7 +130,7 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
       <LatencyChart :samples="detail?.device.id === dev.id ? detail.time_series : []" :loading="loading" />
 
       <section class="space-y-2">
-        <h3 class="flex items-center gap-1.5 text-sm font-bold text-fg"><Layers class="size-4 text-fg-subtle" aria-hidden="true" />{{ t('health_page.drawer_services') }} ({{ uniqueServices.length }})</h3>
+        <h3 class="flex items-center gap-1.5 text-sm font-semibold text-fg"><Layers class="size-4 text-fg-subtle" aria-hidden="true" />{{ t('health_page.drawer_services') }} ({{ uniqueServices.length }})</h3>
         <p v-if="uniqueServices.length === 0" class="rounded-md border border-line bg-raised p-3 text-center text-xs text-fg-subtle">{{ t('health_page.no_services_discovered') }}</p>
         <ul v-else class="divide-y divide-line rounded-md border border-line">
           <li v-for="srv in uniqueServices" :key="srv.id" class="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
@@ -153,7 +153,7 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
       </section>
 
       <section v-if="dev.agent?.has_agent" class="space-y-2">
-        <h3 class="flex items-center gap-1.5 text-sm font-bold text-fg"><Server class="size-4 text-fg-subtle" aria-hidden="true" />{{ t('health_page.drawer_agent_health') }}</h3>
+        <h3 class="flex items-center gap-1.5 text-sm font-semibold text-fg"><Server class="size-4 text-fg-subtle" aria-hidden="true" />{{ t('health_page.drawer_agent_health') }}</h3>
         <div class="space-y-3 rounded-md border border-line bg-raised p-3">
           <p class="flex justify-between font-mono text-xs"><span class="text-fg-subtle">{{ t('health_page.agent_version_label') }}</span><span class="text-fg">{{ dev.agent.agent_version || '–' }}</span></p>
           <div class="grid grid-cols-3 gap-2 text-center font-mono text-xs">
@@ -178,7 +178,7 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
       </dl>
 
       <section class="space-y-2">
-        <h3 class="text-sm font-bold text-fg">{{ t('health_page.drawer_history') }}</h3>
+        <h3 class="text-sm font-semibold text-fg">{{ t('health_page.drawer_history') }}</h3>
         <IncidentList layout="list" :interactive="false" :incidents="detail?.device.id === dev.id ? detail.incidents : []" />
       </section>
     </div>

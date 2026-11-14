@@ -355,7 +355,7 @@ function clearFilters() {
         <div class="gl-card flex h-[24rem] flex-col overflow-hidden md:h-[32rem]">
           <div class="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
             <div class="min-w-0">
-              <p class="text-sm font-bold text-fg">{{ t('gv.plan.title') }}</p>
+              <p class="text-sm font-semibold text-fg">{{ t('gv.plan.title') }}</p>
               <p class="text-xs text-fg-subtle">{{ t('gv.plan.live', { online: store.onlineCount, total: store.totalCount }) }}</p>
             </div>
             <div class="flex items-center gap-2">

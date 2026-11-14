@@ -63,7 +63,7 @@ const byId = computed(() => new Map(store.devices.map((d) => [d.id, d])));
       <ShieldAlert v-if="top.length" class="mt-0.5 size-4 shrink-0 text-warn-text" aria-hidden="true" />
       <ShieldCheck v-else class="mt-0.5 size-4 shrink-0 text-accent-text" aria-hidden="true" />
       <div class="min-w-0">
-        <h2 class="text-sm font-bold text-fg">{{ t('gv.orbit.resilience_title') }}</h2>
+        <h2 class="text-sm font-semibold text-fg">{{ t('gv.orbit.resilience_title') }}</h2>
         <p class="text-xs leading-relaxed text-fg-subtle">{{ t('gv.orbit.resilience_hint') }}</p>
         <p class="mt-1 flex items-start gap-1.5 text-xs leading-relaxed text-fg-muted" data-testid="resilience-computed-hint">
           <Calculator class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />{{ t('gv.orbit.computed_hint') }}

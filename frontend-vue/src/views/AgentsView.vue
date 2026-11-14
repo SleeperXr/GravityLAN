@@ -182,9 +182,9 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
 
             <span class="grid grid-cols-2 gap-3">
               <span v-for="m in [{ label: 'CPU', value: agent.cpu_usage }, { label: 'RAM', value: agent.ram_usage }]" :key="m.label" class="space-y-1">
-                <span class="flex justify-between font-mono text-xs">
+                <span class="flex items-baseline justify-between text-xs">
                   <span class="text-fg-subtle">{{ m.label }}</span>
-                  <span class="font-semibold tabular" :class="toneText[loadTone(m.value)]">{{ m.value.toFixed(1) }} %</span>
+                  <span class="font-mono text-data tabular" :class="toneText[loadTone(m.value)]">{{ m.value.toFixed(1) }} %</span>
                 </span>
                 <span class="block h-1.5 overflow-hidden rounded-full bg-sunken">
                   <span class="block h-full rounded-full" :class="toneBar[loadTone(m.value)]" :style="{ width: `${Math.min(100, Math.max(0, m.value))}%` }" />
@@ -193,7 +193,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
             </span>
 
             <span class="flex items-center gap-2.5">
-              <span class="w-14 shrink-0 font-mono text-xs font-semibold tabular" :class="uptimeText(agent.uptime_pct)">{{ agent.uptime_pct.toFixed(1) }} %</span>
+              <span class="w-16 shrink-0 font-mono text-data tabular" :class="uptimeText(agent.uptime_pct)">{{ agent.uptime_pct.toFixed(1) }} %</span>
               <StatusMonitor class="flex-1" compact :focusable="false" :up-at="AGENT_HOUR_FULL_PCT" :bars="hours(agent)" :span-hours="24" :uptime="agent.uptime_pct" :title="agent.hostname" />
             </span>
 

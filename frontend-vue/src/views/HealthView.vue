@@ -137,7 +137,7 @@ const sortOptions = computed(() => [
           v-for="p in periods"
           :key="p"
           type="button"
-          class="h-8 rounded-[7px] px-3 font-mono text-xs font-semibold transition-colors max-md:h-11"
+          class="h-8 rounded-[7px] px-3 text-xs font-semibold tabular transition-colors max-md:h-11"
           :class="period === p ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
           :aria-pressed="period === p"
           @click="period = p"
@@ -153,14 +153,14 @@ const sortOptions = computed(() => [
     <div class="gl-card flex flex-wrap items-center gap-x-5 gap-y-2.5 px-4 py-3" :aria-label="t('health_page.network_health_score')">
       <div class="flex items-baseline gap-2">
         <span class="text-xs font-semibold text-fg-subtle">{{ t('health_page.network_health_score') }}</span>
-        <span class="font-mono text-xl font-bold tabular" :class="scoreText(kpis?.network_health_score ?? 100)">{{ kpis?.network_health_score ?? '–' }}</span>
+        <span class="font-mono text-hero tabular" :class="scoreText(kpis?.network_health_score ?? 100)">{{ kpis?.network_health_score ?? '–' }}</span>
         <span class="font-mono text-xs text-fg-subtle">/ 100</span>
       </div>
       <span class="hidden h-4 w-px bg-line sm:inline-block" aria-hidden="true" />
       <div class="flex items-baseline gap-1.5 text-xs">
         <span class="font-mono font-semibold text-accent-text tabular">{{ kpis?.online_devices ?? 0 }}</span>
         <span class="text-fg-muted">{{ t('health_page.devices_online').toLowerCase() }}</span>
-        <span class="font-mono text-fg-subtle">· {{ kpis?.offline_devices ?? 0 }} {{ t('health_page.devices_offline').toLowerCase() }}</span>
+        <span class="text-fg-subtle">· <span class="font-mono">{{ kpis?.offline_devices ?? 0 }}</span> {{ t('health_page.devices_offline').toLowerCase() }}</span>
       </div>
       <span class="hidden h-4 w-px bg-line sm:inline-block" aria-hidden="true" />
       <div class="flex items-baseline gap-1.5 text-xs">
@@ -174,9 +174,9 @@ const sortOptions = computed(() => [
         <span class="text-fg-subtle">±{{ ms(kpis?.avg_jitter_ms) }}</span>
       </div>
       <div class="ml-auto flex flex-wrap items-center gap-1.5 text-xs">
-        <Badge v-if="kpis && kpis.active_issues_count > 0" tone="danger" mono>{{ kpis.active_issues_count }} {{ t('health_page.active_issues') }}</Badge>
-        <Badge v-if="kpis && kpis.ssl_warning_count > 0" tone="warn" mono>{{ kpis.ssl_warning_count }} SSL</Badge>
-        <Badge v-if="kpis && kpis.patch_warning_count > 0" tone="danger" mono>{{ kpis.patch_warning_count }} Patches</Badge>
+        <Badge v-if="kpis && kpis.active_issues_count > 0" tone="danger"><span class="font-mono tabular">{{ kpis.active_issues_count }}</span> {{ t('health_page.active_issues') }}</Badge>
+        <Badge v-if="kpis && kpis.ssl_warning_count > 0" tone="warn"><span class="font-mono tabular">{{ kpis.ssl_warning_count }}</span> SSL</Badge>
+        <Badge v-if="kpis && kpis.patch_warning_count > 0" tone="danger"><span class="font-mono tabular">{{ kpis.patch_warning_count }}</span> Patches</Badge>
         <span v-if="kpis && !kpis.active_issues_count && !kpis.ssl_warning_count && !kpis.patch_warning_count" class="text-fg-subtle">{{ t('health_page.no_security_warnings') }}</span>
       </div>
     </div>
@@ -233,7 +233,7 @@ const sortOptions = computed(() => [
             <tr v-for="d in rows" :key="d.id" class="group cursor-pointer transition-colors hover:bg-hover" :class="selected?.id === d.id && sheetOpen && 'bg-raised'" @click="select(d)">
               <td class="px-5 py-3">
                 <div class="flex items-center gap-2">
-                  <button type="button" class="min-w-0 truncate text-left text-sm font-bold text-fg group-hover:text-accent-text" @click.stop="select(d)">{{ d.display_name }}</button>
+                  <button type="button" class="min-w-0 truncate text-left text-sm font-semibold text-fg group-hover:text-accent-text" @click.stop="select(d)">{{ d.display_name }}</button>
                   <button
                     type="button"
                     class="inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 font-sans text-micro font-semibold transition-colors"
@@ -259,7 +259,7 @@ const sortOptions = computed(() => [
               </td>
               <td class="px-4 py-3">
                 <div class="flex items-baseline justify-between text-xs">
-                  <span class="font-mono font-semibold text-fg">{{ d.uptime.uptime_pct.toFixed(1) }}%</span>
+                  <span class="font-mono text-data text-fg tabular">{{ d.uptime.uptime_pct.toFixed(1) }}%</span>
                   <span class="font-mono text-xs text-fg-subtle">24h {{ d.uptime.uptime_24h.toFixed(0) }}%</span>
                 </div>
                 <StatusMonitor class="mt-1" compact size="sm" :bars="d.uptime.history_bars" :span-hours="periodHours(period)" :uptime="d.uptime.uptime_pct" :title="d.display_name" />
@@ -267,7 +267,7 @@ const sortOptions = computed(() => [
               <td class="px-4 py-3">
                 <div class="flex items-center justify-between gap-3">
                   <div class="font-mono text-xs">
-                    <p class="font-semibold text-fg">{{ ms(d.latency.current_ms) }}</p>
+                    <p class="text-data text-fg tabular">{{ ms(d.latency.current_ms) }}</p>
                     <p class="text-xs text-fg-subtle">Ø {{ ms(d.latency.avg_ms) }}<span v-if="d.latency.jitter_ms !== null"> ±{{ d.latency.jitter_ms.toFixed(1) }}</span></p>
                   </div>
                   <Sparkline :values="d.latency.sparkline" />
@@ -293,7 +293,7 @@ const sortOptions = computed(() => [
             <div class="flex items-start gap-3">
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
-                  <p class="truncate text-sm font-bold text-fg">{{ d.display_name }}</p>
+                  <p class="truncate text-sm font-semibold text-fg">{{ d.display_name }}</p>
                   <span
                     role="button"
                     tabindex="0"
@@ -329,7 +329,7 @@ const sortOptions = computed(() => [
 
     <section class="gl-card space-y-4 p-5" aria-labelledby="incidents-title">
       <div class="flex items-baseline justify-between">
-        <h2 id="incidents-title" class="text-base font-bold text-fg">{{ t('health_page.incidents_title') }}</h2>
+        <h2 id="incidents-title" class="text-base font-semibold text-fg">{{ t('health_page.incidents_title') }}</h2>
         <span class="font-mono text-xs text-fg-subtle">{{ data?.recent_incidents?.length ?? 0 }}</span>
       </div>
       <IncidentList :incidents="data?.recent_incidents ?? []" @select="selectById" />
