@@ -14,8 +14,8 @@ const props = defineProps<{ class?: string; mono?: boolean; invalid?: boolean }>
     :aria-invalid="props.invalid || undefined"
     :class="
       cn(
-        'h-9 max-md:h-11 w-full min-w-0 rounded-md border border-line bg-sunken px-3 text-sm text-fg placeholder:text-fg-subtle transition-colors',
-        'hover:border-line-strong focus:border-info focus:outline-none focus-visible:outline-none focus:ring-2 focus:ring-info/25',
+        'h-9 max-md:h-11 w-full min-w-0 rounded-md border border-field-line bg-sunken px-3 text-sm text-fg placeholder:text-fg-subtle transition-colors',
+        'hover:border-fg-subtle focus:border-info focus:outline-none focus-visible:outline-none focus:ring-2 focus:ring-info/25',
         'disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger',
         props.mono && 'font-mono',
         props.class,

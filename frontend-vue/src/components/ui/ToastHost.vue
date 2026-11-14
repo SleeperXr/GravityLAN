@@ -19,7 +19,7 @@ const tones = { success: 'text-accent-text', error: 'text-danger-text', info: 't
         v-for="toast in toasts"
         :key="toast.id"
         :role="toast.type === 'error' ? 'alert' : 'status'"
-        class="pointer-events-auto flex w-full items-start gap-3 rounded-lg border border-line bg-surface p-3 shadow-pop"
+        class="pointer-events-auto flex w-full items-start gap-3 rounded-lg border border-line bg-popover p-3 shadow-pop"
       >
         <component :is="icons[toast.type]" class="mt-0.5 size-4 shrink-0" :class="tones[toast.type]" aria-hidden="true" />
         <div class="min-w-0 flex-1">

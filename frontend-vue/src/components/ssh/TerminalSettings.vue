@@ -31,7 +31,7 @@ const themeId = computed({ get: () => terminalPrefs.theme, set: (v: string) => s
         align="end"
         :side-offset="6"
         :collision-padding="12"
-        class="z-50 w-80 max-w-[calc(100vw-24px)] space-y-4 rounded-lg border border-line bg-surface p-4 shadow-pop"
+        class="z-50 w-80 max-w-[calc(100vw-24px)] space-y-4 rounded-lg border border-line bg-popover p-4 shadow-pop"
         :aria-labelledby="`${id}-title`"
       >
         <div class="flex items-center justify-between">
@@ -69,11 +69,11 @@ const themeId = computed({ get: () => terminalPrefs.theme, set: (v: string) => s
         <div class="grid grid-cols-2 gap-3">
           <label class="flex items-center justify-between gap-2 text-xs text-fg">
             {{ t('ssh.terminal.settings.text_color') }}
-            <input type="color" class="h-7 w-10 cursor-pointer rounded border border-line bg-transparent" :value="toHex(theme.foreground, '#e8edf3')" @input="setTerminalPrefs({ foreground: ($event.target as HTMLInputElement).value })" />
+            <input type="color" class="h-7 w-10 cursor-pointer rounded border border-field-line bg-transparent" :value="toHex(theme.foreground, '#e8edf3')" @input="setTerminalPrefs({ foreground: ($event.target as HTMLInputElement).value })" />
           </label>
           <label class="flex items-center justify-between gap-2 text-xs text-fg">
             {{ t('ssh.terminal.settings.background') }}
-            <input type="color" class="h-7 w-10 cursor-pointer rounded border border-line bg-transparent" :value="toHex(theme.background, '#080a0e')" @input="setTerminalPrefs({ background: ($event.target as HTMLInputElement).value })" />
+            <input type="color" class="h-7 w-10 cursor-pointer rounded border border-field-line bg-transparent" :value="toHex(theme.background, '#080a0e')" @input="setTerminalPrefs({ background: ($event.target as HTMLInputElement).value })" />
           </label>
         </div>
 

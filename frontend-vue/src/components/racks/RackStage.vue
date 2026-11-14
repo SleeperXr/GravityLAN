@@ -984,7 +984,7 @@ const sideName = computed(() => t(shownSide.value === 'front' ? 'gv.rack.side_fr
   padding: 0.3rem 0.55rem;
   border: 1px solid var(--gl-line-strong);
   border-radius: 6px;
-  background: var(--gl-surface);
+  background: var(--gl-popover);
   box-shadow: var(--gl-shadow-pop);
   font-size: var(--text-xs);
   white-space: nowrap;

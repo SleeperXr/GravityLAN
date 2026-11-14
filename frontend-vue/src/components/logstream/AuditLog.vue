@@ -86,7 +86,7 @@ const when = (e: AuditEvent) => {
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('gv.audit.search') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input v-model="search" type="search" :placeholder="t('gv.audit.search')" class="h-9 w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-line-strong focus:border-accent focus:outline-none" />
+        <input v-model="search" type="search" :placeholder="t('gv.audit.search')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
       </label>
       <Button size="icon" variant="ghost" class="ml-auto" :aria-label="t('gv.audit.refresh')" :title="t('gv.audit.refresh')" :disabled="loading" @click="load()">
         <RefreshCw :class="loading && 'animate-spin'" aria-hidden="true" />
@@ -108,7 +108,7 @@ const when = (e: AuditEvent) => {
           </tr>
         </thead>
         <tbody class="divide-y divide-line">
-          <tr v-for="e in items" :key="e.id" class="align-top hover:bg-raised">
+          <tr v-for="e in items" :key="e.id" class="align-top hover:bg-hover">
             <td class="px-4 py-2.5 font-mono text-xs whitespace-nowrap text-fg-muted tabular">{{ when(e) }}</td>
             <td class="px-4 py-2.5">
               <p class="font-medium text-fg">{{ actionLabel(e.action) }}</p>

@@ -2,7 +2,8 @@
 import { computed } from 'vue';
 import { cn } from '@/lib/utils';
 
-export type BadgeTone = 'neutral' | 'accent' | 'info' | 'warn' | 'danger';
+/** `maint` is for what is pending but not urgent (an agent update); `warn` for what needs attention. */
+export type BadgeTone = 'neutral' | 'accent' | 'info' | 'maint' | 'warn' | 'danger';
 
 const props = withDefaults(defineProps<{ tone?: BadgeTone; mono?: boolean; class?: string }>(), {
   tone: 'neutral',
@@ -13,6 +14,7 @@ const tones: Record<BadgeTone, string> = {
   neutral: 'bg-badge text-badge-text border-badge-line',
   accent: 'bg-accent/10 text-accent-text border-accent/25',
   info: 'bg-info/10 text-info-text border-info/25',
+  maint: 'bg-maint/10 text-maint-text border-maint/25',
   warn: 'bg-warn/10 text-warn-text border-warn/30',
   danger: 'bg-danger/10 text-danger-text border-danger/30',
 };

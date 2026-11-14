@@ -69,7 +69,7 @@ function statusText(row: LineRow) {
       <li v-for="row in boardRows" :key="row.id" class="sm:border-r sm:border-b sm:border-line">
         <button
           type="button"
-          class="flex h-full w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-raised"
+          class="flex h-full w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-hover"
           :class="active === row.id && 'bg-raised shadow-[inset_0_-2px_0_0_var(--gl-accent)]'"
           :aria-pressed="active === row.id"
           @click="emit('select', active === row.id ? null : row.id)"
@@ -96,7 +96,7 @@ function statusText(row: LineRow) {
         v-for="row in emptyRows"
         :key="row.id"
         type="button"
-        class="inline-flex items-center gap-2 rounded-md py-1 pr-2.5 pl-1 text-xs font-semibold text-fg-muted transition-colors hover:bg-raised hover:text-fg max-md:min-h-11"
+        class="inline-flex items-center gap-2 rounded-md py-1 pr-2.5 pl-1 text-xs font-semibold text-fg-muted transition-colors hover:bg-hover hover:text-fg max-md:min-h-11"
         :class="active === row.id && 'bg-raised text-fg shadow-[inset_0_-2px_0_0_var(--gl-accent)]'"
         :aria-pressed="active === row.id"
         :title="`${row.cidr} · ${statusText(row).text}`"

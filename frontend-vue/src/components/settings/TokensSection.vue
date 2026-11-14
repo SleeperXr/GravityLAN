@@ -75,7 +75,7 @@ async function revoke(token: ApiTokenResponse) {
     <div v-if="created" role="status" class="space-y-2 rounded-md border border-accent/30 bg-accent/[0.07] p-3">
       <p class="flex items-center gap-2 text-sm text-fg"><CheckCircle2 class="size-4 text-accent-text" aria-hidden="true" />{{ t('settings.token_created_title') }}</p>
       <div class="flex gap-2">
-        <input :value="created" readonly :aria-label="t('settings.api_tokens')" class="h-9 min-w-0 flex-1 rounded-md border border-line bg-sunken px-3 font-mono text-xs text-fg" @focus="($event.target as HTMLInputElement).select()" />
+        <input :value="created" readonly :aria-label="t('settings.api_tokens')" class="h-9 min-w-0 flex-1 rounded-md border border-field-line bg-sunken px-3 font-mono text-xs text-fg" @focus="($event.target as HTMLInputElement).select()" />
         <Button @click="copy"><Copy aria-hidden="true" />{{ t('settings.token_copy') }}</Button>
       </div>
     </div>

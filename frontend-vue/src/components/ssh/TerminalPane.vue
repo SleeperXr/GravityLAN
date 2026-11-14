@@ -412,10 +412,10 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="pasteFallback" class="absolute inset-0 z-10 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="false" :aria-label="t('ssh.terminal.paste')">
-      <form class="w-full max-w-md space-y-3 rounded-lg border border-line bg-surface p-4 shadow-pop" @submit.prevent="submitPaste">
+      <form class="w-full max-w-md space-y-3 rounded-lg border border-line bg-popover p-4 shadow-pop" @submit.prevent="submitPaste">
         <h3 class="flex items-center gap-2 text-sm font-semibold text-fg"><ClipboardPaste class="size-4" aria-hidden="true" />{{ t('ssh.terminal.paste') }}</h3>
         <p class="text-xs text-fg-subtle">{{ t('ssh.terminal.paste_fallback') }}</p>
-        <textarea v-model="pasteText" rows="5" spellcheck="false" class="w-full rounded-md border border-line bg-sunken p-2 font-mono text-xs text-fg focus:border-info focus:outline-none" :aria-label="t('ssh.terminal.paste')" autofocus />
+        <textarea v-model="pasteText" rows="5" spellcheck="false" class="w-full rounded-md border border-field-line bg-sunken p-2 font-mono text-xs text-fg focus:border-info focus:outline-none" :aria-label="t('ssh.terminal.paste')" autofocus />
         <div class="flex justify-end gap-2">
           <Button size="sm" @click="pasteFallback = false">{{ t('common.cancel') }}</Button>
           <Button size="sm" variant="primary" type="submit" :disabled="!pasteText"><ClipboardPaste aria-hidden="true" />{{ t('ssh.terminal.paste_send') }}</Button>
@@ -424,7 +424,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="hostKey" class="absolute inset-0 z-10 grid place-items-center bg-black/50 p-4">
-      <div v-if="hostKey.status === 'changed'" class="w-full max-w-lg space-y-3 rounded-lg border border-danger/50 bg-surface p-5 shadow-pop" role="alert">
+      <div v-if="hostKey.status === 'changed'" class="w-full max-w-lg space-y-3 rounded-lg border border-danger/50 bg-popover p-5 shadow-pop" role="alert">
         <h3 class="flex items-center gap-2 text-sm font-bold text-danger-text"><AlertTriangle class="size-4" aria-hidden="true" />{{ t('ssh.hostkey.changed_title') }}</h3>
         <p class="text-sm text-fg">{{ t('ssh.hostkey.changed_text', { host: `${hostKey.host}:${hostKey.port}` }) }}</p>
         <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
@@ -434,7 +434,7 @@ onBeforeUnmount(() => {
         <p class="text-xs text-fg-subtle">{{ t('ssh.hostkey.changed_hint') }}</p>
         <div class="flex justify-end"><Button size="sm" @click="hostKey = null">{{ t('common.close') }}</Button></div>
       </div>
-      <div v-else class="w-full max-w-lg space-y-3 rounded-lg border border-warn/50 bg-surface p-5 shadow-pop" role="dialog" aria-modal="false" :aria-label="t('ssh.hostkey.unknown_title')">
+      <div v-else class="w-full max-w-lg space-y-3 rounded-lg border border-warn/50 bg-popover p-5 shadow-pop" role="dialog" aria-modal="false" :aria-label="t('ssh.hostkey.unknown_title')">
         <h3 class="flex items-center gap-2 text-sm font-bold text-warn-text"><ShieldAlert class="size-4" aria-hidden="true" />{{ t('ssh.hostkey.unknown_title') }}</h3>
         <p class="text-sm text-fg">{{ t('ssh.hostkey.unknown_text', { host: `${hostKey.host}:${hostKey.port}` }) }}</p>
         <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
@@ -451,7 +451,7 @@ onBeforeUnmount(() => {
 
     <div
       v-else-if="status === 'connecting' || status === 'authenticating'"
-      class="absolute top-12 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-surface/95 px-3 py-1.5 text-xs text-fg-muted shadow-pop"
+      class="absolute top-12 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-popover/95 px-3 py-1.5 text-xs text-fg-muted shadow-pop"
       role="status"
     >
       <Loader2 class="size-3.5 animate-spin" aria-hidden="true" />
@@ -459,7 +459,7 @@ onBeforeUnmount(() => {
     </div>
     <div
       v-else-if="status === 'closed' || status === 'error'"
-      class="absolute inset-x-3 bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-lg border bg-surface/95 px-3 py-2 text-xs shadow-pop"
+      class="absolute inset-x-3 bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-lg border bg-popover/95 px-3 py-2 text-xs shadow-pop"
       :class="status === 'error' ? 'border-danger/40 text-danger-text' : 'border-line text-fg-muted'"
       role="status"
     >

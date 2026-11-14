@@ -11,7 +11,7 @@ const roles: LinkRole[] = ['primary', 'backup'];
 </script>
 
 <template>
-  <div class="absolute bottom-3 left-3 z-10 w-[min(22rem,calc(100%-4.5rem))] space-y-3 rounded-lg border border-line-strong bg-surface p-3.5 shadow-pop" role="dialog" :aria-label="t('gv.plan.link')" @pointerdown.stop>
+  <div class="absolute bottom-3 left-3 z-10 w-[min(22rem,calc(100%-4.5rem))] space-y-3 rounded-lg border border-line-strong bg-popover p-3.5 shadow-pop" role="dialog" :aria-label="t('gv.plan.link')" @pointerdown.stop>
     <div class="flex items-start gap-2">
       <div class="min-w-0 flex-1">
         <p class="text-sm font-semibold text-fg">{{ t('gv.plan.link') }}</p>
@@ -73,7 +73,7 @@ const roles: LinkRole[] = ['primary', 'backup'];
         {{ t('gv.plan.link_type') }}
         <select
           :value="link.link_type"
-          class="h-9 rounded-md border border-line bg-sunken px-2 text-sm text-fg focus:border-accent focus:outline-none"
+          class="h-9 rounded-md border border-field-line bg-sunken px-2 text-sm text-fg focus:border-accent focus:outline-none"
           @change="emit('patch', { link_type: ($event.target as HTMLSelectElement).value })"
         >
           <option v-for="lt in linkTypeOptions(link.link_type)" :key="lt" :value="lt">{{ lt }}</option>

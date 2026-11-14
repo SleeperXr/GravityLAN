@@ -86,7 +86,7 @@ onBeforeUnmount(() => store.disconnectScanStream());
   <div v-else class="flex h-dvh overflow-hidden bg-canvas text-fg">
     <a
       href="#main"
-      class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:shadow-pop"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:rounded-md focus:bg-popover focus:px-3 focus:py-2 focus:text-sm focus:shadow-pop"
     >
       {{ t('gv.skip_to_content') }}
     </a>

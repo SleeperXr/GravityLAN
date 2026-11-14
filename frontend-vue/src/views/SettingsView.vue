@@ -255,7 +255,7 @@ const languages: { value: Locale; key: string }[] = [
         v-if="isDirty || status !== 'idle'"
         role="region"
         :aria-label="t('settings.unsaved_changes')"
-        class="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 mx-auto flex max-w-2xl items-center gap-3 rounded-lg border border-line-strong bg-surface px-4 py-3 shadow-pop md:bottom-5 md:left-[calc(15rem+1.5rem)]"
+        class="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 mx-auto flex max-w-2xl items-center gap-3 rounded-lg border border-line-strong bg-popover px-4 py-3 shadow-pop md:bottom-5 md:left-[calc(15rem+1.5rem)]"
       >
         <span role="status" class="flex min-w-0 flex-1 items-center gap-2 text-sm">
           <template v-if="status === 'saved'"><Check class="size-4 text-accent-text" aria-hidden="true" />{{ t('settings.save_success') }}</template>

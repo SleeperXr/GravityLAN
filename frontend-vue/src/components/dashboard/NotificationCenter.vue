@@ -29,7 +29,7 @@ const tones = { success: 'text-accent-text', error: 'text-danger-text', info: 't
       <PopoverContent
         align="end"
         :side-offset="8"
-        class="z-50 flex max-h-[min(32rem,70dvh)] w-[min(24rem,calc(100vw-1.5rem))] flex-col rounded-lg border border-line bg-surface shadow-pop"
+        class="z-50 flex max-h-[min(32rem,70dvh)] w-[min(24rem,calc(100vw-1.5rem))] flex-col rounded-lg border border-line bg-popover shadow-pop"
       >
         <div class="flex items-center justify-between border-b border-line px-4 py-3">
           <h2 class="flex items-center gap-2 text-sm font-semibold text-fg"><Bell class="size-4" aria-hidden="true" />{{ t('notifications.title') }}</h2>

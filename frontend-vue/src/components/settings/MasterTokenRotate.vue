@@ -54,7 +54,7 @@ async function copy() {
           :value="created"
           readonly
           :aria-label="t('settings.password.master_token_title')"
-          class="h-9 min-w-0 flex-1 rounded-md border border-line bg-sunken px-3 font-mono text-xs text-fg"
+          class="h-9 min-w-0 flex-1 rounded-md border border-field-line bg-sunken px-3 font-mono text-xs text-fg"
           @focus="($event.target as HTMLInputElement).select()"
         />
         <Button @click="copy"><Copy aria-hidden="true" />{{ t('settings.token_copy') }}</Button>

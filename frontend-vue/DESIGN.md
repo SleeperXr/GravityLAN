@@ -54,7 +54,8 @@ colors:
   fg-subtle-day: "#556070"
   station-day: "#ffffff"
   orbit-canvas-day: "#d9dfe7"
-  mark-ok-day: "#2fa38d"
+  mark-ok: "#588b87"
+  mark-ok-day: "#528581"
   mark-warn-day: "#e9a23b"
   mark-danger-day: "#e25563"
   accent-day: "#087a65"
@@ -262,12 +263,13 @@ Alle Werte liegen als `--gl-*` und `--line-1..10` in `src/index.css` und werden 
 
 ### Tertiary
 - **Zustandsfarben**: Info-Blau (`info`) für Eingabefokus und Hinweise, Bernstein (`warn`) für gestörte Dienste, Signalrot (`danger`) für ausgefallene Geräte, Fehler und destruktive Aktionen. Flächen davon nur als Tönung (`/10`, Rand `/25`–`/30`), Text immer in der `*-text`-Variante.
+- **Wartung** (`maint`, `maint-text`; Alias auf `info` in jedem Thema): was ansteht, aber nicht drängt, etwa ein verfügbares Agent-Update (Badge-Ton `maint`, Knopf „Agent-Updates", Punkt am Mehr-Menü). Bernstein bleibt dem vorbehalten, was Aufmerksamkeit braucht: überschrittene Schwellen, Sicherheitsupdates, gestörte Dienste.
 
 ### Neutral
-- **Nachtgrund** (`canvas`): Seitenhintergrund. **Nachtleiste** (`chrome`): Seitenleiste und mobile Tab-Leiste. **Kartenfläche** (`surface`): Karten, Dialoge, Popover. **Innenfläche** (`raised`): Unterkarten, aktive Navigation, Hover von Zeilen. **Senke** (`sunken`): Eingabefelder, Segmentschalter, Rack-Innenraum, Orbit-Grund im Dunkeln. **Bedienfläche** (`control`/`control-hover`): Sekundär-Buttons.
-- **Haarlinien** (`hairline` = `--gl-line`, `hairline-strong`): Rahmen, Trenner, Hover-Rahmen, Scrollbalken.
+- **Nachtgrund** (`canvas`): Seitenhintergrund. **Nachtleiste** (`chrome`): Seitenleiste und mobile Tab-Leiste. **Kartenfläche** (`surface`): Karten, Dialoge, Sheets (die ihr abgedunkelter Hintergrund absetzt). **Schwebefläche** (`popover`; dunkel `#181d25`, hell `#fbfcfd`, Aurora `#181c2a`): alles, was ohne abgedunkelten Hintergrund über anderem liegt: Menüs, Popover, Tooltips, Toasts, Orbit-Panels und -Bedienelemente, die Speicherleiste der Einstellungen. **Innenfläche** (`raised`): Unterkarten, aktive Navigation, ausgewählte Zeile. **Hover** (`hover`; dunkel und Aurora = `control-hover`, hell `#e4e8ed`): Hover von Zeilen und Menüeinträgen; `fg-subtle` erreicht darauf 4,5:1. **Senke** (`sunken`): Eingabefelder, Segmentschalter, Rack-Innenraum, Orbit-Grund im Dunkeln. **Bedienfläche** (`control`/`control-hover`): Sekundär-Buttons.
+- **Haarlinien** (`hairline` = `--gl-line`, `hairline-strong`): Rahmen, Trenner, Hover-Rahmen, Scrollbalken. **Feldrand** (`field-line`; dunkel `#646d7a`, hell `#747b83`, Aurora `#5d70b3`): Rand von Eingabefeldern, Auswahllisten und Textfeldern, mindestens 3:1 gegen Feld, Karte und Schwebefläche (WCAG 1.4.11); Hover `fg-subtle`.
 - **Textstufen** (`fg`, `fg-muted`, `fg-subtle`): Inhalt, Beschreibung, Metadaten. Im hellen Thema wurden alle Textstufen so abgedunkelt, dass sie auf ihren eigenen 10–15-%-Tönungen über jeder hellen Fläche 4,5:1 erreichen.
-- **Datenmarken** (`mark-ok`, `mark-warn`, `mark-danger`, Klassen `bg-mark-*`): Füllung von Auslastungsbalken und Verfügbarkeitsstreifen. Im Dunkeln gleich den Zustandsfarben, im Hellen weicher (`#2fa38d`, `#e9a23b`, `#e25563`), damit eine Tabelle voller Balken nicht lauter ist als Buttons und Text. Buttons, Punkte und Text nutzen weiter `accent`/`warn`/`danger`.
+- **Datenmarken** (`mark-ok`, `mark-warn`, `mark-danger`, Klassen `bg-mark-*`): Füllung von Auslastungsbalken und Verfügbarkeitsstreifen. Der Normalbereich (`mark-ok`) ruht in einem gedämpften Ton (dunkel `#588b87`, hell `#528581`, beide mindestens 3:1 zur Balkenspur), damit eine Seite voller gesunder Balken still bleibt und der Balken auffällt, der seine Schwelle überschreitet. `mark-warn` und `mark-danger` sind im Dunkeln die Zustandsfarben, im Hellen weicher (`#e9a23b`, `#e25563`). Aurora behält Neon-Marken (`mark-ok` = `accent`). Buttons, Punkte und Text nutzen weiter `accent`/`warn`/`danger`.
 - **Orbit-Grund und Linientinte** (`--gl-orbit-canvas`, `--gl-orbit-ring`, `--gl-orbit-ring-active`, `--gl-orbit-ink`, `--gl-orbit-stroke`): Im Dunkeln liegt der Orbit-Netzplan auf `canvas`, Linien behalten ihre Farbe ganz. Im Hellen liegt er auf kühlem Grau (`#d9dfe7`) mit weißen Körpern; Ringe sind deckender (0,6 statt 0,22), Light-Beams 1,6-fach breit, und jede Linienfarbe wird über `orbitInk()` zu 32 % mit der Textfarbe gemischt, damit auch helle Netz- und Verbindungsfarben als Linie tragen. Wer im Orbit eine Linie zeichnet, nimmt `orbitInk(farbe)`.
 - **Körperkern** (`station`): Füllung der Himmelskörper im Orbit-Netzplan. **Schildtinte** (`sign-ink`, `#0c0f14`): fester Text auf Netzschildern und aktiven Navigationsschildern, in beiden Themen.
 
@@ -318,7 +320,7 @@ Das System ist flach und tonal geschichtet: `canvas` → `surface` → `raised`,
 
 ### Shadow Vocabulary
 - **Kartenkante** (`--gl-shadow-card`; dunkel `0 1px 0 0 rgb(255 255 255 / 0.025) inset`, hell `0 1px 2px rgb(16 20 27 / 0.04)`): auf jeder `.gl-card`, kaum sichtbar.
-- **Schwebend** (`--gl-shadow-pop`; dunkel `0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04)`, hell `0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06)`): Dialoge, Sheets, Popover, Orbit-Bedienelemente und -Inspektorpanels.
+- **Schwebend** (`--gl-shadow-pop`; dunkel `0 24px 48px -12px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04)`, hell `0 20px 40px -12px rgb(16 20 27 / 0.2), 0 0 0 1px rgb(16 20 27 / 0.06)`): Dialoge, Sheets, Popover, Orbit-Bedienelemente und -Inspektorpanels. Ohne abgedunkelten Hintergrund liegt darunter die Schwebefläche (`popover`), sonst `surface`.
 - Kleine Bedienelemente auf der Orbit-Karte (Suche, Zoom-/Bewegungsleiste, Hinweis- und Touch-Pillen) tragen nur `shadow-pop` ohne eigene Rahmenlinie: dessen 1-px-Ring ist ihre Kante. Fokus zeigt ein Akzent-Ring (in der Leiste nach innen, weil sie beschneidet).
 - Dialog-Overlay: Schwarz 55 % mit 2 px Unschärfe.
 
@@ -343,7 +345,7 @@ Sachlich und kompakt.
 - **States:** Farbübergang 150 ms; deaktiviert 50 % Deckkraft; Laden mit drehendem Loader und `aria-busy`. Fokus über den globalen Akzentring.
 
 ### Chips
-- **Badges:** 11 px, 6 px Radius, Tönung + `*-text` + getönter Rand (neutral, accent, info, warn, danger), optional Mono.
+- **Badges:** 11 px, 6 px Radius, Tönung + `*-text` + getönter Rand (neutral, accent, info, maint, warn, danger), optional Mono.
 - **Netzschild (`LineBullet`):** rund, Netzfarbe, Schildtinte, 800; Größen 20 / 28 / 40 px. Text ist die VLAN-ID, sonst der Anfangsbuchstabe des Subnetzes (`lineLabel`), „·“ wenn unbekannt; Meldungen ohne Gerät tragen ein neutrales Schild in `fg-muted`. Das Schild ist dekorativ (`aria-hidden`), der Netzname steht immer als Text daneben.
 - **Segmentschalter:** `sunken`-Wanne mit 2 px Innenabstand, aktiver Knopf `control`.
 
@@ -352,10 +354,10 @@ Sachlich und kompakt.
 - **Background:** `surface`; Unterkarten `raised`.
 - **Shadow Strategy:** Kartenkante (siehe Elevation & Depth).
 - **Border:** 1 px Haarlinie.
-- **Internal Padding:** 16 px horizontal, 12–14 px vertikal; Listen in Karten mit Trennlinien und Zeilen-Hover `raised`.
+- **Internal Padding:** 16 px horizontal, 12–14 px vertikal; Listen in Karten mit Trennlinien und Zeilen-Hover `hover`.
 
 ### Inputs / Fields
-- **Style:** `sunken`, Haarlinie, 10 px, 36 px hoch, Platzhalter `fg-subtle`.
+- **Style:** `sunken`, Feldrand (`field-line`), 10 px, 36 px hoch, Platzhalter `fg-subtle`.
 - **Focus:** Rahmen Info-Blau plus 2 px Ring `info/25`.
 - **Error / Disabled:** Rahmen `danger` über `aria-invalid`; deaktiviert 60 %. `Field` verknüpft Label, Hinweis und Fehler per `aria-describedby`. Selects sind nativ.
 

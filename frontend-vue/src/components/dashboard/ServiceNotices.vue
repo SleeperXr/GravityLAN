@@ -72,7 +72,7 @@ async function ackNotice(n: Notice) {
     </div>
     <ul v-else class="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
       <!-- The confirm button sits next to the row button, not inside it: buttons must not nest -->
-      <li v-for="n in shown" :key="n.key" class="group flex items-start transition-colors hover:bg-raised">
+      <li v-for="n in shown" :key="n.key" class="group flex items-start transition-colors hover:bg-hover">
         <button type="button" class="flex min-w-0 flex-1 items-start gap-3 py-3 pl-4 text-left" :class="n.key.startsWith('ip-') && n.device ? 'pr-2' : 'pr-4'" @click="open(n)">
           <!-- The badge of the network orbit the device belongs to; fleet-wide notices get a neutral sign -->
           <LineBullet
@@ -113,7 +113,7 @@ async function ackNotice(n: Notice) {
     <button
       v-if="foldable"
       type="button"
-      class="flex min-h-11 items-center justify-center gap-1.5 border-t border-line px-4 text-xs font-semibold text-fg-muted transition-colors hover:bg-raised hover:text-fg"
+      class="flex min-h-11 items-center justify-center gap-1.5 border-t border-line px-4 text-xs font-semibold text-fg-muted transition-colors hover:bg-hover hover:text-fg"
       :aria-expanded="expanded"
       @click="expanded = !expanded"
     >

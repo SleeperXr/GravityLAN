@@ -47,7 +47,7 @@ function addDiskPath() {
             {{ status?.is_active ? t('agent.status_active') : status?.is_installed ? `${t('agent.status_active')} (${t('common.offline')})` : t('agent.status_inactive') }}
           </span>
           <span v-if="status?.agent_version" class="flex items-center gap-2">
-            <Badge v-if="isAgentOutdated(status.agent_version, status.latest_version)" tone="warn">
+            <Badge v-if="isAgentOutdated(status.agent_version, status.latest_version)" tone="maint">
               <RefreshCw aria-hidden="true" />{{ t('common.update_available', { version: status.latest_version }) }}
             </Badge>
             <span class="font-mono text-xs text-fg-subtle">v{{ status.agent_version }}</span>

@@ -138,7 +138,7 @@ const hovered = computed(() => (active.value !== null ? points.value[active.valu
       <div
         v-if="hovered"
         role="status"
-        class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs shadow-pop"
+        class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-line bg-popover px-2.5 py-1.5 text-xs shadow-pop"
         :style="{ left: `${Math.min(Math.max((hovered.x / W) * 100, 15), 85)}%`, top: `${Math.max(14, (hovered.y / H) * 100 - 6)}%` }"
       >
         <p class="font-mono text-xs text-fg-subtle">{{ formatDateTime(hovered.s.timestamp, { dateStyle: 'short', timeStyle: 'medium' }) }}</p>

@@ -1017,7 +1017,7 @@ useResizeObserver(svgRef, initialFit);
 
     <div
       v-if="dropTarget"
-      class="pointer-events-none absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-accent bg-surface/95 px-3.5 py-1.5 text-xs font-semibold text-accent-text shadow-pop"
+      class="pointer-events-none absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-accent bg-popover/95 px-3.5 py-1.5 text-xs font-semibold text-accent-text shadow-pop"
     >
       <Orbit class="size-3.5" aria-hidden="true" />
       <span>{{ t('gv.orbit.drop_to', { name: deviceLabel(dropTarget.device) }) }}</span>
@@ -1026,7 +1026,7 @@ useResizeObserver(svgRef, initialFit);
     <!-- Search: highlights matches, Enter flies there -->
     <div
       v-if="!editing"
-      class="absolute top-3 left-3 z-10 flex h-9 items-center gap-2 rounded-md bg-surface/95 px-2.5 shadow-pop backdrop-blur focus-within:ring-1 focus-within:ring-accent"
+      class="absolute top-3 left-3 z-10 flex h-9 items-center gap-2 rounded-md bg-popover/95 px-2.5 shadow-pop backdrop-blur focus-within:ring-1 focus-within:ring-accent"
       :class="editable ? 'w-[min(16rem,calc(100%-12rem))]' : 'w-[min(16rem,calc(100%-1.5rem))]'"
       @pointerdown.stop
     >
@@ -1067,7 +1067,7 @@ useResizeObserver(svgRef, initialFit);
     <!-- Plain wheel over the embedded map: the page scrolls, this says how to zoom -->
     <p
       v-if="pageScrolls"
-      class="pointer-events-none absolute top-1/2 left-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface/95 px-3 py-1.5 text-xs font-medium text-fg shadow-pop backdrop-blur transition-opacity duration-200"
+      class="pointer-events-none absolute top-1/2 left-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-md bg-popover/95 px-3 py-1.5 text-xs font-medium text-fg shadow-pop backdrop-blur transition-opacity duration-200"
       :class="wheelHint ? 'opacity-100' : 'opacity-0'"
       aria-hidden="true"
     >
@@ -1104,7 +1104,7 @@ useResizeObserver(svgRef, initialFit);
     >
       <p
         v-if="vitalityHint"
-        class="pointer-events-none absolute right-14 bottom-3 z-10 h-7 rounded-md bg-surface px-2.5 text-xs leading-7 font-medium whitespace-nowrap text-fg shadow-pop max-md:right-3 max-md:!bottom-16"
+        class="pointer-events-none absolute right-14 bottom-3 z-10 h-7 rounded-md bg-popover px-2.5 text-xs leading-7 font-medium whitespace-nowrap text-fg shadow-pop max-md:right-3 max-md:!bottom-16"
         :style="vitalityHintBottom != null ? { bottom: `${vitalityHintBottom}px` } : undefined"
       >
         {{ t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) }) }}
@@ -1114,7 +1114,7 @@ useResizeObserver(svgRef, initialFit);
     <p class="sr-only" role="status" aria-live="polite">{{ vitalityHint ? t('gv.orbit.motion', { mode: t(`gv.orbit.motion_${vitalityMode}`) }) : '' }}</p>
 
     <!-- Motion and zoom controls; a row on phones, where a column of 44 px buttons covered the map height -->
-    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md bg-surface shadow-pop max-md:flex-row">
+    <div class="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-md bg-popover shadow-pop max-md:flex-row">
       <button
         v-if="problemIds.length && !editing"
         type="button"
@@ -1179,7 +1179,7 @@ useResizeObserver(svgRef, initialFit);
         </Button>
         <div
           v-if="hiddenListOpen"
-          class="absolute top-full right-0 mt-1.5 w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-line-strong bg-surface p-2 shadow-pop"
+          class="absolute top-full right-0 mt-1.5 w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-line-strong bg-popover p-2 shadow-pop"
           @pointerdown.stop
         >
           <p class="px-1.5 pt-0.5 text-xs font-semibold text-fg">{{ t('gv.orbit.hidden_title') }}</p>
@@ -1204,7 +1204,7 @@ useResizeObserver(svgRef, initialFit);
 
     <p
       v-if="editing && !selectedLink && !selectedDevice"
-      class="absolute bottom-3 left-3 z-10 flex max-w-md items-start gap-2 rounded-md border border-line bg-surface/95 px-3 py-2 text-xs text-fg-muted shadow-pop backdrop-blur"
+      class="absolute bottom-3 left-3 z-10 flex max-w-md items-start gap-2 rounded-md border border-line bg-popover/95 px-3 py-2 text-xs text-fg-muted shadow-pop backdrop-blur"
     >
       <MousePointer2 class="mt-0.5 size-3.5 shrink-0 text-accent-text" aria-hidden="true" />
       {{ t('gv.plan.edit_hint') }}

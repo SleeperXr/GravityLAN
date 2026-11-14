@@ -114,7 +114,7 @@ const ports = computed(() => {
       </button>
     </PopoverTrigger>
     <PopoverPortal>
-      <PopoverContent :side-offset="6" :collision-padding="12" class="z-50 w-80 max-w-[calc(100vw-1.5rem)] rounded-lg border border-line bg-surface p-4 shadow-pop">
+      <PopoverContent :side-offset="6" :collision-padding="12" class="z-50 w-80 max-w-[calc(100vw-1.5rem)] rounded-lg border border-line bg-popover p-4 shadow-pop">
         <PopoverArrow class="fill-[var(--gl-surface)] stroke-[var(--gl-line)]" />
         <div class="flex items-start gap-2 max-md:flex-wrap">
           <div class="min-w-0 flex-1 max-md:basis-full">

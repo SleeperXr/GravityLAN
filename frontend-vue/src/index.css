@@ -29,6 +29,9 @@
   --color-control-hover: var(--gl-control-hover);
   --color-line: var(--gl-line);
   --color-line-strong: var(--gl-line-strong);
+  --color-popover: var(--gl-popover);
+  --color-hover: var(--gl-hover);
+  --color-field-line: var(--gl-field-line);
   --color-fg: var(--gl-fg);
   --color-fg-muted: var(--gl-fg-muted);
   --color-fg-subtle: var(--gl-fg-subtle);
@@ -43,6 +46,8 @@
   --color-accent-text: var(--gl-accent-text);
   --color-info: var(--gl-info);
   --color-info-text: var(--gl-info-text);
+  --color-maint: var(--gl-maint);
+  --color-maint-text: var(--gl-maint-text);
   --color-warn: var(--gl-warn);
   --color-warn-text: var(--gl-warn-text);
   --color-danger: var(--gl-danger);
@@ -76,6 +81,16 @@
   --gl-control-hover: #1d232d;
   --gl-line: #1d232c;
   --gl-line-strong: #2b323d;
+  /*
+   * Popover: what floats without a dimmed backdrop (menus, popovers, tooltips, toasts, map panels),
+   * a step above the cards it covers. Dialogs and sheets keep `surface`: their backdrop already
+   * separates them, and their sub-cards sit on `raised`.
+   */
+  --gl-popover: #181d25;
+  /* Row and menu-item hover; dim text on it still reaches 4.5:1 */
+  --gl-hover: var(--gl-control-hover);
+  /* Border of inputs, selects and text areas: 3:1 against field, card and popover (WCAG 1.4.11) */
+  --gl-field-line: #646d7a;
   --gl-fg: #eef1f5;
   --gl-fg-muted: #a3adbb;
   --gl-fg-subtle: #7f8a99;
@@ -95,8 +110,14 @@
   --gl-danger-fg: #2a0608;
   --gl-danger-text: #ff8f8f;
   --gl-neutral-dot: #6b7686;
-  /* Fills of data marks (meters, availability strips); the state colours unless a theme softens them */
-  --gl-mark-ok: var(--gl-accent);
+  /* Maintenance: pending but not urgent (an agent update is available). The info hue, so amber stays for what needs attention */
+  --gl-maint: var(--gl-info);
+  --gl-maint-text: var(--gl-info-text);
+  /*
+   * Fills of data marks (meters, availability strips). The normal range rests in a muted tone, so a
+   * page of healthy bars stays quiet and a bar that crosses its threshold is the one that shows.
+   */
+  --gl-mark-ok: #588b87;
   --gl-mark-warn: var(--gl-warn);
   --gl-mark-danger: var(--gl-danger);
   /* Orbit map: its ground and how strongly the orbit rings show (resting / inspected hub) */
@@ -145,6 +166,9 @@
   --gl-control-hover: #e9ecf0;
   --gl-line: #d5dae1;
   --gl-line-strong: #b8bfc9;
+  --gl-popover: #fbfcfd;
+  --gl-hover: #e4e8ed;
+  --gl-field-line: #747b83;
   --gl-fg: #10141b;
   --gl-fg-muted: #434d5b;
   --gl-fg-subtle: #556070;
@@ -173,8 +197,9 @@
   --gl-danger-text: #9e1b29;
   --gl-neutral-dot: #a3aab5;
 
-  /* Softer than the button and text tones: a table full of bars should not be the loudest thing on the page */
-  --gl-mark-ok: #2fa38d;
+  /* Softer than the button and text tones: a table full of bars should not be the loudest thing on the page.
+     The normal range rests like in the night theme and reaches 3:1 against the meter track */
+  --gl-mark-ok: #528581;
   --gl-mark-warn: #e9a23b;
   --gl-mark-danger: #e25563;
 
@@ -209,6 +234,8 @@
   --gl-control-hover: #1f2338;
   --gl-line: #1f2a44;
   --gl-line-strong: #35508f;
+  --gl-popover: #181c2a;
+  --gl-field-line: #5d70b3;
   --gl-fg: #f5f7ff;
   --gl-fg-muted: #a9e4ff;
   --gl-fg-subtle: #8fa8ff;
@@ -226,6 +253,8 @@
   --gl-danger-fg: #2b0010;
   --gl-danger-text: #ff7d9f;
   --gl-neutral-dot: #6d7bb5;
+  /* Aurora keeps its neon marks: the colour sits on the things themselves */
+  --gl-mark-ok: var(--gl-accent);
 
   --gl-badge: color-mix(in oklab, #ff3dbb 14%, var(--gl-surface));
   --gl-badge-text: #ff8fd6;
