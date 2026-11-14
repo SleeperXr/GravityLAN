@@ -43,3 +43,15 @@ To verify that GravityUI builds and compiles without TypeScript errors:
    ```bash
    npm run typecheck
    ```
+
+## Running the Browser Smoke Tests
+
+Two Playwright tests in `frontend-vue/e2e/` walk a fresh install through the setup wizard and sign in and out. They start the demo backend (`scripts/dev_demo.py --fresh`: no scans, no SSH, 127.0.0.1 only) and the Vite dev server themselves, and stop if port 8000 or 5174 is already in use, so they never touch a real instance. CI runs them in the `e2e` job.
+
+```bash
+cd frontend-vue
+npx playwright install chromium   # once
+GRAVITYLAN_E2E_PYTHON=../.venv/bin/python npm run test:e2e
+```
+
+`GRAVITYLAN_E2E_PYTHON` names a Python with the backend dependencies (default: `python`).

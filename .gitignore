@@ -262,3 +262,7 @@ antigravity_key*
 
 # Scratch directory of docker-compose-test.smb.yml
 smb-share/
+
+# Playwright smoke tests (frontend-vue/e2e)
+frontend-vue/test-results/
+frontend-vue/playwright-report/
