@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { LogOut, Monitor, Moon, Sparkles, Sun } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
+import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui';
+import { ChevronUp, LogOut } from 'lucide-vue-next';
 import { api } from '@/api/client';
-import { useTheme, type ThemePreference } from '@/composables/useTheme';
+import { useTheme } from '@/composables/useTheme';
+import { themeInfo } from '@/lib/themes';
+import ThemePicker from '@/components/settings/ThemePicker.vue';
+import ThemeSwatch from '@/components/settings/ThemeSwatch.vue';
 import { locale, setLocale, t, type Locale } from '@/i18n';
 
-/** Theme, language, switch to the React UI and sign-out: shared by sidebar footer and phone menu. */
-const { preference, setPreference } = useTheme();
-
-const themes = computed<{ value: ThemePreference; label: string; icon: typeof Sun }[]>(() => [
-  { value: 'system', label: t('gv.theme.system'), icon: Monitor },
-  { value: 'light', label: t('gv.theme.light'), icon: Sun },
-  { value: 'dark', label: t('gv.theme.dark'), icon: Moon },
-  { value: 'aurora', label: t('gv.theme.aurora'), icon: Sparkles },
-]);
+/** Design menu, language and sign-out: shared by sidebar footer and phone menu. */
+const { preference, resolved } = useTheme();
+const designOpen = ref(false);
+const currentLabel = computed(() => (preference.value === 'system' ? `${t('gv.theme.system')} · ${t(themeInfo(resolved.value).label)}` : t(themeInfo(resolved.value).label)));
 const locales: { value: Locale; label: string }[] = [
   { value: 'de', label: 'DE' },
   { value: 'en', label: 'EN' },
@@ -27,22 +26,23 @@ async function logout() {
 <template>
   <div class="space-y-2">
     <div class="flex gap-2">
-      <div role="radiogroup" :aria-label="t('gv.theme.label')" class="flex flex-1 rounded-md border border-line bg-sunken p-0.5">
-        <button
-          v-for="opt in themes"
-          :key="opt.value"
-          type="button"
-          role="radio"
-          :aria-checked="preference === opt.value"
-          :aria-label="opt.label"
-          :title="opt.label"
-          class="flex h-8 flex-1 items-center justify-center rounded-[5px] transition-colors"
-          :class="preference === opt.value ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
-          @click="setPreference(opt.value)"
+      <!-- The design menu: one button with the current design, the cards open above it -->
+      <PopoverRoot v-model:open="designOpen">
+        <PopoverTrigger
+          class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-sunken pr-2 pl-1 text-left text-xs transition-colors hover:border-line-strong max-md:h-11"
+          :aria-label="`${t('gv.theme.menu')}: ${currentLabel}`"
         >
-          <component :is="opt.icon" class="size-4" aria-hidden="true" />
-        </button>
-      </div>
+          <ThemeSwatch :preview="themeInfo(resolved).preview" small />
+          <span class="min-w-0 flex-1 truncate font-medium text-fg">{{ currentLabel }}</span>
+          <ChevronUp class="size-3.5 shrink-0 text-fg-subtle" aria-hidden="true" />
+        </PopoverTrigger>
+        <PopoverPortal>
+          <PopoverContent side="top" align="start" :side-offset="8" :collision-padding="12" class="z-50 w-72 rounded-lg border border-line bg-popover p-3 shadow-pop">
+            <p class="mb-2.5 text-sm font-semibold text-fg">{{ t('gv.theme.menu') }}</p>
+            <ThemePicker compact @picked="designOpen = false" />
+          </PopoverContent>
+        </PopoverPortal>
+      </PopoverRoot>
       <div role="radiogroup" :aria-label="t('gv.language')" class="flex rounded-md border border-line bg-sunken p-0.5">
         <button
           v-for="opt in locales"

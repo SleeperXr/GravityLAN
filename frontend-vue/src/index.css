@@ -6,7 +6,7 @@
  * semantic names only, never hex. Line colours (one per subnet/VLAN) live in --line-1 ... --line-10
  * and can be overridden by the user (Settings > Language & appearance). See frontend-vue/DESIGN.md.
  */
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, [data-theme="aurora"], [data-theme="aurora"] *));
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, [data-theme="aurora"], [data-theme="aurora"] *, [data-theme="starlight"], [data-theme="starlight"] *));
 
 @theme {
   --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -48,6 +48,9 @@
   --color-mark-warn: var(--gl-mark-warn);
   --color-mark-danger: var(--gl-mark-danger);
 
+  --color-primary: var(--gl-primary);
+  --color-primary-hover: var(--gl-primary-hover);
+  --color-primary-fg: var(--gl-primary-fg);
   --color-accent: var(--gl-accent);
   --color-accent-hover: var(--gl-accent-hover);
   --color-accent-fg: var(--gl-accent-fg);
@@ -109,6 +112,13 @@
   --gl-accent-hover: #4fd6bb;
   --gl-accent-fg: #03201a;
   --gl-accent-text: #45d6b9;
+  /*
+   * Primary: the main action (primary button). The accent in every theme but Starlight, which
+   * gives the action its own neutral light, so colour is left to state and networks.
+   */
+  --gl-primary: var(--gl-accent);
+  --gl-primary-hover: var(--gl-accent-hover);
+  --gl-primary-fg: var(--gl-accent-fg);
   --gl-info: #5aa9ff;
   --gl-info-text: #8cc3ff;
   --gl-warn: #ffb547;
@@ -166,7 +176,8 @@
   --line-10: #f2856d;
 }
 
-:root[data-theme="light"] {
+:root[data-theme="light"],
+:root[data-theme="paper"] {
   color-scheme: light;
   /* No pure white: a soft grey ground and off-white cards, so a full page does not glare */
   --gl-canvas: #e6e9ee;
@@ -228,6 +239,100 @@
   --line-8: #12a88b;
   --line-9: #2f86e8;
   --line-10: #e0644a;
+}
+
+/*
+ * Paper (Tagkarte): the high-contrast day theme for bright rooms and wall monitors. White cards
+ * on a pale ground, dark ink (body text 18:1, dim text 6.9:1). Builds on the light block above
+ * and keeps its network palette.
+ */
+:root[data-theme="paper"] {
+  --gl-canvas: #f4f6f8;
+  --gl-chrome: #eef0f3;
+  --gl-surface: #ffffff;
+  --gl-raised: #eef0f3;
+  --gl-sunken: #eaedf0;
+  --gl-control: #ffffff;
+  --gl-control-hover: #e5e8ec;
+  --gl-line: #d0d5d9;
+  --gl-line-strong: #a5acb2;
+  --gl-popover: #ffffff;
+  --gl-hover: #e5e8ec;
+  --gl-field-line: #747b83;
+  --gl-fg: #12161d;
+  --gl-fg-muted: #3c434d;
+  --gl-fg-subtle: #545b66;
+  --gl-orbit-canvas: #e6eaef;
+
+  --gl-accent: #007563;
+  --gl-accent-hover: #006252;
+  --gl-accent-fg: #ffffff;
+  --gl-accent-text: #005c4d;
+  --gl-info: #0075d4;
+  --gl-info-text: #0054a5;
+  --gl-warn: #ea9602;
+  --gl-warn-text: #804300;
+  --gl-danger: #d4212d;
+  --gl-danger-fg: #ffffff;
+  --gl-danger-text: #a50d1c;
+  --gl-neutral-dot: #81878d;
+  --gl-mark-ok: #77818c;
+
+  --gl-shadow-card: 0 1px 2px rgb(18 22 29 / 0.06);
+  --gl-shadow-pop: 0 20px 40px -12px rgb(18 22 29 / 0.22), 0 0 0 1px rgb(18 22 29 / 0.08);
+}
+
+/*
+ * Starlight (Sternlicht): an achromatic graphite night. The main action is a warm starlight
+ * white instead of a colour, so colour belongs to state (green, amber, red, blue) and to the
+ * networks alone. Tighter corners. Builds on the night theme and keeps its network palette.
+ */
+:root[data-theme="starlight"] {
+  color-scheme: dark;
+  --gl-canvas: #0b0c0e;
+  --gl-chrome: #060709;
+  --gl-surface: #121416;
+  --gl-raised: #1a1c1e;
+  --gl-sunken: #07080a;
+  --gl-control: #1a1c1e;
+  --gl-control-hover: #25282b;
+  --gl-line: #2a2d2f;
+  --gl-line-strong: #414447;
+  --gl-popover: #1f2224;
+  --gl-hover: #25282b;
+  --gl-field-line: #707377;
+  --gl-fg: #f2f4f5;
+  --gl-fg-muted: #adb1b6;
+  --gl-fg-subtle: #8f949a;
+  --gl-station: #07080a;
+
+  --gl-primary: #f0ebd9;
+  --gl-primary-hover: #fcfaf1;
+  --gl-primary-fg: #13120d;
+  --gl-accent: #5edb81;
+  --gl-accent-hover: #89eb9f;
+  --gl-accent-fg: #062a12;
+  --gl-accent-text: #89eb9f;
+  --gl-info: #55b8f8;
+  --gl-info-text: #91d0fc;
+  --gl-warn: #fcba43;
+  --gl-warn-text: #fcd180;
+  --gl-danger: #ff645f;
+  --gl-danger-fg: #2a0608;
+  --gl-danger-text: #ff9492;
+  --gl-neutral-dot: #757b81;
+  --gl-mark-ok: #6f757b;
+
+  --gl-shadow-card: none;
+  --gl-shadow-pop: 0 24px 48px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --gl-orbit-glow-1: rgb(240 235 217 / 0.035);
+  --gl-orbit-glow-2: rgb(85 184 248 / 0.03);
+  --gl-orbit-glow-3: rgb(94 219 129 / 0.025);
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
 }
 
 /*

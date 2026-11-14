@@ -10,7 +10,18 @@
       "system": "System",
       "light": "Light",
       "dark": "Dark",
-      "aurora": "Aurora"
+      "aurora": "Aurora",
+      "menu": "Design",
+      "starlight": "Starlight",
+      "paper": "Day map",
+      "group_dark": "Dark designs",
+      "group_light": "Light designs",
+      "system_desc": "Light or dark, like the operating system",
+      "dark_desc": "Night network, the default",
+      "starlight_desc": "Graphite, actions in starlight white",
+      "aurora_desc": "Neon night, lots of colour",
+      "light_desc": "Soft grey, no glaring white",
+      "paper_desc": "White cards, high contrast"
     },
     "state": {
       "load_failed": "Could not load data",

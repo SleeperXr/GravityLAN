@@ -1,22 +1,20 @@
 /**
- * Colour theme for GravityUI. Dark (night network) is the default, aurora is its more colourful
- * sibling; "system" follows the OS between light and dark.
+ * Colour theme for GravityUI. Dark (night network) is the default; the designs themselves are
+ * listed in lib/themes.ts. "system" follows the OS between light and dark.
  */
 import { computed, ref, watch } from 'vue';
+import { THEMES, isThemeId, themeInfo, type ThemeId } from '@/lib/themes';
 
-export type ThemePreference = 'system' | 'light' | 'dark' | 'aurora';
-export type ResolvedTheme = Exclude<ThemePreference, 'system'>;
+export type ThemePreference = 'system' | ThemeId;
+export type ResolvedTheme = ThemeId;
 
 const STORAGE_KEY = 'gravityui.theme';
 const media = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: light)') : null;
 
-/** Browser bar colour per theme: the theme's --gl-canvas (white for the daytime map) */
-const BROWSER_BAR: Record<ResolvedTheme, string> = { dark: '#0c0f14', light: '#ffffff', aurora: '#08090d' };
-
 function readPreference(): ThemePreference {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored === 'light' || stored === 'system' || stored === 'aurora' ? stored : 'dark';
+    return stored === 'system' || isThemeId(stored) ? stored : 'dark';
   } catch {
     return 'dark';
   }
@@ -35,7 +33,7 @@ const resolved = computed<ResolvedTheme>(() =>
 function apply(theme: ResolvedTheme) {
   const root = document.documentElement;
   root.setAttribute('data-theme', theme);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', BROWSER_BAR[theme]);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeInfo(theme).browserBar);
 }
 
 watch(resolved, apply, { immediate: true });
@@ -51,9 +49,9 @@ export function useTheme() {
     }
   }
 
-  /** dark -> aurora -> light -> system -> dark */
+  /** Every design in menu order, then "system", then round again */
   function cycle() {
-    const order: ThemePreference[] = ['dark', 'aurora', 'light', 'system'];
+    const order: ThemePreference[] = [...THEMES.map((t) => t.id), 'system'];
     setPreference(order[(order.indexOf(preference.value) + 1) % order.length]);
   }
 
