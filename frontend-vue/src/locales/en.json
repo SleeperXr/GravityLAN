@@ -799,7 +799,7 @@
       "sync": "Sync now",
       "sync_needs_save": "Enable and save the integration first.",
       "synced_title": "Sync finished",
-      "synced_body": "Read {{guests}} guests, used {{addresses}} addresses, renamed {{updated_devices}} devices. Skipped: {{skipped}}, conflicts: {{conflicts}}, outside the scan networks: {{outside}}.",
+      "synced_body": "Read {{guests}} guests, used {{addresses}} addresses, renamed {{updated_devices}} devices, hung {{attached}} on their node. Skipped: {{skipped}}, conflicts: {{conflicts}}, outside the scan networks: {{outside}}.",
       "last_sync": "Last sync",
       "disconnect": "Remove connection",
       "disconnect_title": "Remove the Proxmox connection?",
@@ -821,7 +821,11 @@
         "add_one": "Add {{name}} ({{ip}}) to the dashboard",
         "add_all_title": "Add {{count}} guests to the dashboard?",
         "add_all_message": "Each address becomes a device of its own, named after the guest. The scan then works out online state and services.",
-        "added": "Added to the dashboard ({{count}}): {{names}}"
+        "added": "Added to the dashboard ({{count}}): {{names}}",
+        "on_node": "on {{node}}",
+        "nodes_title": "Nodes",
+        "node_device": "→ device \"{{device}}\", its VMs and containers hang on it as physical host",
+        "node_missing": "is not a device on the dashboard – its guests get no physical host. Add the node to the dashboard and the next sync assigns them."
       },
       "status": {
         "renamed": "device renamed",

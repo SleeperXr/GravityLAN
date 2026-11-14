@@ -799,7 +799,7 @@
       "sync": "Jetzt abgleichen",
       "sync_needs_save": "Erst die Anbindung aktivieren und speichern.",
       "synced_title": "Abgleich fertig",
-      "synced_body": "{{guests}} Gäste gelesen, {{addresses}} Adressen übernommen, {{updated_devices}} Geräte umbenannt. Übersprungen: {{skipped}}, Konflikte: {{conflicts}}, außerhalb der Scan-Netze: {{outside}}.",
+      "synced_body": "{{guests}} Gäste gelesen, {{addresses}} Adressen übernommen, {{updated_devices}} Geräte umbenannt, {{attached}} an ihren Knoten gehängt. Übersprungen: {{skipped}}, Konflikte: {{conflicts}}, außerhalb der Scan-Netze: {{outside}}.",
       "last_sync": "Letzter Abgleich",
       "disconnect": "Verbindung entfernen",
       "disconnect_title": "Proxmox-Verbindung entfernen?",
@@ -821,7 +821,11 @@
         "add_one": "{{name}} ({{ip}}) zum Dashboard hinzufügen",
         "add_all_title": "{{count}} Gäste zum Dashboard hinzufügen?",
         "add_all_message": "Jede Adresse wird ein eigenes Gerät, benannt nach dem Gast. Online-Status und Dienste ermittelt danach der Scan.",
-        "added": "Zum Dashboard hinzugefügt ({{count}}): {{names}}"
+        "added": "Zum Dashboard hinzugefügt ({{count}}): {{names}}",
+        "on_node": "auf {{node}}",
+        "nodes_title": "Knoten",
+        "node_device": "→ Gerät „{{device}}“, VMs und Container hängen als physischer Host daran",
+        "node_missing": "ist kein Gerät auf dem Dashboard – seine Gäste bekommen keinen physischen Host. Den Knoten zum Dashboard hinzufügen, dann ordnet der nächste Abgleich zu."
       },
       "status": {
         "renamed": "Gerät umbenannt",
