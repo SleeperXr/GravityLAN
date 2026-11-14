@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.proxmox import ProxmoxIntegration
 from app.services.audit import record as audit
 from app.services.cache_service import discovery_cache
+from app.services import proxmox as proxmox_service
 from app.services.proxmox import ProxmoxError, sync_lock, sync_proxmox, write_lock
 from app.services.secret_vault import VaultError, vault
 from app.services.stepup import require_step_up
@@ -85,6 +86,8 @@ async def save_settings(body: ProxmoxSettings, request: Request, db: AsyncSessio
         if not connection:
             connection = ProxmoxIntegration(id=1)
             db.add(connection)
+        if secret or body.url != connection.url or body.token_id != connection.token_id:
+            proxmox_service.clear_report()  # describes another server or token now
         if secret:
             try:
                 connection.encrypted_secret = vault.encrypt(secret)
@@ -113,7 +116,14 @@ async def disconnect(request: Request, db: AsyncSession = Depends(get_db)):
         await db.delete(connection)
         await db.commit()
         discovery_cache.invalidate()
+        proxmox_service.clear_report()
     await audit(request, "proxmox.delete", target=host)
+
+
+@router.get("/report")
+async def last_sync_report():
+    """What the last sync found per guest; null until a sync ran since the start."""
+    return {"report": proxmox_service.last_report}
 
 
 @router.post("/sync")

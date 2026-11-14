@@ -786,7 +786,7 @@
       "url": "API address",
       "url_hint": "Direct HTTPS address of the server or a cluster node; redirects are not followed.",
       "token_id": "Token ID",
-      "token_id_hint": "In the form user@realm!token-name. The token needs read access to the guests.",
+      "token_id_hint": "In the form user@realm!token-name. If \"Privilege Separation\" is ticked for the token (the default), it needs its own permission: Datacenter → Permissions → API Token Permission, path /, role PVEAuditor. Otherwise it sees no guests. Or untick the separation – then the token has all rights of its user.",
       "secret": "Token secret",
       "secret_hint": "Stored encrypted and never shown again.",
       "secret_stored": "A secret is stored. Leave empty to keep it.",
@@ -799,13 +799,39 @@
       "sync": "Sync now",
       "sync_needs_save": "Enable and save the integration first.",
       "synced_title": "Sync finished",
-      "synced_body": "Read {{guests}} guests with {{addresses}} addresses, renamed {{updated_devices}} devices. Skipped: {{skipped}}, address conflicts: {{conflicts}}.",
+      "synced_body": "Read {{guests}} guests, used {{addresses}} addresses, renamed {{updated_devices}} devices. Skipped: {{skipped}}, conflicts: {{conflicts}}, outside the scan networks: {{outside}}.",
       "last_sync": "Last sync",
       "disconnect": "Remove connection",
       "disconnect_title": "Remove the Proxmox connection?",
       "disconnect_message": "The address and the encrypted token are deleted. Names already taken over stay.",
       "disconnected": "Proxmox connection removed.",
-      "read_only_note": "VMs report their addresses only through a running QEMU guest agent; containers need none. An import never marks a device online, and your own names stay."
+      "read_only_note": "VMs report their addresses only through a running QEMU guest agent; containers need none. An import never marks a device online, and your own names stay.",
+      "no_guests": "Proxmox reported no guests. Usually the token lacks permissions: with \"Privilege Separation\" it needs its own API token permission (path /, role PVEAuditor); otherwise Proxmox returns an empty list instead of an error.",
+      "report": {
+        "title": "Last sync",
+        "guests": "{{count}} guests",
+        "conflicts": "{{count}} conflicts",
+        "skipped": "{{count}} skipped",
+        "conflicts_title": "Address conflicts",
+        "conflicts_hint": "Several guests report these addresses. GravityLAN leaves them out instead of guessing a name.",
+        "guests_title": "Guests",
+        "skipped_title": "Skipped",
+        "outside_hint": "{{count}} addresses are outside the scan networks ({{subnets}}), e.g. Docker bridges or IPv6. They are only listed, not used."
+      },
+      "status": {
+        "renamed": "device renamed",
+        "device": "device, name kept",
+        "host": "discovered host",
+        "new_host": "new discovered host",
+        "conflict": "conflict",
+        "outside": "outside the scan networks"
+      },
+      "reason": {
+        "vm_stopped": "VM stopped – no addresses without a running guest agent",
+        "unreadable": "not readable – no guest agent or no permission on this guest",
+        "no_address": "no usable address (e.g. a stopped container with DHCP)",
+        "incomplete": "reported incompletely by Proxmox"
+      }
     }
   }
 }

@@ -27,6 +27,15 @@ write_lock = asyncio.Lock()
 
 DISCOVERY_TIMEOUT_SECONDS = 120
 
+# What the last sync found, for Settings > Proxmox VE > Last sync. Kept in memory only:
+# the next sync (at most five minutes away) rebuilds it, so no table or migration is needed.
+last_report: dict | None = None
+
+
+def clear_report() -> None:
+    global last_report
+    last_report = None
+
 
 class ProxmoxError(Exception):
     """A safe, credential-free error suitable for the settings UI."""
@@ -37,6 +46,17 @@ class Guest:
     identity: str  # "qemu/100" or "lxc/101"
     name: str
     addresses: list[str]
+
+
+@dataclass
+class Skipped:
+    identity: str
+    name: str
+    # vm_stopped: a stopped VM has no guest agent to ask
+    # unreadable: the agent or interface list could not be read (no agent, no permission)
+    # no_address: read fine, but no usable address (e.g. a stopped container with DHCP)
+    # incomplete: Proxmox listed the guest without a name, node or ID
+    reason: str
 
 
 def _inventory(connection: ProxmoxIntegration) -> dict:
@@ -104,42 +124,43 @@ class ProxmoxClient:
                 if key.startswith("net") and key[3:].isdigit() and isinstance(value, str)
                 for part in value.split(",") if part.startswith(("ip=", "ip6="))]
 
-    async def discover(self) -> tuple[list[Guest], int]:
-        """All VMs and containers with at least one usable address, and the number skipped."""
+    async def discover(self) -> tuple[list[Guest], list[Skipped]]:
+        """All VMs and containers with at least one usable address, and the ones skipped with the reason."""
         resources = await self.get("cluster/resources?type=vm")
         if not isinstance(resources, list):
             raise ProxmoxError("Proxmox returned an invalid guest list.")
         semaphore = asyncio.Semaphore(4)
 
-        async def read_guest(resource) -> tuple[Guest | None, bool]:
+        async def read_guest(resource) -> Guest | Skipped | None:
             if not isinstance(resource, dict) or resource.get("type") not in ("qemu", "lxc") or resource.get("template"):
-                return None, False
-            name = str(resource.get("name") or "").strip()[:100]
-            node = resource.get("node")
-            vmid = resource.get("vmid")
-            if not name or not node or not isinstance(vmid, int):
-                return None, True
+                return None
             kind = resource["type"]
+            vmid = resource.get("vmid")
+            node = resource.get("node")
+            name = str(resource.get("name") or "").strip()[:100]
+            identity = f"{kind}/{vmid}"
+            if not name or not node or not isinstance(vmid, int):
+                return Skipped(identity, name, "incomplete")
             running = resource.get("status") == "running"
             # A stopped VM has no guest agent to ask; never reuse stale agent data.
             if kind == "qemu" and not running:
-                return None, True
+                return Skipped(identity, name, "vm_stopped")
             prefix = f"nodes/{quote(str(node), safe='')}/{kind}/{vmid}"
             async with semaphore:
                 try:
                     addresses = await self._guest_addresses(prefix, kind, running)
                 except (ProxmoxError, TypeError, AttributeError, KeyError):
                     # A missing guest agent or per-guest ACL must not hide the other guests
-                    return None, True
+                    return Skipped(identity, name, "unreadable")
             ips = sorted({ip for value in addresses if isinstance(value, str) and (ip := usable_ip(value))})
-            return Guest(f"{kind}/{vmid}", name, ips), not ips
+            return Guest(identity, name, ips) if ips else Skipped(identity, name, "no_address")
 
         try:
             results = await asyncio.wait_for(asyncio.gather(*(read_guest(r) for r in resources)),
                                              timeout=DISCOVERY_TIMEOUT_SECONDS)
         except TimeoutError as exc:
             raise ProxmoxError("Proxmox discovery timed out. Check guest agents and network access.") from exc
-        return [g for g, _ in results if g and g.addresses], sum(int(skipped) for _, skipped in results)
+        return [r for r in results if isinstance(r, Guest)], [r for r in results if isinstance(r, Skipped)]
 
     async def __aenter__(self):
         return self
@@ -148,44 +169,71 @@ class ProxmoxClient:
         await self.client.aclose()
 
 
-def _address_map(guests: list[Guest]) -> tuple[dict, int]:
-    """IP -> {name, guest}; an address two guests report is left out instead of guessed."""
-    mapping: dict[str, dict] = {}
-    conflicts: set[str] = set()
-    for guest in guests:
-        for ip in guest.addresses:
-            entry = {"name": guest.name, "guest": guest.identity}
-            if ip in mapping and mapping[ip] != entry:
-                conflicts.add(ip)
-            mapping[ip] = entry
-    for ip in conflicts:
-        mapping.pop(ip)
-    return mapping, len(conflicts)
+def _networks(subnets: list[str] | None):
+    if subnets is None:
+        return None
+    nets = []
+    for cidr in subnets:
+        try:
+            nets.append(ipaddress.ip_network(cidr, strict=False))
+        except ValueError:
+            continue
+    return nets
+
+
+def _in_networks(ip: str, nets) -> bool:
+    addr = ipaddress.ip_address(ip)
+    return any(addr.version == net.version and addr in net for net in nets)
 
 
 def _is_automatic(name: str | None, automatic: set) -> bool:
     return not name or is_ip_like(name) or name in automatic
 
 
-async def apply_guests(db, connection: ProxmoxIntegration, guests: list[Guest]) -> dict:
-    """Name devices and discovered hosts by exact IP.
+async def apply_guests(db, connection: ProxmoxIntegration, guests: list[Guest],
+                       subnets: list[str] | None = None, skipped: list[Skipped] | None = None) -> dict:
+    """Name devices and discovered hosts by exact IP and describe what happened.
 
-    Only names that were never chosen by a person are replaced: a device's display name that
-    is still its IP, hostname or the previous guest name, and a discovered host without a DNS
-    name. The scanner keeps owning ``hostname`` and reachability (online state, last_seen).
+    Only addresses in the scan subnets (or of an existing device) are used; container
+    bridges such as 172.17.0.1 or IPv6 addresses outside them are only listed. An address
+    two guests report is left out instead of guessed. Only names never chosen by a person
+    are replaced: a display name that is still the IP, hostname or previous guest name, and
+    the hostname of a discovered host without a DNS name. The scanner keeps owning
+    ``hostname`` and reachability (online state, last_seen).
     """
     previous = _inventory(connection)
-    mapping, conflicts = _address_map(guests)
-
+    nets = _networks(subnets)
     devices = {d.ip: d for d in (await db.execute(select(Device))).scalars()}
     discovered = {d.ip: d for d in (await db.execute(select(DiscoveredHost))).scalars()}
+
+    statuses: dict[tuple[str, str], str] = {}  # (guest, ip) -> status for the report
+    owners: dict[str, list[Guest]] = {}
+    for guest in guests:
+        for ip in guest.addresses:
+            if nets is not None and ip not in devices and not _in_networks(ip, nets):
+                statuses[(guest.identity, ip)] = "outside"
+            else:
+                owners.setdefault(ip, []).append(guest)
+
+    conflicts = []
+    mapping: dict[str, dict] = {}
+    for ip, owned_by in owners.items():
+        if len({g.identity for g in owned_by}) > 1:
+            conflicts.append({"ip": ip, "guests": sorted({g.name for g in owned_by})})
+            for g in owned_by:
+                statuses[(g.identity, ip)] = "conflict"
+        else:
+            mapping[ip] = {"name": owned_by[0].name, "guest": owned_by[0].identity}
+
     renamed = 0
     for ip, entry in mapping.items():
         name = entry["name"]
         old_entry = previous.get(ip) if isinstance(previous.get(ip), dict) else {}
         old_name = old_entry.get("name") if old_entry.get("guest") == entry["guest"] else None
         device = devices.get(ip)
+        status = "host"
         if device:
+            status = "device"
             automatic = {device.ip, device.hostname, (device.hostname or "").split(".")[0], old_name} - {None, ""}
             if device.display_name != name and _is_automatic(device.display_name, automatic):
                 # Explicit last_seen suppresses the onupdate timestamp: a name from Proxmox
@@ -193,22 +241,39 @@ async def apply_guests(db, connection: ProxmoxIntegration, guests: list[Guest]) 
                 await db.execute(update(Device).where(Device.id == device.id).values(
                     display_name=name, last_seen=device.last_seen))
                 renamed += 1
+                status = "renamed"
         host = discovered.get(ip)
         if host is None:
             db.add(DiscoveredHost(ip=ip, hostname=name, is_online=False, is_monitored=device is not None))
+            status = "new_host" if not device else status
         elif host.hostname != name and _is_automatic(host.hostname, {old_name} - {None}):
             await db.execute(update(DiscoveredHost).where(DiscoveredHost.id == host.id).values(
                 hostname=name, last_seen=host.last_seen))
         # custom_name stays the user's; a running guest is not marked reachable
+        statuses[(entry["guest"], ip)] = status
 
+    now = datetime.now(timezone.utc).isoformat()
     connection.inventory = json.dumps(mapping)
-    connection.last_sync = datetime.now(timezone.utc).isoformat()
+    connection.last_sync = now
     connection.last_error = None
     await db.commit()
     dashboard_cache.invalidate_all()
     discovery_cache.invalidate()
     topology_cache.invalidate()
-    return {"guests": len(guests), "addresses": len(mapping), "updated_devices": renamed, "conflicts": conflicts}
+
+    global last_report
+    last_report = {
+        "synced_at": now,
+        "subnets": subnets,
+        "guests": [{"guest": g.identity, "name": g.name,
+                    "addresses": [{"ip": ip, "status": statuses.get((g.identity, ip), "host")} for ip in g.addresses]}
+                   for g in sorted(guests, key=lambda g: g.name.lower())],
+        "skipped": [{"guest": s.identity, "name": s.name, "reason": s.reason} for s in (skipped or [])],
+        "conflicts": sorted(conflicts, key=lambda c: c["ip"]),
+    }
+    outside = sum(1 for s in statuses.values() if s == "outside")
+    return {"guests": len(guests), "addresses": len(mapping), "updated_devices": renamed,
+            "conflicts": len(conflicts), "outside": outside}
 
 
 def _target(connection: ProxmoxIntegration) -> tuple:
@@ -220,6 +285,13 @@ async def _reload(db) -> ProxmoxIntegration | None:
     result = await db.execute(select(ProxmoxIntegration).where(ProxmoxIntegration.id == 1)
                               .execution_options(populate_existing=True))
     return result.scalar_one_or_none()
+
+
+async def _scan_subnets(db) -> list[str]:
+    """The networks GravityLAN scans: the enabled subnets, else the auto-detected local ones."""
+    from app.scanner.subnets import get_enabled_subnets
+    from app.scanner.utils import get_auto_scan_subnets
+    return await get_enabled_subnets(db) or get_auto_scan_subnets()
 
 
 async def sync_proxmox(db) -> dict:
@@ -243,10 +315,11 @@ async def sync_proxmox(db) -> dict:
                     await db.commit()
             raise ProxmoxError(message) from exc
 
+        subnets = await _scan_subnets(db)
         async with write_lock:
             connection = await _reload(db)
             if not connection or _target(connection) != target:
                 raise ProxmoxError("The Proxmox settings changed during the sync. Synchronize again.")
-            result = await apply_guests(db, connection, guests)
-        result["skipped"] = skipped
+            result = await apply_guests(db, connection, guests, subnets, skipped)
+        result["skipped"] = len(skipped)
         return result

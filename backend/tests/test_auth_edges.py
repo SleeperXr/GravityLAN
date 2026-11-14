@@ -254,3 +254,16 @@ async def test_me_reports_the_read_only_defaults_for_a_token_without_scopes(db):
     assert await auth.auth_me("api_token:reader", db) == {
         "scopes": ["devices:read", "topology:read", "network:read", "agent:read", "settings:read", "backup:read", "scanner:read"]
     }
+
+
+@pytest.mark.asyncio
+async def test_expired_session_cookie_after_a_restart_is_info_not_a_warning(caplog):
+    """Sessions live in memory: after every restart an open tab reconnects with its old cookie."""
+    ws = _Ws()
+    with caplog.at_level(logging.INFO, logger="app.api.auth"):
+        result = await auth._ws_session_cookie(ws, "cookie-from-before-the-restart")
+
+    assert result == {"authenticated": False}
+    assert ws.closed == (4003, "Session expired or invalid")
+    records = [r for r in caplog.records if "session cookie expired or unknown" in r.getMessage()]
+    assert [r.levelno for r in records] == [logging.INFO]

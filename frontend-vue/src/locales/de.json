@@ -786,7 +786,7 @@
       "url": "API-Adresse",
       "url_hint": "Direkte HTTPS-Adresse des Servers oder eines Cluster-Knotens; Weiterleitungen werden nicht befolgt.",
       "token_id": "Token-ID",
-      "token_id_hint": "In der Form benutzer@realm!token-name. Der Token braucht Leserechte auf die Gäste.",
+      "token_id_hint": "In der Form benutzer@realm!token-name. Ist beim Token „Privilege Separation“ angehakt (Standard), braucht er eigene Rechte: Datacenter → Permissions → API Token Permission, Pfad /, Rolle PVEAuditor. Sonst sieht er keine Gäste. Alternativ die Trennung abschalten – dann hat der Token alle Rechte seines Benutzers.",
       "secret": "Token-Secret",
       "secret_hint": "Wird verschlüsselt gespeichert und nie wieder angezeigt.",
       "secret_stored": "Ein Secret ist gespeichert. Leer lassen, um es zu behalten.",
@@ -799,13 +799,39 @@
       "sync": "Jetzt abgleichen",
       "sync_needs_save": "Erst die Anbindung aktivieren und speichern.",
       "synced_title": "Abgleich fertig",
-      "synced_body": "{{guests}} Gäste mit {{addresses}} Adressen gelesen, {{updated_devices}} Geräte umbenannt. Übersprungen: {{skipped}}, Adresskonflikte: {{conflicts}}.",
+      "synced_body": "{{guests}} Gäste gelesen, {{addresses}} Adressen übernommen, {{updated_devices}} Geräte umbenannt. Übersprungen: {{skipped}}, Konflikte: {{conflicts}}, außerhalb der Scan-Netze: {{outside}}.",
       "last_sync": "Letzter Abgleich",
       "disconnect": "Verbindung entfernen",
       "disconnect_title": "Proxmox-Verbindung entfernen?",
       "disconnect_message": "Adresse und verschlüsselter Token werden gelöscht. Bereits übernommene Namen bleiben erhalten.",
       "disconnected": "Proxmox-Verbindung entfernt.",
-      "read_only_note": "VMs liefern ihre Adressen nur über einen laufenden QEMU Guest Agent; Container brauchen keinen. Ein Import setzt kein Gerät auf online, und eigene Namen bleiben erhalten."
+      "read_only_note": "VMs liefern ihre Adressen nur über einen laufenden QEMU Guest Agent; Container brauchen keinen. Ein Import setzt kein Gerät auf online, und eigene Namen bleiben erhalten.",
+      "no_guests": "Proxmox hat keine Gäste gemeldet. Meist fehlen dem Token die Rechte: Mit „Privilege Separation“ braucht er eine eigene API-Token-Berechtigung (Pfad /, Rolle PVEAuditor), sonst liefert Proxmox eine leere Liste statt eines Fehlers.",
+      "report": {
+        "title": "Letzter Abgleich",
+        "guests": "{{count}} Gäste",
+        "conflicts": "{{count}} Konflikte",
+        "skipped": "{{count}} übersprungen",
+        "conflicts_title": "Adresskonflikte",
+        "conflicts_hint": "Diese Adressen melden mehrere Gäste. GravityLAN übernimmt sie nicht, statt einen Namen zu raten.",
+        "guests_title": "Gäste",
+        "skipped_title": "Übersprungen",
+        "outside_hint": "{{count}} Adressen liegen außerhalb der Scan-Netze ({{subnets}}), z. B. Docker-Bridges oder IPv6. Sie werden nur angezeigt, nicht übernommen."
+      },
+      "status": {
+        "renamed": "Gerät umbenannt",
+        "device": "Gerät, Name bleibt",
+        "host": "gefundener Host",
+        "new_host": "neu bei gefundenen Hosts",
+        "conflict": "Konflikt",
+        "outside": "außerhalb der Scan-Netze"
+      },
+      "reason": {
+        "vm_stopped": "VM gestoppt – ohne laufenden Guest Agent keine Adressen",
+        "unreadable": "nicht lesbar – kein Guest Agent oder keine Rechte auf diesen Gast",
+        "no_address": "keine nutzbare Adresse (z. B. gestoppter Container mit DHCP)",
+        "incomplete": "unvollständig von Proxmox gemeldet"
+      }
     }
   }
 }
