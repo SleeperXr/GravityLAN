@@ -482,6 +482,7 @@ async def logs_websocket(websocket: WebSocket):
 # and a heuristically cached copy keeps serving the previous release's UI after
 # an update (the version label still looks new because it comes from the API).
 INDEX_HEADERS = {"Cache-Control": "no-cache"}
+NO_CACHE_FILES = frozenset({"index.html", "sw.js", "manifest.webmanifest"})
 GRAVITYUI_PATH = "/frontend-vue/"
 
 
@@ -528,9 +529,11 @@ def _file_in_build(build_dir: Path, full_path: str) -> tuple[str, str | None]:
 
 
 def _build_file_response(path: str) -> FileResponse:
-    # index.html names the hashed bundles, so it must be revalidated on every load
-    headers = INDEX_HEADERS if os.path.basename(path) == "index.html" else None
-    return FileResponse(path, headers=headers)
+    # index.html, sw.js and manifest.webmanifest are unhashed entry files and must be revalidated on every load
+    basename = os.path.basename(path)
+    headers = INDEX_HEADERS if basename in NO_CACHE_FILES else None
+    media_type = "application/manifest+json" if basename.endswith(".webmanifest") else None
+    return FileResponse(path, headers=headers, media_type=media_type)
 
 
 @app.get("/frontend-vue")
