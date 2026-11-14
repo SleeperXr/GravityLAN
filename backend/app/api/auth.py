@@ -633,9 +633,40 @@ def served_over_https(request: Request) -> bool:
     return forwarded.split(",")[0].strip().lower() == "https"
 
 
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
+
+
+def secure_cookie_dropped(request: Request) -> bool:
+    """Whether the browser will throw the session cookie away: Secure flag, but plain HTTP.
+
+    Browsers only store a Secure cookie over HTTPS (localhost excepted), so the login seems
+    to work and the next request is unauthenticated again.
+    """
+    if not settings.secure_cookies or served_over_https(request):
+        return False
+    host = (request.url.hostname or "").lower()
+    return host not in _LOOPBACK_HOSTS and not host.endswith(".localhost")
+
+
+_dropped_cookie_warned = False
+
+
 def warn_if_cookie_insecure(request: Request) -> None:
-    """Log once per process when a session cookie goes out over HTTPS without the Secure flag."""
-    global _insecure_cookie_warned
+    """Log once per process when the session cookie and the connection do not fit together.
+
+    Over HTTPS without the Secure flag the cookie could also travel over plain HTTP; with the
+    flag over plain HTTP the browser drops it and every login bounces back to the login screen.
+    """
+    global _insecure_cookie_warned, _dropped_cookie_warned
+    if secure_cookie_dropped(request):
+        if not _dropped_cookie_warned:
+            _dropped_cookie_warned = True
+            logger.warning(
+                "Session cookie issued with the Secure flag over plain HTTP: browsers drop it, so the login does "
+                "not stick. Open GravityLAN over HTTPS, or set GRAVITYLAN_SECURE_COOKIES=false while it is "
+                "reached over HTTP."
+            )
+        return
     if settings.secure_cookies or _insecure_cookie_warned or not served_over_https(request):
         return
     _insecure_cookie_warned = True
@@ -720,7 +751,8 @@ async def login(
     warn_if_cookie_insecure(request)
     issue_session_cookie(response, request.headers.get("user-agent"))
     await audit(request, "auth.login", actor="session")
-    return {"status": "ok", "message": "Login successful"}
+    # Lets the login screen say why the session will not stick instead of silently showing itself again
+    return {"status": "ok", "message": "Login successful", "secure_cookie_over_http": secure_cookie_dropped(request)}
 
 @router.post("/logout")
 async def logout(request: Request, response: Response):
