@@ -254,6 +254,8 @@ function clearFilters() {
 
 <template>
   <div class="mx-auto max-w-[1800px] space-y-6 px-4 py-5 md:px-8 md:py-7">
+    <!-- Phones: the status line comes before search and actions, the quick glance is what a phone is for -->
+    <NetworkPulse v-if="isMobile && store.loaded && store.totalCount > 0 && !editMode" :devices="store.devices" :updated="store.lastUpdated" :failed="!!store.error" @open="(d) => openEditor(d)" />
     <PageHeader :title="t('sidebar.dashboard')" :description="t('dashboard.devices_sections', { devices: store.totalCount, groups: store.groups.length })">
       <template v-if="!editMode">
         <!-- A row of its own on phones; squeezed between the buttons it shrank to its icon -->
@@ -309,7 +311,7 @@ function clearFilters() {
     <!-- Status first: the one-line answer, the status board, what needs attention, then the orbit map -->
     <template v-if="store.loaded && store.totalCount > 0 && !editMode">
       <div class="space-y-3">
-        <NetworkPulse :devices="store.devices" :updated="store.lastUpdated" :failed="!!store.error" @open="(d) => openEditor(d)" />
+        <NetworkPulse v-if="!isMobile" :devices="store.devices" :updated="store.lastUpdated" :failed="!!store.error" @open="(d) => openEditor(d)" />
         <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
       </div>
       <!-- Collapsed banner: slim bar when the orbit map and notices are folded away -->
