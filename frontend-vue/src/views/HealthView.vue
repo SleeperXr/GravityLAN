@@ -313,7 +313,7 @@ const sortOptions = computed(() => [
             </div>
             <div class="flex items-center justify-between gap-2 text-xs">
               <HealthStatusBadge :status="d.health_status" />
-              <span class="font-mono text-fg">{{ d.uptime.uptime_pct.toFixed(1) }}% <span class="text-fg-subtle">· {{ ms(d.latency.current_ms) }}</span></span>
+              <span class="font-mono text-data text-fg tabular">{{ d.uptime.uptime_pct.toFixed(1) }}% <span class="text-fg-subtle">· {{ ms(d.latency.current_ms) }}</span></span>
             </div>
             <StatusMonitor compact size="sm" :focusable="false" :bars="d.uptime.history_bars" :span-hours="periodHours(period)" :uptime="d.uptime.uptime_pct" />
             <!-- The same warnings the table shows, now that the cards stand in for it up to 1280 px -->
