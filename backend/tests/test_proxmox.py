@@ -405,3 +405,48 @@ async def test_report_is_cleared_when_the_connection_is_removed(client, db, admi
     await db.commit()
     assert (await client.delete('/api/settings/proxmox', headers=headers)).status_code == 204
     assert (await client.get('/api/settings/proxmox/report', headers=headers)).json() == {'report': None}
+
+
+@pytest.fixture
+def no_lookups(monkeypatch):
+    """Adding a device looks up MAC, vendor and DNS; tests do not touch the network."""
+    import app.api.devices as devices_api
+
+    async def nothing(device, ip):
+        return None
+    monkeypatch.setattr(devices_api, '_fill_new_device_details', nothing)
+
+
+async def test_add_to_dashboard_creates_named_devices_only_for_synced_addresses(client, db, admin_token, no_lookups):
+    headers = {'Authorization': f'Bearer {admin_token}'}
+    connection = ProxmoxIntegration(id=1, enabled=True, url='https://pve', token_id='reader@pve!inventory')
+    db.add(connection)
+    await db.commit()
+    await apply_guests(db, connection, [Guest('qemu/100', 'nas', ['192.168.1.10']), Guest('lxc/101', 'dns', ['192.168.1.11'])],
+                       ['192.168.1.0/24'])
+    assert (await db.execute(select(Device))).scalars().all() == []  # a sync alone never adds devices
+
+    response = await client.post('/api/settings/proxmox/add-to-dashboard', headers=headers, json={'ips': ['192.168.1.10']})
+    assert response.status_code == 200, response.text
+    assert [(a['ip'], a['name']) for a in response.json()['added']] == [('192.168.1.10', 'nas')]
+    device = (await db.execute(select(Device))).scalar_one()
+    assert device.display_name == 'nas'
+    host = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == '192.168.1.10'))).scalar_one()
+    assert host.is_monitored is True
+    statuses = {a['ip']: a['status'] for g in proxmox_service.last_report['guests'] for a in g['addresses']}
+    assert statuses == {'192.168.1.10': 'device', '192.168.1.11': 'new_host'}
+
+    # Not from the last sync: refused, nothing created
+    response = await client.post('/api/settings/proxmox/add-to-dashboard', headers=headers, json={'ips': ['192.168.1.99']})
+    assert response.status_code == 400
+    assert len((await db.execute(select(Device))).scalars().all()) == 1
+
+
+async def test_add_to_dashboard_keeps_an_existing_device_and_its_name(client, db, admin_token, no_lookups):
+    headers = {'Authorization': f'Bearer {admin_token}'}
+    db.add_all([ProxmoxIntegration(id=1, enabled=True, inventory=json.dumps({'192.168.1.10': {'name': 'nas', 'guest': 'qemu/100'}})),
+                Device(ip='192.168.1.10', display_name='My storage')])
+    await db.commit()
+    response = await client.post('/api/settings/proxmox/add-to-dashboard', headers=headers, json={'ips': ['192.168.1.10']})
+    assert response.json()['added'][0]['name'] == 'My storage'
+    assert len((await db.execute(select(Device))).scalars().all()) == 1

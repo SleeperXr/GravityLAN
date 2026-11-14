@@ -25,6 +25,7 @@ const report = ref<Report | null>(null);
 const form = ref({ enabled: false, url: '', token_id: '', token_secret: '', verify_tls: true });
 const saving = ref(false);
 const syncing = ref(false);
+const adding = ref(false);
 
 function applyStored(next: ProxmoxSettings) {
   stored.value = next;
@@ -81,6 +82,23 @@ async function sync() {
     syncing.value = false;
     // The form may hold unsaved edits by now; only the status line follows the server
     api.getProxmoxSettings().then((next) => (stored.value = next)).catch(() => {});
+    loadReport();
+  }
+}
+
+async function addToDashboard(ips: string[]) {
+  if (ips.length > 1) {
+    const ok = await confirm({ title: t('gv.proxmox.report.add_all_title', { count: ips.length }), message: t('gv.proxmox.report.add_all_message') });
+    if (!ok) return;
+  }
+  adding.value = true;
+  try {
+    const res = await api.addProxmoxGuestsToDashboard(ips);
+    showToast('success', t('common.success'), t('gv.proxmox.report.added', { count: res.added.length, names: res.added.map((a) => a.name).join(', ') }));
+  } catch (err) {
+    showToast('error', t('common.error'), (err as Error).message);
+  } finally {
+    adding.value = false;
     loadReport();
   }
 }
@@ -163,7 +181,7 @@ async function disconnect() {
       </div>
     </form>
 
-    <ProxmoxReport v-if="report && stored?.enabled" :report="report" />
+    <ProxmoxReport v-if="report && stored?.enabled" :report="report" :adding="adding" @add="addToDashboard" />
 
     <p class="flex items-start gap-2 text-xs leading-relaxed text-fg-subtle">
       <Server class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />{{ t('gv.proxmox.read_only_note') }}

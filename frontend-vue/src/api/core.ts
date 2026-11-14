@@ -260,6 +260,8 @@ export const api = {
   deleteProxmoxSettings: () => request<void>('/api/settings/proxmox', { method: 'DELETE' }),
   syncProxmox: () => request<ProxmoxSyncResult>('/api/settings/proxmox/sync', { method: 'POST' }),
   getProxmoxReport: () => request<{ report: ProxmoxReport | null }>('/api/settings/proxmox/report'),
+  addProxmoxGuestsToDashboard: (ips: string[]) =>
+    request<{ added: { ip: string; id: number; name: string }[] }>('/api/settings/proxmox/add-to-dashboard', { method: 'POST', body: JSON.stringify({ ips }) }),
 
   // Measurement data (separate telemetry database)
   getTelemetryStatus: () => request<TelemetryStatus>('/api/settings/telemetry'),

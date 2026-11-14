@@ -126,6 +126,22 @@ async def last_sync_report():
     return {"report": proxmox_service.last_report}
 
 
+class AddToDashboard(BaseModel):
+    ips: list[str] = Field(..., min_length=1, max_length=proxmox_service.MAX_ADD_AT_ONCE)
+
+
+@router.post("/add-to-dashboard")
+async def add_to_dashboard(body: AddToDashboard, request: Request, db: AsyncSession = Depends(get_db)):
+    """Put chosen guests of the last sync on the dashboard (Settings > Proxmox VE > Last sync)."""
+    try:
+        added = await proxmox_service.add_guests_to_dashboard(db, body.ips)
+    except ProxmoxError as exc:
+        raise HTTPException(400, str(exc))
+    await audit(request, "proxmox.add_to_dashboard", target=", ".join(a["ip"] for a in added)[:200],
+                detail=f"{len(added)} device(s)")
+    return {"added": added}
+
+
 @router.post("/sync")
 async def synchronize(db: AsyncSession = Depends(get_db)):
     if sync_lock.locked():
