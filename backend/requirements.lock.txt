@@ -16,9 +16,7 @@ argon2-cffi==25.1.0
 argon2-cffi-bindings==26.1.0
     # via argon2-cffi
 bcrypt==5.0.0
-    # via
-    #   paramiko
-    #   passlib
+    # via paramiko
 certifi==2026.10.23
     # via
     #   gravitylan-backend
@@ -70,8 +68,6 @@ netifaces==0.11.0
 opentelemetry-api==1.45.2
     # via fastapi
 paramiko==5.1.0
-    # via gravitylan-backend
-passlib==1.7.4
     # via gravitylan-backend
 psutil==7.2.2
     # via gravitylan-backend

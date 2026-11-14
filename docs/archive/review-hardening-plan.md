@@ -25,8 +25,8 @@ This document details the concrete plan to harden and optimize GravityLAN across
 *   **No configuration toggle**: There is currently no way to enforce strict host key checking (`RejectPolicy`) if a user desires high security.
 
 ### Maßnahmen
-1.  **Strict Mode Config Option**: Add `ssh_strict_mode: bool = False` to `Settings` in [config.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/config.py) (via environment variable `GRAVITYLAN_SSH_STRICT_MODE`).
-2.  **Toggle in Deployer**: Update `deploy_agent` and `remove_agent` in [agent_deployer.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/services/agent_deployer.py):
+1.  **Strict Mode Config Option**: Add `ssh_strict_mode: bool = False` to `Settings` in [config.py](../../backend/app/config.py) (via environment variable `GRAVITYLAN_SSH_STRICT_MODE`).
+2.  **Toggle in Deployer**: Update `deploy_agent` and `remove_agent` in [agent_deployer.py](../../backend/app/services/agent_deployer.py):
     *   If `settings.ssh_strict_mode` is `True`, set missing host key policy to `RejectPolicy`.
     *   Load system host keys via `client.load_system_host_keys()`.
 3.  **Document Security Implications**: Record the trade-off in `docs/security-baseline.md` and `docs/threat-model.md` to guide users on custom hardening options.
@@ -40,8 +40,8 @@ This document details the concrete plan to harden and optimize GravityLAN across
 *   **Hardcoded defaults**: The default retention period of 7 days is hardcoded inside the loop.
 
 ### Maßnahmen
-1.  **Configurable Retention**: Add `history_retention_days: int = 30` to `Settings` in [config.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/config.py) (overridable via `GRAVITYLAN_HISTORY_RETENTION_DAYS`).
-2.  **Complete Pruning Loop**: Update `_clean_old_history()` in [scheduler.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/scanner/scheduler.py) to:
+1.  **Configurable Retention**: Add `history_retention_days: int = 30` to `Settings` in [config.py](../../backend/app/config.py) (overridable via `GRAVITYLAN_HISTORY_RETENTION_DAYS`).
+2.  **Complete Pruning Loop**: Update `_clean_old_history()` in [scheduler.py](../../backend/app/scanner/scheduler.py) to:
     *   Load the retention period from `settings.history_retention_days` as the fallback if no database override exists.
     *   Delete old entries from BOTH `DeviceHistory` and `DeviceMetrics`.
     *   Ensure configuration, active settings, and device state records remain untouched.
@@ -67,8 +67,8 @@ This document details the concrete plan to harden and optimize GravityLAN across
 
 ### Maßnahmen
 1.  **Doku**:
-    *   Create [docs/security-baseline.md](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/docs/security-baseline.md).
-    *   Create [docs/threat-model.md](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/docs/threat-model.md).
+    *   Create [docs/security-baseline.md](../../docs/security-baseline.md).
+    *   Create [docs/threat-model.md](../../docs/threat-model.md).
     *   Add system boundaries documentation explaining what is core (Discovery, Inventory, Topology) and what is out of scope.
 2.  **Tests**:
     *   Write regression tests for the scheduler database-retention pruning loop.
