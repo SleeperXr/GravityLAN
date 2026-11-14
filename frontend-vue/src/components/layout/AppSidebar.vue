@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
+import { Search } from 'lucide-vue-next';
 import { NAV_ITEMS, lineInk, lineVar } from './navigation';
 import NavPreferences from './NavPreferences.vue';
+import { commandPaletteOpen } from '@/lib/commandSearch';
 import { t } from '@/i18n';
 import { useNetworkStore } from '@/stores/network';
 import { useSshSessions } from '@/stores/sshSessions';
@@ -28,6 +30,18 @@ const activeId = computed(() => route.meta.navId as string | undefined);
     <p v-if="props.build" class="mx-5 -mt-2 mb-1 truncate rounded-sm border border-warn/30 bg-warn/10 px-1.5 py-px font-mono text-micro text-warn-text" :title="t('gv.build.title')">
       {{ t('gv.build.label', { build: props.build }) }}
     </p>
+
+    <!-- The app-wide search, findable without knowing the shortcut -->
+    <button
+      type="button"
+      class="mx-3 mt-1 flex h-9 items-center gap-2.5 rounded-md border border-field-line bg-sunken px-2.5 text-sm text-fg-subtle transition-colors hover:border-fg-subtle hover:text-fg"
+      :aria-label="t('gv.search.title')"
+      @click="commandPaletteOpen = true"
+    >
+      <Search class="size-4 shrink-0" aria-hidden="true" />
+      <span class="flex-1 text-left">{{ t('gv.search.open') }}</span>
+      <kbd class="rounded border border-line px-1.5 py-px font-mono text-micro">Ctrl K</kbd>
+    </button>
 
     <!-- The pages as stops on one route: each has its own line sign, the current stop is filled, a hairline joins the stops -->
     <nav :aria-label="t('sidebar.navigation')" class="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">

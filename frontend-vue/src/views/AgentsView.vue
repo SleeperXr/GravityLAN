@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { queryCodecs, useQueryState } from '@/composables/useQueryState';
+import { useSlashFocus } from '@/composables/useSlashFocus';
 import { Activity, ArrowUpCircle, ChevronRight, Package, RefreshCw, RotateCcw, Search, Server, ShieldAlert, ShieldCheck } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import PageHeader from '@/components/ui/PageHeader.vue';
@@ -36,7 +38,10 @@ const data = ref<Overview | null>(null);
 const loading = ref(true);
 const refreshing = ref(false);
 const error = ref<string | null>(null);
-const search = ref('');
+// The filter lives in the URL (?q=), so Back, a reload and a shared link keep it; "/" focuses it
+const search = useQueryState('q', '', queryCodecs.string);
+const searchInputRef = ref<HTMLInputElement | null>(null);
+useSlashFocus(searchInputRef);
 const expandedId = ref<number | null>(null);
 const showGlobal = ref(false);
 const updateCenterOpen = ref(false);
@@ -100,7 +105,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('agents_page.search_placeholder') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input v-model="search" type="search" :placeholder="t('agents_page.search_placeholder')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
+        <input ref="searchInputRef" v-model="search" type="search" :placeholder="t('agents_page.search_placeholder')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
       </label>
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-line bg-surface px-3.5 py-2 text-xs" :aria-label="t('agents_page.title')">
         <span class="flex items-baseline gap-1.5">

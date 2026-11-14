@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useEventListener, useMediaQuery, useStorage } from '@vueuse/core';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { Check, ChevronDown, ChevronRight, ChevronUp, LayoutGrid, Orbit, Pencil, Radar, RefreshCw, RotateCcw, Search, Server, Trash2, X } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device } from '@/types';
@@ -9,6 +9,8 @@ import { useNetworkStore } from '@/stores/network';
 import { useDashboardScan } from '@/composables/useDashboardScan';
 import { useToast } from '@/composables/useToast';
 import { useConfirm } from '@/composables/useConfirm';
+import { queryCodecs, useQueryState } from '@/composables/useQueryState';
+import { useSlashFocus } from '@/composables/useSlashFocus';
 import { swapGroupOrder } from '@/lib/dashboardLayout';
 import { isAgentOutdated } from '@/lib/agent';
 import { deviceLabel } from '@/lib/networks';
@@ -51,25 +53,32 @@ const editMode = ref(false);
 const selectedIds = ref(new Set<number>());
 const refreshingAll = ref(false);
 const updateCenterOpen = ref(false);
-const query = ref('');
+// The filters live in the URL (?q=, ?status=, ?net=): Back, a reload and a shared link keep them
+const query = useQueryState('q', '', queryCodecs.string);
 const searchInputRef = ref<HTMLInputElement | null>(null);
-const statusFilter = ref<'all' | 'online' | 'offline'>('all');
+const statusFilter = useQueryState<'all' | 'online' | 'offline'>('status', 'all', queryCodecs.oneOf(['all', 'online', 'offline'] as const));
 /** Network orbit chosen on the status board; the overview then shows only that network. */
-const lineFilter = ref<number | null>(null);
+const lineFilter = useQueryState<number | null>('net', null, queryCodecs.nullableInt);
+// "/" focuses the search; Ctrl+K is the app-wide search (CommandPalette)
+useSlashFocus(searchInputRef);
 
 const editorDevice = ref<Device | null>(null);
 const editorTab = ref<EditorTab>('settings');
 const editorOpen = ref(false);
 
-function onGlobalKeyDown(e: KeyboardEvent) {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-    e.preventDefault();
-    searchInputRef.value?.focus();
-    searchInputRef.value?.select();
-  }
-}
-
-onMounted(() => window.addEventListener('keydown', onGlobalKeyDown));
+// ?device=<id> opens that device's editor (the app-wide search links here), then leaves the URL
+const route = useRoute();
+watch(
+  () => route.query.device,
+  (raw) => {
+    const id = Number(Array.isArray(raw) ? raw[0] : raw);
+    if (!Number.isInteger(id) || id <= 0) return;
+    const { device: _device, ...rest } = route.query;
+    void router.replace({ query: rest });
+    void openDeviceById(id);
+  },
+  { immediate: true },
+);
 
 // Keep the overview current outside edit mode: every 10 s during a scan, 30 s otherwise.
 const POLL_MS = 30000;
@@ -93,10 +102,7 @@ watch(
 useEventListener(document, 'visibilitychange', () => {
   if (document.visibilityState === 'visible' && !editMode.value) refreshIfOld();
 });
-onBeforeUnmount(() => {
-  window.clearInterval(timer);
-  window.removeEventListener('keydown', onGlobalKeyDown);
-});
+onBeforeUnmount(() => window.clearInterval(timer));
 if (!store.loaded) void store.loadData();
 
 const outdatedAgents = computed(
@@ -269,9 +275,7 @@ function clearFilters() {
             :placeholder="t('gv.dashboard.search')"
             class="h-9 w-full rounded-md max-md:h-11 border border-field-line bg-sunken pr-14 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-info focus:ring-2 focus:ring-info/25 focus:outline-none"
           />
-          <kbd class="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-micro text-fg-subtle sm:inline">
-            Ctrl K
-          </kbd>
+          <kbd class="pointer-events-none absolute top-1/2 right-2.5 hidden -translate-y-1/2 rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-micro text-fg-subtle sm:inline">/</kbd>
         </label>
         <GatewaysPopover @open-device="(id, tab) => openDeviceById(id, tab)" />
         <NotificationCenter />
