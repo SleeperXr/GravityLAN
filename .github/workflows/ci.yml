@@ -46,8 +46,17 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install flake8 pytest pytest-asyncio
-        if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+        # The image installs the same fully pinned set
+        pip install -r backend/requirements.lock.txt
         
+    - name: requirements.lock.txt matches uv.lock
+      # After a Dependabot PR or an edit to requirements.txt: cd backend, then the export command below
+      run: |
+        pip install uv==0.10.10
+        cd backend
+        uv export --frozen --no-dev --no-hashes --no-emit-project > /tmp/requirements.lock.txt
+        diff -u requirements.lock.txt /tmp/requirements.lock.txt
+
     - name: Lint with flake8
       run: |
         # stop the build on syntax errors, undefined names, unused imports and unused variables

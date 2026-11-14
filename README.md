@@ -267,7 +267,7 @@ Architecture decisions are recorded in [docs/adr/](docs/adr).
 ```bash
 # Backend (Python 3.12+, Nmap installed)
 cd backend
-pip install -r requirements.txt
+pip install -r requirements.lock.txt
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # GravityUI (Node 20+), in a second terminal: http://localhost:5174/frontend-vue/, proxies /api to :8000
@@ -548,7 +548,7 @@ Architekturentscheidungen stehen in [docs/adr/](docs/adr).
 ```bash
 # Backend (Python 3.12+, Nmap installiert)
 cd backend
-pip install -r requirements.txt
+pip install -r requirements.lock.txt
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # GravityUI (Node 20+), in einem zweiten Terminal: http://localhost:5174/frontend-vue/, leitet /api an :8000 weiter
