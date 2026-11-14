@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Settings → Access can replace the master token. It needs a logged-in browser session and the password confirmation for credentials; the master token cannot replace itself. The new token is shown once and only its hash is stored, clients with the old token stop working at once, browser sessions stay signed in, and the audit log records it under credentials. Until now only a database reset gave a new master token.
 - Before a new version migrates the database, GravityLAN copies `gravitylan.db` to `data/backups/gravitylan-<previous version>-<time>.db` and keeps the last three copies. `data/.last_version` records which version last migrated the database; the copy is made only when it changes, so a normal restart makes none. Measurement data and an external database (`GRAVITYLAN_DATABASE_URL`) are not copied, and a failed copy is logged without stopping the start.
 - Signing in over HTTPS while `GRAVITYLAN_SECURE_COOKIES` is off now logs a warning once per start, and Settings → Access shows a hint: without the flag a browser would also send the login cookie over plain HTTP. HTTPS is recognised directly or from a reverse proxy's `X-Forwarded-Proto`; the flag itself stays off by default, so existing HTTP installations are unchanged.
 
