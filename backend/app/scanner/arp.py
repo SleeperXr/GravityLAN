@@ -7,7 +7,6 @@ import socket
 import subprocess
 import sys
 import json
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 from app.scanner.vendor import get_vendor
 

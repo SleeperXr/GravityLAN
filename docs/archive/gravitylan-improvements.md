@@ -39,10 +39,10 @@ graph TD
 ### Phase 1: DB & Versionierung (Fundament)
 - **Ziel**: Dialekt-unabhängige Datenbank-Prüfung und Konsolidierung der Versionierung als Single Source of Truth.
 - **Betroffene Dateien**:
-  - [backend/app/database/__init__.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/database/__init__.py)
-  - [backend/app/database/migrations.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/database/migrations.py)
-  - [backend/app/config.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/config.py)
-  - [backend/app/version.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/version.py)
+  - [backend/app/database/__init__.py](../../backend/app/database/__init__.py)
+  - [backend/app/database/migrations.py](../../backend/app/database/migrations.py)
+  - [backend/app/config.py](../../backend/app/config.py)
+  - [backend/app/version.py](../../backend/app/version.py)
 - **Vorgeschlagene Commits**:
   - `refactor(db): use dialect-agnostic inspection in migrations`
     - SQLite-spezifische Raw-SQL-Abfragen (`PRAGMA table_info`) durch SQLAlchemy `inspect(conn).get_columns()` ersetzen.
@@ -54,8 +54,8 @@ graph TD
 ### Phase 2: Lifecycle & Robustheit (App-Laufzeit)
 - **Ziel**: Geordneter Start/Shutdown der Applikation, Pydantic-basierte Konfigurationsvalidierung und Bereinigung von Background-Tasks.
 - **Betroffene Dateien**:
-  - [backend/app/config.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/config.py)
-  - [backend/app/main.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/main.py)
+  - [backend/app/config.py](../../backend/app/config.py)
+  - [backend/app/main.py](../../backend/app/main.py)
 - **Vorgeschlagene Commits**:
   - `feat(config): implement strict pydantic settings validation`
     - Grenzwerte für Timeouts, Worker-Anzahl und Hostnames mittels Pydantic `@field_validator` validieren.
@@ -69,9 +69,9 @@ graph TD
 ### Phase 3: Core Security & Auth (Absicherung)
 - **Ziel**: Einführung temporärer Sitzungen anstelle des statischen Master-Tokens in Cookies und Vereinheitlichung der WebSocket-Auth.
 - **Betroffene Dateien**:
-  - [backend/app/api/auth.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/api/auth.py)
-  - [backend/app/services/auth_service.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/services/auth_service.py)
-  - [backend/app/main.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/main.py)
+  - [backend/app/api/auth.py](../../backend/app/api/auth.py)
+  - [backend/app/services/auth_service.py](../../backend/app/services/auth_service.py)
+  - [backend/app/main.py](../../backend/app/main.py)
 - **Vorgeschlagene Commits**:
   - `feat(auth): support dynamic sessions and configurable secure cookies`
     - Sitzungsbasierte Authentifizierung einführen; Cookie-Attribute wie `SameSite` und `Secure` konfigurierbar machen (`settings.secure_cookies`), um HTTP-Umgebungen im Homelab zu unterstützen.
@@ -83,8 +83,8 @@ graph TD
 ### Phase 4: Frontend-Build-Stabilität (Client-Wartbarkeit)
 - **Ziel**: Gewährleistung fehlerfreier und stabiler Builds des Clients sowie strikte Typisierungsprüfungen.
 - **Betroffene Dateien**:
-  - [frontend/package.json](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/package.json)
-  - [frontend/tsconfig.json](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/tsconfig.json)
+  - [frontend/package.json](../../frontend/package.json)
+  - [frontend/tsconfig.json](../../frontend/tsconfig.json)
 - **Vorgeschlagene Commits**:
   - `build(frontend): enable strict tsconfig checks and verify production build`
     - `noImplicitAny` und `strictNullChecks` im Compiler aktivieren, npm-Skripte aufräumen.
@@ -94,7 +94,7 @@ graph TD
 ### Phase 5: Observability & Diagnostics (Wartbarkeit)
 - **Ziel**: Logging-Filter reparieren und Korrelations-IDs zur transparenten Fehlerverfolgung im Stack etablieren.
 - **Betroffene Dateien**:
-  - [backend/app/main.py](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/main.py)
+  - [backend/app/main.py](../../backend/app/main.py)
 - **Vorgeschlagene Commits**:
   - `feat(observability): propagate correlation ids in requests and errors`
     - Middleware zur Weitergabe von `X-Correlation-ID` im Request-Context und in Fehlerantworten implementieren.
@@ -106,9 +106,9 @@ graph TD
 ### Phase 6: Docker & Compose Deployment (Auslieferung)
 - **Ziel**: Härtung des Docker-Images (Multi-Stage Build, Entfernung von Compilern zur Laufzeit) und Bereinigung der Compose-Dateien.
 - **Betroffene Dateien**:
-  - [Dockerfile](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/Dockerfile)
-  - [docker-compose.yml](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/docker-compose.yml)
-  - [README.md](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/README.md)
+  - [Dockerfile](../../Dockerfile)
+  - [docker-compose.yml](../../docker-compose.yml)
+  - [README.md](../../README.md)
 - **Vorgeschlagene Commits**:
   - `docker(engine): harden runtime image using multi-stage builds`
     - Compiler-Werkzeuge (`gcc`, `musl-dev`) in die Build-Stage verbannen; schlankes, compilerfreies Runtime-Image erzeugen.
