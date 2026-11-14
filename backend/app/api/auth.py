@@ -23,10 +23,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 from app.services.auth_service import (
-    MASTER_TOKEN_PREFIX, hash_password, looks_hashed, master_token_matches, secure_compare, verify_password,
+    MASTER_TOKEN_PREFIX, hash_master_token, hash_password, looks_hashed, master_token_matches, secure_compare,
+    verify_password,
 )
 from app.services.session_service import session_store
-from app.services.agent_telemetry import _setting_cache
+from app.services.agent_telemetry import _setting_cache  # noqa: F401 - tests reset it through this module
 
 _READ_METHODS = ("GET", "HEAD")
 
@@ -845,6 +846,33 @@ async def step_up_status(request: Request, token: str = Depends(get_current_admi
 async def cookie_security(request: Request, token: str = Depends(get_current_admin)):
     """Whether session cookies carry the Secure flag, and whether this request came over HTTPS."""
     return {"secure_cookies": settings.secure_cookies, "https": served_over_https(request)}
+
+
+@router.post("/master-token/rotate", dependencies=[Depends(require_step_up("credentials"))])
+async def rotate_master_token(
+    request: Request,
+    token: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace the master token; the new one is returned once and only its hash is stored.
+
+    Only a logged-in browser session with a password confirmation may do this, so the master token
+    cannot replace itself. Clients using the old token stop working at once; browser sessions stay.
+    """
+    if not _is_valid_browser_session(token):
+        await audit(request, "auth.master_token.rotate", "denied", detail="not a browser session")
+        raise HTTPException(status_code=403, detail="Only a logged-in browser session can replace the master token.")
+
+    master_setting, _ = await _password_settings(db)
+    if not master_setting:
+        raise HTTPException(status_code=500, detail="System not initialized. Run setup first.")
+
+    new_token = secrets.token_hex(32)
+    master_setting.value = hash_master_token(new_token)
+    await db.commit()
+    logger.info("Master token replaced")
+    await audit(request, "auth.master_token.rotate")
+    return {"token": new_token}
 
 
 @router.post("/check")

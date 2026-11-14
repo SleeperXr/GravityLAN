@@ -1,22 +1,31 @@
-from passlib.context import CryptContext
 import hashlib
 import hmac
 
-# Password hashing configuration
-pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
+
+# Argon2id with argon2-cffi's defaults (t=3, m=64 MiB, p=4), the same parameters passlib used before:
+# the parameters are stored in each hash, so hashes written by older versions keep verifying.
+_hasher = PasswordHasher()
+
 
 def hash_password(password: str) -> str:
-    """Hash a password using Argon2 (fallback to bcrypt)."""
-    return pwd_context.hash(password)
+    """Hash a password with Argon2id."""
+    return _hasher.hash(password)
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against a hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify a password against an Argon2 hash; anything else (also a bcrypt hash) does not match."""
+    try:
+        return _hasher.verify(hashed_password, plain_password)
+    except (VerificationError, InvalidHashError):
+        return False
+
 
 def looks_hashed(value: str) -> bool:
-    """Check if a value looks like a hashed password."""
-    # passlib hashes usually start with $
+    """Whether a stored value is a password hash rather than a legacy plain-text value."""
     return value.startswith("$argon2") or value.startswith("$2b$") or value.startswith("$2a$")
+
 
 def secure_compare(a: str, b: str) -> bool:
     """Constant-time comparison for tokens/secrets."""

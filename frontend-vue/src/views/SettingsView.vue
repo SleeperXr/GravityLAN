@@ -14,6 +14,7 @@ import SubnetsSection from '@/components/settings/SubnetsSection.vue';
 import TelemetrySection from '@/components/settings/TelemetrySection.vue';
 import GroupsSection from '@/components/settings/GroupsSection.vue';
 import CookieSecurityNotice from '@/components/settings/CookieSecurityNotice.vue';
+import MasterTokenRotate from '@/components/settings/MasterTokenRotate.vue';
 import PasswordForm from '@/components/settings/PasswordForm.vue';
 import TokensSection from '@/components/settings/TokensSection.vue';
 import WebhooksSection from '@/components/settings/WebhooksSection.vue';
@@ -236,6 +237,7 @@ const languages: { value: Locale; key: string }[] = [
         <SettingsSection id="access" :title="t('settings.password.section')" :description="t('settings.password.section_desc')">
           <CookieSecurityNotice />
           <PasswordForm />
+          <MasterTokenRotate />
         </SettingsSection>
 
         <TokensSection />

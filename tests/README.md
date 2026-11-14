@@ -4,8 +4,8 @@ This directory serves as a guide for running tests in GravityLAN.
 
 To keep the repository clean and structured, the testing suites are located within their respective components:
 
-*   **Backend Tests**: Located in [backend/tests/](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/tests). These are automated tests for the FastAPI endpoints, authentication, database migrations, scanner, and agent adoption.
-*   **CI/CD Workflow**: Configured in [.github/workflows/ci.yml](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/.github/workflows/ci.yml) to automatically run linting and pytest suites on every push and pull request.
+*   **Backend Tests**: Located in [backend/tests/](../backend/tests). These are automated tests for the FastAPI endpoints, authentication, database migrations, scanner, and agent adoption.
+*   **CI/CD Workflow**: Configured in [.github/workflows/ci.yml](../.github/workflows/ci.yml) to automatically run linting and pytest suites on every push and pull request.
 
 ---
 

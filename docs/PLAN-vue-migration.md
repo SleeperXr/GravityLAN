@@ -13,7 +13,7 @@ Statt einer riskanten Big-Bang-Ablösung des bestehenden React-Frontends wird **
 
 1. **Zero-Risk für `main`:** Das bestehende React-Frontend (`frontend/`) läuft unverändert unter `/` weiter. Alle bestehenden Workflows, Tests und Bookmarks bleiben intakt.
 2. **1-Klick-Wechsel (`Legacy UI` ↔ `GravityUI`):**
-   - In der Legacy-Sidebar ([`frontend/src/components/Sidebar.tsx`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/src/components/Sidebar.tsx)) führt ein Button direkt zu `/frontend-vue/`.
+   - In der Legacy-Sidebar ([`frontend/src/components/Sidebar.tsx`](../frontend/src/components/Sidebar.tsx)) führt ein Button direkt zu `/frontend-vue/`.
    - In der GravityUI-Sidebar (`frontend-vue/src/components/layout/AppSidebar.vue`) führt ein Button mit einem Klick zurück zu `/` (Legacy UI).
    - Da beide Frontends unter derselben Origin laufen, teilen sie sich automatisch das **`httpOnly`-Session-Cookie** und alle `/api/*`- sowie WebSocket-Endpunkte (kein doppelter Login nötig).
 3. **Standard-Dashboards statt Custom-Gridstack:** GravityUI nutzt das `shadcn-vue` Dashboard-Paradigma (App-Shell mit fester Sidebar, Top-Header, strukturierte KPI-Cards, sortier-/filterbare Data-Tables, Status-Badges und Slide-Over `Sheet`-Drawers).
@@ -57,7 +57,7 @@ flowchart LR
 | **UI-System** | `shadcn-vue` (`reka-ui`, `class-variance-authority`, `clsx`, `tailwind-merge`) | Strukturierte Standard-Dashboards (`Card`, `Table`, `Badge`, `Tabs`, `Sheet`, `Dialog`, `Input`, `Select`, `Switch`) |
 | **Styling** | `tailwindcss` v4 (`@tailwindcss/vite`) | Graphite/Sky-Farbschema (`#0E1116` / `#151A21` / `#3DB8F5`), Purple Ban eingehalten |
 | **Icons & Fonts** | `lucide-vue-next`, `IBM Plex Sans`, `IBM Plex Mono` | 1:1 Konsistenz mit GravityLAN |
-| **API & Typen** | [`api/client.ts`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/src/api/client.ts), [`types/index.ts`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/src/types/index.ts) | 100 % Wiederverwendung des bestehenden Backend-Vertrags |
+| **API & Typen** | [`api/client.ts`](../frontend/src/api/client.ts), [`types/index.ts`](../frontend/src/types/index.ts) | 100 % Wiederverwendung des bestehenden Backend-Vertrags |
 
 ---
 
@@ -107,23 +107,23 @@ frontend-vue/
 
 ### Phase 1: Dual-UI Brücke (Legacy Button, Vite Proxy, FastAPI `/frontend-vue` Route)
 - [x] **Task 1.1: 1-Klick Switch-Button in Legacy UI (`Sidebar.tsx`) & Dev-Proxy (`vite.config.ts`)**
-  - **INPUT:** [`frontend/src/components/Sidebar.tsx`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/src/components/Sidebar.tsx), [`frontend/vite.config.ts`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/vite.config.ts)
+  - **INPUT:** [`frontend/src/components/Sidebar.tsx`](../frontend/src/components/Sidebar.tsx), [`frontend/vite.config.ts`](../frontend/vite.config.ts)
   - **OUTPUT:** Button „GravityUI (Vue)“ in der Legacy-Sidebar (`/frontend-vue/`) + Vite-Proxy von `:5173/frontend-vue` auf `:5174`.
   - **VERIFY:** Legacy-Tests (`npm test`) und Typecheck (`npm run typecheck`) in `frontend/` bleiben grün.
 
 - [x] **Task 1.2: FastAPI `/frontend-vue` Static-Serving & Start-/Docker-Skripte**
-  - **INPUT:** [`backend/app/main.py`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/backend/app/main.py), [`Dockerfile`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/Dockerfile), [`start_gravitylan.ps1`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/start_gravitylan.ps1)
+  - **INPUT:** [`backend/app/main.py`](../backend/app/main.py), [`Dockerfile`](../Dockerfile), [`start_gravitylan.ps1`](../start_gravitylan.ps1)
   - **OUTPUT:** `serve_vue_spa` unter `/frontend-vue` und `/frontend-vue/{full_path:path}` in `backend/app/main.py`, Multi-Stage-Build in `Dockerfile` und Dev-Start in `start_gravitylan.ps1`.
   - **VERIFY:** Backend-Tests (`pytest`) laufen fehlerfrei; `/frontend-vue/` liefert `frontend-vue/dist/index.html` aus.
 
 ### Phase 2: `frontend-vue` (GravityUI) mit `shadcn-vue` Standard-Dashboards
 - [x] **Task 2.1: `frontend-vue` Scaffolding, Tailwind v4 & `shadcn-vue` UI-Primitives**
-  - **INPUT:** [`frontend/package.json`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/package.json), [`frontend/src/index.css`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/src/index.css)
+  - **INPUT:** [`frontend/package.json`](../frontend/package.json), [`frontend/src/index.css`](../frontend/src/index.css)
   - **OUTPUT:** Vollständiges Vue 3.5 + TypeScript + `shadcn-vue` Setup mit Graphite/Sky Theme-Tokens und UI-Komponenten (`Button`, `Card`, `Table`, `Badge`, `Tabs`, `Sheet`, `Dialog`, `Input`).
   - **VERIFY:** `npx vue-tsc --noEmit` ohne Fehler.
 
 - [x] **Task 2.2: App-Shell (`AppSidebar.vue`, `AppHeader.vue`), Auth-Flow & 1-Klick Rückkehr zu Legacy UI**
-  - **INPUT:** [`api/client.ts`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/src/api/client.ts), [`types/index.ts`](file:///e:/Users/Oliver/Etc/Projekte/Antigravity/GravityLAN/frontend/src/types/index.ts)
+  - **INPUT:** [`api/client.ts`](../frontend/src/api/client.ts), [`types/index.ts`](../frontend/src/types/index.ts)
   - **OUTPUT:** Standard Dashboard Layout mit Sidebar-Navigation, Sprachumschalter (`DE`/`EN`), Live-Scan-Indikator und „Legacy UI“-Switch-Button (`href="/"`).
   - **VERIFY:** Navigation zwischen allen Ansichten und Wechsel zurück zu `/` funktionieren nahtlos.
 
