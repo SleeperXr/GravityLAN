@@ -107,7 +107,7 @@ const assigned = computed(() => {
 });
 
 const plan = computed(() => planArrange(props.bodies, props.links, props.roles, { kinds: kinds.value, parents: parents.value }));
-const changes = computed(() => plan.value.createLinks.length + plan.value.removeLinkIds.length + Object.keys(kinds.value).length);
+const changes = computed(() => plan.value.createLinks.length + plan.value.promoteLinkIds.length + plan.value.removeLinkIds.length + Object.keys(kinds.value).length);
 
 const tabs = computed(() => [
   { value: 'kinds', label: t('gv.arrange.step_kinds') },
@@ -195,7 +195,7 @@ const tabs = computed(() => [
     <template #footer>
       <div class="flex w-full flex-wrap items-center gap-2">
         <span class="text-xs text-fg-subtle" data-test="arrange-summary">
-          {{ t('gv.arrange.summary', { links: plan.createLinks.length, removed: plan.removeLinkIds.length, roles: Object.keys(kinds).length }) }}
+          {{ t('gv.arrange.summary', { links: plan.createLinks.length + plan.promoteLinkIds.length, removed: plan.removeLinkIds.length, roles: Object.keys(kinds).length }) }}
         </span>
         <span class="flex-1" />
         <Button variant="ghost" size="sm" :disabled="props.busy" data-test="arrange-only" @click="emit('arrangeOnly')">

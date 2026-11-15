@@ -30,20 +30,17 @@ const devices = [
 const links = [link(1, 1, 2, '10GbE'), link(2, 2, 3), link(3, 2, 4), link(4, 2, 5), link(5, 2, 6), link(6, 2, 7), link(7, 2, 8)];
 const bodies = resolveOrbitSystem(devices, links, new Set([1]));
 const pos = layoutOrbit(bodies);
-const angle = (id: number) => Math.atan2(pos.get(id)!.y, pos.get(id)!.x);
 
 describe('orbit layout', () => {
-  it('puts the router at the centre, even when only a core switch hangs off it', () => {
+  it('puts the router at the centre and the core switch on a short hop', () => {
     expect(pos.get(1)).toEqual({ x: 0, y: 0 });
-    // The hosts and APs behind the switch spread around the router, not into one corner
-    const quadrants = new Set([3, 4, 5, 6].map((id) => `${Math.sign(pos.get(id)!.x)}/${Math.sign(pos.get(id)!.y)}`));
-    expect(quadrants.size).toBe(4);
+    expect(Math.hypot(pos.get(2)!.x, pos.get(2)!.y)).toBeLessThan(600);
   });
 
-  it('puts planets of one tier on one ring around the star, outside the tier before', () => {
-    const r = (id: number) => Math.round(Math.hypot(pos.get(id)!.x, pos.get(id)!.y));
-    expect(new Set([3, 4, 5, 6].map(r)).size).toBe(1);
-    expect(r(3)).toBeGreaterThan(r(2));
+  it('keeps every child close to its parent instead of on one global ring', () => {
+    const d = (a: number, b: number) => Math.hypot(pos.get(a)!.x - pos.get(b)!.x, pos.get(a)!.y - pos.get(b)!.y);
+    for (const id of [3, 4, 5, 6, 7, 8]) expect(d(id, 2), String(id)).toBeLessThan(400);
+    for (const vm of [10, 11]) expect(d(vm, 3)).toBeLessThan(150);
   });
 
   it('keeps every pair of bodies apart', () => {
@@ -56,11 +53,10 @@ describe('orbit layout', () => {
       }
   });
 
-  it('fans moons around their planet away from the star', () => {
-    // VMs of host 3 sit further out than the host itself
-    const host = Math.hypot(pos.get(3)!.x, pos.get(3)!.y);
-    for (const vm of [10, 11]) expect(Math.hypot(pos.get(vm)!.x, pos.get(vm)!.y)).toBeGreaterThan(host - 1);
-    expect(Math.abs(angle(10) - angle(3))).toBeLessThan(0.6);
+  it('fans leaf children around their parent away from its uplink', () => {
+    // VMs of host 3 sit further from the switch it hangs on than the host itself
+    const d = (a: number, b: number) => Math.hypot(pos.get(a)!.x - pos.get(b)!.x, pos.get(a)!.y - pos.get(b)!.y);
+    for (const vm of [10, 11]) expect(d(vm, 2)).toBeGreaterThan(d(3, 2) - 1);
   });
 
   it('orbits moons around their parent and planets around their star', () => {
