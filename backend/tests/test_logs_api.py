@@ -58,3 +58,9 @@ async def test_logs_filter_by_level_in_any_case(client, admin_token, history):
 async def test_logs_need_an_admin_and_a_sane_limit(client, admin_token, history):
     assert (await client.get("/api/logs")).status_code == 401
     assert (await client.get("/api/logs?limit=0", headers={"Authorization": f"Bearer {admin_token}"})).status_code == 422
+
+
+def test_parse_log_line_reads_the_utc_iso_time_of_the_live_log():
+    parsed = parse_log_line("2026-11-15T08:45:36.123Z [INFO] [-] app.scanner.planner: Scan complete.")
+    assert (parsed["timestamp"], parsed["logger"], parsed["message"]) == (
+        "2026-11-15T08:45:36.123Z", "app.scanner.planner", "Scan complete.")

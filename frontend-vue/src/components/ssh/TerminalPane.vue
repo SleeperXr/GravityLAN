@@ -14,7 +14,7 @@ import { buildInstallCommand, needsInsecureOptIn, requestInstallCode } from '@/l
 import { copyText } from '@/lib/clipboard';
 import { useToast } from '@/composables/useToast';
 import { useTheme } from '@/composables/useTheme';
-import { t } from '@/i18n';
+import { formatDateTime, t } from '@/i18n';
 
 /**
  * One xterm.js terminal bound to one SSH session over the /api/ssh/terminal WebSocket.
@@ -278,7 +278,7 @@ async function insertUpdate() {
     if (!term) return;
     term.paste(command);
     term.focus();
-    showToast('success', t('ssh.terminal.agent_update_inserted'), t('ssh.terminal.agent_update_inserted_text', { time: expiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }));
+    showToast('success', t('ssh.terminal.agent_update_inserted'), t('ssh.terminal.agent_update_inserted_text', { time: formatDateTime(expiresAt, { hour: '2-digit', minute: '2-digit' }) }));
     if (needsInsecureOptIn(installCode)) showToast('info', t('agent.insecure_install_title'), t('agent.insecure_install_terminal'));
     else if (insecure) showToast('info', t('agent.insecure_install_title'), t('agent.insecure_install_warning'));
   } catch {

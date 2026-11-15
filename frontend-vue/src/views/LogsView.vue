@@ -10,7 +10,7 @@ import AuditLog from '@/components/logstream/AuditLog.vue';
 import { MAX_LINES, countLevels, filterLogs, parseLogLine, type LogLevel, type LogLine } from '@/components/logstream/logModel';
 import { copyText } from '@/lib/clipboard';
 import { useToast } from '@/composables/useToast';
-import { t } from '@/i18n';
+import { formatDateTime, t } from '@/i18n';
 
 /**
  * Two tabs: the live backend log over /api/logs/ws (last 500 lines, for debugging) and the audit log
@@ -104,7 +104,12 @@ async function copyVisible() {
 const levelText: Record<LogLevel, string> = { debug: 'text-fg-subtle', info: 'text-fg-subtle', warning: 'font-semibold text-warn-text', error: 'font-semibold text-danger-text' };
 const levelRow: Record<LogLevel, string> = { debug: '', info: '', warning: 'bg-warn/[0.06]', error: 'bg-danger/[0.08]' };
 const levelLabel: Record<LogLevel, string> = { debug: 'DEBUG', info: 'INFO', warning: 'WARN', error: 'ERROR' };
-const shortTime = (time: string) => time.slice(11, 19);
+// Times arrive in UTC and are shown in the chosen time zone, like everywhere else in the UI; 24-hour
+// clock so the column keeps its width. A time without a zone (older backend) is shown as written.
+const shortTime = (line: LogLine) =>
+  line.date ? formatDateTime(line.date, { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }) : (line.time ?? '').slice(11, 19);
+const fullTime = (line: LogLine) =>
+  line.date ? formatDateTime(line.date, { dateStyle: 'medium', timeStyle: 'long' }) : (line.time ?? '');
 </script>
 
 <template>
@@ -160,7 +165,7 @@ const shortTime = (time: string) => time.slice(11, 19);
           :class="line.level ? levelRow[line.level] : ''"
         >
           <template v-if="line.time">
-            <span class="text-fg-subtle tabular" :title="line.time">{{ shortTime(line.time) }}</span>
+            <time class="text-fg-subtle tabular" :datetime="line.date?.toISOString()" :title="fullTime(line)">{{ shortTime(line) }}</time>
             <span :class="line.level ? levelText[line.level] : 'text-fg-subtle'">{{ line.level ? levelLabel[line.level] : '' }}</span>
             <!-- Phones: the source took a line of its own on every entry; it stays in the tooltip of wider screens -->
             <span class="truncate text-fg-subtle max-sm:hidden" :title="line.correlationId ? `${line.logger} · ${line.correlationId}` : (line.logger ?? undefined)">{{ line.logger }}</span>

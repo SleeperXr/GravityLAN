@@ -10,8 +10,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 
+# The live log writes ISO 8601 in UTC ("2026-11-15T08:45:36.123Z"); the older
+# "2026-11-15 08:45:36,123" (server-local, no zone) still parses
 LOG_PATTERN = re.compile(
-    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) \[([A-Z]+)\] \[([^\]]*)\] ([^:]+): (.*)$"
+    r"^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]\d{3}(?:Z|[+-]\d{2}:?\d{2})?) "
+    r"\[([A-Z]+)\] \[([^\]]*)\] ([^:]+): (.*)$"
 )
 
 def parse_log_line(line: str) -> dict:
