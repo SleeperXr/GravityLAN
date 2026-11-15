@@ -76,9 +76,14 @@ async function remove(theme: CustomTheme) {
   <div role="radiogroup" :aria-label="t('gv.theme.label')" class="space-y-3">
     <button type="button" role="radio" :aria-checked="preference === 'system'" :class="[card, cardState(preference === 'system')]" @click="pick('system')">
       <!-- Half the day map, half the night map -->
+      <!-- Each half is its design's ground with a bordered card, so the night half stays visible on a dark page -->
       <span class="flex h-9 w-14 shrink-0 overflow-hidden rounded-[5px] border border-line" aria-hidden="true">
-        <span class="flex-1" :style="{ background: dayPreview.surface }" />
-        <span class="flex-1" :style="{ background: nightPreview.surface }" />
+        <span class="relative flex-1" :style="{ background: dayPreview.canvas }">
+          <span class="absolute inset-y-1.5 right-0 left-1.5 rounded-l-[3px] border border-r-0" :style="{ background: dayPreview.surface, borderColor: dayPreview.line }" />
+        </span>
+        <span class="relative flex-1" :style="{ background: nightPreview.canvas }">
+          <span class="absolute inset-y-1.5 right-1.5 left-0 rounded-r-[3px] border border-l-0" :style="{ background: nightPreview.surface, borderColor: nightPreview.line }" />
+        </span>
       </span>
       <span class="min-w-0 flex-1">
         <span class="flex items-center gap-1.5 text-sm font-medium text-fg"><Monitor class="size-3.5 text-fg-subtle" aria-hidden="true" />{{ t('gv.theme.system') }}</span>

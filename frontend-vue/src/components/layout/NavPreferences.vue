@@ -56,7 +56,7 @@ async function logout() {
           type="button"
           role="radio"
           :aria-checked="locale === opt.value"
-          class="h-8 rounded-[5px] px-2 font-mono text-xs font-semibold transition-colors"
+          class="h-8 max-md:h-11 rounded-[5px] px-2 font-mono text-xs font-semibold transition-colors"
           :class="locale === opt.value ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
           @click="setLocale(opt.value)"
         >

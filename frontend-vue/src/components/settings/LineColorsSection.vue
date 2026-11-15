@@ -77,12 +77,12 @@ async function choose(s: Subnet, color: string | null) {
             <span class="block font-mono text-xs text-fg-subtle">{{ s.cidr }}<template v-if="s.vlan_id != null"> · VLAN {{ s.vlan_id }}</template></span>
           </span>
         </span>
-        <span class="flex flex-wrap items-center gap-1.5" role="group" :aria-label="t('gv.lines.colors_for', { name: s.name || s.cidr })">
+        <span class="flex flex-wrap items-center gap-1.5 max-md:gap-2" role="group" :aria-label="t('gv.lines.colors_for', { name: s.name || s.cidr })">
           <button
             v-for="(color, i) in palette"
             :key="color"
             type="button"
-            class="grid size-6 place-items-center rounded-full ring-offset-2 ring-offset-surface transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-fg"
+            class="gl-hit grid size-6 place-items-center rounded-full max-md:size-9 ring-offset-2 ring-offset-surface transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-fg"
             :style="{ background: color }"
             :aria-label="t('gv.lines.slot', { n: i + 1 })"
             :aria-pressed="isPicked(s, i)"
@@ -90,14 +90,14 @@ async function choose(s: Subnet, color: string | null) {
           >
             <Check v-if="isPicked(s, i)" class="size-3.5 text-[#0c0f14]" :stroke-width="3" aria-hidden="true" />
           </button>
-          <label class="relative grid size-6 cursor-pointer place-items-center overflow-hidden rounded-full border border-dashed border-line-strong" :title="t('gv.lines.custom')">
+          <label class="relative grid size-6 cursor-pointer place-items-center overflow-hidden rounded-full border border-dashed border-line-strong max-md:size-9" :title="t('gv.lines.custom')">
             <span class="sr-only">{{ t('gv.lines.custom') }}</span>
             <span class="text-xs font-semibold text-fg-subtle" aria-hidden="true">+</span>
             <input type="color" class="absolute inset-0 cursor-pointer opacity-0" :value="toHex(custom(s))" @change="choose(s, ($event.target as HTMLInputElement).value)" />
           </label>
           <button
             type="button"
-            class="ml-1 inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs transition-colors disabled:opacity-40"
+            class="gl-hit ml-1 inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs transition-colors disabled:opacity-40"
             :class="custom(s) ? 'text-fg-muted hover:bg-control-hover hover:text-fg' : 'text-fg-subtle'"
             :disabled="!custom(s)"
             @click="choose(s, null)"

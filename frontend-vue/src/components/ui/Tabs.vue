@@ -23,7 +23,7 @@ const props = defineProps<{
         :key="tab.value"
         :value="tab.value"
         :disabled="tab.disabled"
-        class="relative inline-flex h-10 shrink-0 items-center gap-1.5 px-2.5 text-sm font-medium text-fg-muted transition-colors hover:text-fg disabled:opacity-40 data-[state=active]:text-fg after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent data-[state=active]:after:bg-accent [&_svg]:size-4"
+        class="relative inline-flex h-10 max-md:h-11 shrink-0 items-center gap-1.5 px-2.5 text-sm font-medium text-fg-muted transition-colors hover:text-fg disabled:opacity-40 data-[state=active]:text-fg after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent data-[state=active]:after:bg-accent [&_svg]:size-4"
       >
         <component :is="tab.icon" v-if="tab.icon" aria-hidden="true" />
         {{ tab.label }}

@@ -84,7 +84,7 @@ async function resetDatabase() {
       <Button size="sm" :loading="exporting" @click="exportBackup"><Download v-if="!exporting" aria-hidden="true" />{{ exporting ? t('settings.backup_exporting') : t('settings.backup_download') }}</Button>
     </ActionRow>
     <ActionRow :title="t('settings.backup_import')" :description="t('settings.backup_import_desc')">
-      <label class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-control px-2.5 text-xs font-medium text-fg hover:border-line-strong hover:bg-control-hover focus-within:outline-2 focus-within:outline-info" :class="importing && 'pointer-events-none opacity-60'">
+      <label class="inline-flex h-8 max-md:h-11 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-control px-2.5 text-xs font-medium text-fg hover:border-line-strong hover:bg-control-hover focus-within:outline-2 focus-within:outline-info" :class="importing && 'pointer-events-none opacity-60'">
         <Upload class="size-4" aria-hidden="true" />
         {{ importing ? t('settings.backup_importing') : t('settings.backup_select_file') }}
         <input type="file" accept=".json,application/json" class="sr-only" :disabled="importing" @change="importBackup" />

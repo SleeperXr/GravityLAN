@@ -265,7 +265,7 @@ function clearFilters() {
     <PageHeader :title="t('sidebar.dashboard')" :description="t('dashboard.devices_sections', { devices: store.totalCount, groups: store.groups.length })">
       <template v-if="!editMode">
         <!-- A row of its own on phones; squeezed between the buttons it shrank to its icon -->
-        <label v-if="store.totalCount > 0" class="relative w-full sm:w-64">
+        <label v-if="store.totalCount > 0" class="relative w-full sm:w-80">
           <span class="sr-only">{{ t('gv.dashboard.search') }}</span>
           <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
           <input

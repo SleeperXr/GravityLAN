@@ -200,7 +200,7 @@ function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
         <div class="inline-flex rounded-md border border-line bg-sunken p-0.5">
           <button
             type="button"
-            class="px-2.5 py-1 text-xs font-medium rounded transition-colors"
+            class="gl-hit px-2.5 py-1 text-xs font-medium rounded transition-colors"
             :class="serviceType === 'webhook' ? 'bg-raised text-fg shadow-sm' : 'text-fg-muted hover:text-fg'"
             @click="serviceType = 'webhook'"
           >
@@ -208,7 +208,7 @@ function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
           </button>
           <button
             type="button"
-            class="px-2.5 py-1 text-xs font-medium rounded transition-colors"
+            class="gl-hit px-2.5 py-1 text-xs font-medium rounded transition-colors"
             :class="serviceType === 'ntfy' ? 'bg-raised text-fg shadow-sm' : 'text-fg-muted hover:text-fg'"
             @click="serviceType = 'ntfy'"
           >
@@ -216,7 +216,7 @@ function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
           </button>
           <button
             type="button"
-            class="px-2.5 py-1 text-xs font-medium rounded transition-colors"
+            class="gl-hit px-2.5 py-1 text-xs font-medium rounded transition-colors"
             :class="serviceType === 'gotify' ? 'bg-raised text-fg shadow-sm' : 'text-fg-muted hover:text-fg'"
             @click="serviceType = 'gotify'"
           >
@@ -257,7 +257,7 @@ function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
               v-for="ev in availableEvents"
               :key="ev.id"
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors"
+              class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors max-md:min-h-11"
               :class="
                 selectedEvents.includes(ev.id)
                   ? 'border-accent/40 bg-accent/15 text-accent-text font-medium'
@@ -286,7 +286,7 @@ function serviceTone(type: string): 'neutral' | 'accent' | 'info' {
         <h3 class="text-xs font-semibold text-fg-muted uppercase tracking-wider">
           {{ t('gv.webhooks.section') }} ({{ webhooks.length }})
         </h3>
-        <Button size="icon-sm" variant="ghost" :loading="loading" @click="load">
+        <Button size="icon-sm" variant="ghost" :loading="loading" :aria-label="t('common.update')" :title="t('common.update')" @click="load">
           <RefreshCw aria-hidden="true" />
         </Button>
       </div>

@@ -38,7 +38,7 @@ const rowClass = 'flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1.
     <label class="relative m-3 mb-2 block">
       <span class="sr-only">{{ t('ssh.targets.search') }}</span>
       <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-      <input v-model="search" type="search" :placeholder="t('ssh.targets.search')" class="h-9 w-full rounded-md border border-field-line bg-sunken pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none" />
+      <input v-model="search" type="search" :placeholder="t('ssh.targets.search')" class="h-9 max-md:h-11 w-full rounded-md border border-field-line bg-sunken pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none" />
     </label>
 
     <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pb-4">

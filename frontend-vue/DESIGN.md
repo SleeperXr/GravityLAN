@@ -337,7 +337,7 @@ Vier Designs, jedes ein `:root[data-theme="…"]`-Block in `index.css` und ein E
 - **Raster:** 16 px zwischen Karten (12 px in dichten Gerätegittern); Karten-Innenabstand 16 px horizontal, 12–14 px vertikal; Gerätekarten innerhalb einer Gruppe erhalten einheitliche Standardhöhen (`groupDefaultH`).
 - **Statusboard:** eine Zelle pro Subnetz/Orbit, `auto-fit` mit mindestens 16 rem, auf Telefonen gestapelt mit Trennern.
 - **Orbit-Netzplan:** füllt seinen Rahmen, `fitView` mit 16 % Rand, Zoom 0,22–2,6; Bedienknöpfe (Zoom, Einpassen, Lebendigkeit) unten rechts, Inspektor-Panels unten links. Grund: dunkel `sunken`, hell `surface` (Weiß), jeweils mit feinem Koordinatenraster (28 px).
-- **Touch:** Ziele mindestens 44 px auf Telefonen; Eingaben dort 16 px Schrift, sonst zoomt iOS.
+- **Touch:** Ziele mindestens 44 px auf Telefonen; kleine Bedienelemente (Schalter, Farbfelder, Chips, Segmentknöpfe) bekommen dafür `.gl-hit`, eine unsichtbare Trefferfläche von mindestens 44 × 44 px auf Touch-Geräten und unter 768 px. In horizontal scrollenden Leisten (Tabs, Abschnittsnavigation) wird stattdessen das Element selbst 44 px hoch, weil eine überstehende Fläche dort abgeschnitten würde; Eingaben dort 16 px Schrift, sonst zoomt iOS.
 
 ## Elevation & Depth
 
