@@ -17,6 +17,7 @@ import {
   freeOrbitSlot,
   getDescendantIds,
   inferLinkType,
+  isBackupLink,
   linkCount,
   moveWithDescendants,
   portLimitReached,
@@ -220,8 +221,11 @@ function rootOf(id: number): number {
   }
   return cur?.id ?? id;
 }
-/** Beams between two bodies of the same system bend around its star. */
+/** Where a beam bends around: the root of its system, except a beam from a body to its own orbit parent stays straight. */
 function beamCentre(beam: LightBeam): Point | null {
+  const source = bodies.value.get(beam.sourceId);
+  const target = bodies.value.get(beam.targetId);
+  if (source?.parentId === beam.targetId || target?.parentId === beam.sourceId) return null;
   const a = rootOf(beam.sourceId);
   return a === rootOf(beam.targetId) ? posOf(a) : null;
 }
@@ -548,11 +552,23 @@ function freeMoonSlot(target: OrbitBody): Point {
   return freeOrbitSlot(posOf(target.id), siblings, target.kind === 'star' ? 140 : 90);
 }
 
-/** Drop the child's old parent link (if any) and link it to `target`. */
+/**
+ * Drop the child's old parent link (if any) and link it to `target`. A link the two already share (in either
+ * direction, e.g. the target hung on the child, or a backup path) is kept and made primary instead of being
+ * created a second time.
+ */
 async function relinkChild(child: OrbitBody, target: OrbitBody) {
-  if (child.parentLinkId != null) {
+  const shared = findLink(child.id, target.id);
+  if (child.parentLinkId != null && child.parentLinkId !== shared?.id) {
     await api.deleteTopologyLink(child.parentLinkId).catch(() => {});
     links.value = links.value.filter((l) => l.id !== child.parentLinkId);
+  }
+  if (shared) {
+    if (isBackupLink(shared)) {
+      await api.updateTopologyLink(shared.id, { role: 'primary' } as never);
+      links.value = links.value.map((l) => (l.id === shared.id ? { ...l, role: 'primary' } : l));
+    }
+    return;
   }
   // Only the child's wireless flag counts here (not the target's), as before
   const type = inferLinkType(child.device, { is_ap: target.device.is_ap });
@@ -578,8 +594,13 @@ async function setMaxPorts(device: Device, value: number) {
   }
 }
 
+/** The link between two devices in either direction, if they share one. */
+function findLink(a: number, b: number): OrbitLink | undefined {
+  return links.value.find((l) => (l.source_id === a && l.target_id === b) || (l.source_id === b && l.target_id === a));
+}
+
 function linkExists(a: number, b: number): boolean {
-  return links.value.some((l) => (l.source_id === a && l.target_id === b) || (l.source_id === b && l.target_id === a));
+  return findLink(a, b) != null;
 }
 
 async function createBeamBetween(source: number, target: number) {
@@ -648,6 +669,12 @@ async function applyArrangePlan(plan: ArrangePlan) {
     for (const id of plan.removeLinkIds) {
       await api.deleteTopologyLink(id).then(
         () => (links.value = links.value.filter((l) => l.id !== id)),
+        () => failed++,
+      );
+    }
+    for (const id of plan.promoteLinkIds) {
+      await api.updateTopologyLink(id, { role: 'primary' } as never).then(
+        () => (links.value = links.value.map((l) => (l.id === id ? { ...l, role: 'primary' } : l))),
         () => failed++,
       );
     }

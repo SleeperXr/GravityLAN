@@ -47,10 +47,11 @@ describe('arrange assistant plan', () => {
     expect(plan.createLinks).toEqual([{ source_id: 7, target_id: 3, link_type: 'WLAN' }]);
 
     // Switch 2 moves under switch 7: its link to the router goes, the one to its AP stays; 2–7 is only a backup,
-    // so a primary link is made next to it
+    // so it becomes the primary link (a second link next to it would be a duplicate the server refuses)
     const plan2 = planArrange(system, wired, {}, { kinds: {}, parents: { 2: 7 } });
     expect(plan2.removeLinkIds).toEqual([1]);
-    expect(plan2.createLinks).toEqual([{ source_id: 7, target_id: 2, link_type: '1GbE' }]);
+    expect(plan2.promoteLinkIds).toEqual([4]);
+    expect(plan2.createLinks).toEqual([]);
   });
 
   it('does not duplicate an existing link and ignores self or unknown parents', () => {

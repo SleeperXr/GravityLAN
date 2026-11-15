@@ -44,13 +44,15 @@ export interface ArrangeChoices {
 export interface ArrangePlan {
   roles: OrbitRoles;
   removeLinkIds: number[];
+  /** Backup links that become the device's primary link to its new parent (one link per pair, never a second) */
+  promoteLinkIds: number[];
   createLinks: { source_id: number; target_id: number; link_type: string }[];
 }
 
 /**
  * Roles and link changes for the user's choices. A device with a new parent loses its primary links to the other
- * stars and hubs it hung on (links to its own children and backup links stay) and gets one link to the new parent,
- * unless that link exists already. WLAN when an access point or a WLAN client is involved, else 1GbE.
+ * stars and hubs it hung on (links to its own children and backup links stay) and gets one link to the new parent:
+ * a backup link the two already share is promoted to primary, any other shared link is kept, else one is created. WLAN when an access point or a WLAN client is involved, else 1GbE.
  */
 export function planArrange(
   bodies: Map<number, OrbitBody>,
@@ -73,6 +75,7 @@ export function planArrange(
   const parentOf = (id: number) => choices.parents[id] ?? bodies.get(id)?.parentId ?? null;
 
   const removeLinkIds = new Set<number>();
+  const promoteLinkIds: number[] = [];
   const createLinks: ArrangePlan['createLinks'] = [];
   for (const [key, parentId] of Object.entries(choices.parents)) {
     const id = Number(key);
@@ -83,15 +86,18 @@ export function planArrange(
       // A link to a hub that hangs on this device is one of its children: it stays
       if (other !== parentId && isHub(other) && parentOf(other) !== id) removeLinkIds.add(l.id);
     }
-    const exists = links.some(
-      (l) => !isBackupLink(l) && ((l.source_id === parentId && l.target_id === id) || (l.source_id === id && l.target_id === parentId)),
+    // Any link the pair already shares counts, in either direction: the database holds one link per pair. A backup
+    // one becomes the primary link instead of getting a second link next to it.
+    const shared = links.find(
+      (l) => (l.source_id === parentId && l.target_id === id) || (l.source_id === id && l.target_id === parentId),
     );
-    if (!exists) {
+    if (shared && isBackupLink(shared)) promoteLinkIds.push(shared.id);
+    if (!shared) {
       const wireless = kindOf(parentId) === 'ap' || kindOf(id) === 'ap' || Boolean(bodies.get(id)!.device.is_wlan);
       createLinks.push({ source_id: parentId, target_id: id, link_type: wireless ? 'WLAN' : '1GbE' });
     }
   }
-  return { roles, removeLinkIds: [...removeLinkIds], createLinks };
+  return { roles, removeLinkIds: [...removeLinkIds], promoteLinkIds, createLinks };
 }
 
 /** Devices matching a search over name, host name and IP (empty search: all). */

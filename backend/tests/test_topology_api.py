@@ -84,3 +84,26 @@ async def test_map_is_cached_and_nodes_come_from_it(client, auth, db):
     topology_cache.invalidate()
     refreshed = (await client.get("/api/topology/map", headers=auth)).json()
     assert sorted(d["ip"] for d in refreshed["devices"]) == ["192.0.2.1", "192.0.2.2"]
+
+
+async def test_duplicate_link_is_a_409_in_either_direction(client, auth, db):
+    """Dragging a device onto one it is already linked to used to crash with a UNIQUE IntegrityError (500)."""
+    a, b = Device(ip="192.0.2.1"), Device(ip="192.0.2.2")
+    db.add_all([a, b])
+    await db.commit()
+
+    first = await client.post("/api/topology/links", json={"source_id": b.id, "target_id": a.id, "link_type": "1GbE"}, headers=auth)
+    assert first.status_code == 200
+    same = await client.post("/api/topology/links", json={"source_id": b.id, "target_id": a.id, "link_type": "1GbE"}, headers=auth)
+    reverse = await client.post("/api/topology/links", json={"source_id": a.id, "target_id": b.id}, headers=auth)
+    assert (same.status_code, reverse.status_code) == (409, 409)
+    assert "already linked" in reverse.json()["detail"]
+    assert len((await db.execute(select(TopologyLink))).scalars().all()) == 1
+
+
+async def test_self_link_is_refused(client, auth, db):
+    a = Device(ip="192.0.2.1")
+    db.add(a)
+    await db.commit()
+    resp = await client.post("/api/topology/links", json={"source_id": a.id, "target_id": a.id}, headers=auth)
+    assert resp.status_code == 422
