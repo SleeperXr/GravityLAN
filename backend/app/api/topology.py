@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, or_, and_
+from sqlalchemy.exc import IntegrityError
 from typing import List
 
 from app.api.auth import get_current_admin
@@ -94,10 +95,23 @@ async def get_links(db: AsyncSession = Depends(get_db)):
 
 @router.post("/links", response_model=LinkSchema)
 async def create_link(link: TopologyLinkCreate, db: AsyncSession = Depends(get_db)):
-    # Prevent duplicate links between same devices if needed, but for now just allow
+    """Link two devices. A link is undirected: one already there in either direction is a 409, never a second row."""
+    if link.source_id == link.target_id:
+        raise HTTPException(status_code=422, detail="A device cannot be linked to itself")
+    existing = (await db.execute(select(LinkModel.id).where(or_(
+        and_(LinkModel.source_id == link.source_id, LinkModel.target_id == link.target_id),
+        and_(LinkModel.source_id == link.target_id, LinkModel.target_id == link.source_id),
+    )).limit(1))).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=f"These devices are already linked (link {existing})")
     db_link = LinkModel(**link.model_dump())
     db.add(db_link)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # A concurrent request created the same link first (or a device is gone)
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="These devices are already linked")
     topology_cache.invalidate()
     await db.refresh(db_link)
     return db_link

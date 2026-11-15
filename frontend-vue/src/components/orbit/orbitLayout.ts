@@ -1,13 +1,13 @@
 /**
  * Orbit geometry: where bodies sit, where their labels go and how beams bend.
  *
- * Layout ("solar system"):
+ * Layout (radial tree, "solar system"):
  * - The router (star) sits at the centre of its system.
- * - Planets (switches, APs, hosts) circle the star on concentric tier rings: tier 1 are the
- *   planets hanging off the star, tier 2 the planets hanging off tier 1, and so on. Each ring is
- *   just big enough that the planets' own moon systems never overlap.
- * - Moons (endpoints, VMs, WLAN clients) circle their planet on a small ring, fanned away from
- *   the star so the beam towards the centre stays clear.
+ * - Every subtree owns an angular wedge around its parent, sized by how much hangs below it, so
+ *   subtrees never cross: switches, hosts and chains of bridges hang on short edges, each one
+ *   pointing away from where it came from.
+ * - Children without children of their own (VMs, containers, clients) circle their parent on a
+ *   small local ring, fanned away from the parent's uplink.
  */
 import type { OrbitBody, Point } from './orbitModel';
 
@@ -20,7 +20,6 @@ const SLOT = 104; // arc (world px) one body plus its label needs on a ring
 const MOON_RING_MIN = 82;
 const STAR_MOON_RING_MIN = 120;
 const LABEL_PAD = 38; // room for the two label lines below a body
-const TIER_GAP = 40;
 const SYSTEM_GAP = 140;
 const MOON_FAN = Math.PI * 2 * 0.78; // moons leave the quarter towards the star free
 
@@ -38,20 +37,6 @@ export function orbitCenterId(body: OrbitBody, bodies: Map<number, OrbitBody>): 
     cur = bodies.get(cur.parentId)!;
   }
   return cur.id === body.id ? null : cur.id;
-}
-
-function childrenOf(bodies: Map<number, OrbitBody>) {
-  const moons = new Map<number, OrbitBody[]>();
-  const planets = new Map<number, OrbitBody[]>();
-  for (const b of bodies.values()) {
-    if (b.parentId == null || !bodies.has(b.parentId)) continue;
-    const target = b.kind === 'moon' ? moons : planets;
-    if (!target.has(b.parentId)) target.set(b.parentId, []);
-    target.get(b.parentId)!.push(b);
-  }
-  const byId = (a: OrbitBody, b: OrbitBody) => a.id - b.id;
-  for (const list of [...moons.values(), ...planets.values()]) list.sort(byId);
-  return { moons, planets };
 }
 
 /** Distance between two moon rings: a moon, its two label lines and some air. */
@@ -113,123 +98,159 @@ function fan(n: number, centre: number, span: number): number[] {
   return Array.from({ length: n }, (_, i) => centre - span / 2 + step * (i + 0.5));
 }
 
-type Sectors = Map<number, { start: number; span: number }>;
+// ── Radial tree ("balloon") layout ──────────────────────────────────────────
+//
+// Every body owns a disc that holds its whole subtree. A parent puts the children that have children of their own
+// (branches) at a short hop, each in an angular wedge just wide enough for its disc, and the children without any
+// (leaves: VMs, containers, clients, a lone switch) on a small local ring in the wedge that is left. Wedges never
+// overlap, so subtrees never cross and every edge stays inside its parent's wedge.
 
-/** Who hangs below whom, and the two measures the tiers need (memoised for one layout). */
-interface OrbitTree {
-  moons: Map<number, OrbitBody[]>;
-  planets: Map<number, OrbitBody[]>;
-  extent: (p: OrbitBody) => number;
-  weight: (p: OrbitBody) => number;
+/** Shortest edge from a parent to a child that carries a subtree of its own. */
+const HOP_MIN = 150;
+/** Air between two neighbouring subtree discs. */
+const SUB_GAP = 28;
+/** What a child's disc must keep clear of its parent: the parent body and its label. */
+const PARENT_CLEAR = BODY_RADIUS.planet + LABEL_PAD;
+/** Leaves fit on at most this many local rings before the branches move further out. */
+const MAX_LEAF_RINGS = 3;
+
+interface Fan {
+  /** Children with children, in drawing order: distance from the parent and wedge angle */
+  branches: { body: OrbitBody; dist: number; arc: number }[];
+  leaves: OrbitBody[];
+  rings: { radius: number; count: number }[];
+  /** Arc the leaf rings use */
+  leafArc: number;
+  /** Radius of the disc around the body that holds its whole subtree */
+  reach: number;
 }
 
-function orbitTree(bodies: Map<number, OrbitBody>): OrbitTree {
-  const { moons, planets } = childrenOf(bodies);
+function childrenByParent(bodies: Map<number, OrbitBody>): Map<number, OrbitBody[]> {
+  const kids = new Map<number, OrbitBody[]>();
+  for (const b of bodies.values()) {
+    if (b.parentId == null || b.parentId === b.id || !bodies.has(b.parentId)) continue;
+    if (!kids.has(b.parentId)) kids.set(b.parentId, []);
+    kids.get(b.parentId)!.push(b);
+  }
+  for (const list of kids.values()) list.sort((a, b) => a.id - b.id);
+  return kids;
+}
 
-  /** Radius a planet's own system needs: its moon ring plus their labels. */
-  const extentCache = new Map<number, number>();
-  function extent(p: OrbitBody): number {
-    if (extentCache.has(p.id)) return extentCache.get(p.id)!;
-    const n = moons.get(p.id)?.length ?? 0;
-    const value = n ? outerRing(packRings(n, MOON_FAN, MOON_RING_MIN)) + BODY_RADIUS.moon + LABEL_PAD : BODY_RADIUS.planet + LABEL_PAD;
-    extentCache.set(p.id, value);
-    return value;
+/** Arc of the leaf rings: the root fills what is left, others only what their leaves need. */
+function leafArcOf(rings: { radius: number; count: number }[], rest: number, full: boolean): number {
+  if (!rings.length) return 0;
+  if (full) return rest;
+  return Math.min(rest, Math.max(...rings.map((r) => (r.count * SLOT) / r.radius)));
+}
+
+/** Branches of a body at `scale` times their shortest hop, each with the wedge its disc needs. */
+function branchFan(branchBodies: OrbitBody[], reachOf: Map<number, number>, scale: number): Fan['branches'] {
+  return branchBodies.map((c) => {
+    const r = reachOf.get(c.id)!;
+    const dist = Math.round(Math.max(HOP_MIN, r + PARENT_CLEAR) * scale);
+    return { body: c, dist, arc: 2 * Math.asin(Math.min(1, (r + SUB_GAP / 2) / dist)) };
+  });
+}
+
+/** Measure every subtree bottom-up: how far its children sit and how big a disc it needs. */
+function measureFans(roots: OrbitBody[], kids: Map<number, OrbitBody[]>): Map<number, Fan> {
+  const fans = new Map<number, Fan>();
+  const visiting = new Set<number>();
+
+  function measure(body: OrbitBody, isRoot: boolean): number {
+    const known = fans.get(body.id);
+    if (known) return known.reach;
+    visiting.add(body.id);
+    const children = (kids.get(body.id) ?? []).filter((c) => !visiting.has(c.id));
+    const branchBodies = children.filter((c) => (kids.get(c.id) ?? []).length > 0);
+    const leaves = moonOrder(children.filter((c) => !branchBodies.includes(c)));
+    const reachOf = new Map(branchBodies.map((c) => [c.id, measure(c, false)]));
+    const span = isRoot ? TAU : MOON_FAN;
+    const ringMin = isRoot ? STAR_MOON_RING_MIN : MOON_RING_MIN;
+
+    // Push the branches out step by step until they and the leaves share the span
+    let branches: Fan['branches'] = [];
+    let rings: Fan['rings'] = [];
+    let rest = span;
+    for (let step = 0, scale = 1; step < 40; step++, scale *= 1.12) {
+      branches = branchFan(branchBodies, reachOf, scale);
+      rest = span - branches.reduce((s, b) => s + b.arc, 0);
+      if (rest < 0) continue;
+      if (!leaves.length) break;
+      rings = packRings(leaves.length, Math.max(rest, 0.01), ringMin);
+      if (rings.length <= MAX_LEAF_RINGS && rest > 0.2) break;
+    }
+    rest = Math.max(rest, 0);
+    if (leaves.length && !rings.length) rings = packRings(leaves.length, Math.max(rest, 0.01), ringMin);
+
+    // The root shares a full circle: spread the branches when nothing else needs the room
+    if (isRoot && !leaves.length && rest > 0 && branches.length) {
+      const used = TAU - rest;
+      branches = branches.map((b) => ({ ...b, arc: (b.arc / used) * TAU }));
+      rest = 0;
+    }
+    const leafArc = leafArcOf(rings, rest, isRoot);
+    const leafReach = rings.length ? outerRing(rings) + BODY_RADIUS.moon + LABEL_PAD : 0;
+    const branchReach = Math.max(0, ...branches.map((b) => b.dist + reachOf.get(b.body.id)!));
+    const reach = Math.max(BODY_RADIUS.star + LABEL_PAD, leafReach, branchReach);
+    fans.set(body.id, { branches, leaves, rings, leafArc, reach });
+    visiting.delete(body.id);
+    return reach;
   }
 
-  /** Sector weight of a planet: the number of leaf planets below it (itself when it has none). */
-  const weightCache = new Map<number, number>();
-  function weight(p: OrbitBody): number {
-    if (weightCache.has(p.id)) return weightCache.get(p.id)!;
-    const kids = planets.get(p.id) ?? [];
-    const value = kids.length ? kids.reduce((s, k) => s + weight(k), 0) : 1;
-    weightCache.set(p.id, value);
-    return value;
+  for (const root of roots) measure(root, true);
+  return fans;
+}
+
+/**
+ * Place a body's children around it, top-down. The leaves are centred on `towards` (away from the parent), the
+ * branches flank them, half on each side, so a chain runs straight on and a host's VMs fan out behind it.
+ */
+function placeFan(out: Map<number, Point>, fans: Map<number, Fan>, body: OrbitBody, pos: Point, towards: number): void {
+  const fan = fans.get(body.id);
+  if (!fan) return;
+  const half = Math.ceil(fan.branches.length / 2);
+  const before = fan.branches.slice(0, half);
+  const after = fan.branches.slice(half);
+  const beforeArc = before.reduce((s, b) => s + b.arc, 0);
+  const total = beforeArc + fan.leafArc + after.reduce((s, b) => s + b.arc, 0);
+  let cursor = fan.leaves.length ? towards - fan.leafArc / 2 - beforeArc : towards - total / 2;
+
+  const placeBranch = (b: Fan['branches'][number]) => {
+    const angle = cursor + b.arc / 2;
+    const at = polar(pos, b.dist, angle);
+    out.set(b.body.id, at);
+    placeFan(out, fans, b.body, at, angle);
+    cursor += b.arc;
+  };
+  before.forEach(placeBranch);
+  if (fan.leaves.length) {
+    placeOnRings(out, fan.leaves, pos, fan.rings, cursor + fan.leafArc / 2, fan.leafArc, true);
+    cursor += fan.leafArc;
   }
-
-  return { moons, planets, extent, weight };
+  after.forEach(placeBranch);
 }
 
-const totalWeight = (list: OrbitBody[], weight: OrbitTree['weight']) => list.reduce((s, p) => s + weight(p), 0) || 1;
-
-/** Share the arc from `start` among `kids`, each by how much hangs below it. */
-function divideSector(kids: OrbitBody[], weight: OrbitTree['weight'], start: number, span: number, sectors: Sectors): void {
-  const total = totalWeight(kids, weight);
-  let at = start;
-  for (const kid of kids) {
-    const share = (weight(kid) / total) * span;
-    sectors.set(kid.id, { start: at, span: share });
-    at += share;
-  }
-}
-
-/** Moons of the star on their own rings around it, as many rings as they need. Returns the reach. */
-function placeStarMoons(local: Map<number, Point>, tree: OrbitTree, root: OrbitBody, centre: Point): number {
-  const starMoons = moonOrder(tree.moons.get(root.id) ?? []);
-  const starRings = packRings(starMoons.length, TAU, STAR_MOON_RING_MIN);
-  placeOnRings(local, starMoons, centre, starRings, -Math.PI / 2 + Math.PI / Math.max(1, starRings[0]?.count ?? 1), TAU, true);
-  return starMoons.length ? outerRing(starRings) + BODY_RADIUS.moon + LABEL_PAD : BODY_RADIUS.star + LABEL_PAD;
-}
-
-/** Ring big enough to clear the inner rings and to give every planet the arc it needs. */
-function tierRadius(tier: OrbitBody[], tree: OrbitTree, sectors: Sectors, reach: number, maxExtent: number): number {
-  let radius = Math.round(reach + maxExtent + TIER_GAP);
-  for (const p of tier) radius = Math.max(radius, Math.ceil((2 * tree.extent(p) + TIER_GAP) / Math.max(sectors.get(p.id)!.span, 0.05)));
-  return radius;
-}
-
-/** A planet on its ring, its moons fanned away from the star, its sector split among its child planets. */
-function placePlanet(local: Map<number, Point>, tree: OrbitTree, sectors: Sectors, p: OrbitBody, centre: Point, radius: number): void {
-  const s = sectors.get(p.id)!;
-  const angle = s.start + s.span / 2;
-  const pos = polar(centre, radius, angle);
-  local.set(p.id, pos);
-  const own = moonOrder(tree.moons.get(p.id) ?? []);
-  placeOnRings(local, own, pos, packRings(own.length, MOON_FAN, MOON_RING_MIN), angle, MOON_FAN, false);
-  divideSector(tree.planets.get(p.id) ?? [], tree.weight, s.start, s.span, sectors);
-}
-
-/** One solar system around (0, 0): its positions and how far it reaches. */
-function layoutSystem(root: OrbitBody, tree: OrbitTree): { local: Map<number, Point>; reach: number } {
-  const local = new Map<number, Point>();
-  const centre = { x: 0, y: 0 };
-  local.set(root.id, centre);
-  let reach = placeStarMoons(local, tree, root, centre);
-
-  // Planets tier by tier, as a radial tree: every planet owns a sector of the circle, sized
-  // by how much hangs below it, and its child planets share that sector. So a single core
-  // switch still spreads its servers and APs all around the router.
-  const sectors: Sectors = new Map();
-  let tier = tree.planets.get(root.id) ?? [];
-  const first = tier.length ? tree.weight(tier[0]) : 1;
-  divideSector(tier, tree.weight, -Math.PI / 2 - (first / totalWeight(tier, tree.weight)) * Math.PI, TAU, sectors);
-
-  while (tier.length) {
-    const maxExtent = Math.max(...tier.map(tree.extent));
-    const radius = tierRadius(tier, tree, sectors, reach, maxExtent);
-    for (const p of tier) placePlanet(local, tree, sectors, p, centre, radius);
-    reach = radius + maxExtent;
-    tier = tier.flatMap((p) => tree.planets.get(p.id) ?? []);
-  }
-  return { local, reach };
-}
-
-/** Positions for every body, one solar system per star, systems side by side. */
+/** Positions for every body: one radial tree per star (its root at the centre), trees side by side. */
 export function layoutOrbit(bodies: Map<number, OrbitBody>): Map<number, Point> {
-  const tree = orbitTree(bodies);
-  const roots = [...bodies.values()].filter((b) => b.parentId == null || !bodies.has(b.parentId)).sort((a, b) => (a.kind === 'star' ? 0 : 1) - (b.kind === 'star' ? 0 : 1) || a.id - b.id);
+  const kids = childrenByParent(bodies);
+  const roots = [...bodies.values()]
+    .filter((b) => b.parentId == null || b.parentId === b.id || !bodies.has(b.parentId))
+    .sort((a, b) => (a.kind === 'star' ? 0 : 1) - (b.kind === 'star' ? 0 : 1) || a.id - b.id);
+  const fans = measureFans(roots, kids);
 
   const out = new Map<number, Point>();
   let cursorX = 0;
-  let previousRadius = 0;
-
+  let previousReach = 0;
   roots.forEach((root, index) => {
-    const { local, reach } = layoutSystem(root, tree);
-    // Systems side by side along x
-    if (index > 0) cursorX += previousRadius + SYSTEM_GAP + reach;
-    previousRadius = reach;
-    for (const [id, p] of local) out.set(id, { x: p.x + cursorX, y: p.y });
+    const reach = fans.get(root.id)?.reach ?? BODY_RADIUS.star + LABEL_PAD;
+    if (index > 0) cursorX += previousReach + SYSTEM_GAP + reach;
+    previousReach = reach;
+    const centre = { x: cursorX, y: 0 };
+    out.set(root.id, centre);
+    // The root's own leaves sit on top, its branches around them
+    placeFan(out, fans, root, centre, -Math.PI / 2);
   });
-
   return out;
 }
 
