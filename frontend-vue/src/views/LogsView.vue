@@ -126,7 +126,7 @@ const shortTime = (time: string) => time.slice(11, 19);
           v-for="opt in (['all', 'warning', 'error'] as const)"
           :key="opt"
           type="button"
-          class="inline-flex h-8 items-center gap-1.5 rounded-[7px] px-3 text-xs font-semibold transition-colors"
+          class="gl-hit inline-flex h-8 items-center gap-1.5 rounded-[7px] px-3 text-xs font-semibold transition-colors"
           :class="level === opt ? 'bg-control text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
           :aria-pressed="level === opt"
           @click="level = opt"
@@ -138,7 +138,7 @@ const shortTime = (time: string) => time.slice(11, 19);
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('gv.logs.search') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input ref="searchInputRef" v-model="search" type="search" :placeholder="t('gv.logs.search')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
+        <input ref="searchInputRef" v-model="search" type="search" :placeholder="t('gv.logs.search')" class="h-9 max-md:h-11 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
       </label>
       <div class="ml-auto flex gap-1">
         <Button size="icon" variant="ghost" :aria-label="paused ? t('common.resume') : t('common.pause')" :title="paused ? t('common.resume') : t('common.pause')" :aria-pressed="paused" @click="paused = !paused">

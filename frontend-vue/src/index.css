@@ -324,8 +324,9 @@
   --gl-accent-hover: #5dffc4;
   --gl-accent-fg: #00261a;
   --gl-accent-text: #3dffb8;
-  --gl-info: #29c5ff;
-  --gl-info-text: #7ddcff;
+  /* A clear blue rather than cyan, so info and maintenance stand apart from network line 1 (#00e5ff) */
+  --gl-info: #6e9bff;
+  --gl-info-text: #a3bdff;
   --gl-warn: #ffd60a;
   --gl-warn-text: #ffe14d;
   --gl-danger: #ff3d71;
@@ -431,6 +432,26 @@
     box-shadow: var(--gl-shadow-card);
   }
 
+  /*
+   * Touch target: on touch screens and phones an invisible layer grows the control's hit area
+   * to at least 44 x 44 px around its centre, without changing how it looks (switches, swatches,
+   * chips, segmented buttons). Neighbours need about 44 px between their centres.
+   */
+  .gl-hit {
+    position: relative;
+  }
+  @media (pointer: coarse), (max-width: 767px) {
+    .gl-hit::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+
   .gl-subcard {
     background-color: var(--gl-raised);
     border: 1px solid var(--gl-line);
@@ -469,6 +490,11 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  /* A loading spinner is progress, not decoration: frozen it reads as "stuck", so it turns slowly */
+  .animate-spin {
+    animation-duration: 2.4s !important;
+    animation-iteration-count: infinite !important;
   }
 }
 

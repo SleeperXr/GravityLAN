@@ -105,7 +105,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
       <label class="relative min-w-0 flex-1 sm:max-w-xs">
         <span class="sr-only">{{ t('agents_page.search_placeholder') }}</span>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden="true" />
-        <input ref="searchInputRef" v-model="search" type="search" :placeholder="t('agents_page.search_placeholder')" class="h-9 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
+        <input ref="searchInputRef" v-model="search" type="search" :placeholder="t('agents_page.search_placeholder')" class="h-9 max-md:h-11 w-full rounded-md border border-field-line bg-surface pr-3 pl-9 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle focus:border-accent focus:outline-none" />
       </label>
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-line bg-surface px-3.5 py-2 text-xs" :aria-label="t('agents_page.title')">
         <span class="flex items-baseline gap-1.5">

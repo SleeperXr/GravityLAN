@@ -179,7 +179,7 @@ function gatewayLabel(sub: Subnet): string {
     <div v-if="importing" id="router-import-panel"><RouterImportPanel @applied="load" /></div>
 
     <ActionRow :title="t('settings.subnets_overview')" :description="t('settings.subnets_overview_desc')">
-      <RouterLink to="/network" class="inline-flex h-8 items-center rounded-md border border-line bg-control px-2.5 text-xs font-medium text-fg hover:border-line-strong hover:bg-control-hover">
+      <RouterLink to="/network" class="inline-flex h-8 max-md:h-11 items-center rounded-md border border-line bg-control px-2.5 text-xs font-medium text-fg hover:border-line-strong hover:bg-control-hover">
         {{ t('settings.subnets_overview_open') }}
       </RouterLink>
     </ActionRow>

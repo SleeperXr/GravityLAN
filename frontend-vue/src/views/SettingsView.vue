@@ -116,7 +116,7 @@ const languages: { value: Locale; key: string }[] = [
           <li v-for="section in sections" :key="section.id" class="shrink-0">
             <a
               :href="`#${section.id}`"
-              class="block rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors lg:py-2"
+              class="block rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors max-md:py-3 lg:py-2"
               :class="section.id === 'danger' ? 'text-danger-text hover:bg-danger/10' : 'border border-line text-fg-muted hover:bg-control-hover hover:text-fg lg:border-transparent'"
             >
               {{ section.label }}
@@ -181,7 +181,7 @@ const languages: { value: Locale; key: string }[] = [
             <Input :id="id" v-model="form.server_url_override" type="url" mono placeholder="http://192.168.1.10:8000" :aria-describedby="describedBy" />
           </Field>
           <ActionRow :title="t('settings.system_livelogs')" :description="t('settings.system_livelogs_desc')">
-            <RouterLink to="/logs" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-control px-2.5 text-xs font-medium text-fg hover:border-line-strong hover:bg-control-hover">
+            <RouterLink to="/logs" class="inline-flex h-8 max-md:h-11 items-center gap-1.5 rounded-md border border-line bg-control px-2.5 text-xs font-medium text-fg hover:border-line-strong hover:bg-control-hover">
               <FileText class="size-4" aria-hidden="true" />{{ t('settings.system_livelogs_open') }}
             </RouterLink>
           </ActionRow>
@@ -201,7 +201,7 @@ const languages: { value: Locale; key: string }[] = [
                   type="button"
                   :lang="lang.value"
                   :aria-pressed="locale === lang.value"
-                  class="h-8 flex-1 rounded-[5px] text-sm transition-colors"
+                  class="h-8 max-md:h-11 flex-1 rounded-[5px] text-sm transition-colors"
                   :class="locale === lang.value ? 'bg-control font-medium text-fg shadow-sm' : 'text-fg-subtle hover:text-fg'"
                   @click="setLocale(lang.value)"
                 >
