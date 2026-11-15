@@ -2,6 +2,7 @@ import asyncio
 import contextvars
 import logging
 from collections import deque
+from datetime import datetime, timezone
 from typing import Set
 from fastapi import WebSocket
 
@@ -20,6 +21,17 @@ class SafeCorrelationIdFormatter(logging.Formatter):
         if not hasattr(record, "correlation_id"):
             record.correlation_id = "-"
         return super().format(record)
+
+
+class UtcIsoFormatter(SafeCorrelationIdFormatter):
+    """Times as ISO 8601 in UTC with a "Z" (2026-11-15T08:45:36.123Z), whatever TZ the server runs in.
+
+    The browser reads the zone and shows the time in the viewer's chosen time zone, so the live log
+    matches every other time in the UI instead of showing the container's clock without an offset.
+    """
+    def formatTime(self, record, datefmt=None):
+        moment = datetime.fromtimestamp(record.created, tz=timezone.utc)
+        return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 class LogStreamerHandler(logging.Handler):
     """
@@ -94,7 +106,7 @@ class LogStreamerHandler(logging.Handler):
 # Global instance
 log_handler = LogStreamerHandler()
 log_handler.addFilter(CorrelationIdFilter())
-log_handler.setFormatter(SafeCorrelationIdFormatter("%(asctime)s [%(levelname)s] [%(correlation_id)s] %(name)s: %(message)s"))
+log_handler.setFormatter(UtcIsoFormatter("%(asctime)s [%(levelname)s] [%(correlation_id)s] %(name)s: %(message)s"))
 
 def apply_log_level(lvl_str: str):
     """

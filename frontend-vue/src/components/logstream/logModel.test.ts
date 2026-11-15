@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countLevels, filterLogs, parseLogLine } from './logModel';
+import { countLevels, filterLogs, parseLogLine, parseLogTime } from './logModel';
 
 const line = (level: string, msg: string, n = 1) => parseLogLine(`2026-10-22 21:07:01,123 [${level}] [-] app.scanner: ${msg}`, n);
 
@@ -10,6 +10,18 @@ describe('logModel', () => {
     });
     expect(line('CRITICAL', 'boom').level).toBe('error');
     expect(line('INFO', 'ok').correlationId).toBeNull();
+  });
+
+  it('reads the UTC ISO time of the live log as a moment, so it can be shown in any zone', () => {
+    // Regression: the time was shown as the server wrote it, an hour early for a viewer in Germany
+    const parsed = parseLogLine('2026-11-15T08:45:36.123Z [INFO] [-] app.scanner.planner: Scan complete.', 1);
+    expect(parsed).toMatchObject({ time: '2026-11-15T08:45:36.123Z', level: 'info', logger: 'app.scanner.planner', message: 'Scan complete.' });
+    expect(parsed.date?.toISOString()).toBe('2026-11-15T08:45:36.123Z');
+    expect(parseLogTime('2026-11-15 09:45:36,123+01:00')?.toISOString()).toBe('2026-11-15T08:45:36.123Z');
+  });
+
+  it('leaves a time without a zone undated rather than guessing', () => {
+    expect(line('INFO', 'old backend').date).toBeNull();
   });
 
   it('keeps other lines raw and still spots their level', () => {

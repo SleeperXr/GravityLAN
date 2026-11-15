@@ -10,6 +10,7 @@ import translationDE from '@/locales/base/de.json';
 import translationEN from '@/locales/base/en.json';
 import gravityDE from '@/locales/de.json';
 import gravityEN from '@/locales/en.json';
+import { activeTimeZone } from './timeZone';
 
 export type Locale = 'de' | 'en';
 
@@ -51,9 +52,11 @@ export function formatNumber(value: number, options?: Intl.NumberFormatOptions):
   return new Intl.NumberFormat(locale.value === 'de' ? 'de-DE' : 'en-US', options).format(value);
 }
 
+/** Dates and times in the chosen time zone (Settings → Language & appearance), the browser's by default. */
 export function formatDateTime(value: string | number | Date, options?: Intl.DateTimeFormatOptions): string {
   const date = value instanceof Date ? value : new Date(value);
-  return new Intl.DateTimeFormat(locale.value === 'de' ? 'de-DE' : 'en-US', options ?? { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  const opts = options ?? { dateStyle: 'medium', timeStyle: 'short' };
+  return new Intl.DateTimeFormat(locale.value === 'de' ? 'de-DE' : 'en-US', { timeZone: activeTimeZone(), ...opts }).format(date);
 }
 
 export { i18next };

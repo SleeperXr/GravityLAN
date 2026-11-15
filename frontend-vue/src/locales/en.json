@@ -87,6 +87,9 @@
     },
     "settings": {
       "appearance": "Language & appearance",
+      "timezone": "Time zone",
+      "timezone_browser": "Same as this browser: {{zone}}",
+      "timezone_hint": "Applies to every time in GravityLAN, logs and charts included. Now: {{time}} ({{zone}})",
       "sections": "Sections"
     },
     "plan": {

@@ -23,6 +23,7 @@ import DataSections from '@/components/settings/DataSections.vue';
 import LineColorsSection from '@/components/settings/LineColorsSection.vue';
 import LinkTypeColorsSection from '@/components/settings/LinkTypeColorsSection.vue';
 import ThemePicker from '@/components/settings/ThemePicker.vue';
+import TimeZoneField from '@/components/settings/TimeZoneField.vue';
 import { locale, setLocale, t, type Locale } from '@/i18n';
 
 /** Settings saved together through the save bar, keyed as the backend stores them. */
@@ -209,6 +210,7 @@ const languages: { value: Locale; key: string }[] = [
                 </button>
               </div>
             </fieldset>
+            <TimeZoneField />
             <fieldset class="min-w-0 basis-full">
               <legend class="mb-1.5 text-xs font-medium text-fg">{{ t('gv.theme.menu') }}</legend>
               <ThemePicker />

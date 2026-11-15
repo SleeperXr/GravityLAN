@@ -126,3 +126,29 @@ def test_global_handler_configured():
     assert isinstance(log_handler, LogStreamerHandler)
     assert len(log_handler.filters) == 1
     assert log_handler.formatter is not None
+
+
+# --- UtcIsoFormatter ----------------------------------------------------------
+
+def test_live_log_times_are_utc_iso_whatever_the_server_zone(monkeypatch):
+    """Regression: the live log showed the container's clock without a zone, an hour off in Germany."""
+    import time
+    from app.services.log_streamer import UtcIsoFormatter
+
+    if hasattr(time, "tzset"):
+        monkeypatch.setenv("TZ", "Asia/Tokyo")
+        time.tzset()
+    try:
+        record = logging.LogRecord("app.x", logging.INFO, __file__, 1, "hi", (), None)
+        record.created = 1794732336.123  # 2026-11-15 08:45:36.123 UTC
+        line = UtcIsoFormatter("%(asctime)s [%(levelname)s] [%(correlation_id)s] %(name)s: %(message)s").format(record)
+        assert line == "2026-11-15T08:45:36.123Z [INFO] [-] app.x: hi"
+    finally:
+        if hasattr(time, "tzset"):
+            monkeypatch.delenv("TZ")
+            time.tzset()
+
+
+def test_the_global_live_log_handler_uses_utc_iso():
+    from app.services.log_streamer import UtcIsoFormatter
+    assert isinstance(log_handler.formatter, UtcIsoFormatter)
