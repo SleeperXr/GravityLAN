@@ -123,6 +123,8 @@ interface Fan {
   leafArc: number;
   /** Radius of the disc around the body that holds its whole subtree */
   reach: number;
+  /** Radius of the body's own leaf rings (or just the body and its label): how close its parent may come */
+  local: number;
 }
 
 function childrenByParent(bodies: Map<number, OrbitBody>): Map<number, OrbitBody[]> {
@@ -143,12 +145,16 @@ function leafArcOf(rings: { radius: number; count: number }[], rest: number, ful
   return Math.min(rest, Math.max(...rings.map((r) => (r.count * SLOT) / r.radius)));
 }
 
-/** Branches of a body at `scale` times their shortest hop, each with the wedge its disc needs. */
-function branchFan(branchBodies: OrbitBody[], reachOf: Map<number, number>, scale: number): Fan['branches'] {
+/**
+ * Branches of a body at `scale` times their shortest hop, each with the wedge its subtree needs. The hop only has to
+ * clear the child's own leaf ring; the rest of its subtree points away from the parent, so a chain grows by one hop
+ * per device instead of doubling. A subtree wider than the hop gets at most half a circle.
+ */
+function branchFan(branchBodies: OrbitBody[], fans: Map<number, Fan>, scale: number): Fan['branches'] {
   return branchBodies.map((c) => {
-    const r = reachOf.get(c.id)!;
-    const dist = Math.round(Math.max(HOP_MIN, r + PARENT_CLEAR) * scale);
-    return { body: c, dist, arc: 2 * Math.asin(Math.min(1, (r + SUB_GAP / 2) / dist)) };
+    const { reach, local } = fans.get(c.id)!;
+    const dist = Math.round(Math.max(HOP_MIN, local + PARENT_CLEAR) * scale);
+    return { body: c, dist, arc: 2 * Math.asin(Math.min(1, (reach + SUB_GAP / 2) / dist)) };
   });
 }
 
@@ -157,31 +163,32 @@ function measureFans(roots: OrbitBody[], kids: Map<number, OrbitBody[]>): Map<nu
   const fans = new Map<number, Fan>();
   const visiting = new Set<number>();
 
-  function measure(body: OrbitBody, isRoot: boolean): number {
-    const known = fans.get(body.id);
-    if (known) return known.reach;
+  function measure(body: OrbitBody, isRoot: boolean): void {
+    if (fans.has(body.id)) return;
     visiting.add(body.id);
     const children = (kids.get(body.id) ?? []).filter((c) => !visiting.has(c.id));
     const branchBodies = children.filter((c) => (kids.get(c.id) ?? []).length > 0);
     const leaves = moonOrder(children.filter((c) => !branchBodies.includes(c)));
-    const reachOf = new Map(branchBodies.map((c) => [c.id, measure(c, false)]));
+    for (const c of branchBodies) measure(c, false);
     const span = isRoot ? TAU : MOON_FAN;
     const ringMin = isRoot ? STAR_MOON_RING_MIN : MOON_RING_MIN;
 
-    // Push the branches out step by step until they and the leaves share the span
-    let branches: Fan['branches'] = [];
-    let rings: Fan['rings'] = [];
-    let rest = span;
-    for (let step = 0, scale = 1; step < 40; step++, scale *= 1.12) {
-      branches = branchFan(branchBodies, reachOf, scale);
-      rest = span - branches.reduce((s, b) => s + b.arc, 0);
-      if (rest < 0) continue;
-      if (!leaves.length) break;
-      rings = packRings(leaves.length, Math.max(rest, 0.01), ringMin);
-      if (rings.length <= MAX_LEAF_RINGS && rest > 0.2) break;
+    // Branches on their shortest hop. When their wedges do not fit next to the leaves, squeeze them by the same factor
+    // and move a branch out only as far as its own leaf ring needs to stay inside its narrower wedge: subtrees point
+    // away from the parent, so pushing every branch out would only stretch the edges.
+    const leafNeed = leaves.length ? Math.min(span / 2, (leaves.length * SLOT) / (ringMin + (MAX_LEAF_RINGS - 1) * RING_STEP)) : 0;
+    let branches = branchFan(branchBodies, fans, 1);
+    const wanted = branches.reduce((s, b) => s + b.arc, 0);
+    if (wanted > span - leafNeed) {
+      const squeeze = (span - leafNeed) / wanted;
+      branches = branches.map((b) => {
+        const arc = b.arc * squeeze;
+        const local = fans.get(b.body.id)!.local;
+        return { ...b, arc, dist: Math.round(Math.max(b.dist, (local + SUB_GAP / 2) / Math.sin(Math.min(arc, Math.PI) / 2))) };
+      });
     }
-    rest = Math.max(rest, 0);
-    if (leaves.length && !rings.length) rings = packRings(leaves.length, Math.max(rest, 0.01), ringMin);
+    let rest = Math.max(span - branches.reduce((s, b) => s + b.arc, 0), 0);
+    const rings = leaves.length ? packRings(leaves.length, Math.max(rest, 0.01), ringMin) : [];
 
     // The root shares a full circle: spread the branches when nothing else needs the room
     if (isRoot && !leaves.length && rest > 0 && branches.length) {
@@ -191,11 +198,10 @@ function measureFans(roots: OrbitBody[], kids: Map<number, OrbitBody[]>): Map<nu
     }
     const leafArc = leafArcOf(rings, rest, isRoot);
     const leafReach = rings.length ? outerRing(rings) + BODY_RADIUS.moon + LABEL_PAD : 0;
-    const branchReach = Math.max(0, ...branches.map((b) => b.dist + reachOf.get(b.body.id)!));
-    const reach = Math.max(BODY_RADIUS.star + LABEL_PAD, leafReach, branchReach);
-    fans.set(body.id, { branches, leaves, rings, leafArc, reach });
+    const branchReach = Math.max(0, ...branches.map((b) => b.dist + fans.get(b.body.id)!.reach));
+    const local = Math.max(BODY_RADIUS.star + LABEL_PAD, leafReach);
+    fans.set(body.id, { branches, leaves, rings, leafArc, reach: Math.max(local, branchReach), local });
     visiting.delete(body.id);
-    return reach;
   }
 
   for (const root of roots) measure(root, true);
