@@ -531,3 +531,15 @@ def test_uvicorn_error_logger_gets_the_secret_filter():
             logger.filters[:] = filters
             logger.handlers[:] = handlers
             logger.setLevel(level)
+
+
+def test_redaction_matches_percent_encoded_parameter_names():
+    """Starlette decodes ``%74oken`` to ``token``; the log must mask it as well."""
+    from app.services.enrollment_service import redact_enrollment_codes
+
+    assert redact_enrollment_codes("/api/logs/ws?%74oken=LIVE_TOKEN") == "/api/logs/ws?%74oken=[redacted]"
+    assert redact_enrollment_codes("/x?patch%5Ftoken=pt&page=2") == "/x?patch%5Ftoken=[redacted]&page=2"
+    assert redact_enrollment_codes("/x?TOKEN=abc") == "/x?TOKEN=[redacted]"
+    # A secret value is masked completely, unrelated parameters stay as they were
+    assert redact_enrollment_codes("/x?token=a%26b%3Dc&next=%2Fhome") == "/x?token=[redacted]&next=%2Fhome"
+    assert redact_enrollment_codes("/x?code=") == "/x?code="

@@ -9,8 +9,8 @@ All notable changes to this project will be documented in this file.
 - Agent scanner relay: MAC addresses are stored in lower case, like the local scanner does, and MAC matching ignores case. Before, a host the agent relay saw first (upper case) and a later local scan (lower case) could become two entries, or the MAC was rewritten on every report. Upper-case MACs already in the database are still matched.
 
 ### Security
-- A request that fails validation (HTTP 422) no longer writes the submitted values to the log, the live log or the response, only the field, the error type and the message. Pydantic put the raw value there, such as a too-short password or a router secret.
-- The request log now masks `token=`, `patch_token=` and `ticket=` in addition to enrollment `code=`, and it also does that for WebSocket handshakes, which uvicorn logs with their full query string. API, master and agent tokens on the log and scanner WebSockets no longer appear in the log or the log viewer.
+- A request that fails validation (HTTP 422) no longer writes the submitted values to the log, the live log or the response, only the field, the error type and the message. Pydantic put the raw value there, such as a too-short password or a router secret. The DNS server check no longer quotes the rejected value in its message either.
+- The request log now masks `token=`, `patch_token=` and `ticket=` in addition to enrollment `code=`, and it also does that for WebSocket handshakes, which uvicorn logs with their full query string. API, master and agent tokens on the log and scanner WebSockets no longer appear in the log or the log viewer. Percent-encoded parameter names such as `%74oken=` are masked as well.
 
 ## [0.8.0] - 2026-11-15
 

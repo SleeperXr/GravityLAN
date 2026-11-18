@@ -339,10 +339,19 @@ def _redact_validation_errors(errors) -> list:
     """Drop the submitted values from Pydantic's error list.
 
     Pydantic v2 puts the raw request value under ``input`` (a password, a router
-    secret, a whole login body), and the 422 handler both logs the list, which
-    shows up under /api/logs, and sends it back. Location, type and message stay.
+    secret, a whole login body), and a field_validator's exception under
+    ``ctx["error"]``. The 422 handler both logs the list, which shows up under
+    /api/logs, and sends it back. Location, type, message and the other ``ctx``
+    values (such as ``min_length``) stay.
     """
-    return [{k: v for k, v in err.items() if k != "input"} for err in errors]
+    redacted = []
+    for err in errors:
+        clean = {k: v for k, v in err.items() if k != "input"}
+        # A field_validator's ValueError sits in ctx["error"]; its text can quote the value
+        if isinstance(clean.get("ctx"), dict) and "error" in clean["ctx"]:
+            clean["ctx"] = {k: v for k, v in clean["ctx"].items() if k != "error"}
+        redacted.append(clean)
+    return redacted
 
 
 @app.exception_handler(RequestValidationError)
@@ -362,8 +371,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         headers={"X-Correlation-ID": cid},
         content={
             "status": "validation_error",
-            # jsonable_encoder: a field_validator's ValueError sits in ctx["error"] and is
-            # not JSON serializable, which turned every such 422 into a 500
+            # jsonable_encoder: ctx values need not be JSON serializable (a field_validator's
+            # ValueError there turned every such 422 into a 500; it is dropped above now)
             "detail": jsonable_encoder(errors),
             "correlation_id": cid
         },

@@ -20,8 +20,10 @@ def normalize_dns_server(value: str | None) -> str | None:
     try:
         return str(ipaddress.ip_address(value))
     except ValueError:
+        # No echo of the value: a 422 logs and returns this message, and a pasted
+        # credential in the wrong field must not end up there
         raise ValueError(
-            f"Invalid DNS server: '{value}'. Must be a single IP address (e.g. 192.168.1.1)."
+            "Invalid DNS server. Must be a single IP address (e.g. 192.168.1.1)."
         ) from None
 
 
