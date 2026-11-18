@@ -93,17 +93,19 @@ enrollment_store = EnrollmentStore()
 
 # Install commands carry the code in their URL (``.../install-sh/5?code=...``) and the
 # access log records every request line: masked there, a live code never ends up in a
-# log file or in the log viewer.
-_CODE_PARAM = re.compile(r"([?&]code=)[^&\s\"']+")
+# log file or in the log viewer. WebSocket handshakes carry API, master or agent tokens
+# (``?token=``), patch-runner tokens (``?patch_token=``) and SSH tickets (``?ticket=``)
+# the same way, and uvicorn logs their path with the query string too.
+_SECRET_PARAM = re.compile(r"([?&](?:code|token|patch_token|ticket)=)[^&\s\"']+", re.IGNORECASE)
 
 
 def redact_enrollment_codes(text: str) -> str:
-    """Mask the value of every ``code=`` query parameter in ``text``."""
-    return _CODE_PARAM.sub(r"\1[redacted]", text)
+    """Mask the value of every ``code=``, ``token=``, ``patch_token=`` and ``ticket=`` query parameter."""
+    return _SECRET_PARAM.sub(r"\1[redacted]", text)
 
 
 class EnrollmentCodeLogFilter(logging.Filter):
-    """Mask enrollment codes in logged request lines (attached to ``uvicorn.access``)."""
+    """Mask secrets in logged request lines (on ``uvicorn.access`` and, for WebSocket handshakes, ``uvicorn.error``)."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.msg, str):

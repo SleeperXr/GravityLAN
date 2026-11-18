@@ -351,6 +351,11 @@ async def resolve_mac_addresses(discovered_hosts: List[Dict[str, Any]], all_targ
             host_ip = host["ip"]
             if host_ip in arp_map:
                 host["mac"] = arp_map[host_ip]
+            elif host_ip in raw_arp_map:
+                # The filter stripped this IP's entry: its MAC is the gateway's or a
+                # proxy-ARP MAC. Checking arp_map.values() is not enough here, since the
+                # gateway itself keeps that MAC there.
+                host["mac"] = None
             elif host.get("mac") and host["mac"].lower() not in [m.lower() for m in arp_map.values()]:
                 host["mac"] = None
 

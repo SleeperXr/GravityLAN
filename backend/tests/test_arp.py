@@ -287,3 +287,31 @@ def test_filter_gateway_macs_strips_from_remote_routed_hosts():
 def test_filter_gateway_macs_empty():
     assert arp._filter_gateway_and_proxy_macs({}) == {}
 
+
+
+@pytest.mark.asyncio
+async def test_resolve_mac_addresses_clears_gateway_mac_on_routed_host(monkeypatch):
+    """A routed host must not keep the gateway MAC, although the gateway still holds it."""
+    gateway_mac = "00:11:22:33:44:55"
+    raw = {
+        "192.168.1.1": gateway_mac,
+        "192.168.20.10": gateway_mac,
+        "192.168.20.11": gateway_mac,
+    }
+    hosts = [
+        {"ip": "192.168.1.1", "mac": None, "hostname": "gw"},
+        {"ip": "192.168.20.10", "mac": None, "hostname": "iot"},
+    ]
+    monkeypatch.setattr(arp, "_collect_arp_maps", lambda: _async_value(raw))
+    monkeypatch.setattr(arp, "_probe_and_retry_missing", AsyncMock_passthrough())
+    monkeypatch.setattr(arp, "_merge_into_hosts", lambda h, m, t: None)
+    real_filter = arp._filter_gateway_and_proxy_macs
+    monkeypatch.setattr(
+        arp, "_filter_gateway_and_proxy_macs",
+        lambda m: real_filter(m, local_subnets=["192.168.1.0/24"]),
+    )
+
+    result = await arp.resolve_mac_addresses(hosts)
+    by_ip = {h["ip"]: h["mac"] for h in result}
+    assert by_ip["192.168.1.1"] == gateway_mac
+    assert by_ip["192.168.20.10"] is None
