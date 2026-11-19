@@ -32,6 +32,7 @@ All notable changes to this project will be documented in this file.
 - `/api/health`: "unread" notifications count only unread ones (it counted every entry), and revoked agent tokens no longer count as agents that stopped reporting.
 - GravityUI: an expired session during a backup export or import signs out like any other request, the quick subnet scan and "add device by IP" encode their parameters, and the generated `.rdp` file no longer stays in memory until the page reloads.
 - On shutdown the webhook service also closes the connections of its direct client.
+- A scan no longer hands a device over to another box only because the name matches. A second device with the same hostname (a replacement, a default name such as `raspberrypi`, or a hostname equal to a name you gave a device) took over the documented device at its new address, with its notes, links, rack ports and probes; if the original was still online, the next scan pulled it back by its MAC, reported an IP change and handed it over again, every scan, and the second device never showed up on its own. When the MAC addresses differ, the new address now becomes a discovered host of its own and the device stays where it is. Without a MAC on either side the name still follows a device to a new address. Names are compared literally: `_` or `%` in a hostname no longer matches any character.
 
 ## [0.8.0] - 2026-11-19
 
