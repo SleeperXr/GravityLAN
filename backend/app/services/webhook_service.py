@@ -6,7 +6,6 @@ import json
 import logging
 import socket
 from datetime import datetime, timedelta, timezone
-import urllib.request
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -28,6 +27,7 @@ _background_webhook_tasks: set[asyncio.Task] = set()
 # One delivery pass at a time: an event's own pass and the retry loop must not send the same entry twice
 _delivery_lock = asyncio.Lock()
 _shared_client: httpx.AsyncClient | None = None
+_direct_client: httpx.AsyncClient | None = None
 
 
 async def _get_client() -> httpx.AsyncClient:
@@ -36,6 +36,19 @@ async def _get_client() -> httpx.AsyncClient:
     if _shared_client is None or _shared_client.is_closed:
         _shared_client = httpx.AsyncClient(timeout=5.0)
     return _shared_client
+
+
+def _get_direct_client() -> httpx.AsyncClient:
+    """The client for posts pinned to a checked address: never a proxy, no redirects, HTTP/1.1.
+
+    httpx picks the proxy again per request, from the URL it sends; for a pinned post that is
+    the address, which NO_PROXY names do not match, so the shared client would send a post meant
+    to go direct through the proxy. HTTP/2 would also multiplex several names over one connection.
+    """
+    global _direct_client
+    if _direct_client is None or _direct_client.is_closed:
+        _direct_client = httpx.AsyncClient(timeout=5.0, trust_env=False, follow_redirects=False, http2=False)
+    return _direct_client
 
 
 async def drain_webhook_tasks(timeout: float = 5.0) -> int:
@@ -193,12 +206,16 @@ async def _vet_target(url: str) -> tuple[str | None, str | None]:
 
     parsed = urlparse(url)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        host = _ascii_host(url)
+    except (httpx.InvalidURL, UnicodeError):
+        return f"{parsed.hostname} is not a valid host name", None
     # A name that does not resolve right now (DNS server restarting) is a failed attempt that the
     # outbox retries, not a blocked target: raised like httpx's own connect errors
     try:
-        infos = await asyncio.get_running_loop().getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+        infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except (socket.gaierror, UnicodeError) as e:
-        raise httpx.ConnectError(f"{parsed.hostname} could not be resolved") from e
+        raise httpx.ConnectError(f"{host} could not be resolved") from e
     addresses = []
     for *_, sockaddr in infos:
         try:
@@ -207,23 +224,35 @@ async def _vet_target(url: str) -> tuple[str | None, str | None]:
             continue
     for addr in addresses:
         if is_blocked_webhook_ip(addr):
-            return f"{parsed.hostname} resolves to {addr}, a loopback, link-local or metadata address", None
+            return f"{host} resolves to {addr}, a loopback, link-local or metadata address", None
     if not addresses:
-        raise httpx.ConnectError(f"{parsed.hostname} could not be resolved")
-    if _through_proxy(parsed):
-        # The proxy resolves and connects itself (and checks the certificate against what it is
-        # given): pinning the address would make it check the address. The check above still ran.
-        return None, None
+        raise httpx.ConnectError(f"{host} could not be resolved")
     ipv4 = [a for a in addresses if a.version == 4]
     return None, str((ipv4 or addresses)[0])
 
 
-def _through_proxy(parsed) -> bool:
-    """True when httpx sends this URL through a proxy from the environment (HTTP(S)_PROXY, ALL_PROXY, NO_PROXY)."""
-    proxies = urllib.request.getproxies_environment()
-    if not (proxies.get(parsed.scheme) or proxies.get("all")):
-        return False
-    return not urllib.request.proxy_bypass_environment(parsed.hostname or "", proxies)
+def _ascii_host(url: str) -> str:
+    """The host as httpx sends it: IDNA 2008 punycode (Python's own "idna" codec is IDNA 2003 and maps
+    "faß" to another domain, "fass"). DNS, the Host header and SNI all use this one name."""
+    return httpx.URL(url).raw_host.decode("ascii")
+
+
+def _routes_directly(client, url: str) -> bool:
+    """True when ``client`` sends ``url`` without a proxy, decided by the client itself.
+
+    Through a proxy the address is not pinned: the proxy resolves and connects, and httpcore's
+    tunnel checks the certificate against the URL host, which would be the address. The client's
+    own routing (HTTP(S)_PROXY, ALL_PROXY, NO_PROXY with wildcards and ports) is the only one that
+    matches what it does; a client without it (a test double) counts as direct.
+    """
+    if not isinstance(client, httpx.AsyncClient):
+        return True  # a test double (also an AsyncMock, whose every attribute exists)
+    try:
+        return client._transport_for_url(httpx.URL(url)) is client._transport
+    except AttributeError:
+        # httpx changed its internals: pin and send direct, the safe side (a proxy is then not used)
+        logger.warning("Webhook: cannot tell whether httpx would use a proxy; sending directly")
+        return True
 
 
 async def _blocked_target_reason(url: str) -> str | None:
@@ -237,12 +266,17 @@ def _pinned_request(url: str, address: str, headers: dict[str, str] | None) -> t
     against the host name and not the address."""
     parsed = urlparse(url)
     host = f"[{address}]" if ":" in address else address
-    netloc = f"{host}:{parsed.port}" if parsed.port else host
-    # Header values and the TLS server name are ASCII: an international name goes as punycode
-    name = parsed.hostname.encode("idna").decode("ascii")
+    # The port only when it is not the scheme's default, as httpx writes the Host header
+    port = parsed.port if parsed.port not in (None, 443 if parsed.scheme == "https" else 80) else None
+    netloc = f"{host}:{port}" if port else host
+    # Credentials in the URL (user:pass@) stay: httpx turns them into the Authorization header
+    if "@" in parsed.netloc:
+        netloc = parsed.netloc.rsplit("@", 1)[0] + "@" + netloc
+    # Header values and the TLS server name are ASCII: the same punycode name httpx and the DNS lookup use
+    name = _ascii_host(url)
     name_in_host = f"[{name}]" if ":" in name else name  # an IPv6 literal keeps its brackets
     pinned_headers = dict(headers or {})
-    pinned_headers["Host"] = f"{name_in_host}:{parsed.port}" if parsed.port else name_in_host
+    pinned_headers["Host"] = f"{name_in_host}:{port}" if port else name_in_host
     # The pool keeps connections by address: one opened for another name on the same address
     # (two webhooks behind one reverse proxy) would carry this request without a TLS check for it
     pinned_headers["Connection"] = "close"
@@ -505,14 +539,18 @@ async def _send_webhook_post(
     if reason:
         logger.warning("Webhook: refusing to post to '%s': %s", url, reason)
         return None
-    target, extensions = url, {}
-    if address:
+    target, extensions, sender = url, {}, client
+    if address and _routes_directly(client, url):
         target, headers, extensions = _pinned_request(url, address, headers)
+        # A real httpx client would route the address again (through a proxy NO_PROXY spares the
+        # name from): the pinned post goes through the direct client. Test doubles keep their own.
+        if isinstance(client, httpx.AsyncClient):
+            sender = _get_direct_client()
+    body = {"content": payload} if isinstance(payload, bytes) else {"json": payload}
     try:
-        if isinstance(payload, bytes):
-            response = await client.post(target, content=payload, headers=headers, extensions=extensions)
-        else:
-            response = await client.post(target, json=payload, headers=headers, extensions=extensions)
+        response = await sender.post(
+            target, headers=headers, extensions=extensions, follow_redirects=False, **body,
+        )
         if not _is_delivered(response.status_code):
             logger.warning(
                 f"Webhook: Target URL '{url}' returned status code {response.status_code}"

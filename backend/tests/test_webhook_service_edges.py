@@ -11,6 +11,17 @@ import pytest
 
 from app.services import webhook_service
 
+_PROXY_VARIABLES = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+
+
+@pytest.fixture(autouse=True)
+def _no_proxy_from_the_environment(monkeypatch):
+    """Pinning depends on the proxy routing: a proxy set on the developer's machine or the CI runner
+    must not change what these tests see. Tests that need one set it themselves."""
+    for name in _PROXY_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.delenv(name.lower(), raising=False)
+
 
 async def test_a_resolved_address_that_does_not_parse_is_skipped(monkeypatch):
     async def resolves(host, port, type=0):
@@ -82,24 +93,82 @@ async def test_an_unresolvable_target_keeps_the_outbox_entry_pending_for_a_retry
     assert "could not be resolved" in entry.last_error
 
 
-async def test_through_a_proxy_the_address_is_not_pinned(monkeypatch):
-    """The proxy connects itself; pinned, it would check the certificate against the address."""
+def _real_client_recording_posts():
+    """An httpx client with the environment's proxy routing, whose posts are only recorded."""
+    client = httpx.AsyncClient()
+    calls = []
+
+    async def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return SimpleNamespace(status_code=200, text="")
+
+    client.post = post
+    return client, calls
+
+
+async def _resolve_to_public(monkeypatch):
     async def resolves(host, port, type=0):
         return [(2, 1, 6, "", ("198.51.100.7", port))]
 
     monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", resolves)
-    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.lan:3128")
-    monkeypatch.delenv("NO_PROXY", raising=False)
-    monkeypatch.delenv("no_proxy", raising=False)
-    client = _Recorder()
-    await webhook_service._send_webhook_post(client, "https://hooks.example.test/x", {})
-    url, kwargs = client.calls[0]
-    assert url == "https://hooks.example.test/x"
-    assert kwargs["extensions"] == {}
 
-    monkeypatch.setenv("NO_PROXY", "hooks.example.test")  # bypassed: pinned again
-    await webhook_service._send_webhook_post(client, "https://hooks.example.test/x", {})
-    assert client.calls[1][0] == "https://198.51.100.7/x"
+
+@pytest.mark.parametrize("no_proxy, pinned", [
+    (None, False),                         # through the proxy: the proxy resolves and connects
+    ("hooks.example.test", True),          # bypassed by name
+    ("localhost,*", True),                 # a "*" inside the list turns proxies off in httpx
+    ("hooks.example.test:8443", False),    # another port: still through the proxy
+])
+async def test_the_pinning_follows_the_clients_own_proxy_routing(monkeypatch, no_proxy, pinned):
+    """urllib's NO_PROXY rules differ from httpx's ("*" in a list, ports); only the client decides.
+    A pinned post goes through the direct client: the shared one would route the address again."""
+    await _resolve_to_public(monkeypatch)
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.lan:3128")
+    if no_proxy:
+        monkeypatch.setenv("NO_PROXY", no_proxy)
+    shared, shared_calls = _real_client_recording_posts()
+    direct = _Recorder()
+    monkeypatch.setattr(webhook_service, "_get_direct_client", lambda: direct)
+
+    await webhook_service._send_webhook_post(shared, "https://hooks.example.test/x", {})
+
+    if pinned:
+        assert shared_calls == []
+        url, kwargs = direct.calls[0]
+        assert url == "https://198.51.100.7/x"
+        assert kwargs["extensions"] == {"sni_hostname": "hooks.example.test"}
+    else:
+        assert direct.calls == []
+        url, kwargs = shared_calls[0]
+        assert url == "https://hooks.example.test/x" and kwargs["extensions"] == {}
+    assert kwargs["follow_redirects"] is False
+
+
+def test_the_direct_client_never_routes_a_pinned_address_through_a_proxy(monkeypatch):
+    """The bug the second review found: NO_PROXY names the host, the pinned URL names the address,
+    so the shared client sent it through the proxy (and HTTPS then checked the address)."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.lan:3128")
+    monkeypatch.setenv("NO_PROXY", "hooks.example.test")
+    monkeypatch.setattr(webhook_service, "_direct_client", None)
+    shared = httpx.AsyncClient()
+    pinned_url = httpx.URL("https://198.51.100.7/x")
+    assert shared._transport_for_url(pinned_url) is not shared._transport  # what went wrong
+    direct = webhook_service._get_direct_client()
+    assert direct._transport_for_url(pinned_url) is direct._transport
+    assert direct.follow_redirects is False
+
+
+def test_pinning_keeps_credentials_and_drops_default_ports():
+    url, headers, _ = webhook_service._pinned_request("https://user:secret@hooks.example.test:443/x", "198.51.100.7", None)
+    assert url == "https://user:secret@198.51.100.7/x"
+    assert headers["Host"] == "hooks.example.test"
+    url, headers, _ = webhook_service._pinned_request("http://hooks.example.test:8080/x", "198.51.100.7", None)
+    assert url == "http://198.51.100.7:8080/x" and headers["Host"] == "hooks.example.test:8080"
+
+
+def test_a_mock_client_counts_as_direct():
+    from unittest.mock import AsyncMock
+    assert webhook_service._routes_directly(AsyncMock(), "https://hooks.example.test/x") is True
 
 
 def test_ipv6_and_international_names_give_valid_host_headers():
@@ -108,6 +177,23 @@ def test_ipv6_and_international_names_give_valid_host_headers():
     url, headers, ext = webhook_service._pinned_request("https://büro.example.test/hook", "198.51.100.7", None)
     assert headers["Host"] == "xn--bro-hoa.example.test"
     assert ext == {"sni_hostname": "xn--bro-hoa.example.test"}
+
+
+async def test_the_name_is_encoded_as_httpx_does_for_dns_host_and_sni(monkeypatch):
+    """Python's "idna" codec (IDNA 2003) maps faß to fass, another domain; httpx uses IDNA 2008."""
+    looked_up = []
+
+    async def resolves(host, port, type=0):
+        looked_up.append(host)
+        return [(2, 1, 6, "", ("198.51.100.7", port))]
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", resolves)
+    client = _Recorder()
+    await webhook_service._send_webhook_post(client, "https://faß.example.test/hook", {})
+    assert looked_up == ["xn--fa-hia.example.test"]
+    url, kwargs = client.calls[0]
+    assert kwargs["headers"]["Host"] == "xn--fa-hia.example.test"
+    assert kwargs["extensions"] == {"sni_hostname": "xn--fa-hia.example.test"}
 
 
 async def test_a_failure_while_queueing_is_logged_and_not_raised(caplog):
