@@ -269,7 +269,7 @@ if [ -f /etc/unraid-version ]; then
   cat >> /boot/config/go <<'GOEOF'
 # >>> gravitylan-agent (added by the GravityLAN installer; delete this block to disable)
 ( for i in $(seq 1 60); do command -v python3 >/dev/null 2>&1 && break; sleep 5; done
-  mkdir -p /opt/gravitylan-agent && cp /boot/config/gravitylan-agent/* /opt/gravitylan-agent/ && chmod 600 /opt/gravitylan-agent/agent.conf
+  mkdir -p -m 700 /opt/gravitylan-agent && chmod 700 /opt/gravitylan-agent && cp /boot/config/gravitylan-agent/* /opt/gravitylan-agent/ && chmod 600 /opt/gravitylan-agent/agent.conf
   cd /opt/gravitylan-agent && exec nohup python3 gravitylan-agent.py > gravitylan-agent.log 2>&1 ) < /dev/null > /dev/null 2>&1 &
 # <<< gravitylan-agent
 GOEOF

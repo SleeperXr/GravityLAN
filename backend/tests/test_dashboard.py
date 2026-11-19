@@ -219,9 +219,10 @@ async def test_run_dashboard_scan_end_to_end(monkeypatch, patch_async_session, d
 @pytest.mark.parametrize("stop_in", ["discovery", "health"])
 async def test_a_stopped_dashboard_scan_marks_nothing_offline_and_announces_nothing(monkeypatch, patch_async_session, db, stop_in):
     """Stopped during discovery: the health phase never runs (it would count every missed device).
-    Stopped later: the search for new devices and scan.complete are left out."""
-    missing = Device(ip="192.168.1.60", is_online=True, missed_scans=2)
-    db.add(missing)
+    Stopped inside a real health batch: the cut-short port scans are not applied, no further batch
+    starts, and the search for new devices and scan.complete are left out."""
+    # 13 devices one miss before their offline threshold: two health batches of up to 12
+    db.add_all([Device(ip=f"192.168.1.{60 + i}", is_online=True, missed_scans=2) for i in range(13)])
     await db.commit()
     cancel = asyncio.Event()
 
@@ -230,8 +231,9 @@ async def test_a_stopped_dashboard_scan_marks_nothing_offline_and_announces_noth
             cancel.set()
         return []
 
-    async def health_phase(alive_map, progress_callback=None, scanned_subnets=None):
-        cancel.set()
+    async def port_scan(ip, **kwargs):
+        assert kwargs["cancel_event"] is cancel
+        cancel.set()  # Stop arrives while the first batch is being port-scanned
         return []
 
     docker_service = MagicMock()
@@ -239,15 +241,17 @@ async def test_a_stopped_dashboard_scan_marks_nothing_offline_and_announces_noth
     monkeypatch.setattr("app.services.docker_service.docker_service", docker_service)
     monkeypatch.setattr(dashboard, "discover_hosts_simple", AsyncMock(side_effect=discover))
     monkeypatch.setattr(dashboard, "resolve_mac_addresses", AsyncMock(return_value=[]))
-    if stop_in == "health":
-        monkeypatch.setattr(dashboard, "_run_health_phase", health_phase)
-    scan_ports = AsyncMock(return_value=[22])
+    scan_ports = AsyncMock(side_effect=port_scan)
     monkeypatch.setattr(dashboard, "scan_ports", scan_ports)
     webhook_mock = AsyncMock()
     monkeypatch.setattr("app.services.webhook_service.trigger_webhooks", webhook_mock)
 
-    assert await dashboard.run_dashboard_scan(["192.168.1.0/24"], cancel_event=cancel) == 0
+    with pytest.raises(dashboard.ScanCancelled):
+        await dashboard.run_dashboard_scan(["192.168.1.0/24"], cancel_event=cancel)
 
-    assert (await db.execute(select(Device).where(Device.ip == "192.168.1.60"))).scalar_one().is_online is True
-    scan_ports.assert_not_awaited()
+    devices = (await db.execute(select(Device))).scalars().all()
+    assert all(d.is_online for d in devices)
+    assert all(d.missed_scans == 2 for d in devices)
+    # Discovery stop: no port scan at all; health stop: only the first batch of 12 ran
+    assert scan_ports.await_count == (0 if stop_in == "discovery" else 12)
     webhook_mock.assert_not_awaited()

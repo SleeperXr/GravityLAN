@@ -336,17 +336,34 @@ async def test_stop_reaches_the_running_planner_scan_and_reports_cancelled(monke
     async def fake_planner(subnets, progress_callback, hosts_callback, cancel_event):
         started.set()
         await asyncio.wait_for(cancel_event.wait(), timeout=2)
-        return 1
+        raise scanner.ScanCancelled(1)
 
     monkeypatch.setattr(scanner, "run_planner_scan", fake_planner)
 
     await scanner.start_scan(ScanRequest(subnets=["10.0.0.0/24"]))
-    await started.wait()
+    await asyncio.wait_for(started.wait(), timeout=2)
     await scanner.stop_scan()
     await scanner.state.task
 
     assert scanner.state.last_progress.status == ScanStatus.CANCELLED
+    assert scanner.state.last_progress.devices_found == 1
     assert await scanner.state.get_active() is False
+
+
+@pytest.mark.asyncio
+async def test_a_stop_that_comes_too_late_reports_the_scan_as_completed(monkeypatch):
+    """The scan decides: one that finished its work (cleanup, scan.complete) counts as completed."""
+    async def fake_planner(subnets, progress_callback, hosts_callback, cancel_event):
+        cancel_event.set()  # Stop arrives while the offline cleanup already runs
+        return 3
+
+    monkeypatch.setattr(scanner, "run_planner_scan", fake_planner)
+
+    await scanner.start_scan(ScanRequest(subnets=["10.0.0.0/24"]))
+    await scanner.state.task
+
+    assert scanner.state.last_progress.status == ScanStatus.COMPLETED
+    assert scanner.state.last_progress.devices_found == 3
 
 
 @pytest.mark.asyncio

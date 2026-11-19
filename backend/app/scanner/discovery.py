@@ -20,6 +20,19 @@ logger = logging.getLogger(__name__)
 # Common ports to check if a host is alive when ping fails
 ALIVE_CHECK_PORTS = [445, 135, 80, 22, 443, 8080, 8443, 1883, 8123, 5000, 8266, 9090]
 
+class ScanCancelled(Exception):
+    """A planner or dashboard scan stopped early on its cancel event, before it marked anything offline
+    or announced scan.complete. ``found`` is what it had found and saved until then.
+
+    Raised only when the scan really stopped: a Stop that comes after the last such point lets the
+    scan finish, and it then counts as completed, so the reported status matches what it did.
+    """
+
+    def __init__(self, found: int = 0):
+        super().__init__(f"scan cancelled after {found} hosts")
+        self.found = found
+
+
 _NMAP_REPORT_RE = re.compile(r"Nmap scan report for (?:(.+?) \()?((\d{1,3}\.){3}\d{1,3})\)?")
 
 
@@ -121,8 +134,10 @@ async def _run_sync_nmap_fallback(cmd_args: List[str], discovered: List[Dict[str
         None, _run_sync_nmap, cmd_args, NMAP_DISCOVERY_TIMEOUT, cancel_event
     )
 
-    if returncode == 0:
-        for hostname, ip_addr, _ in _NMAP_REPORT_RE.findall(stdout_str):
+    # A stopped nmap exits nonzero, but the hosts it reported until then count (as on the async path)
+    cancelled = cancel_event is not None and cancel_event.is_set()
+    if returncode == 0 or cancelled:
+        for hostname, ip_addr, _ in _NMAP_REPORT_RE.findall(stdout_str or ""):
             hostname = hostname.strip() if hostname else None
             await _record_found_host(discovered, ip_addr, hostname, host_found_callback)
     else:
@@ -270,6 +285,8 @@ async def discover_hosts_simple(
     # This triggers if Nmap found nothing or failed
     logger.info("Falling back to manual Ping/TCP/ARP discovery loop.")
     await _manual_discovery(discovered, target_ips, timeout, max_workers, cancel_event)
+    if cancel_event and cancel_event.is_set():
+        return discovered
 
     # Final MAC resolution for all hosts found in fallback
     await resolve_mac_addresses(discovered, target_ips)

@@ -211,7 +211,14 @@ async def _sync_batch_once(hosts: list[dict]) -> tuple[str, list, "SyncContext"]
 async def _sync_batch_with_retry(hosts: list[dict]) -> tuple[bool, list, "SyncContext"]:
     """Redo the whole batch while the database is locked; raises once the attempts run out."""
     for attempt in range(BATCH_ATTEMPTS):
-        outcome, results, ctx = await _sync_batch_once(hosts)
+        try:
+            outcome, results, ctx = await _sync_batch_once(hosts)
+        except OperationalError as e:
+            # The reads that load the context can meet a busy database too; the session of
+            # this attempt is closed by then, the next one starts fresh
+            if not _is_lock_error(e):
+                raise
+            outcome = "locked"
         if outcome != "locked":
             return outcome == "ok", results, ctx
         if attempt < BATCH_ATTEMPTS - 1:

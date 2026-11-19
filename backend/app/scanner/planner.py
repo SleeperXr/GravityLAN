@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.database import async_session
 from app.models.device import DiscoveredHost, Device
 from app.models.network import Subnet
-from app.scanner.discovery import discover_hosts_simple
+from app.scanner.discovery import ScanCancelled, discover_hosts_simple
 from app.scanner.subnets import scan_target_ips
 from app.scanner.arp import resolve_mac_addresses, get_local_arp_table, get_linux_stale_ips
 from app.scanner.hostname import is_ip_like, resolve_hostnames
@@ -314,8 +314,9 @@ async def run_planner_scan(
     ``hosts_callback(subnet, hosts_scanned, hosts_total)`` is awaited when a subnet starts and
     when it is done; nmap sweeps a whole subnet at once, so the count moves per subnet.
     ``announce=False`` for the recurring quick checks: every few minutes is no news worth a scan.complete.
-    ``cancel_event`` stops the scan: the hosts found so far are kept, but nothing is marked
-    offline, since the subnets were not swept completely.
+    ``cancel_event`` stops the scan with ScanCancelled: the hosts found so far are kept, but nothing
+    is marked offline and no scan.complete is sent, since the subnets were not swept completely.
+    A Stop after the last subnet comes too late: the scan completes.
     """
     subnets = _normalize_subnets(subnets)
     logger.info(f"Planner: Starting discovery on {subnets}")
@@ -374,8 +375,9 @@ async def run_planner_scan(
         discovery_cache.invalidate()
         dashboard_cache.invalidate_all()
         topology_cache.invalidate()
-        return total_found
+        raise ScanCancelled(total_found)
 
+    # Last point a Stop takes effect: from here on the sweep was complete and the scan completes
     # Offline Cleanup & Cache Invalidation (Exclusive to Planner)
     await _post_scan_cleanup(subnets, all_alive_ips)
 

@@ -349,7 +349,8 @@ async def test_a_cancelled_scan_marks_nothing_offline_and_stops_at_the_next_subn
     docker_service.is_available.return_value = False
     monkeypatch.setattr("app.services.docker_service.docker_service", docker_service)
 
-    await planner.run_planner_scan(["192.168.1.0/24", "192.168.2.0/24"], cancel_event=cancel)
+    with pytest.raises(planner.ScanCancelled):
+        await planner.run_planner_scan(["192.168.1.0/24", "192.168.2.0/24"], cancel_event=cancel)
 
     assert discover_mock.await_count == 1
     host = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.168.1.77"))).scalar_one()

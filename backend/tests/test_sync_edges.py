@@ -9,6 +9,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from app.models.device import Device, DiscoveredHost
 from app.models.network import Subnet
 from app.scanner import sync
@@ -133,6 +135,59 @@ async def test_a_lock_inside_one_host_redoes_the_batch_instead_of_skipping_the_h
 
     assert [r.ip for r in results] == ["192.0.2.52"]
     saved = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.0.2.52"))).scalar_one_or_none()
+    assert saved is not None
+
+
+async def test_a_lock_after_staged_changes_redoes_the_whole_batch_in_a_new_session(db):
+    """Host 1 stages its changes, host 2 meets the lock: the next attempt, in its own session,
+    saves both, and each webhook goes out once (the first attempt's were never committed)."""
+    real = sync._sync_host_internal
+    calls = []
+    sessions = []
+
+    async def lock_second_host_once(session, host, ctx):
+        calls.append(host["ip"])
+        sessions.append(session)
+        if host["ip"] == "192.0.2.62" and calls.count("192.0.2.62") == 1:
+            raise locked()
+        return await real(session, host, ctx)
+
+    hooks = AsyncMock()
+    # A real new session per attempt, on the test database
+    new_session = async_sessionmaker(db.bind, expire_on_commit=False, autoflush=False)
+    with patch("app.scanner.sync.async_session", new=new_session), \
+            patch("app.scanner.sync.detect_default_gateways", return_value=[]), \
+            patch("app.scanner.sync._sync_host_internal", new=lock_second_host_once), \
+            patch("app.scanner.sync.asyncio.sleep", new=AsyncMock()), \
+            patch("app.services.webhook_service.trigger_webhooks", new=hooks):
+        results = await sync_hosts_batch([{"ip": "192.0.2.61", "mac": MAC_A}, {"ip": "192.0.2.62", "mac": MAC_B}])
+
+    assert calls == ["192.0.2.61", "192.0.2.62", "192.0.2.61", "192.0.2.62"]
+    assert sessions[0] is not sessions[2]
+    assert sorted(r.ip for r in results) == ["192.0.2.61", "192.0.2.62"]
+    saved = (await db.execute(select(DiscoveredHost.ip).where(DiscoveredHost.ip.in_(["192.0.2.61", "192.0.2.62"])))).scalars().all()
+    assert sorted(saved) == ["192.0.2.61", "192.0.2.62"]
+    sent = [(c.kwargs.get("event_type"), str(c.kwargs.get("data"))) for c in hooks.await_args_list]
+    assert len(sent) == len(set(sent))
+
+
+async def test_a_lock_while_loading_the_context_is_retried(db, scan):
+    real = sync.load_sync_context
+    calls = 0
+
+    async def locked_once(session):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise locked("database is busy")
+        return await real(session)
+
+    with patch("app.scanner.sync.load_sync_context", new=locked_once), \
+            patch("app.scanner.sync.asyncio.sleep", new=AsyncMock()):
+        await scan({"ip": "192.0.2.63", "mac": MAC_A})
+
+    assert calls == 2
+    saved = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.0.2.63"))).scalar_one_or_none()
     assert saved is not None
 
 

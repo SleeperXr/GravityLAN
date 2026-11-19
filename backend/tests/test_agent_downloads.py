@@ -279,7 +279,11 @@ async def test_install_script_makes_the_config_owner_only(client, db, admin_toke
     assert script.index('chmod 600 "$INSTALL_DIR/agent.conf"') > moved
     assert script.index('chmod 600 "$INSTALL_DIR/agent.conf"') < script.index("3. Starting the agent")
     # Unraid copies it back from the flash drive (FAT, no permissions) on every boot
-    assert "cp /boot/config/gravitylan-agent/* /opt/gravitylan-agent/ && chmod 600 /opt/gravitylan-agent/agent.conf" in script
+    # ... into a directory nobody else can open, so the copy is never readable before the chmod
+    assert (
+        "mkdir -p -m 700 /opt/gravitylan-agent && chmod 700 /opt/gravitylan-agent && "
+        "cp /boot/config/gravitylan-agent/* /opt/gravitylan-agent/ && chmod 600 /opt/gravitylan-agent/agent.conf"
+    ) in script
 
 
 @pytest.mark.asyncio

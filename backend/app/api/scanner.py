@@ -31,7 +31,7 @@ from app.scanner.sync import sync_host_to_db
 from app.services.cache_service import discovery_cache
 from app.scanner.utils import get_local_subnets
 from app.scanner.port_scanner import nmap_scan, scan_ports
-from app.scanner.discovery import discover_hosts_simple
+from app.scanner.discovery import ScanCancelled, discover_hosts_simple
 from app.scanner.arp import resolve_mac_addresses
 from app.scanner.hostname import resolve_hostname, resolve_hostnames
 from app.scanner.vendor import get_vendor
@@ -292,14 +292,14 @@ async def start_dashboard_scan_api(request: ScanRequest, background_tasks: Backg
         try:
             subnets = await _requested_or_enabled_subnets(request)
             found_count = await run_dashboard_scan(subnets, progress_callback=progress_cb, cancel_event=cancel_event)
-            if cancel_event.is_set():
-                await state.broadcast(ScanProgress(status=ScanStatus.CANCELLED, message="Dashboard scan cancelled"))
-            else:
-                await state.broadcast(ScanProgress(
-                    status=ScanStatus.COMPLETED,
-                    message=f"Dashboard scan complete: {found_count} devices updated",
-                    devices_found=found_count
-                ))
+            # Completed also when Stop came too late to change anything: the status matches what the scan did
+            await state.broadcast(ScanProgress(
+                status=ScanStatus.COMPLETED,
+                message=f"Dashboard scan complete: {found_count} devices updated",
+                devices_found=found_count
+            ))
+        except ScanCancelled:
+            await state.broadcast(ScanProgress(status=ScanStatus.CANCELLED, message="Dashboard scan cancelled"))
         except Exception as e:
             logger.error("Dashboard scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.FAILED, message=f"Scan error: {str(e)}"))
@@ -356,10 +356,9 @@ async def start_scan(request: ScanRequest, admin: str = Depends(get_current_admi
             found_count = await run_planner_scan(
                 subnets, progress_callback=progress_cb, hosts_callback=hosts_cb, cancel_event=cancel_event,
             )
-            if cancel_event.is_set():
-                await state.broadcast(snapshot(ScanStatus.CANCELLED, "Scan cancelled", devices_found=found_count))
-            else:
-                await state.broadcast(snapshot(ScanStatus.COMPLETED, "Scan complete", devices_found=found_count))
+            await state.broadcast(snapshot(ScanStatus.COMPLETED, "Scan complete", devices_found=found_count))
+        except ScanCancelled as stopped:
+            await state.broadcast(snapshot(ScanStatus.CANCELLED, "Scan cancelled", devices_found=stopped.found))
         except Exception as e:
             logger.error("Manual scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.FAILED, message=f"Scan error: {str(e)}"))
