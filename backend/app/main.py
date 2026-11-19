@@ -262,6 +262,15 @@ async def _shutdown(app: FastAPI) -> None:
     logger.info("GravityLAN shutting down.")
 
 
+def _loggable_database_url(url: str) -> str:
+    """The database URL with its password masked, for the start-up log."""
+    from sqlalchemy.engine import make_url
+    try:
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:  # an unparsable URL: say which driver, never the rest
+        return url.split("://", 1)[0] + "://***"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager — runs on startup and shutdown."""
@@ -279,7 +288,7 @@ async def lifespan(app: FastAPI):
     _backup_before_upgrade()
     _register_models()
     await init_db()
-    logger.info("Database initialized: %s", settings.effective_database_url)
+    logger.info("Database initialized: %s", _loggable_database_url(settings.effective_database_url))
 
     # Background tasks are registered on app.state to allow a clean shutdown
     app.state.background_tasks = set()
