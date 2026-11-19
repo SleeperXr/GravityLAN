@@ -616,6 +616,30 @@ def test_report_sender_backoff_on_error(agent_mod):
     assert sender.backoff_seconds == 10
 
 
+def _answer(body: bytes):
+    resp = MagicMock()
+    resp.__enter__ = MagicMock(return_value=resp)
+    resp.__exit__ = MagicMock(return_value=False)
+    resp.read.return_value = body
+    return resp
+
+
+@pytest.mark.parametrize("body", [b"<html>proxy error</html>", b'{"cut off', b"[1, 2]", b'"just a string"'])
+def test_a_broken_answer_counts_as_a_failed_report_with_back_off(agent_mod, body):
+    """A 200 that is not a JSON object (a proxy's error page, a cut-off body) used to leave the
+    back-off at 0, or at the value of an earlier failure."""
+    sender = agent_mod.ReportSender(_make_config(agent_mod))
+    with patch.object(agent_mod.urllib.request, "urlopen", return_value=_answer(body)):
+        assert sender.send({"device_id": 1}) is None
+        assert sender.send({"device_id": 1}) is None
+    assert (sender.consecutive_failures, sender.backoff_seconds) == (2, 10)
+
+    # The next answer that can be read ends the back-off
+    with patch.object(agent_mod.urllib.request, "urlopen", return_value=_answer(b'{"ok": true}')):
+        assert sender.send({"device_id": 1}) == {"ok": True}
+    assert (sender.consecutive_failures, sender.backoff_seconds) == (0, 0)
+
+
 def test_the_backoff_is_actually_waited_and_ends_with_a_success(agent_mod, monkeypatch):
     """The backoff used to be logged only; the loop now waits it on top of the interval."""
     config = _make_config(agent_mod)

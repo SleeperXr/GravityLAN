@@ -219,6 +219,14 @@ def test_unraid_go_block_waits_for_python_and_detaches():
     assert "< /dev/null" in block
 
 
+def test_unraid_go_block_restores_agent_conf_owner_only_after_a_reboot():
+    """The flash drive (FAT) has no permissions: the copy back to /opt must narrow them again,
+    into a directory nobody else can open, like the manual install script does."""
+    block = agent_deployer._UNRAID_GO_BLOCK
+    assert ("mkdir -p -m 700 /opt/gravitylan-agent && chmod 700 /opt/gravitylan-agent && "
+            "cp /boot/config/gravitylan-agent/* /opt/gravitylan-agent/ && chmod 600 /opt/gravitylan-agent/agent.conf") in block
+
+
 def test_cleanup_removes_unraid_boot_hook():
     joined = "\n".join(agent_deployer._build_cleanup_script(has_systemd=False, has_syno_rc=False))
     assert "/boot/config/gravitylan-agent" in joined
