@@ -16,7 +16,7 @@ from app.models.device import Device, DeviceHistory, DeviceInterface, Discovered
 from app.models.network import Subnet
 from app.scanner.gateways import detect_default_gateways, effective_gateway
 from app.scanner.vendor import get_vendor
-from app.scanner.hostname import is_ip_like, mask_ip
+from app.scanner.hostname import is_ip_like
 from app.services.cache_service import discovery_cache, dashboard_cache, topology_cache
 
 logger = logging.getLogger(__name__)
@@ -190,7 +190,7 @@ async def _sync_batch_once(hosts: list[dict]) -> tuple[str, list, "SyncContext"]
     results = []
     async with async_session() as db:
         ctx = await load_sync_context(db)
-        for host in hosts:
+        for position, host in enumerate(hosts, start=1):
             try:
                 res = await _sync_host_internal(db, host, ctx)
                 results.append(res)
@@ -201,9 +201,10 @@ async def _sync_batch_once(hosts: list[dict]) -> tuple[str, list, "SyncContext"]
                     raise
                 await db.rollback()
                 return "locked", [], ctx
-            except Exception as e:
-                # Address masked and no MAC, as everywhere else in the scanner logs
-                logger.error("Sync: Failed to process host %s: %s", mask_ip(host.get("ip")), type(e).__name__)
+            except Exception:
+                # Nothing of the host itself (address, MAC, names) and nothing of the error built
+                # from it goes into the log, only where in the batch it was
+                logger.error("Sync: Failed to process host %d of %d in the batch; it was skipped", position, len(hosts))
 
         outcome = await commit_or_discard(db)
     return outcome, results, ctx
