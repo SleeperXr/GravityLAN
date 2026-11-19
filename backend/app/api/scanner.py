@@ -32,6 +32,7 @@ from app.services.cache_service import discovery_cache
 from app.scanner.utils import get_local_subnets
 from app.scanner.port_scanner import nmap_scan, scan_ports
 from app.scanner.discovery import ScanCancelled, discover_hosts_simple
+from app.scanner.scan_slot import REQUESTED, scan_slot
 from app.scanner.arp import resolve_mac_addresses
 from app.scanner.hostname import resolve_hostname, resolve_hostnames
 from app.scanner.vendor import get_vendor
@@ -59,13 +60,27 @@ class ScanStateManager:
             return self.is_active
 
     async def try_start(self) -> bool:
-        """Mark a scan active unless one is; True when this caller may start it (one check and set)."""
+        """Mark a scan active unless one is; True when this caller may start it (one check and set).
+
+        It also takes the shared scan slot: a scheduled scan that holds it is stopped first, and
+        a quick subnet scan someone started refuses this one (see app.scanner.scan_slot).
+        """
         async with self._lock:
             if self.is_active:
                 return False
-            self.is_active = True
-            self.cancel_event = asyncio.Event()
+            self.is_active = True  # reserved while the slot is taken
+        cancel_event = await scan_slot.try_acquire(REQUESTED)
+        async with self._lock:
+            if cancel_event is None:
+                self.is_active = False
+                return False
+            self.cancel_event = cancel_event
             return True
+
+    async def finish(self) -> None:
+        """The started scan is over: not active any more, and the scan slot is free again."""
+        await self.set_active(False)
+        await scan_slot.release(self.cancel_event)
 
     async def add_client(self, ws: WebSocket) -> None:
         async with self._lock:
@@ -174,7 +189,16 @@ def _subnets_param(subnets: str) -> list[str]:
 async def quick_subnet_scan(subnets: str) -> Dict[str, str]:
     """Turbo-fast subnet refresh (ARP + ICMP) via Planner scan."""
     subnet_list = _subnets_param(subnets)
-    await run_planner_scan(subnet_list, announce=False)
+    # The same scan slot as Start scan: it stops a scheduled scan, but never runs next to a started one
+    cancel_event = await scan_slot.try_acquire(REQUESTED)
+    if cancel_event is None:
+        return {"status": "error", "message": "A scan is already in progress"}
+    try:
+        await run_planner_scan(subnet_list, announce=False, cancel_event=cancel_event)
+    except ScanCancelled:
+        return {"status": "cancelled", "message": "Quick scan stopped"}
+    finally:
+        await scan_slot.release(cancel_event)
     return {"status": "ok", "message": "Quick scan triggered"}
 
 @router.post("/discover", dependencies=[Depends(get_current_admin)])
@@ -304,7 +328,7 @@ async def start_dashboard_scan_api(request: ScanRequest, background_tasks: Backg
             logger.error("Dashboard scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.FAILED, message=f"Scan error: {str(e)}"))
         finally:
-            await state.set_active(False)
+            await state.finish()
 
     state.task = asyncio.create_task(run_dashboard_task())
     return {"status": "ok", "message": "Dashboard scan started"}
@@ -363,15 +387,16 @@ async def start_scan(request: ScanRequest, admin: str = Depends(get_current_admi
             logger.error("Manual scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.FAILED, message=f"Scan error: {str(e)}"))
         finally:
-            await state.set_active(False)
+            await state.finish()
 
     state.task = asyncio.create_task(run_scan_task())
     return {"status": "ok", "message": "Planner scan started"}
 
 @router.post("/stop", dependencies=[Depends(get_current_admin)])
 async def stop_scan() -> Dict[str, str]:
-    """Cancel any running scan."""
+    """Cancel any running scan: the started one, a quick subnet scan or a scheduled scan."""
     state.cancel_event.set()
+    scan_slot.cancel()
     return {"status": "cancelling"}
 
 def _normalize_subnet_input(subnet: str) -> str:

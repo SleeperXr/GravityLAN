@@ -159,7 +159,8 @@ async def test_quick_subnet_scan_expands_bare_prefixes(monkeypatch):
 
     assert res["status"] == "ok"
     assert planner.await_args.args[0] == ["192.168.1.0/24", "10.0.0.0/24"]
-    assert planner.await_args.kwargs == {"announce": False}
+    assert planner.await_args.kwargs["announce"] is False
+    assert planner.await_args.kwargs["cancel_event"] is not None  # it ran in the scan slot
 
 
 def test_normalize_subnet_input():
@@ -370,7 +371,7 @@ async def test_a_stop_that_comes_too_late_reports_the_scan_as_completed(monkeypa
 async def test_try_start_lets_only_one_caller_through():
     results = await asyncio.gather(*(scanner.state.try_start() for _ in range(5)))
     assert results.count(True) == 1
-    await scanner.state.set_active(False)
+    await scanner.state.finish()
 
 
 # --- live discovery ------------------------------------------------------------------
