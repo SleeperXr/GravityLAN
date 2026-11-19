@@ -25,7 +25,10 @@ def _span(unit: int, height: int) -> set[int]:
     return set(range(unit - height + 1, unit + 1))
 
 
-async def _check_placement(db: AsyncSession, rack_id: int, unit: int | None, height: int, *, exclude_item_id: int | None = None) -> None:
+async def _check_placement(
+    db: AsyncSession, rack_id: int, unit: int | None, height: int, *,
+    exclude_item_id: int | None = None, exclude_device_id: int | None = None,
+) -> None:
     rack = await db.get(Rack, rack_id)
     if rack is None:
         raise HTTPException(status_code=404, detail="Rack not found")
@@ -38,7 +41,7 @@ async def _check_placement(db: AsyncSession, rack_id: int, unit: int | None, hei
         await db.execute(select(DeviceModel).where(DeviceModel.rack_id == rack_id, DeviceModel.rack_unit.is_not(None)))
     ).scalars().all()
     for device in devices:
-        if _span(device.rack_unit, device.rack_height or 1) & span:
+        if device.id != exclude_device_id and _span(device.rack_unit, device.rack_height or 1) & span:
             raise HTTPException(status_code=409, detail=f"Unit already taken by {device.display_name or device.ip}")
     items = (await db.execute(select(RackItem).where(RackItem.rack_id == rack_id, RackItem.rack_unit.is_not(None)))).scalars().all()
     for item in items:

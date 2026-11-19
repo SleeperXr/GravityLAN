@@ -228,7 +228,8 @@ def _build_key(algorithm: str, public_blob: bytes, private_blob: bytes):
     if algorithm == "ssh-rsa":
         e, n = pub.mpint(), pub.mpint()
         d, p, q, iqmp = priv.mpint(), priv.mpint(), priv.mpint(), priv.mpint()
-        if p * q != n:
+        # p = 1, q = n passes p * q == n but divides by zero below (an error 500 instead of this message)
+        if min(e, d, p, q) <= 1 or p * q != n:
             raise PpkError("PuTTY key is corrupt (RSA parameters).")
         return rsa.RSAPrivateNumbers(
             p=p, q=q, d=d, dmp1=d % (p - 1), dmq1=d % (q - 1), iqmp=iqmp,

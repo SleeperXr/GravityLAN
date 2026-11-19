@@ -1,7 +1,9 @@
 """API for importing subnets/VLANs from a router (Settings > Scan subnets > Import from router).
 
-Lives under /api/network, so API tokens need network:read (saved connections) or
-network:write (fetch and apply). Secrets are accepted but never returned.
+Lives under /api/network, so API tokens need network:read (saved connections) or network:write
+(apply). Fetching from the router (preview) and forgetting a saved connection use the stored
+credentials: they need the password confirmation and are refused to API tokens. Secrets are
+accepted but never returned.
 """
 
 import logging
@@ -9,7 +11,9 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import get_current_admin
 from app.database import get_db
+from app.services.stepup import require_step_up
 from app.schemas.router_import import (
     ProviderKey,
     RouterImportApply,
@@ -22,7 +26,8 @@ from app.services.router_import import RouterImportError
 from app.services.router_import import service
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/network/router-import", tags=["network"])
+# Guarded here as well, not only where main.py mounts it (as the Proxmox router does)
+router = APIRouter(prefix="/api/network/router-import", tags=["network"], dependencies=[Depends(get_current_admin)])
 
 
 @router.get("/sources", response_model=list[RouterSourceResponse])
@@ -31,7 +36,9 @@ async def list_router_sources(db: AsyncSession = Depends(get_db)):
     return await service.list_sources(db)
 
 
-@router.delete("/sources/{provider}")
+# Forgetting and using the stored router credentials (SNMP community, UniFi API key) asks for the
+# password like the Proxmox connection, and refuses API tokens (step-up class credentials)
+@router.delete("/sources/{provider}", dependencies=[Depends(require_step_up("credentials"))])
 async def delete_router_source(provider: ProviderKey, db: AsyncSession = Depends(get_db)):
     """Forget a saved router connection and its stored credentials."""
     if not await service.delete_source(db, provider):
@@ -39,7 +46,7 @@ async def delete_router_source(provider: ProviderKey, db: AsyncSession = Depends
     return {"status": "ok"}
 
 
-@router.post("/preview", response_model=RouterImportPreview)
+@router.post("/preview", response_model=RouterImportPreview, dependencies=[Depends(require_step_up("credentials"))])
 async def preview_router_import(req: RouterImportRequest, db: AsyncSession = Depends(get_db)):
     """Ask the router for its networks and compare them with the scan subnets. Changes no subnet."""
     try:

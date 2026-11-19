@@ -11,7 +11,7 @@ from sqlalchemy.exc import OperationalError
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.models.device import Device, DiscoveredHost
+from app.models.device import Device, DeviceHistory, DiscoveredHost
 from app.models.network import Subnet
 from app.scanner import sync
 from app.scanner.sync import (
@@ -317,6 +317,107 @@ async def test_discovered_host_is_found_again_by_name(db, scan):
     await scan({"ip": "192.0.2.61", "mac": None, "hostname": "camera"})
     await db.refresh(known)
     assert known.ip == "192.0.2.61"
+
+
+PI_HIT = {"ip": "192.0.2.10", "mac": MAC_A, "hostname": "raspberrypi"}
+
+
+async def add_documented_pi(db, is_online=True):
+    dev = Device(ip="192.0.2.10", mac=MAC_A, hostname="raspberrypi", display_name="Pi-hole",
+                 notes="DNS", is_online=is_online)
+    disc = DiscoveredHost(ip="192.0.2.10", mac=MAC_A, hostname="raspberrypi", custom_name="Pi-hole",
+                          is_online=is_online, is_monitored=True)
+    await add(db, dev, disc)
+    return dev, disc
+
+
+async def ip_changes(db):
+    return (await db.execute(select(DeviceHistory).where(DeviceHistory.status == "ip_changed"))).scalars().all()
+
+
+@pytest.mark.parametrize("other_ip, other_first", [("192.0.2.50", False), ("192.0.2.5", True)])
+async def test_same_name_with_another_mac_does_not_take_over_the_device(db, scan, other_ip, other_first):
+    """A second box with the same hostname took over the record, its notes and probes, and in
+    every later scan the MAC match pulled it back: an ip_changed event per scan, and the second
+    box never got a record of its own."""
+    dev, disc = await add_documented_pi(db)
+    other = {"ip": other_ip, "mac": MAC_B, "hostname": "raspberrypi"}
+    batch = (other, PI_HIT) if other_first else (PI_HIT, other)
+
+    for _ in range(2):
+        await scan(*batch)
+
+    await db.refresh(dev)
+    await db.refresh(disc)
+    assert (dev.ip, dev.mac, dev.old_ip, dev.notes) == ("192.0.2.10", MAC_A, None, "DNS")
+    assert (disc.ip, disc.mac) == ("192.0.2.10", MAC_A)
+    assert await ip_changes(db) == []
+    candidate = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == other_ip))).scalar_one()
+    assert (candidate.mac, candidate.hostname, candidate.is_monitored) == (MAC_B, "raspberrypi", False)
+
+
+async def test_same_name_with_another_mac_leaves_an_offline_device_where_it_is(db, scan):
+    """The other box must not make the documented one look online at its address."""
+    dev, _ = await add_documented_pi(db, is_online=False)
+
+    await scan({"ip": "192.0.2.50", "mac": MAC_B, "hostname": "raspberrypi"})
+
+    await db.refresh(dev)
+    assert (dev.ip, dev.is_online, dev.old_ip) == ("192.0.2.10", False, None)
+    candidate = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.0.2.50"))).scalar_one()
+    assert (candidate.mac, candidate.is_monitored) == (MAC_B, False)
+
+
+async def test_a_user_given_name_does_not_pull_in_another_box_with_that_hostname(db, scan):
+    nas = Device(ip="192.0.2.20", mac=MAC_A, hostname="ds920.lan", display_name="nas", is_online=True)
+    await add(db, nas)
+
+    await scan({"ip": "192.0.2.60", "mac": MAC_B, "hostname": "nas"})
+
+    await db.refresh(nas)
+    assert (nas.ip, nas.old_ip) == ("192.0.2.20", None)
+
+
+@pytest.mark.parametrize("model", [Device, DiscoveredHost])
+async def test_name_match_is_literal_not_a_like_pattern(db, scan, model):
+    """With ilike, "_" in a scanned name matched any character of a stored one."""
+    fields = {"display_name": "Sensor"} if model is Device else {}
+    record = model(ip="192.0.2.30", mac=None, hostname="esp-01", is_online=False, **fields)
+    await add(db, record)
+
+    await scan({"ip": "192.0.2.70", "mac": None, "hostname": "esp_01"})
+
+    await db.refresh(record)
+    assert record.ip == "192.0.2.30"
+
+
+async def test_name_match_ignores_case(db, scan):
+    known = DiscoveredHost(ip="192.0.2.62", mac=None, hostname="Camera", is_online=False)
+    await add(db, known)
+    await scan({"ip": "192.0.2.63", "mac": None, "hostname": "camera"})
+    await db.refresh(known)
+    assert known.ip == "192.0.2.63"
+
+
+async def test_device_name_still_follows_a_dhcp_move_without_any_mac(db, scan):
+    dev = Device(ip="192.0.2.40", mac=None, hostname="camera", display_name="Camera", is_online=False)
+    await add(db, dev)
+
+    await scan({"ip": "192.0.2.41", "mac": None, "hostname": "camera"})
+
+    await db.refresh(dev)
+    assert (dev.ip, dev.old_ip) == ("192.0.2.41", "192.0.2.40")
+
+
+async def test_a_hit_without_mac_still_follows_the_name_of_a_device_with_one(db, scan):
+    """Accepted on purpose: a routed scan sees no MAC, so nothing contradicts the name."""
+    dev = Device(ip="192.0.2.42", mac=MAC_A, hostname="camera", display_name="Camera", is_online=False)
+    await add(db, dev)
+
+    await scan({"ip": "192.0.2.43", "mac": None, "hostname": "camera"})
+
+    await db.refresh(dev)
+    assert (dev.ip, dev.mac) == ("192.0.2.43", MAC_A)
 
 
 async def test_placeholder_prefers_a_free_old_ip_and_otherwise_counts_up(db):

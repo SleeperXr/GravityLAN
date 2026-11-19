@@ -251,6 +251,10 @@ async def _persist_settings(db: AsyncSession, values: dict[str, str]) -> None:
 
 async def _apply_post_update_hooks(db: AsyncSession, values: dict[str, str]) -> None:
     """Clear dependent cached DNS picks when the secondary DNS server is cleared."""
+    if "agent.allow_auto_adoption" in values:
+        # Read with a five-minute cache: switched off, it must stop at once
+        from app.services.agent_telemetry import _setting_cache
+        _setting_cache.clear()
     if "dns.server_secondary" in values and not str(values["dns.server_secondary"] or "").strip():
         # Without DNS 2 its kept answers and the picks made from them no longer apply
         from app.services.cache_service import dashboard_cache

@@ -197,6 +197,17 @@ def build_connect_kwargs(
     return connect_kwargs, None
 
 
+def is_unreachable(error: BaseException) -> bool:
+    """True when the host could not be reached at all: only then is the Docker gateway worth a try.
+
+    A host key that is not the confirmed one, or a rejected login, came from a host that answered;
+    retrying them on the gateway would send the same credentials to another machine.
+    """
+    if isinstance(error, (HostKeyNotTrusted, paramiko.BadHostKeyException, paramiko.AuthenticationException)):
+        return False
+    return isinstance(error, (OSError, EOFError, paramiko.ssh_exception.NoValidConnectionsError))
+
+
 def host_bypass_gateway(host_ip: str) -> Optional[str]:
     """The Docker bridge gateway to retry an SSH login on, or None.
 
@@ -222,8 +233,8 @@ def connect_with_gateway_fallback(
     try:
         client.connect(**connect_kwargs)
         return
-    except (paramiko.SSHException, OSError, EOFError):
-        gateway = host_bypass_gateway(host_ip)
+    except Exception as e:
+        gateway = host_bypass_gateway(host_ip) if is_unreachable(e) else None
         if not gateway:
             raise
 

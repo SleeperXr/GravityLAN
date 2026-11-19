@@ -14,7 +14,7 @@ from app.database import get_db
 from app.models.device import Device, DeviceGroup, Service
 from app.models.agent import AgentToken
 from app.scanner.vendor import get_vendor
-from app.services.cache_service import topology_cache, dashboard_cache
+from app.services.cache_service import topology_cache, dashboard_cache, discovery_cache
 from app.services.agent_activity import load_intervals
 from app.dns_answers import stored_dns_answers
 from app.scanner.hostname import HOSTNAME_SOURCES, choose_hostname, lookup_dns_names, resolve_hostname, is_ip_like
@@ -354,6 +354,45 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     return device
 
 
+async def _check_parent(db: AsyncSession, device: Device, parent_id: int) -> None:
+    """The parent must exist and must not be the device itself or one of its descendants (a cycle)."""
+    if parent_id == device.id:
+        raise HTTPException(status_code=422, detail="A device cannot be its own parent")
+    seen = {device.id}
+    current = await db.get(Device, parent_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="Parent device not found")
+    while current is not None and current.parent_id is not None:
+        if current.parent_id in seen:
+            raise HTTPException(status_code=422, detail="The parent chain would form a cycle")
+        seen.add(current.id)
+        current = await db.get(Device, current.parent_id)
+
+
+async def _check_device_links(db: AsyncSession, device: Device, update_data: dict) -> None:
+    """Refuse links the database or the rack view cannot hold, before anything is written.
+
+    A missing group, rack or parent used to fail only at the commit (HTTP 500), a parent chain could
+    loop back to the device, and a PATCH could put a device on units another one already takes.
+    """
+    from app.api.rack_cabling import _check_placement
+    from app.models.device import DeviceGroup
+
+    if update_data.get("parent_id") is not None:
+        await _check_parent(db, device, update_data["parent_id"])
+    if update_data.get("group_id") is not None and await db.get(DeviceGroup, update_data["group_id"]) is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if {"rack_id", "rack_unit", "rack_height"} & update_data.keys():
+        rack_id = update_data.get("rack_id", device.rack_id)
+        if rack_id is not None:
+            await _check_placement(
+                db, rack_id,
+                update_data.get("rack_unit", device.rack_unit),
+                update_data.get("rack_height", device.rack_height) or 1,
+                exclude_device_id=device.id,
+            )
+
+
 @router.patch("/{device_id}", response_model=DeviceResponse)
 async def update_device(
     device_id: int,
@@ -366,6 +405,7 @@ async def update_device(
         raise HTTPException(status_code=404, detail="Device not found")
 
     update_data = update.model_dump(exclude_unset=True)
+    await _check_device_links(db, device, update_data)
     if "hostname_source" in update_data:
         _set_hostname_source(device, update_data.pop("hostname_source"))
     for field, value in update_data.items():
@@ -396,6 +436,13 @@ async def _delete_device_dependencies(db: AsyncSession, device_ids: list[int]) -
 
     if not device_ids:
         return
+
+    # 0. The scanner's own record of these addresses is no longer on the dashboard: it shows up
+    #    again as discovered (it used to stay "monitored" and was listed nowhere)
+    from app.models.device import DiscoveredHost
+    ips = (await db.execute(select(Device.ip).where(Device.id.in_(device_ids)))).scalars().all()
+    if ips:
+        await db.execute(update(DiscoveredHost).where(DiscoveredHost.ip.in_(ips)).values(is_monitored=False))
 
     # 1. Topology links
     await db.execute(
@@ -435,6 +482,7 @@ async def delete_device(device_id: int, db: AsyncSession = Depends(get_db)) -> N
     await db.commit()
     dashboard_cache.invalidate_all()
     topology_cache.invalidate()
+    discovery_cache.invalidate()  # the address is listed as discovered again
 
 
 @router.post("/bulk-delete", status_code=204)
@@ -449,6 +497,7 @@ async def bulk_delete_devices(device_ids: list[int], db: AsyncSession = Depends(
     await db.commit()
     dashboard_cache.invalidate_all()
     topology_cache.invalidate()
+    discovery_cache.invalidate()
     logger.info(f"Bulk deleted {len(device_ids)} devices")
 
 

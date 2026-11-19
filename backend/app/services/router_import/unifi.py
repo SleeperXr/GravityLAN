@@ -23,6 +23,7 @@ import logging
 import re
 import ssl
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -152,6 +153,9 @@ class UnifiProvider(RouterProvider):
             verify=context,
             timeout=10.0,
             follow_redirects=False,
+            # The console is in the LAN and addressed by its checked IP: NO_PROXY names would not
+            # match it, so a proxy from the environment would get the request and its API key
+            trust_env=False,
         )
 
     async def fetch(self, conn: RouterConnection) -> list[RouterNetwork]:
@@ -166,13 +170,14 @@ class UnifiProvider(RouterProvider):
                 return await self._get_json(client, conn.host, path, headers, pin, params)
 
             sites = await self._get_all(get, f"{API_PREFIX}/sites")
-            site_id = pick_site(sites, conn.options.get("site")).get("id")
+            # IDs from the console's answers go into the path encoded: a "/" or ".." cannot reach another endpoint
+            site_id = quote(str(pick_site(sites, conn.options.get("site")).get("id")), safe="")
             overview = await self._get_all(get, f"{API_PREFIX}/sites/{site_id}/networks")
             networks: list[RouterNetwork] = []
             for net in overview:
                 if net.get("enabled") is False or not net.get("id"):
                     continue
-                detail = await get(f"{API_PREFIX}/sites/{site_id}/networks/{net['id']}")
+                detail = await get(f"{API_PREFIX}/sites/{site_id}/networks/{quote(str(net['id']), safe='')}")
                 if isinstance(detail, dict):
                     networks.extend(networks_from_detail(detail))
             return networks

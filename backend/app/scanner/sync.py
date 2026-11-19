@@ -287,7 +287,8 @@ async def _query_by_mac_ordered(db, model, mac: str):
 
 
 async def _query_by_name(db, model, name: str, name_columns):
-    clauses = [col.ilike(name) for col in name_columns]
+    # Literal, case-insensitive: with ilike a "_" or "%" in a name was a wildcard ("esp_01" found "esp-01")
+    clauses = [func.lower(col) == name.lower() for col in name_columns]
     res = await db.execute(select(model).where(or_(*clauses)))
     return res.scalars().all()
 
@@ -340,10 +341,21 @@ async def _match_by_address(db, model, hit: ScanHit):
     return (cand, "ip") if cand else (None, None)
 
 
-async def _match_by_name(db, model, name: str | None, name_columns):
+async def _match_by_name(db, model, hit: ScanHit, name_columns):
+    """The record with the scanned name, unless its MAC says it is another box.
+
+    A name is the weakest clue: a second device with the same name (a replacement, a default
+    hostname, a user-given name that is another box's hostname) would otherwise take over the
+    record, its notes, links and probes. A different valid MAC makes the hit a new candidate;
+    without a MAC on either side the name still follows a DHCP move.
+    """
+    name = hit.hostname
     if not name or is_ip_like(name):
         return None
-    candidates = await _query_by_name(db, model, name, name_columns)
+    candidates = [
+        c for c in await _query_by_name(db, model, name, name_columns)
+        if not _macs_conflict(c.mac, hit.mac, hit.is_valid_mac)
+    ]
     if not candidates:
         return None
     placeholder = next((c for c in candidates if getattr(c, "ip_placeholder", False)), None)
@@ -360,7 +372,7 @@ async def _match_dashboard_device(db, hit: ScanHit):
     if dev:
         return dev, "mac"
 
-    dev = await _match_by_name(db, Device, hit.hostname, (Device.hostname, Device.display_name))
+    dev = await _match_by_name(db, Device, hit, (Device.hostname, Device.display_name))
     return (dev, "hostname") if dev else (None, None)
 
 
@@ -389,7 +401,7 @@ async def _match_discovered_host(db, hit: ScanHit, ctx: SyncContext | None = Non
     disc = _unless_live_elsewhere(await _match_discovered_by_mac(db, hit.mac, hit.is_valid_mac), hit.ip, ctx)
     if disc:
         return disc
-    by_name = await _match_by_name(db, DiscoveredHost, hit.hostname, (DiscoveredHost.hostname, DiscoveredHost.custom_name))
+    by_name = await _match_by_name(db, DiscoveredHost, hit, (DiscoveredHost.hostname, DiscoveredHost.custom_name))
     disc = _unless_live_elsewhere(by_name, hit.ip, ctx)
     if disc:
         return disc

@@ -145,4 +145,5 @@ async def test_agent_download_and_missing_script(client, monkeypatch, tmp_path):
 async def test_uninstall_script_needs_a_known_device(client, device):
     ok = await client.get(f"/api/agent/download/uninstall-sh/{device.id}")
     assert ok.status_code == 200 and ok.text.startswith("#!")
-    assert (await client.get("/api/agent/download/uninstall-sh/9999")).status_code == 404
+    # The same script for any id: it no longer tells which device ids exist
+    assert (await client.get("/api/agent/download/uninstall-sh/9999")).status_code == 200

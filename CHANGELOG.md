@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- API tokens can no longer change credentials or the instance, whatever their scope. With `settings:write` a token could replace the Proxmox connection, add or delete webhooks with their tokens, retry outbox entries or lengthen the step-up time, all actions a browser session may only take after confirming the password. An API token has no password to confirm, so these answer 403 now; GravityUI with password confirmation and the master token work as before. Reading settings and all other `settings:write` changes stay allowed.
+- Adopting an agent's pending token (Agents → adopt) now asks for the password like enrolling or deploying an agent; adopting lets that host report as the device.
+- The SSH deploy makes root the owner of the agent script and `agent.conf`. `mv` kept the SSH user as owner, so with a non-root deploy user that user could change the script root runs without sudo.
+- The router import's fetch (which uses or saves the stored SNMP community or UniFi API key) and "forget connection" ask for the password like the Proxmox connection and refuse API tokens; applying the shown networks stays open to `network:write`.
+- SSH to the Docker host: only a host that cannot be reached at all is retried on the bridge gateway. A changed host key or a rejected login was retried there too, sending the same credentials to another machine.
+- The uninstall script download no longer tells which device ids exist (it answered 404 for unknown ones without a login).
+- The UniFi router import never sends its API key through a proxy from the environment: the console is addressed by its LAN IP, which `NO_PROXY` names did not match. IDs from the console's answers are encoded in the request path.
+
 ### Fixed
 - Scan results were lost when the database was busy. If saving a batch of found hosts met a locked database, the batch was rolled back, which drops all its changes, and the retry then saved nothing but counted as success, webhooks included. The whole batch is now applied again in a new session, also when the lock already hits while one host is written (before, that host was only logged and dropped); if the database stays locked, the batch fails visibly and sends no webhooks. A health probe pass that cannot be saved is logged and dropped; the next pass probes again.
 - "Stop scan" did nothing: the running network or dashboard scan never looked at the stop signal and ran to its end. Both scans now stop at once (nmap is ended, no fallback sweep, MAC or name lookups follow), keep the hosts found so far and end as "cancelled". A stopped scan marks nothing offline, because it did not look at every address; a dashboard scan stopped after its health check skips the search for new devices and sends no scan.complete. Two start requests at the same moment can no longer start two scans.
@@ -17,6 +26,21 @@ All notable changes to this project will be documented in this file.
 - After a successful "security updates only" run, the pending regular updates disappeared from the dashboard until the agent's next patch check: both counters were set to 0. Only the security count is cleared now; the other updates stay pending.
 - A PuTTY key (.ppk version 3) brings its own Argon2 settings for the passphrase. An upload with extreme values (gigabytes of memory, a million passes) could exhaust the server; keys beyond 256 MiB, 64 passes or 8 lanes are refused with a hint to save them again in PuTTYgen, and the conversion no longer blocks other requests while it runs. Keys made with PuTTYgen's settings are unaffected.
 - Agent 0.3.17: after a failed report the agent logged "Backing off for N s" but sent the next report after the normal interval anyway. It now waits the back-off (5 s more per failure in a row, at most 60 s) on top of the interval, and returns to the interval after the next success. An answer it cannot read (not JSON, cut off, a proxy's error page sent with status 200) counts as a failed report too; before, it reset the back-off as if the report had arrived.
+- Restoring a backup in which a table is empty (no devices, no subnets, …) now empties that table; the old rows used to stay. A table a backup leaves out, as older backups do, is still kept. A table the export cannot read is now left out of the file instead of being written as an empty list. An upload without a file name is refused instead of failing with an error 500.
+- Editing a device checks its links first: a missing group, rack or parent device is a 404 instead of an error 500, a device cannot become its own parent or close a loop of parents, and it cannot be put on rack units another device already takes (moving it within its own units still works).
+- A device removed from the dashboard shows up under discovered hosts again; it stayed marked as monitored and was listed nowhere.
+- The agent scanner relay only updates devices in enabled networks, and a device it finds again starts its miss count anew; the old count made a single missed scan take it offline at once.
+- Package updates over SSH: a sudo prompt split over two reads is now answered (the run used to wait until its timeout), and package lists with bytes that are not UTF-8 no longer break the query.
+- A PuTTY RSA key with degenerate parameters is refused as corrupt instead of failing with an error 500.
+- `/api/health`: "unread" notifications count only unread ones (it counted every entry), and revoked agent tokens no longer count as agents that stopped reporting.
+- GravityUI: an expired session during a backup export or import signs out like any other request, the quick subnet scan and "add device by IP" encode their parameters, and the generated `.rdp` file no longer stays in memory until the page reloads.
+- On shutdown the webhook service also closes the connections of its direct client.
+- Package update checks and runs with a saved SSH connection no longer need an SSH user in the request (the connection brings it); without either, the answer is a clear 400.
+- An `apt-get update` that runs into its 90 s limit is ended on the host instead of holding the package lock.
+- Switching off "adopt agents automatically", or restoring a backup with it off, takes effect at once instead of after up to five minutes.
+- Restoring a backup keeps every column a row has; the columns of the first row decided for all rows before.
+- Synology: stopping the agent no longer matches other processes that have its path in their command line. GravityUI encodes the token of the scan and metrics WebSockets and leaves it out when there is none.
+- A scan no longer hands a device over to another box only because the name matches. A second device with the same hostname (a replacement, a default name such as `raspberrypi`, or a hostname equal to a name you gave a device) took over the documented device at its new address, with its notes, links, rack ports and probes; if the original was still online, the next scan pulled it back by its MAC, reported an IP change and handed it over again, every scan, and the second device never showed up on its own. When the MAC addresses differ, the new address now becomes a discovered host of its own and the device stays where it is. Without a MAC on either side the name still follows a device to a new address. Names are compared literally: `_` or `%` in a hostname no longer matches any character.
 
 ## [0.8.0] - 2026-11-19
 

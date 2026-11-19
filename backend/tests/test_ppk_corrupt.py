@@ -163,3 +163,16 @@ def test_ecdsa_unknown_curve_and_mismatching_halves():
 def test_unsupported_key_type():
     with pytest.raises(PpkError, match="Unsupported PuTTY key type 'ssh-dss'"):
         ppk_to_openssh(_ppk("ssh-dss", _s(b"ssh-dss"), b""))
+
+
+@pytest.mark.parametrize("p, q, e, d", [
+    (1, 3233, 17, 2753),     # p = 1 passes p * q == n, then divided by zero (an error 500)
+    (61, 53, 1, 2753),       # e = 1
+    (61, 53, 17, 0),         # d = 0
+])
+def test_degenerate_rsa_parameters_are_a_corrupt_key_not_a_crash(p, q, e, d):
+    n = p * q
+    public = _s(b"ssh-rsa") + _mpint(e) + _mpint(n)
+    private = _mpint(d) + _mpint(p) + _mpint(q) + _mpint(1)
+    with pytest.raises(PpkError, match="RSA parameters"):
+        ppk_to_openssh(_ppk("ssh-rsa", public, private))

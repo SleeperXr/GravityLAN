@@ -187,3 +187,54 @@ async def test_agent_config_download_needs_a_remote_confirmation(browser, device
     res = await browser.post(f"/api/agent/download/config/{device.id}")
     assert res.status_code == 403
     assert res.headers["X-Step-Up"] == "remote"
+
+
+# --- API tokens never pass a password-confirmed class -----------------------------------------------
+
+async def _writer_token(client, admin_token, name="automation-writer"):
+    res = await client.post("/api/auth/tokens", headers={"Authorization": f"Bearer {admin_token}"},
+                            json={"name": name, "scopes": ["settings:read", "settings:write"]})
+    assert res.status_code == 200
+    return res.json()["token"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method, path, body", [
+    ("post", "/api/webhooks", {"url": "https://ntfy.example.com/t", "events": "device.offline"}),
+    ("put", "/api/settings/proxmox", {"url": "https://pve.lan:8006", "token_id": "a@pam!b", "token_secret": "x"}),
+    ("delete", "/api/settings/proxmox", None),
+])
+async def test_an_api_token_with_write_scope_cannot_change_credentials(client, admin_token, monkeypatch, method, path, body):
+    """settings:write used to be enough to replace Proxmox credentials or add a webhook with its
+    token: an API token has no password to confirm, so these classes refuse it whatever its scope."""
+    monkeypatch.setattr("app.services.stepup.store.is_granted", lambda session_id, cls: False)
+    token = await _writer_token(client, admin_token)
+    kwargs = {"headers": {"Authorization": f"Bearer {token}"}}
+    if body is not None:
+        kwargs["json"] = body
+    res = await getattr(client, method)(path, **kwargs)
+    assert res.status_code == 403
+    assert "API tokens cannot change credentials" in res.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_step_up_setting_change_by_an_api_token_is_refused(client, admin_token, monkeypatch):
+    monkeypatch.setattr("app.services.stepup.store.is_granted", lambda session_id, cls: False)
+    token = await _writer_token(client, admin_token, "automation-settings")
+    res = await client.post("/api/settings", headers={"Authorization": f"Bearer {token}"},
+                            json={"security.stepup_minutes": "60"})
+    assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_router_import_preview_and_forget_refuse_api_tokens(client, admin_token, monkeypatch):
+    """They use or delete the stored router credentials, like the Proxmox connection."""
+    monkeypatch.setattr("app.services.stepup.store.is_granted", lambda session_id, cls: False)
+    res = await client.post("/api/auth/tokens", headers={"Authorization": f"Bearer {admin_token}"},
+                            json={"name": "net-writer", "scopes": ["network:read", "network:write"]})
+    headers = {"Authorization": f"Bearer {res.json()['token']}"}
+    preview = await client.post("/api/network/router-import/preview", headers=headers,
+                                json={"provider": "snmp", "host": "192.168.1.1"})
+    assert preview.status_code == 403
+    forget = await client.delete("/api/network/router-import/sources/snmp", headers=headers)
+    assert forget.status_code == 403

@@ -40,9 +40,9 @@ ALLOWED_TABLE_MAP = {
     "rack_cables": "rack_cables",
 }
 
-# Rack cabling came into backups after 0.6.0: a backup that has these keys is complete for them, so an
-# empty list empties the table. Older backups leave them out and keep what the instance has.
-REPLACE_WHEN_EMPTY = frozenset({"rack_items", "rack_ports", "rack_cables"})
+# A key the backup has is complete for its table: an empty list empties it (only rack cabling did
+# that until 0.8.0; restoring an emptied device list kept the old devices). A key it leaves out,
+# as older backups do for tables that came later, keeps what the instance has.
 
 # Credentials and setup state of the running instance. An import never deletes or
 # replaces them: a backup from another instance (or a tampered one) would otherwise
@@ -64,6 +64,8 @@ _RUNTIME_CACHES = (
     ("app.api.discovery", "discovery_cache"),
     ("app.api.agent", "_latest_metrics"),
     ("app.api.auth", "_setting_cache"),
+    # agent.allow_auto_adoption: a restored "off" must not stay "on" for the cache's five minutes
+    ("app.services.agent_telemetry", "_setting_cache"),
 )
 
 
@@ -122,6 +124,8 @@ async def export_backup(request: Request):
                     rows = [r for r in rows if r.get("key") not in PROTECTED_SETTING_KEYS]
                 data[key] = rows
             except sqlite3.OperationalError as e:
+                # Left out, not written as []: an empty list empties the table on import
+                data.pop(key, None)
                 logger.warning(f"Backup: Table {table} skipped ({e})")
         conn.close()
         return data
@@ -388,7 +392,8 @@ def _replace_table(cursor, table: str, rows: list[dict]) -> None:
         cursor.execute(f"DELETE FROM {table}")
     if not rows:
         return
-    columns = list(rows[0].keys())
+    # Every column any row has: taking the first row's only dropped the values of columns it lacked
+    columns = list(dict.fromkeys(col for row in rows for col in row))
     placeholders = ", ".join(["?"] * len(columns))
     cursor.executemany(
         f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
@@ -398,7 +403,9 @@ def _replace_table(cursor, table: str, rows: list[dict]) -> None:
 
 def _restorable_table(key: str, rows) -> str | None:
     """The table a backup key restores, or None when this key is to be skipped."""
-    if key == "metadata" or (not rows and key not in REPLACE_WHEN_EMPTY):
+    # A key the backup has replaces its table, also when its list is empty (the instance had none of
+    # these: restoring it means none now); a key it leaves out (an older backup) keeps the table
+    if key == "metadata" or rows is None:
         return None
     if key not in ALLOWED_TABLE_MAP:
         logger.warning(f"Backup: Skipping unauthorized table key '{key}'")
@@ -415,8 +422,8 @@ def _import_tables(cursor, data: dict) -> tuple[dict[str, int], dict[str, int]]:
         if table is None:
             continue
         valid_rows = _clean_rows(cursor, table, rows) if rows else []
-        if not valid_rows and key not in REPLACE_WHEN_EMPTY:
-            continue
+        if rows and not valid_rows:
+            continue  # every row was dropped while cleaning: keep the table rather than empty it
         valid_rows, dropped = _drop_duplicates(table, valid_rows)
         if dropped:
             duplicates[table] = dropped
@@ -499,7 +506,7 @@ async def import_backup(request: Request, file: UploadFile = File(...), db: Asyn
 
 async def _read_backup_upload(file: UploadFile) -> dict:
     """The parsed backup of an upload; HTTP 400/413 when it is no usable backup file."""
-    if not file.filename.endswith(".json"):
+    if not (file.filename or "").lower().endswith(".json"):
         raise HTTPException(status_code=400, detail="Only JSON files are supported")
 
     # Issue 8: Read with size limit (10MB max) to prevent memory exhaustion DOS

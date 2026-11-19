@@ -75,10 +75,14 @@ async def drain_webhook_tasks(timeout: float = 5.0) -> int:
 
 async def close_webhook_client():
     """Close the shared client on application shutdown."""
-    global _shared_client
+    global _shared_client, _direct_client
     if _shared_client is not None and not _shared_client.is_closed:
         await _shared_client.aclose()
         _shared_client = None
+    # The client of the pinned posts has its own connections
+    if _direct_client is not None and not _direct_client.is_closed:
+        await _direct_client.aclose()
+        _direct_client = None
 
 
 EVENT_ALIASES = {
