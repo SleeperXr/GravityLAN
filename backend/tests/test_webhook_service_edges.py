@@ -120,16 +120,55 @@ async def _resolve_to_public(monkeypatch):
     ("hooks.example.test:8443", False),    # another port: still through the proxy
 ])
 async def test_the_pinning_follows_the_clients_own_proxy_routing(monkeypatch, no_proxy, pinned):
-    """urllib's NO_PROXY rules differ from httpx's ("*" in a list, ports); only the client decides."""
+    """urllib's NO_PROXY rules differ from httpx's ("*" in a list, ports); only the client decides.
+    A pinned post goes through the direct client: the shared one would route the address again."""
     await _resolve_to_public(monkeypatch)
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.lan:3128")
     if no_proxy:
         monkeypatch.setenv("NO_PROXY", no_proxy)
-    client, calls = _real_client_recording_posts()
-    await webhook_service._send_webhook_post(client, "https://hooks.example.test/x", {})
-    url, kwargs = calls[0]
-    assert (url == "https://198.51.100.7/x") is pinned
-    assert (kwargs["extensions"] == {"sni_hostname": "hooks.example.test"}) is pinned
+    shared, shared_calls = _real_client_recording_posts()
+    direct = _Recorder()
+    monkeypatch.setattr(webhook_service, "_get_direct_client", lambda: direct)
+
+    await webhook_service._send_webhook_post(shared, "https://hooks.example.test/x", {})
+
+    if pinned:
+        assert shared_calls == []
+        url, kwargs = direct.calls[0]
+        assert url == "https://198.51.100.7/x"
+        assert kwargs["extensions"] == {"sni_hostname": "hooks.example.test"}
+    else:
+        assert direct.calls == []
+        url, kwargs = shared_calls[0]
+        assert url == "https://hooks.example.test/x" and kwargs["extensions"] == {}
+    assert kwargs["follow_redirects"] is False
+
+
+def test_the_direct_client_never_routes_a_pinned_address_through_a_proxy(monkeypatch):
+    """The bug the second review found: NO_PROXY names the host, the pinned URL names the address,
+    so the shared client sent it through the proxy (and HTTPS then checked the address)."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.lan:3128")
+    monkeypatch.setenv("NO_PROXY", "hooks.example.test")
+    monkeypatch.setattr(webhook_service, "_direct_client", None)
+    shared = httpx.AsyncClient()
+    pinned_url = httpx.URL("https://198.51.100.7/x")
+    assert shared._transport_for_url(pinned_url) is not shared._transport  # what went wrong
+    direct = webhook_service._get_direct_client()
+    assert direct._transport_for_url(pinned_url) is direct._transport
+    assert direct.follow_redirects is False
+
+
+def test_pinning_keeps_credentials_and_drops_default_ports():
+    url, headers, _ = webhook_service._pinned_request("https://user:secret@hooks.example.test:443/x", "198.51.100.7", None)
+    assert url == "https://user:secret@198.51.100.7/x"
+    assert headers["Host"] == "hooks.example.test"
+    url, headers, _ = webhook_service._pinned_request("http://hooks.example.test:8080/x", "198.51.100.7", None)
+    assert url == "http://198.51.100.7:8080/x" and headers["Host"] == "hooks.example.test:8080"
+
+
+def test_a_mock_client_counts_as_direct():
+    from unittest.mock import AsyncMock
+    assert webhook_service._routes_directly(AsyncMock(), "https://hooks.example.test/x") is True
 
 
 def test_ipv6_and_international_names_give_valid_host_headers():

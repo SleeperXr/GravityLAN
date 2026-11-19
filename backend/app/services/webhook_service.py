@@ -27,6 +27,7 @@ _background_webhook_tasks: set[asyncio.Task] = set()
 # One delivery pass at a time: an event's own pass and the retry loop must not send the same entry twice
 _delivery_lock = asyncio.Lock()
 _shared_client: httpx.AsyncClient | None = None
+_direct_client: httpx.AsyncClient | None = None
 
 
 async def _get_client() -> httpx.AsyncClient:
@@ -35,6 +36,19 @@ async def _get_client() -> httpx.AsyncClient:
     if _shared_client is None or _shared_client.is_closed:
         _shared_client = httpx.AsyncClient(timeout=5.0)
     return _shared_client
+
+
+def _get_direct_client() -> httpx.AsyncClient:
+    """The client for posts pinned to a checked address: never a proxy, no redirects, HTTP/1.1.
+
+    httpx picks the proxy again per request, from the URL it sends; for a pinned post that is
+    the address, which NO_PROXY names do not match, so the shared client would send a post meant
+    to go direct through the proxy. HTTP/2 would also multiplex several names over one connection.
+    """
+    global _direct_client
+    if _direct_client is None or _direct_client.is_closed:
+        _direct_client = httpx.AsyncClient(timeout=5.0, trust_env=False, follow_redirects=False, http2=False)
+    return _direct_client
 
 
 async def drain_webhook_tasks(timeout: float = 5.0) -> int:
@@ -231,10 +245,14 @@ def _routes_directly(client, url: str) -> bool:
     own routing (HTTP(S)_PROXY, ALL_PROXY, NO_PROXY with wildcards and ports) is the only one that
     matches what it does; a client without it (a test double) counts as direct.
     """
-    route = getattr(client, "_transport_for_url", None)
-    if route is None:
+    if not isinstance(client, httpx.AsyncClient):
+        return True  # a test double (also an AsyncMock, whose every attribute exists)
+    try:
+        return client._transport_for_url(httpx.URL(url)) is client._transport
+    except AttributeError:
+        # httpx changed its internals: pin and send direct, the safe side (a proxy is then not used)
+        logger.warning("Webhook: cannot tell whether httpx would use a proxy; sending directly")
         return True
-    return route(httpx.URL(url)) is client._transport
 
 
 async def _blocked_target_reason(url: str) -> str | None:
@@ -248,12 +266,17 @@ def _pinned_request(url: str, address: str, headers: dict[str, str] | None) -> t
     against the host name and not the address."""
     parsed = urlparse(url)
     host = f"[{address}]" if ":" in address else address
-    netloc = f"{host}:{parsed.port}" if parsed.port else host
+    # The port only when it is not the scheme's default, as httpx writes the Host header
+    port = parsed.port if parsed.port not in (None, 443 if parsed.scheme == "https" else 80) else None
+    netloc = f"{host}:{port}" if port else host
+    # Credentials in the URL (user:pass@) stay: httpx turns them into the Authorization header
+    if "@" in parsed.netloc:
+        netloc = parsed.netloc.rsplit("@", 1)[0] + "@" + netloc
     # Header values and the TLS server name are ASCII: the same punycode name httpx and the DNS lookup use
     name = _ascii_host(url)
     name_in_host = f"[{name}]" if ":" in name else name  # an IPv6 literal keeps its brackets
     pinned_headers = dict(headers or {})
-    pinned_headers["Host"] = f"{name_in_host}:{parsed.port}" if parsed.port else name_in_host
+    pinned_headers["Host"] = f"{name_in_host}:{port}" if port else name_in_host
     # The pool keeps connections by address: one opened for another name on the same address
     # (two webhooks behind one reverse proxy) would carry this request without a TLS check for it
     pinned_headers["Connection"] = "close"
@@ -516,14 +539,18 @@ async def _send_webhook_post(
     if reason:
         logger.warning("Webhook: refusing to post to '%s': %s", url, reason)
         return None
-    target, extensions = url, {}
+    target, extensions, sender = url, {}, client
     if address and _routes_directly(client, url):
         target, headers, extensions = _pinned_request(url, address, headers)
+        # A real httpx client would route the address again (through a proxy NO_PROXY spares the
+        # name from): the pinned post goes through the direct client. Test doubles keep their own.
+        if isinstance(client, httpx.AsyncClient):
+            sender = _get_direct_client()
+    body = {"content": payload} if isinstance(payload, bytes) else {"json": payload}
     try:
-        if isinstance(payload, bytes):
-            response = await client.post(target, content=payload, headers=headers, extensions=extensions)
-        else:
-            response = await client.post(target, json=payload, headers=headers, extensions=extensions)
+        response = await sender.post(
+            target, headers=headers, extensions=extensions, follow_redirects=False, **body,
+        )
         if not _is_delivered(response.status_code):
             logger.warning(
                 f"Webhook: Target URL '{url}' returned status code {response.status_code}"
