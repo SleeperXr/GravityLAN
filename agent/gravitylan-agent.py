@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 # Constants & Logging
 # ---------------------------------------------------------------------------
 
-VERSION = "0.3.16"
+VERSION = "0.3.17"
 AGENT_NAME = "gravitylan-agent"
 DEFAULT_CONFIG_FILENAME = "agent.conf"
 DEFAULT_LOG_FILENAME = "gravitylan-agent.log"
@@ -1012,18 +1012,27 @@ class ReportSender:
 
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
-                self.consecutive_failures = 0
-                self.backoff_seconds = 0
-                return json.loads(resp.read().decode("utf-8"))
+                answer = json.loads(resp.read().decode("utf-8"))
+            if not isinstance(answer, dict):
+                raise ValueError("the server's answer is not a JSON object")
         except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout) as e:
-            self.consecutive_failures += 1
-            # The orchestrator waits this long on top of the interval (it used to be logged only)
-            self.backoff_seconds = min(self.consecutive_failures * 5, 60)
-            logger.warning("Report delivery failed (%s). Backing off for %ds.", e, self.backoff_seconds)
+            self._failed(logging.WARNING, "Report delivery failed (%s)", e)
             return None
         except Exception as e:
-            logger.error("Unexpected error in ReportSender: %s", e)
+            # A broken answer (not JSON, cut off, a proxy's error page with status 200) is a failed
+            # report as well: before, it left the back-off at 0 or at an old value
+            self._failed(logging.ERROR, "Unexpected answer to the report (%s)", e)
             return None
+        # Only an answer that was read counts as a success
+        self.consecutive_failures = 0
+        self.backoff_seconds = 0
+        return answer
+
+    def _failed(self, level: int, message: str, error: Exception) -> None:
+        """Count a failed report; the orchestrator waits the back-off on top of the interval."""
+        self.consecutive_failures += 1
+        self.backoff_seconds = min(self.consecutive_failures * 5, 60)
+        logger.log(level, message + ". Backing off for %ds.", error, self.backoff_seconds)
 
 # ---------------------------------------------------------------------------
 # Orchestration
