@@ -1006,6 +1006,11 @@ async def create_api_token(
     if token.startswith("api_token:"):
         raise HTTPException(status_code=403, detail="Read-only tokens cannot view or manage other tokens.")
     
+    # The name identifies the token in the audit log and in /api/auth/me, so it must be unique
+    taken = await db.execute(select(ApiToken.id).where(ApiToken.name == payload.name))
+    if taken.first():
+        raise HTTPException(status_code=409, detail=f"An API token named '{payload.name}' already exists.")
+
     raw_token = "gl_pat_" + secrets.token_hex(24)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     prefix = raw_token[:11] + "..."
@@ -1057,15 +1062,18 @@ async def delete_api_token(
 
 @router.get("/me")
 async def auth_me(
+    request: Request,
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Token introspection endpoint returning authorized scopes."""
     if token.startswith("api_token:"):
-        name = token.removeprefix("api_token:")
         from app.models.api_token import ApiToken
-        res = await db.execute(select(ApiToken).where(ApiToken.name == name))
-        db_token = res.scalar_one_or_none()
+        # The token that was sent, by its hash: names were not unique before 0.8.1, and a name
+        # lookup failed (two rows) or could report another token's scopes
+        sent = (request.headers.get("authorization") or "").removeprefix("Bearer ").strip()
+        res = await db.execute(select(ApiToken).where(ApiToken.token_hash == hashlib.sha256(sent.encode()).hexdigest()))
+        db_token = res.scalars().first()
         if db_token:
             if db_token.scopes:
                 scopes = [s.strip() for s in db_token.scopes.split(",") if s.strip()]

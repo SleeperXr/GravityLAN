@@ -322,8 +322,19 @@ async def _push_metrics_to_subscribers(device_id: int) -> None:
             logger.debug("Failed to push patch metrics to subscriber for device %s: %s", device_id, exc)
 
 
-async def _clear_device_patch_state(device_id: int) -> None:
-    """Reset patch counters in DB and push updated metrics to subscribers."""
+def _counts_after_run(available, security, mode: str) -> tuple[int, int]:
+    """(available, security) once a run of ``mode`` succeeded.
+
+    A full upgrade leaves nothing pending. "security-only" installs only the security updates,
+    which are part of the available ones: the others are still pending.
+    """
+    if mode == "security-only":
+        return max(0, (available or 0) - (security or 0)), 0
+    return 0, 0
+
+
+async def _clear_device_patch_state(device_id: int, mode: str = "upgrade") -> None:
+    """Update the patch counters after a successful run (in DB and for metric subscribers)."""
     try:
         async with async_session() as db:
             metrics_res = await db.execute(
@@ -334,16 +345,17 @@ async def _clear_device_patch_state(device_id: int) -> None:
             last_metric = metrics_res.scalars().first()
             if not last_metric:
                 return
-            last_metric.patch_available = 0
-            last_metric.patch_security = 0
+            available, security = _counts_after_run(last_metric.patch_available, last_metric.patch_security, mode)
+            last_metric.patch_available = available
+            last_metric.patch_security = security
             await db.commit()
     except SQLAlchemyError as exc:
         logger.error("Failed to update database metrics after patch execution for device %s: %s", device_id, exc)
         return
 
     if device_id in _latest_metrics:
-        _latest_metrics[device_id]["patch_available"] = 0
-        _latest_metrics[device_id]["patch_security"] = 0
+        _latest_metrics[device_id]["patch_available"] = available
+        _latest_metrics[device_id]["patch_security"] = security
         await _push_metrics_to_subscribers(device_id)
 
 
@@ -488,7 +500,7 @@ async def _stream_update(params: PatchStreamParams) -> None:
         if tofu_policy and tofu_policy.captured:
             await _remember_host_key(params.ssh["host_ip"], params.ssh["ssh_port"], tofu_policy.captured)
         clear_fn = _get_agent_attr("_clear_device_patch_state", _clear_device_patch_state)
-        await clear_fn(params.device_id)
+        await clear_fn(params.device_id, mode=params.mode)
     if sink.connected:
         await _report_result(params.websocket, success, msg)
 

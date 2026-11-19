@@ -19,6 +19,21 @@ from app.services.webhook_service import (
 )
 
 
+@pytest.fixture(autouse=True)
+async def _example_hosts_resolve(monkeypatch):
+    """Webhook posts go to the address the SSRF check resolved; the example hosts get a fixed
+    documentation address, so these tests need no DNS (IP literals still resolve as they are)."""
+    loop = asyncio.get_running_loop()
+    real = loop.getaddrinfo
+
+    async def resolve(host, port, *args, **kwargs):
+        if host and host.endswith("example.com"):
+            return [(2, 1, 6, "", ("203.0.113.10", port))]
+        return await real(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(loop, "getaddrinfo", resolve)
+
+
 def test_format_event_notification_offline():
     title, msg, prio, tags = format_event_notification("device.offline", {"display_name": "Switch 1", "ip": "10.0.0.1"})
     assert "Device Offline" in title

@@ -15,6 +15,7 @@ so API and master tokens still cannot open shells (ADR 002).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import time
@@ -330,7 +331,8 @@ async def create_key(req: SshKeyCreate, request: Request, db: AsyncSession = Dep
         raise HTTPException(status_code=400, detail="Private key is required.")
     if len(private_key) > MAX_PRIVATE_KEY_LENGTH:
         raise HTTPException(status_code=400, detail="Private key is too large.")
-    pkey, private_key, passphrase = _load_uploaded_key(private_key, req.passphrase)
+    # A PuTTY v3 key runs Argon2 with the file's own cost: off the event loop, so other requests go on
+    pkey, private_key, passphrase = await asyncio.to_thread(_load_uploaded_key, private_key, req.passphrase)
 
     key = SshKey(
         name=name, key_type=pkey.get_name(), fingerprint=pkey.fingerprint,

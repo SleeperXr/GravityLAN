@@ -90,6 +90,31 @@ def test_bad_v3_key_derivation(extra, message):
         ppk_to_openssh(_ppk("ssh-ed25519", public, b"0" * 16, encryption="aes256-cbc", extra=extra), "pass")
 
 
+def _argon2_header(memory="8192", passes="8", lanes="1", salt="00" * 16):
+    return (f"Key-Derivation: Argon2id\nArgon2-Memory: {memory}\nArgon2-Passes: {passes}\n"
+            f"Argon2-Parallelism: {lanes}\nArgon2-Salt: {salt}\n")
+
+
+@pytest.mark.parametrize("extra", [
+    _argon2_header(memory=str(4 * 1024 * 1024)),  # 4 GiB
+    _argon2_header(passes="1000000"),
+    _argon2_header(lanes="255"),
+    _argon2_header(passes="0"),
+    _argon2_header(memory="1"),                    # below argon2's own minimum of 8 KiB per lane
+])
+def test_v3_key_derivation_beyond_the_limits_is_refused_before_hashing(monkeypatch, extra):
+    """The cost comes from the uploaded file: a crafted one must not make the server hash for minutes."""
+    import argon2.low_level
+
+    def no_hashing(**kwargs):
+        raise AssertionError("argon2 ran")
+
+    monkeypatch.setattr(argon2.low_level, "hash_secret_raw", no_hashing)
+    public, _ = _ed25519()
+    with pytest.raises(PpkError, match="outside what GravityLAN accepts"):
+        ppk_to_openssh(_ppk("ssh-ed25519", public, b"0" * 16, encryption="aes256-cbc", extra=extra), "pass")
+
+
 @pytest.mark.parametrize("public", [
     b"\x00\x00",                                    # length field cut short
     _s(b"ssh-ed25519")[:4] + b"ssh",                # announces 11 bytes, 3 there

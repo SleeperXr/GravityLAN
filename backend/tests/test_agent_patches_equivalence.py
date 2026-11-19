@@ -270,7 +270,7 @@ async def _run(fn, monkeypatch, session, probe, stream, strict, narrow, capture_
     async def fake_session():
         yield None
 
-    async def fake_clear(device_id):
+    async def fake_clear(device_id, mode="upgrade"):
         record.append(("clear", device_id))
 
     monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", auth_ok)
