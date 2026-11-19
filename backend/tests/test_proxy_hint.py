@@ -55,3 +55,4 @@ def test_the_app_checks_forwarded_requests(monkeypatch):
         client.get("/ping")
         client.get("/ping", headers={"X-Forwarded-For": "203.0.113.7"})
     assert seen == [("testclient", "203.0.113.7")]
+
