@@ -1,4 +1,4 @@
-"""Say at start-up which time zone the log uses, and warn when TZ is set but cannot take effect.
+"""Say at start-up which time zone the log uses, and warn when TZ is missing or cannot take effect.
 
 Log times come from the C library (time.localtime). It reads TZ only when the zone file exists
 under /usr/share/zoneinfo; without it TZ=Europe/Berlin is silently ignored and every log time is
@@ -35,10 +35,16 @@ def zone_file_missing(tz: str, zoneinfo_dir: Path = ZONEINFO_DIR) -> bool:
 
 
 def log_timezone() -> None:
-    """One line with the zone the log uses; a warning when TZ is set but has no effect."""
+    """One line with the zone the log uses; a warning when TZ is not set or has no effect."""
     if os.name != "posix":
         return
     tz = os.environ.get("TZ", "")
+    if not tz.strip():
+        logger.warning(
+            "TZ is not set, so log times are UTC. Set the TZ environment variable "
+            "of the container to your zone, for example TZ=Europe/Berlin (TZ=UTC keeps UTC and "
+            "silences this warning).")
+        return
     if tz and zone_file_missing(tz):
         logger.warning(
             "TZ=%s is set, but %s is missing, so it has no effect and log times are UTC. "

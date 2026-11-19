@@ -330,6 +330,16 @@ SECURITY_HEADERS = {
 
 
 @app.middleware("http")
+async def forwarded_for_hint_middleware(request: Request, call_next):
+    # One warning per start when a reverse proxy sends X-Forwarded-For but is not trusted
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        from app.services.proxy_hint import check_forwarded_for
+        check_forwarded_for(request.client.host if request.client else None, forwarded_for)
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     for name, value in SECURITY_HEADERS.items():
