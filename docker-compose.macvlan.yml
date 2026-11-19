@@ -13,9 +13,34 @@ services:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - GRAVITYLAN_PORT=${GRAVITYLAN_PORT:-8000}
+      - TZ=${TZ:-UTC}
+      # With macvlan the container cannot reach its own host. Set the host's LAN IP so SSH
+      # logins to it (agent deploy, updates, terminal) may retry over the Docker bridge gateway
+      # - GRAVITYLAN_DOCKER_HOST_IP=192.168.1.10
+      # --- HTTPS and reverse proxy: leave commented while you open GravityLAN over plain HTTP ---
+      # Mark the session cookie Secure. Only once GravityLAN is reached over https://,
+      # otherwise the browser drops the cookie and the login does not stick
+      # - GRAVITYLAN_SECURE_COOKIES=true
+      # Addresses or networks of your reverse proxy, comma-separated. Only these may set the
+      # client address with X-Forwarded-For, so the login limit, the audit log and agent IPs
+      # see the real client instead of the proxy. Empty = only localhost is trusted
+      # - GRAVITYLAN_TRUSTED_PROXIES=172.18.0.0/16
+      # Only needed if the proxy rewrites the Host header and sends no X-Forwarded-Host:
+      # the address you open GravityLAN with (JSON list). Otherwise WebSockets (live scan,
+      # logs, metrics, terminal) refuse the page
+      # - 'GRAVITYLAN_CORS_ORIGINS=["https://gravity.example.com"]'
+    # Optional resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2.0'
+    #       memory: 1G
+    #     reservations:
+    #       cpus: '0.25'
+    #       memory: 256M
     networks:
       gravitylan_net:
-        ipv4_address: ${GRAVITYLAN_IP:-192.168.100.254}
+        ipv4_address: ${GRAVITYLAN_IP:-192.168.1.250}
     volumes:
       - ./data:/app/data
 
@@ -23,8 +48,8 @@ networks:
   gravitylan_net:
     driver: macvlan
     driver_opts:
-      parent: ${GRAVITYLAN_INTERFACE:-ens19}
+      parent: ${GRAVITYLAN_INTERFACE:-eth0}
     ipam:
       config:
-        - subnet: ${GRAVITYLAN_SUBNET:-192.168.100.0/24}
-          gateway: ${GRAVITYLAN_GATEWAY:-192.168.100.1}
+        - subnet: ${GRAVITYLAN_SUBNET:-192.168.1.0/24}
+          gateway: ${GRAVITYLAN_GATEWAY:-192.168.1.1}

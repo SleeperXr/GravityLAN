@@ -17,3 +17,15 @@ services:
       - PGID=${PGID:-1000}
       - GRAVITYLAN_PORT=8000
       - TZ=UTC
+      # --- HTTPS and reverse proxy: leave commented while you open GravityLAN over plain HTTP ---
+      # Mark the session cookie Secure. Only once GravityLAN is reached over https://,
+      # otherwise the browser drops the cookie and the login does not stick
+      # - GRAVITYLAN_SECURE_COOKIES=true
+      # Addresses or networks of your reverse proxy, comma-separated. Only these may set the
+      # client address with X-Forwarded-For, so the login limit, the audit log and agent IPs
+      # see the real client instead of the proxy. Empty = only localhost is trusted
+      # - GRAVITYLAN_TRUSTED_PROXIES=172.18.0.0/16
+      # Only needed if the proxy rewrites the Host header and sends no X-Forwarded-Host:
+      # the address you open GravityLAN with (JSON list). Otherwise WebSockets (live scan,
+      # logs, metrics, terminal) refuse the page
+      # - 'GRAVITYLAN_CORS_ORIGINS=["https://gravity.example.com"]'
