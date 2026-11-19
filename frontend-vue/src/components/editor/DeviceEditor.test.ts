@@ -242,3 +242,31 @@ describe('tabs', () => {
     expect(settings(w).props('form')).toMatchObject({ display_name: 'router' });
   });
 });
+
+describe('closing', () => {
+  it('reports afterLeave once the leave animation is over', async () => {
+    vi.useFakeTimers();
+    try {
+      const w = await render();
+      await w.setProps({ open: false } as never);
+      vi.advanceTimersByTime(250);
+      expect(w.emitted('afterLeave')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not report afterLeave when reopened within the leave delay', async () => {
+    vi.useFakeTimers();
+    try {
+      const w = await render();
+      await w.setProps({ open: false } as never);
+      vi.advanceTimersByTime(100);
+      await w.setProps({ open: true } as never);
+      vi.advanceTimersByTime(500);
+      expect(w.emitted('afterLeave')).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

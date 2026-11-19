@@ -360,7 +360,8 @@ async def resolve_mac_addresses(discovered_hosts: List[Dict[str, Any]], all_targ
                 host["mac"] = None
 
         # 5. Consolidate results
-        _merge_into_hosts(discovered_hosts, arp_map, all_target_ips)
+        # In a thread: get_vendor can wait on the rate-limited vendor API
+        await asyncio.to_thread(_merge_into_hosts, discovered_hosts, arp_map, all_target_ips)
 
     except Exception as e:
         logger.error(f"Error during ARP resolution: {e}")

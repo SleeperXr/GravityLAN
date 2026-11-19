@@ -340,7 +340,7 @@ async def _fill_new_device_details(device, ip: str) -> None:
     mac = await _lookup_mac(ip)
     if mac:
         device.mac = mac
-        device.vendor = get_vendor(mac)
+        device.vendor = await asyncio.to_thread(get_vendor, mac)
 
 
 @router.get("/{device_id}", response_model=DeviceResponse)
@@ -476,7 +476,7 @@ async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db)
     # 2. MAC via ARP when missing, 3. vendor from the MAC
     if not device.mac:
         device.mac = await _lookup_mac(device.ip) or device.mac
-    new_vendor = get_vendor(device.mac) if device.mac else None
+    new_vendor = await asyncio.to_thread(get_vendor, device.mac) if device.mac else None
     if new_vendor:
         device.vendor = new_vendor
 

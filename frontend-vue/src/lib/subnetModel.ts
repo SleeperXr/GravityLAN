@@ -107,10 +107,12 @@ export function buildTiles(prefix: string, devices: Device[], discovered: Discov
 
 /** Online overview devices plus online discovered hosts that are not in the overview yet. */
 export function countOnline(prefix: string, devices: Device[], discovered: DiscoveredHost[]): number {
-  const known = devices.filter(d => d.ip?.startsWith(prefix) && d.is_online).length
-    + devices.flatMap(d => d.interfaces ?? []).filter(i => i.ip.startsWith(prefix) && i.is_online).length;
+  // With the trailing dot: "192.168.1" must not also count 192.168.10.x and 192.168.100.x
+  const p = prefix.endsWith('.') ? prefix : `${prefix}.`;
+  const known = devices.filter(d => d.ip?.startsWith(p) && d.is_online).length
+    + devices.flatMap(d => d.interfaces ?? []).filter(i => i.ip.startsWith(p) && i.is_online).length;
   const onlyDiscovered = discovered
-    .filter(h => h.ip?.startsWith(prefix) && h.is_online)
+    .filter(h => h.ip?.startsWith(p) && h.is_online)
     .filter(h => !devices.some(d => ownsAddress(d, h.ip))).length;
   return known + onlyDiscovered;
 }
