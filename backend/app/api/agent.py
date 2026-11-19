@@ -28,7 +28,7 @@ from app.models.agent import AgentConfig, DeviceMetrics, AgentToken
 from app.models.device import Device
 from app.models.ssh import SshKnownHost
 from app.services.ssh_utils import PinnedHostKey, TofuHostKeyPolicy
-from app.api.auth import get_current_admin
+from app.api.auth import get_bearer_admin, get_current_admin
 from app.schemas.agent import (
     AgentReportPayload,
     AgentReportResponse,
@@ -466,31 +466,12 @@ async def create_enrollment_code(
     )
 
 
-@router.get("/download/config/{device_id}")
-async def download_agent_config(
-    device_id: int,
-    request: Request,
-    code: str | None = None,
-    authorization: str | None = Header(None),
-    db: AsyncSession = Depends(get_db),
-):
-    """Generate and download the agent.conf for a specific device.
-
-    The config carries the agent token, so it needs admin auth or a single-use
-    enrollment code (redeemed by the manual install script).
-    """
-    if code is not None:
-        if not enrollment_store.consume(code, device_id):
-            raise HTTPException(status_code=403, detail="Invalid, expired or already used enrollment code")
-    else:
-        caller = await get_current_admin(conn=request, authorization=authorization, token=None, db=db)
-        if caller.startswith("api_token:"):
-            raise HTTPException(status_code=403, detail="Read-only API tokens cannot export agent configurations")
-
+async def _issue_agent_config(db: AsyncSession, device_id: int) -> PlainTextResponse:
+    """A fresh agent.conf for ``device_id``; replaces (and so invalidates) the device's agent token."""
     device = await db.get(Device, device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-        
+
     # Only the hash is stored, so the plaintext token exists once: every
     # download issues a fresh token and invalidates the previous one.
     raw_token, stored_token = new_agent_token()
@@ -512,6 +493,59 @@ async def download_agent_config(
 
     # Generate JSON config via service builder
     return PlainTextResponse(build_agent_config_json(server_url, raw_token, device_id))
+
+
+@router.get("/download/config/{device_id}")
+async def download_agent_config(
+    device_id: int,
+    request: Request,
+    code: str | None = None,
+    authorization: str | None = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate and download the agent.conf for a specific device.
+
+    The config carries the agent token, so it needs a single-use enrollment code
+    (redeemed by the manual install script) or the master token in the
+    Authorization header. Every download replaces the device's agent token, so a
+    browser session cookie is not enough here: SameSite=Lax still sends it when
+    another site links to this URL, which would lock the running agent out.
+    Browser sessions use POST with password confirmation instead.
+    """
+    if code is not None:
+        if not enrollment_store.consume(code, device_id):
+            raise HTTPException(status_code=403, detail="Invalid, expired or already used enrollment code")
+        response = await _issue_agent_config(db, device_id)
+        await audit(request, "agent.config_download", device_id=device_id, detail="install code", actor="install script")
+        return response
+
+    if not (authorization and authorization.startswith("Bearer ")):
+        if request.cookies.get("gravitylan_token"):
+            raise HTTPException(
+                status_code=403,
+                detail="Browser sessions download the agent configuration with POST and password confirmation.",
+            )
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    # Only the header counts: a valid session cookie next to an invalid token must not pass
+    caller = await get_bearer_admin(conn=request, authorization=authorization, db=db)
+    if caller.startswith("api_token:"):
+        raise HTTPException(status_code=403, detail="Read-only API tokens cannot export agent configurations")
+
+    response = await _issue_agent_config(db, device_id)
+    await audit(request, "agent.config_download", device_id=device_id, detail="master token")
+    return response
+
+
+@router.post(
+    "/download/config/{device_id}",
+    dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))],
+)
+async def download_agent_config_session(device_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """agent.conf for a browser session that confirmed its password; replaces the agent token."""
+    response = await _issue_agent_config(db, device_id)
+    device = await db.get(Device, device_id)
+    await audit(request, "agent.config_download", device_id=device_id, target=device_label(device))
+    return response
 
 
 @router.get("/download/install-sh/{device_id}")

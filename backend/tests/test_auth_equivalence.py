@@ -29,7 +29,8 @@ from app.services.session_service import session_store
 
 logger = logging.getLogger(__name__)
 
-_READONLY_FORBIDDEN_PATHS = ("/api/backup/export", "/api/settings/reset-db")
+# Backup import is refused to scoped tokens like export and reset-db
+_READONLY_FORBIDDEN_PATHS = ("/api/backup/export", "/api/backup/import", "/api/settings/reset-db")
 _READONLY_DEFAULT_SCOPES = {
     "devices:read", "topology:read", "network:read", "agent:read",
     "settings:read", "backup:read", "scanner:read"

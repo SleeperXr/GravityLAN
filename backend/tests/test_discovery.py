@@ -259,3 +259,102 @@ async def test_discover_hosts_simple_empty_targets_returns_empty():
 
     assert hosts == []
     resolve_mac.assert_awaited_once()
+
+class HangingProc:
+    """nmap that reports one host and then never finishes."""
+
+    def __init__(self):
+        self.returncode = None
+        self.terminated = False
+        self.stdout = self
+        self._lines = [b"Nmap scan report for 192.168.1.10\n"]
+
+    async def readline(self):
+        if self._lines:
+            return self._lines.pop()
+        await asyncio.sleep(3600)
+
+    async def communicate(self):
+        if self.terminated:
+            self.returncode = -15
+            return b"", b""
+        await asyncio.sleep(3600)
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        pass
+
+    async def wait(self):
+        if self.terminated:
+            self.returncode = -15
+        return self.returncode
+
+
+@pytest.mark.asyncio
+async def test_a_hanging_nmap_is_stopped_after_the_timeout_and_keeps_its_hosts():
+    from app.scanner import discovery
+
+    proc = HangingProc()
+    discovered = []
+    with (
+        patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)),
+        patch.object(discovery, "NMAP_DISCOVERY_TIMEOUT", 0.05),
+    ):
+        await discovery._scan_network_once("192.168.1.0/24", ["192.168.1.1"], None, discovered, None)
+
+    assert proc.terminated and proc.returncode == -15
+    assert [h["ip"] for h in discovered] == ["192.168.1.10"]
+
+
+@pytest.mark.asyncio
+async def test_cancelling_stops_a_running_nmap_at_once():
+    from app.scanner import discovery
+
+    proc = HangingProc()
+    cancel = asyncio.Event()
+    with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
+        task = asyncio.create_task(
+            discovery._scan_network_once("192.168.1.0/24", ["192.168.1.1"], None, [], None, cancel)
+        )
+        await asyncio.sleep(0.01)
+        cancel.set()
+        await asyncio.wait_for(task, timeout=1.0)
+
+    assert proc.terminated
+
+
+def test_the_sync_fallback_stops_nmap_at_the_timeout():
+    """Without async subprocesses (some Windows loops) a hanging nmap is bounded as well."""
+    import sys
+    import time
+    from app.scanner import discovery
+
+    started = time.monotonic()
+    stdout, returncode = discovery._run_sync_nmap([sys.executable, "-c", "print('x', flush=True); import time; time.sleep(30)"], timeout=0.3)
+    assert time.monotonic() - started < 10
+    assert returncode != 0
+    assert "x" in stdout
+
+
+def test_the_sync_fallback_stops_nmap_when_the_scan_is_cancelled():
+    import sys
+    import threading
+    import time
+    from app.scanner import discovery
+
+    cancel = asyncio.Event()
+    threading.Timer(0.2, cancel.set).start()
+    started = time.monotonic()
+    _, returncode = discovery._run_sync_nmap([sys.executable, "-c", "import time; time.sleep(30)"], timeout=60, cancel_event=cancel)
+    assert time.monotonic() - started < 10
+    assert returncode != 0
+
+
+def test_the_sync_fallback_returns_a_finished_scan_unchanged():
+    import sys
+    from app.scanner import discovery
+
+    stdout, returncode = discovery._run_sync_nmap([sys.executable, "-c", "print('Nmap scan report for 192.168.1.10')"], timeout=30)
+    assert returncode == 0 and "192.168.1.10" in stdout

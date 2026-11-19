@@ -70,3 +70,26 @@ async def test_other_ctx_values_stay():
 
     body = json.loads((await validation_exception_handler(_request(), exc)).body)
     assert body["detail"][0]["ctx"] == {"min_length": 32}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field, kwargs", [
+    ("cidr", {"cidr": SECRET}),
+    ("gateway_ip", {"cidr": "192.168.1.0/24", "gateway_ip": SECRET}),
+])
+async def test_subnet_validators_do_not_quote_the_value(caplog, field, kwargs):
+    from app.schemas.network import SubnetCreate
+
+    try:
+        SubnetCreate(name="LAN", **kwargs)
+    except ValidationError as err:
+        exc = RequestValidationError(err.errors())
+
+    with caplog.at_level(logging.ERROR):
+        response = await validation_exception_handler(_request(), exc)
+
+    body = json.loads(response.body)
+    assert body["detail"][0]["loc"] == [field]
+    assert body["detail"][0]["type"] == "value_error"
+    assert SECRET not in response.body.decode()
+    assert SECRET not in caplog.text

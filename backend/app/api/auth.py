@@ -72,7 +72,8 @@ def _required_scope_for(path: str, method: str) -> str | None:
     return None
 
 
-_READONLY_FORBIDDEN_PATHS = ("/api/backup/export", "/api/settings/reset-db")
+# Import overwrites the whole database like reset-db, so a scoped token must not reach it either
+_READONLY_FORBIDDEN_PATHS = ("/api/backup/export", "/api/backup/import", "/api/settings/reset-db")
 _READONLY_DEFAULT_SCOPES = {
     "devices:read", "topology:read", "network:read", "agent:read",
     "settings:read", "backup:read", "scanner:read"
@@ -298,7 +299,9 @@ async def get_bearer_admin(
                 "Browser sessions must use the POST variant."
             )
         )
-    return await _authenticate_bearer(db, authorization, conn)
+    identity = await _authenticate_bearer(db, authorization, conn)
+    remember_actor(conn, identity)
+    return identity
 
 async def authenticate_websocket(
     websocket: WebSocket,

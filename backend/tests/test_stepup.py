@@ -179,3 +179,11 @@ async def test_every_class_guards_its_endpoints(browser, device):
         for method, path, body in requests:
             res = await getattr(browser, method)(path, **({"json": body} if body is not None else {}))
             assert (res.status_code, res.headers.get("X-Step-Up")) == (403, cls), path
+
+
+@pytest.mark.asyncio
+async def test_agent_config_download_needs_a_remote_confirmation(browser, device):
+    """The config carries a fresh agent token, so a browser session confirms first."""
+    res = await browser.post(f"/api/agent/download/config/{device.id}")
+    assert res.status_code == 403
+    assert res.headers["X-Step-Up"] == "remote"

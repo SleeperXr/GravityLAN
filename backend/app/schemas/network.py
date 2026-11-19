@@ -44,9 +44,9 @@ def normalize_cidr(value: str) -> str:
     try:
         network = ipaddress.ip_network(value, strict=False)
     except ValueError:
-        raise ValueError(f"Invalid subnet: '{value}'. Use CIDR notation such as 192.168.1.0/24.") from None
+        raise ValueError("Invalid subnet. Use CIDR notation such as 192.168.1.0/24.") from None
     if network.version != 4:
-        raise ValueError(f"Invalid subnet: '{value}'. Only IPv4 subnets can be scanned.")
+        raise ValueError("Invalid subnet. Only IPv4 subnets can be scanned.")
     return str(network)
 
 
@@ -82,7 +82,7 @@ def normalize_gateway_ip(value: str | None) -> str | None:
     try:
         return str(ipaddress.IPv4Address(value))
     except ValueError:
-        raise ValueError(f"Invalid gateway: '{value}'. Must be a single IPv4 address (e.g. 192.168.1.1).") from None
+        raise ValueError("Invalid gateway. Must be a single IPv4 address (e.g. 192.168.1.1).") from None
 
 
 def check_gateway_in_subnet(gateway_ip: str | None, cidr: str) -> None:

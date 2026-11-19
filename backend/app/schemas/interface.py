@@ -11,7 +11,7 @@ def _plain_ipv4(value: str) -> str:
     try:
         return str(ipaddress.IPv4Address(value.strip()))
     except (ValueError, AttributeError):
-        raise ValueError(f"Invalid IPv4 address: '{value}'") from None
+        raise ValueError("Invalid IPv4 address") from None
 
 
 class DeviceInterfaceResponse(BaseModel):

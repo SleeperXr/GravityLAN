@@ -89,6 +89,8 @@ def _remote_audit_action(path: str) -> str:
         return "ssh.terminal.open"
     if "/enroll/" in path:
         return "agent.install_code"
+    if "/download/config/" in path:
+        return "agent.config_download"
     if "/deploy/" in path:
         return "agent.deploy"
     if "/uninstall/" in path:

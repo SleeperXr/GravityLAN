@@ -279,6 +279,7 @@
         "ssh_terminal_open": "Terminal opened",
         "ssh_terminal_close": "Terminal closed",
         "agent_install_code": "Install code issued",
+        "agent_config_download": "Agent configuration downloaded",
         "agent_deploy": "Agent installed",
         "agent_uninstall": "Agent removed",
         "agent_patches": "Package updates",

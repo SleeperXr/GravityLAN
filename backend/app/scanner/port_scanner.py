@@ -145,6 +145,49 @@ def _build_nmap_command(ip: str, dns_server: str | None) -> list[str]:
     return cmd
 
 
+NMAP_PORT_SCAN_TIMEOUT = 45.0
+
+
+async def _reap(proc, timeout: float) -> bool:
+    """Wait up to ``timeout`` for ``proc`` to exit; True once it has.
+
+    communicate() drains stdout/stderr while waiting: a process whose pipe reader was
+    paused (a cancelled read) only counts as exited once its pipes are closed.
+    """
+    try:
+        await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        return False
+    except Exception:
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return False
+    return True
+
+
+async def terminate_process(proc, grace: float = 2.0, reap_timeout: float = 5.0) -> None:
+    """Stop a subprocess and reap it: SIGTERM, then SIGKILL after ``grace`` seconds.
+
+    Without reaping, a killed nmap stays behind as a zombie. Every wait is bounded, so
+    cleanup never blocks a scan's end or a shutdown.
+    """
+    if proc.returncode is not None:
+        return
+    try:
+        proc.terminate()
+    except ProcessLookupError:
+        pass
+    if await _reap(proc, grace):
+        return
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        pass
+    if not await _reap(proc, reap_timeout):
+        logger.warning("nmap (pid %s) did not exit after SIGKILL", getattr(proc, "pid", "?"))
+
+
 async def _wait_for_cancel(cancel_event: asyncio.Event | None, proc) -> None:
     """Terminate the running nmap process when the cancellation event fires."""
     if not cancel_event:
@@ -174,12 +217,18 @@ async def _run_nmap_async(cmd: list[str], cancel_event: asyncio.Event | None, ip
 
     cancel_task = asyncio.create_task(_wait_for_cancel(cancel_event, proc))
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=45.0)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=NMAP_PORT_SCAN_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.warning("Nmap scan of %s timed out after %ss; stopping it", ip, NMAP_PORT_SCAN_TIMEOUT)
+        await terminate_process(proc)
+        stdout, stderr = b"", b""
     except Exception as e:
         logger.warning(f"Nmap communication error for {ip}: {e}")
+        await terminate_process(proc)
         stdout, stderr = b"", b""
     finally:
         cancel_task.cancel()
+        await asyncio.gather(cancel_task, return_exceptions=True)
 
     return stdout, stderr, proc.returncode
 

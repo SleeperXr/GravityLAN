@@ -11,11 +11,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import or_, select
 from fastapi import Depends
 
-from app.api.auth import get_current_admin
+from app.api.auth import get_bearer_admin, get_current_admin
 
 from app.database import async_session
 from app.models.device import DiscoveredHost
@@ -108,9 +108,26 @@ async def test_scanner() -> Dict[str, str]:
     """Verify scanner API availability."""
     return {"status": "ok", "module": "scanner"}
 
-@router.get("/scan-ip", dependencies=[Depends(get_current_admin)])
-async def scan_ip(ip: str) -> Dict[str, Any]:
+class ScanIpRequest(BaseModel):
+    ip: str
+
+
+class LiveDiscoveryRequest(BaseModel):
+    subnets: List[str]
+
+
+# Scans and DB writes must not be triggered by a link: SameSite=Lax still sends the
+# session cookie on a cross-site GET, so the GET routes only take a Bearer token
+# (scripts) and the browser uses the POST routes.
+@router.post("/scan-ip", dependencies=[Depends(get_current_admin)])
+async def scan_ip_post(request: ScanIpRequest) -> Dict[str, Any]:
     """Perform a robust scan on a specific IP address."""
+    return await scan_ip(request.ip)
+
+
+@router.get("/scan-ip", dependencies=[Depends(get_bearer_admin)])
+async def scan_ip(ip: str) -> Dict[str, Any]:
+    """Perform a robust scan on a specific IP address (Bearer token only; browsers use POST)."""
     # Issue 6: Validate IP address
     try:
         ipaddress.IPv4Address(ip)
@@ -375,9 +392,15 @@ async def _discover_and_sync_subnet(db, subnet: str, global_dns: str | None) -> 
     return alive_hosts
 
 
-@router.get("/live-discovery", dependencies=[Depends(get_current_admin)])
-async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
+@router.post("/live-discovery", dependencies=[Depends(get_current_admin)])
+async def live_discovery_post(request: LiveDiscoveryRequest) -> List[Dict[str, Any]]:
     """Perform a fast ICMP/ARP discovery and sync results to DB."""
+    return await live_discovery(",".join(request.subnets))
+
+
+@router.get("/live-discovery", dependencies=[Depends(get_bearer_admin)])
+async def live_discovery(subnets: str) -> List[Dict[str, Any]]:
+    """Perform a fast ICMP/ARP discovery and sync results to DB (Bearer token only; browsers use POST)."""
     subnet_list = _subnets_param(subnets)
     all_hosts = []
     
