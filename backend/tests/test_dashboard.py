@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 import app.scanner.dashboard as dashboard
-from app.models.device import Device, DeviceHistory, Service
+from app.models.device import Device, DeviceHistory, DeviceInterface, Service
 from app.models.network import Subnet
 
 
@@ -255,3 +255,34 @@ async def test_a_stopped_dashboard_scan_marks_nothing_offline_and_announces_noth
     # Discovery stop: no port scan at all; health stop: only the first batch of 12 ran
     assert scan_ports.await_count == (0 if stop_in == "discovery" else 12)
     webhook_mock.assert_not_awaited()
+
+
+async def test_a_stop_during_the_interface_update_saves_no_interface_change(monkeypatch, patch_async_session, db):
+    """The interface presence is the health phase's last write; Stop during its query drops it."""
+    router = Device(ip="192.168.1.1", is_online=True)
+    db.add(router)
+    await db.flush()
+    db.add(DeviceInterface(device_id=router.id, ip="192.168.1.254", is_online=True, missed_scans=2))
+    await db.commit()
+    cancel = asyncio.Event()
+    real_update = dashboard.update_interface_presence
+
+    async def update_then_stop(*args, **kwargs):
+        await real_update(*args, **kwargs)  # counts the missing interface address as a miss
+        cancel.set()
+
+    docker_service = MagicMock()
+    docker_service.is_available.return_value = False
+    monkeypatch.setattr("app.services.docker_service.docker_service", docker_service)
+    monkeypatch.setattr(dashboard, "discover_hosts_simple", AsyncMock(return_value=[{"ip": "192.168.1.1"}]))
+    monkeypatch.setattr(dashboard, "resolve_mac_addresses", AsyncMock(side_effect=lambda hosts: hosts))
+    monkeypatch.setattr("app.scanner.sync.sync_hosts_batch", AsyncMock())
+    monkeypatch.setattr(dashboard, "scan_ports", AsyncMock(return_value=[22]))
+    monkeypatch.setattr(dashboard, "update_interface_presence", update_then_stop)
+    monkeypatch.setattr("app.services.webhook_service.trigger_webhooks", AsyncMock())
+
+    with pytest.raises(dashboard.ScanCancelled):
+        await dashboard.run_dashboard_scan(["192.168.1.0/24"], cancel_event=cancel)
+
+    iface = (await db.execute(select(DeviceInterface).where(DeviceInterface.ip == "192.168.1.254"))).scalar_one()
+    assert (iface.is_online, iface.missed_scans) == (True, 2)

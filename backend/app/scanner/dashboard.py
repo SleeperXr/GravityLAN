@@ -170,7 +170,11 @@ async def _run_health_phase(
 
         if scanned_subnets and not _is_set(cancel_event):
             await update_interface_presence(db, scanned_subnets, set(alive_map), offline_threshold)
-            await db.commit()
+            # A Stop during its query: the changes are only in the session, so drop them
+            if _is_set(cancel_event):
+                await db.rollback()
+            else:
+                await db.commit()
 
         dashboard_cache.invalidate_all()
         topology_cache.invalidate()

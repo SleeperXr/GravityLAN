@@ -16,7 +16,7 @@ from app.models.device import Device, DeviceHistory, DeviceInterface, Discovered
 from app.models.network import Subnet
 from app.scanner.gateways import detect_default_gateways, effective_gateway
 from app.scanner.vendor import get_vendor
-from app.scanner.hostname import is_ip_like
+from app.scanner.hostname import is_ip_like, mask_ip
 from app.services.cache_service import discovery_cache, dashboard_cache, topology_cache
 
 logger = logging.getLogger(__name__)
@@ -202,7 +202,8 @@ async def _sync_batch_once(hosts: list[dict]) -> tuple[str, list, "SyncContext"]
                 await db.rollback()
                 return "locked", [], ctx
             except Exception as e:
-                logger.error(f"Sync: Failed to process host {host.get('ip')} ({host.get('mac')}): {e}")
+                # Address masked and no MAC, as everywhere else in the scanner logs
+                logger.error("Sync: Failed to process host %s: %s", mask_ip(host.get("ip")), type(e).__name__)
 
         outcome = await commit_or_discard(db)
     return outcome, results, ctx
