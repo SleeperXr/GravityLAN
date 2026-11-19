@@ -51,3 +51,13 @@ def test_start_up_names_the_zone_in_use(monkeypatch, caplog):
         timezone_check.log_timezone()
     assert caplog.records[0].levelno == logging.INFO
     assert caplog.records[0].getMessage().startswith("Time zone: UTC (")
+
+
+def test_start_up_warns_when_tz_is_not_set(monkeypatch, caplog):
+    """Without TZ the log only said "not set" at INFO, and times stayed UTC unnoticed."""
+    monkeypatch.setattr(timezone_check.os, "name", "posix")
+    monkeypatch.delenv("TZ", raising=False)
+    with caplog.at_level(logging.INFO, logger="app.timezone_check"):
+        timezone_check.log_timezone()
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]
+    assert "TZ=Europe/Berlin" in caplog.records[0].getMessage()

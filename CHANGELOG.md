@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Added
 - `GRAVITYLAN_TRUSTED_PROXIES`: behind a reverse proxy, its addresses or networks. uvicorn then takes the client address from `X-Forwarded-For` for requests from these addresses, so the login limit, the audit log, the SSH ticket binding and agent IPs see the real client instead of the proxy. Without it an existing `FORWARDED_ALLOW_IPS` still applies, and otherwise only localhost is trusted, as before.
 - Compose files and the Unraid template list `GRAVITYLAN_SECURE_COOKIES`, `GRAVITYLAN_TRUSTED_PROXIES` and `GRAVITYLAN_CORS_ORIGINS`, commented out or empty, with a short note each. The default and macvlan compose files show optional resource limits, the macvlan one also `TZ` and `GRAVITYLAN_DOCKER_HOST_IP`, and its example network defaults are now `192.168.1.0/24` on `eth0`.
+- Start-up warns when `TZ` is not set: log times are then UTC, and until now the log only said "not set" at INFO. The warning suggests `TZ=Europe/Berlin`; `TZ=UTC` keeps UTC without it.
+- A request with `X-Forwarded-For` from an address that is not in `GRAVITYLAN_TRUSTED_PROXIES` logs one warning per start that names the address. uvicorn ignores the header in that case, so the login limit, the audit log and agent IPs see the proxy instead of the client.
 
 ### Fixed
 - The vendor lookup (MAC to manufacturer) and the Docker container query no longer block the server while they wait. An unknown MAC asks a rate-limited web API, which could pause every request, WebSocket and background job for seconds during an agent ARP report, a scan or a device refresh; the Docker query in the minute-by-minute sync and in the scans waited on the socket the same way. Both now run in a worker thread.
