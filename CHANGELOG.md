@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Scan results were lost when the database was busy. If saving a batch of found hosts met a locked database, the batch was rolled back, which drops all its changes, and the retry then saved nothing but counted as success, webhooks included. The whole batch is now applied again in a new session, also when the lock already hits while one host is written (before, that host was only logged and dropped); if the database stays locked, the batch fails visibly and sends no webhooks. A health probe pass that cannot be saved is logged and dropped; the next pass probes again.
+- "Stop scan" did nothing: the running network or dashboard scan never looked at the stop signal and ran to its end. Both scans now stop at once (nmap is ended, no fallback sweep, MAC or name lookups follow), keep the hosts found so far and end as "cancelled". A stopped scan marks nothing offline, because it did not look at every address; a dashboard scan stopped after its health check skips the search for new devices and sends no scan.complete. Two start requests at the same moment can no longer start two scans.
+- The manual install script (curl … | sudo bash) left `agent.conf`, which holds the agent token, readable for every user on the host (0644). It is now 0600, as with the SSH deploy, also on Unraid after a reboot copies it back from the flash drive.
+- A device address is only ever handed to nmap, avahi-resolve, dig or ping (also the health probe's ping) when it is an IP address. Before, a tampered backup could store a device "address" such as `--script=…` that a port scan of the device passed to nmap as an option.
+
 ## [0.8.0] - 2026-11-19
 
 0.7.1 went out only as a release candidate (0.7.1-rc.1); everything in it is part of 0.8.0.

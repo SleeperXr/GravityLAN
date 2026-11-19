@@ -238,6 +238,11 @@ def _build_ping_command(ip: str, timeout: float) -> list[str]:
 
 async def _ping_reply(ip: str, timeout: float) -> str | None:
     """Ping once and return ping's output if the host answered, otherwise None."""
+    try:
+        # Only an address reaches ping: a value such as "-f" from a tampered backup would be an option
+        ipaddress.ip_address(ip)
+    except (ValueError, TypeError):
+        return None
     command = _build_ping_command(ip, timeout)
 
     def _run_ping():

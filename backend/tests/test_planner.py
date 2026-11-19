@@ -1,5 +1,7 @@
 """Tests for the Network Planner scan logic (app/scanner/planner.py)."""
 
+import asyncio
+
 import pytest
 import pytest_asyncio
 from contextlib import asynccontextmanager
@@ -324,6 +326,36 @@ async def test_quick_check_sends_no_scan_complete(monkeypatch, patch_async_sessi
 
     events = [c.args[0] if c.args else c.kwargs.get("event_type") for c in webhook_mock.await_args_list]
     assert "scan.complete" not in events
+
+
+async def test_a_cancelled_scan_marks_nothing_offline_and_stops_at_the_next_subnet(monkeypatch, patch_async_session, db):
+    """Stop: the subnets were not swept completely, so hosts missing from them are not taken for gone."""
+    db.add(DiscoveredHost(ip="192.168.1.77", is_online=True, is_monitored=False))
+    await db.commit()
+    cancel = asyncio.Event()
+
+    async def discover(target_ips, **kwargs):
+        assert kwargs["cancel_event"] is cancel
+        cancel.set()  # the user stops the scan while the first subnet is swept
+        return []
+
+    discover_mock = AsyncMock(side_effect=discover)
+    monkeypatch.setattr(planner, "discover_hosts_simple", discover_mock)
+    monkeypatch.setattr(planner, "resolve_mac_addresses", AsyncMock(return_value=[]))
+    monkeypatch.setattr("app.scanner.sync.sync_hosts_batch", AsyncMock())
+    webhook_mock = AsyncMock()
+    monkeypatch.setattr("app.services.webhook_service.trigger_webhooks", webhook_mock)
+    docker_service = MagicMock()
+    docker_service.is_available.return_value = False
+    monkeypatch.setattr("app.services.docker_service.docker_service", docker_service)
+
+    with pytest.raises(planner.ScanCancelled):
+        await planner.run_planner_scan(["192.168.1.0/24", "192.168.2.0/24"], cancel_event=cancel)
+
+    assert discover_mock.await_count == 1
+    host = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.168.1.77"))).scalar_one()
+    assert host.is_online is True
+    webhook_mock.assert_not_awaited()
 
 
 async def test_run_planner_scan_skips_link_local_and_invalid_subnets(monkeypatch, patch_async_session, db):

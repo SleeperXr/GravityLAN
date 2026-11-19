@@ -270,6 +270,23 @@ async def test_install_script_supports_hosts_without_systemd(client, db, admin_t
 
 
 @pytest.mark.asyncio
+async def test_install_script_makes_the_config_owner_only(client, db, admin_token, monkeypatch):
+    """agent.conf carries the agent token: curl writes it with the umask (0644), so it is narrowed to 0600."""
+    script = await _install_script_text(client, db, monkeypatch)
+    moved = script.index('mv "$TMP_DIR/gravitylan-agent.py" "$TMP_DIR/agent.conf" "$INSTALL_DIR/"')
+    # Narrowed before it leaves the private temp directory, and again in place
+    assert script.index('chmod 600 "$TMP_DIR/agent.conf"') < moved
+    assert script.index('chmod 600 "$INSTALL_DIR/agent.conf"') > moved
+    assert script.index('chmod 600 "$INSTALL_DIR/agent.conf"') < script.index("3. Starting the agent")
+    # Unraid copies it back from the flash drive (FAT, no permissions) on every boot
+    # ... into a directory nobody else can open, so the copy is never readable before the chmod
+    assert (
+        "mkdir -p -m 700 /opt/gravitylan-agent && chmod 700 /opt/gravitylan-agent && "
+        "cp /boot/config/gravitylan-agent/* /opt/gravitylan-agent/ && chmod 600 /opt/gravitylan-agent/agent.conf"
+    ) in script
+
+
+@pytest.mark.asyncio
 async def test_install_script_is_valid_bash(client, db, admin_token, monkeypatch):
     import shutil
     import subprocess

@@ -209,7 +209,11 @@ fi
 pkill -9 -f '[g]ravitylan-agent\\.py' 2>/dev/null || true
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
+# agent.conf holds the agent token: owner-only, like the SSH deploy and the agent itself write it.
+# Narrowed while it is still in the private temp directory, so it is never readable in $INSTALL_DIR
+chmod 600 "$TMP_DIR/agent.conf"
 mv "$TMP_DIR/gravitylan-agent.py" "$TMP_DIR/agent.conf" "$INSTALL_DIR/"
+chmod 600 "$INSTALL_DIR/agent.conf"
 
 echo "3. Starting the agent ($START_MODE)..."
 if [ "$START_MODE" = "systemd" ]; then
@@ -265,7 +269,7 @@ if [ -f /etc/unraid-version ]; then
   cat >> /boot/config/go <<'GOEOF'
 # >>> gravitylan-agent (added by the GravityLAN installer; delete this block to disable)
 ( for i in $(seq 1 60); do command -v python3 >/dev/null 2>&1 && break; sleep 5; done
-  mkdir -p /opt/gravitylan-agent && cp /boot/config/gravitylan-agent/* /opt/gravitylan-agent/
+  mkdir -p -m 700 /opt/gravitylan-agent && chmod 700 /opt/gravitylan-agent && cp /boot/config/gravitylan-agent/* /opt/gravitylan-agent/ && chmod 600 /opt/gravitylan-agent/agent.conf
   cd /opt/gravitylan-agent && exec nohup python3 gravitylan-agent.py > gravitylan-agent.log 2>&1 ) < /dev/null > /dev/null 2>&1 &
 # <<< gravitylan-agent
 GOEOF

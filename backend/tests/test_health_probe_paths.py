@@ -125,6 +125,29 @@ async def test_an_unreachable_device_with_services_and_no_agent_counts_a_miss(pr
     assert misses == [dev.id]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["locked", "stale"])
+async def test_a_pass_the_database_refuses_is_dropped_not_reported_as_saved(probe_db, monkeypatch, outcome):
+    """The rollback discards the pass; it must not count its samples or refresh the caches as if saved."""
+    probe_db.add(Device(ip="192.0.2.14", display_name="tv"))
+    await probe_db.commit()
+
+    async def ping(ip, timeout):
+        return 1.0
+
+    async def refused(db):
+        await db.rollback()
+        return outcome
+
+    invalidated = []
+    monkeypatch.setattr(hp, "measure_ping_latency_ms", ping)
+    monkeypatch.setattr(hp, "commit_or_discard", refused)
+    monkeypatch.setattr(hp.dashboard_cache, "invalidate_all", lambda: invalidated.append("dashboard"))
+    assert await hp.run_health_probe_pass() == 0
+    assert (await probe_db.execute(select(DeviceHealthSample))).scalars().all() == []
+    assert invalidated == []
+
+
 # --- a slow service gets a second try --------------------------------------------------------------
 
 def _svc():

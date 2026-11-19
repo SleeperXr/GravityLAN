@@ -1,5 +1,6 @@
 """Tests for the dashboard scan logic."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
@@ -7,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 import app.scanner.dashboard as dashboard
-from app.models.device import Device, DeviceHistory, Service
+from app.models.device import Device, DeviceHistory, DeviceInterface, Service
 from app.models.network import Subnet
 
 
@@ -64,7 +65,7 @@ async def test_discover_subnet_hosts_uses_dns_and_syncs(monkeypatch, patch_async
     result = await dashboard._discover_subnet_hosts("192.168.1.0/30")
 
     assert result == resolved
-    discover_mock.assert_awaited_once_with(["192.168.1.1", "192.168.1.2"], dns_server="8.8.8.8")
+    discover_mock.assert_awaited_once_with(["192.168.1.1", "192.168.1.2"], dns_server="8.8.8.8", cancel_event=None)
     resolve_mock.assert_awaited_once_with(alive)
     sync_mock.assert_awaited_once_with(
         resolved,
@@ -213,3 +214,75 @@ async def test_run_dashboard_scan_end_to_end(monkeypatch, patch_async_session, d
     assert "scan.complete" in events
     assert webhook_mock.await_args.kwargs["data"]["new_devices_found"] == 1
     progress.assert_awaited()
+
+
+@pytest.mark.parametrize("stop_in", ["discovery", "health"])
+async def test_a_stopped_dashboard_scan_marks_nothing_offline_and_announces_nothing(monkeypatch, patch_async_session, db, stop_in):
+    """Stopped during discovery: the health phase never runs (it would count every missed device).
+    Stopped inside a real health batch: the cut-short port scans are not applied, no further batch
+    starts, and the search for new devices and scan.complete are left out."""
+    # 13 devices one miss before their offline threshold: two health batches of up to 12
+    db.add_all([Device(ip=f"192.168.1.{60 + i}", is_online=True, missed_scans=2) for i in range(13)])
+    await db.commit()
+    cancel = asyncio.Event()
+
+    async def discover(target_ips, **kwargs):
+        if stop_in == "discovery":
+            cancel.set()
+        return []
+
+    async def port_scan(ip, **kwargs):
+        assert kwargs["cancel_event"] is cancel
+        cancel.set()  # Stop arrives while the first batch is being port-scanned
+        return []
+
+    docker_service = MagicMock()
+    docker_service.is_available.return_value = False
+    monkeypatch.setattr("app.services.docker_service.docker_service", docker_service)
+    monkeypatch.setattr(dashboard, "discover_hosts_simple", AsyncMock(side_effect=discover))
+    monkeypatch.setattr(dashboard, "resolve_mac_addresses", AsyncMock(return_value=[]))
+    scan_ports = AsyncMock(side_effect=port_scan)
+    monkeypatch.setattr(dashboard, "scan_ports", scan_ports)
+    webhook_mock = AsyncMock()
+    monkeypatch.setattr("app.services.webhook_service.trigger_webhooks", webhook_mock)
+
+    with pytest.raises(dashboard.ScanCancelled):
+        await dashboard.run_dashboard_scan(["192.168.1.0/24"], cancel_event=cancel)
+
+    devices = (await db.execute(select(Device))).scalars().all()
+    assert all(d.is_online for d in devices)
+    assert all(d.missed_scans == 2 for d in devices)
+    # Discovery stop: no port scan at all; health stop: only the first batch of 12 ran
+    assert scan_ports.await_count == (0 if stop_in == "discovery" else 12)
+    webhook_mock.assert_not_awaited()
+
+
+async def test_a_stop_during_the_interface_update_saves_no_interface_change(monkeypatch, patch_async_session, db):
+    """The interface presence is the health phase's last write; Stop during its query drops it."""
+    router = Device(ip="192.168.1.1", is_online=True)
+    db.add(router)
+    await db.flush()
+    db.add(DeviceInterface(device_id=router.id, ip="192.168.1.254", is_online=True, missed_scans=2))
+    await db.commit()
+    cancel = asyncio.Event()
+    real_update = dashboard.update_interface_presence
+
+    async def update_then_stop(*args, **kwargs):
+        await real_update(*args, **kwargs)  # counts the missing interface address as a miss
+        cancel.set()
+
+    docker_service = MagicMock()
+    docker_service.is_available.return_value = False
+    monkeypatch.setattr("app.services.docker_service.docker_service", docker_service)
+    monkeypatch.setattr(dashboard, "discover_hosts_simple", AsyncMock(return_value=[{"ip": "192.168.1.1"}]))
+    monkeypatch.setattr(dashboard, "resolve_mac_addresses", AsyncMock(side_effect=lambda hosts: hosts))
+    monkeypatch.setattr("app.scanner.sync.sync_hosts_batch", AsyncMock())
+    monkeypatch.setattr(dashboard, "scan_ports", AsyncMock(return_value=[22]))
+    monkeypatch.setattr(dashboard, "update_interface_presence", update_then_stop)
+    monkeypatch.setattr("app.services.webhook_service.trigger_webhooks", AsyncMock())
+
+    with pytest.raises(dashboard.ScanCancelled):
+        await dashboard.run_dashboard_scan(["192.168.1.0/24"], cancel_event=cancel)
+
+    iface = (await db.execute(select(DeviceInterface).where(DeviceInterface.ip == "192.168.1.254"))).scalar_one()
+    assert (iface.is_online, iface.missed_scans) == (True, 2)

@@ -20,7 +20,7 @@ from app.scanner.presence import (
     register_miss,
     register_seen,
 )
-from app.scanner.sync import _commit_with_retry
+from app.scanner.sync import commit_or_discard
 from app.scanner.utils import (
     check_ssl_expiry_days,
     ensure_utc,
@@ -203,7 +203,11 @@ async def run_health_probe_pass() -> int:
                     await register_miss(dev, db, offline_threshold)
 
         db.add_all(samples_to_add)
-        await _commit_with_retry(db)
+        outcome = await commit_or_discard(db)
+        if outcome != "ok":
+            # The rollback dropped this pass's samples and state changes; the next pass probes again
+            logger.warning("Health probe pass not saved (%s): %d samples dropped", outcome, len(samples_to_add))
+            return 0
         dashboard_cache.invalidate_all()
         topology_cache.invalidate()
 

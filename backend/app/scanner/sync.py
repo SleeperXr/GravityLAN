@@ -155,17 +155,21 @@ async def sync_host_to_db(ip: str, mac: str | None, hostname: str | None = None,
     return await sync_hosts_batch([host_data], is_planner_scan, should_invalidate_cache)
 
 
-async def _commit_with_retry(db):
-    """Commit with robust SQLite retry logic. Returns False when stale data rolled the batch back."""
-    for attempt in range(5):
-        outcome = await _commit_attempt(db, attempt)
-        if outcome != "retry":
-            return outcome == "ok"
-        await asyncio.sleep((attempt + 1) * 0.2)
+BATCH_ATTEMPTS = 5
 
 
-async def _commit_attempt(db, attempt):
-    """Single commit attempt. Returns 'ok', 'stale' or 'retry'."""
+def _is_lock_error(e: OperationalError) -> bool:
+    error_msg = str(e).lower()
+    return "locked" in error_msg or "busy" in error_msg
+
+
+async def commit_or_discard(db) -> str:
+    """Commit once; returns 'ok', 'stale' or 'locked'.
+
+    A failed commit is rolled back, and the rollback discards every change the session held:
+    committing again afterwards would commit nothing. Whoever gets 'locked' has to redo the
+    work in a new session, or give it up. Other database errors are raised.
+    """
     try:
         await db.commit()
         return "ok"
@@ -175,16 +179,54 @@ async def _commit_attempt(db, attempt):
         return "stale"
     except OperationalError as e:
         await db.rollback()
-        return _commit_error_outcome(e, attempt)
+        if _is_lock_error(e):
+            return "locked"
+        logger.error(f"Sync: Batch DB failure: {e}")
+        raise
 
 
-def _commit_error_outcome(e: OperationalError, attempt: int):
-    """Classify a DB lock failure; raises when retries are exhausted."""
-    error_msg = str(e).lower()
-    if ("locked" in error_msg or "busy" in error_msg) and attempt < 4:
-        return "retry"
-    logger.error(f"Sync: Batch DB lock failure: {e}")
-    raise
+async def _sync_batch_once(hosts: list[dict]) -> tuple[str, list, "SyncContext"]:
+    """Apply ``hosts`` in one new session and commit; returns (commit outcome, results, context)."""
+    results = []
+    async with async_session() as db:
+        ctx = await load_sync_context(db)
+        for position, host in enumerate(hosts, start=1):
+            try:
+                res = await _sync_host_internal(db, host, ctx)
+                results.append(res)
+            except OperationalError as e:
+                # A lock met by a flush or DELETE inside one host leaves the session unusable:
+                # the whole batch is redone, not just this host skipped
+                if not _is_lock_error(e):
+                    raise
+                await db.rollback()
+                return "locked", [], ctx
+            except Exception:
+                # Nothing of the host itself (address, MAC, names) and nothing of the error built
+                # from it goes into the log, only where in the batch it was
+                logger.error("Sync: Failed to process host %d of %d in the batch; it was skipped", position, len(hosts))
+
+        outcome = await commit_or_discard(db)
+    return outcome, results, ctx
+
+
+async def _sync_batch_with_retry(hosts: list[dict]) -> tuple[bool, list, "SyncContext"]:
+    """Redo the whole batch while the database is locked; raises once the attempts run out."""
+    for attempt in range(BATCH_ATTEMPTS):
+        try:
+            outcome, results, ctx = await _sync_batch_once(hosts)
+        except OperationalError as e:
+            # The reads that load the context can meet a busy database too; the session of
+            # this attempt is closed by then, the next one starts fresh
+            if not _is_lock_error(e):
+                raise
+            outcome = "locked"
+        if outcome != "locked":
+            return outcome == "ok", results, ctx
+        if attempt < BATCH_ATTEMPTS - 1:
+            await asyncio.sleep((attempt + 1) * 0.2)
+    logger.error("Sync: database still locked after %d attempts, %d host(s) not saved", BATCH_ATTEMPTS, len(hosts))
+    raise OperationalError("sync_hosts_batch", None, Exception("database is locked"))
 
 
 async def sync_hosts_batch(hosts: list[dict], is_planner_scan: bool = True, should_invalidate_cache: bool = True):
@@ -195,19 +237,12 @@ async def sync_hosts_batch(hosts: list[dict], is_planner_scan: bool = True, shou
     if not hosts:
         return []
 
-    results = []
-    async with async_session() as db:
-        ctx = await load_sync_context(db)
-        for host in hosts:
-            try:
-                res = await _sync_host_internal(db, host, ctx)
-                results.append(res)
-            except Exception as e:
-                logger.error(f"Sync: Failed to process host {host.get('ip')} ({host.get('mac')}): {e}")
+    committed, results, ctx = await _sync_batch_with_retry(hosts)
+    if not committed:
+        # Stale data rolled the batch back: its records were not saved (and are expired), so none are returned
+        return []
 
-        committed = await _commit_with_retry(db)
-
-    if committed and ctx.pending_webhooks:
+    if ctx.pending_webhooks:
         from app.services.webhook_service import trigger_webhooks
         for event_type, data in ctx.pending_webhooks:
             await trigger_webhooks(event_type=event_type, data=data)
