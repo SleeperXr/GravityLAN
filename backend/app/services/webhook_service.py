@@ -6,7 +6,6 @@ import json
 import logging
 import socket
 from datetime import datetime, timedelta, timezone
-import urllib.request
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -193,12 +192,16 @@ async def _vet_target(url: str) -> tuple[str | None, str | None]:
 
     parsed = urlparse(url)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        host = _ascii_host(url)
+    except (httpx.InvalidURL, UnicodeError):
+        return f"{parsed.hostname} is not a valid host name", None
     # A name that does not resolve right now (DNS server restarting) is a failed attempt that the
     # outbox retries, not a blocked target: raised like httpx's own connect errors
     try:
-        infos = await asyncio.get_running_loop().getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+        infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except (socket.gaierror, UnicodeError) as e:
-        raise httpx.ConnectError(f"{parsed.hostname} could not be resolved") from e
+        raise httpx.ConnectError(f"{host} could not be resolved") from e
     addresses = []
     for *_, sockaddr in infos:
         try:
@@ -207,23 +210,31 @@ async def _vet_target(url: str) -> tuple[str | None, str | None]:
             continue
     for addr in addresses:
         if is_blocked_webhook_ip(addr):
-            return f"{parsed.hostname} resolves to {addr}, a loopback, link-local or metadata address", None
+            return f"{host} resolves to {addr}, a loopback, link-local or metadata address", None
     if not addresses:
-        raise httpx.ConnectError(f"{parsed.hostname} could not be resolved")
-    if _through_proxy(parsed):
-        # The proxy resolves and connects itself (and checks the certificate against what it is
-        # given): pinning the address would make it check the address. The check above still ran.
-        return None, None
+        raise httpx.ConnectError(f"{host} could not be resolved")
     ipv4 = [a for a in addresses if a.version == 4]
     return None, str((ipv4 or addresses)[0])
 
 
-def _through_proxy(parsed) -> bool:
-    """True when httpx sends this URL through a proxy from the environment (HTTP(S)_PROXY, ALL_PROXY, NO_PROXY)."""
-    proxies = urllib.request.getproxies_environment()
-    if not (proxies.get(parsed.scheme) or proxies.get("all")):
-        return False
-    return not urllib.request.proxy_bypass_environment(parsed.hostname or "", proxies)
+def _ascii_host(url: str) -> str:
+    """The host as httpx sends it: IDNA 2008 punycode (Python's own "idna" codec is IDNA 2003 and maps
+    "faß" to another domain, "fass"). DNS, the Host header and SNI all use this one name."""
+    return httpx.URL(url).raw_host.decode("ascii")
+
+
+def _routes_directly(client, url: str) -> bool:
+    """True when ``client`` sends ``url`` without a proxy, decided by the client itself.
+
+    Through a proxy the address is not pinned: the proxy resolves and connects, and httpcore's
+    tunnel checks the certificate against the URL host, which would be the address. The client's
+    own routing (HTTP(S)_PROXY, ALL_PROXY, NO_PROXY with wildcards and ports) is the only one that
+    matches what it does; a client without it (a test double) counts as direct.
+    """
+    route = getattr(client, "_transport_for_url", None)
+    if route is None:
+        return True
+    return route(httpx.URL(url)) is client._transport
 
 
 async def _blocked_target_reason(url: str) -> str | None:
@@ -238,8 +249,8 @@ def _pinned_request(url: str, address: str, headers: dict[str, str] | None) -> t
     parsed = urlparse(url)
     host = f"[{address}]" if ":" in address else address
     netloc = f"{host}:{parsed.port}" if parsed.port else host
-    # Header values and the TLS server name are ASCII: an international name goes as punycode
-    name = parsed.hostname.encode("idna").decode("ascii")
+    # Header values and the TLS server name are ASCII: the same punycode name httpx and the DNS lookup use
+    name = _ascii_host(url)
     name_in_host = f"[{name}]" if ":" in name else name  # an IPv6 literal keeps its brackets
     pinned_headers = dict(headers or {})
     pinned_headers["Host"] = f"{name_in_host}:{parsed.port}" if parsed.port else name_in_host
@@ -506,7 +517,7 @@ async def _send_webhook_post(
         logger.warning("Webhook: refusing to post to '%s': %s", url, reason)
         return None
     target, extensions = url, {}
-    if address:
+    if address and _routes_directly(client, url):
         target, headers, extensions = _pinned_request(url, address, headers)
     try:
         if isinstance(payload, bytes):
