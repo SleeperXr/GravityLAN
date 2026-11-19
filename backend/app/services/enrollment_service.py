@@ -17,6 +17,7 @@ import re
 import secrets
 import time
 from dataclasses import dataclass
+from urllib.parse import unquote_plus
 from typing import Callable, Dict, Iterable
 
 CODE_TTL_SECONDS = 30 * 60
@@ -93,17 +94,28 @@ enrollment_store = EnrollmentStore()
 
 # Install commands carry the code in their URL (``.../install-sh/5?code=...``) and the
 # access log records every request line: masked there, a live code never ends up in a
-# log file or in the log viewer.
-_CODE_PARAM = re.compile(r"([?&]code=)[^&\s\"']+")
+# log file or in the log viewer. WebSocket handshakes carry API, master or agent tokens
+# (``?token=``), patch-runner tokens (``?patch_token=``) and SSH tickets (``?ticket=``)
+# the same way, and uvicorn logs their path with the query string too.
+_SECRET_PARAM_NAMES = frozenset({"code", "token", "patch_token", "ticket"})
+_QUERY_PARAM = re.compile(r"([?&])([^=&\s\"'#]+)=([^&\s\"'#]*)")
+
+
+def _mask_param(match: re.Match) -> str:
+    sep, name, value = match.groups()
+    # Starlette decodes parameter names (``?%74oken=`` reads as ``token``), so compare decoded
+    if unquote_plus(name).lower() in _SECRET_PARAM_NAMES and value:
+        return f"{sep}{name}=[redacted]"
+    return match.group(0)
 
 
 def redact_enrollment_codes(text: str) -> str:
-    """Mask the value of every ``code=`` query parameter in ``text``."""
-    return _CODE_PARAM.sub(r"\1[redacted]", text)
+    """Mask the value of every ``code=``, ``token=``, ``patch_token=`` and ``ticket=`` query parameter."""
+    return _QUERY_PARAM.sub(_mask_param, text)
 
 
 class EnrollmentCodeLogFilter(logging.Filter):
-    """Mask enrollment codes in logged request lines (attached to ``uvicorn.access``)."""
+    """Mask secrets in logged request lines (on ``uvicorn.access`` and, for WebSocket handshakes, ``uvicorn.error``)."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.msg, str):

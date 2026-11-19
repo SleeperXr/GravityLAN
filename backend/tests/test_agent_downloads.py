@@ -485,3 +485,61 @@ def test_synology_start_script_detaches_the_agent_like_the_other_paths():
     bash = shutil.which("bash")
     if bash:  # the whole installer must still parse
         assert subprocess.run([bash, "-n"], input=script.encode(), capture_output=True).returncode == 0
+
+
+def test_redaction_covers_websocket_tokens_and_tickets():
+    from app.services.enrollment_service import redact_enrollment_codes
+
+    line = redact_enrollment_codes(
+        "/api/agent/patches/3/run-ws?patch_token=pt-secret&token=gl_master_secret"
+    )
+    assert "secret" not in line
+    assert line == "/api/agent/patches/3/run-ws?patch_token=[redacted]&token=[redacted]"
+    assert redact_enrollment_codes("/api/ssh/ws?ticket=tk-secret") == "/api/ssh/ws?ticket=[redacted]"
+    # Parameters that only end in a secret name stay readable
+    assert redact_enrollment_codes("/x?csrf_token_hint=1&page=2") == "/x?csrf_token_hint=1&page=2"
+
+
+def test_websocket_handshake_log_line_is_masked():
+    """uvicorn logs accepted WebSocket handshakes on uvicorn.error, query string included."""
+    import logging
+    from app.services.enrollment_service import EnrollmentCodeLogFilter
+
+    record = logging.LogRecord(
+        "uvicorn.error", logging.INFO, __file__, 1, '%s - "WebSocket %s" [accepted]',
+        ("10.0.0.5:51234", "/api/logs/ws?token=gl_master_secret"),
+        None,
+    )
+
+    assert EnrollmentCodeLogFilter().filter(record) is True
+    assert "gl_master_secret" not in record.getMessage()
+
+
+def test_uvicorn_error_logger_gets_the_secret_filter():
+    import logging
+    from app.main import _configure_logging
+    from app.services.enrollment_service import EnrollmentCodeLogFilter
+
+    names = ["", "uvicorn.access", "uvicorn.error"]
+    saved = {n: (logging.getLogger(n).filters[:], logging.getLogger(n).handlers[:], logging.getLogger(n).level) for n in names}
+    try:
+        _configure_logging()
+        assert any(isinstance(f, EnrollmentCodeLogFilter) for f in logging.getLogger("uvicorn.error").filters)
+    finally:
+        for n, (filters, handlers, level) in saved.items():
+            logger = logging.getLogger(n)
+            logger.filters[:] = filters
+            logger.handlers[:] = handlers
+            logger.setLevel(level)
+
+
+def test_redaction_matches_percent_encoded_parameter_names():
+    """Starlette decodes ``%74oken`` to ``token``; the log must mask it as well."""
+    from app.services.enrollment_service import redact_enrollment_codes
+
+    assert redact_enrollment_codes("/api/logs/ws?%74oken=LIVE_TOKEN") == "/api/logs/ws?%74oken=[redacted]"
+    assert redact_enrollment_codes("/x?patch%5Ftoken=pt&page=2") == "/x?patch%5Ftoken=[redacted]&page=2"
+    assert redact_enrollment_codes("/x?TOKEN=abc") == "/x?TOKEN=[redacted]"
+    # A secret value is masked completely, unrelated parameters stay as they were
+    assert redact_enrollment_codes("/x?token=a%26b%3Dc&next=%2Fhome") == "/x?token=[redacted]&next=%2Fhome"
+    assert redact_enrollment_codes("/x?code=") == "/x?code="

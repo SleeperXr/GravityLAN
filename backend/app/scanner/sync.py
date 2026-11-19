@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm.exc import StaleDataError
 
@@ -222,8 +222,13 @@ async def sync_hosts_batch(hosts: list[dict], is_planner_scan: bool = True, shou
     return results
 
 
+def _mac_equals(model, mac: str):
+    """Case-insensitive MAC comparison: older rows from the agent relay are upper case."""
+    return func.lower(model.mac) == (mac or "").lower()
+
+
 async def _query_by_mac_and_ip(db, model, mac: str, ip: str):
-    res = await db.execute(select(model).where(model.mac == mac, model.ip == ip))
+    res = await db.execute(select(model).where(_mac_equals(model, mac), model.ip == ip))
     return res.scalar_one_or_none()
 
 
@@ -233,14 +238,14 @@ async def _query_by_ip(db, model, ip: str):
 
 
 async def _query_by_mac_all(db, model, mac: str):
-    res = await db.execute(select(model).where(model.mac == mac))
+    res = await db.execute(select(model).where(_mac_equals(model, mac)))
     return res.scalars().all()
 
 
 async def _query_by_mac_ordered(db, model, mac: str):
     res = await db.execute(
         select(model)
-        .where(model.mac == mac)
+        .where(_mac_equals(model, mac))
         .order_by(model.is_monitored.desc(), model.custom_name.desc())
     )
     return res.scalars().all()

@@ -113,7 +113,9 @@ async def ingest_agent_arp_table(
             continue
 
         raw_ip = str(raw_ip).strip()
-        raw_mac = str(raw_mac).strip().upper()
+        # Lower case, like the local scanner (arp.py), so sync.py's MAC matching
+        # finds the same host whichever path saw it first
+        raw_mac = str(raw_mac).strip().replace("-", ":").lower()
 
         try:
             addr = ipaddress.ip_address(raw_ip)
@@ -131,7 +133,7 @@ async def ingest_agent_arp_table(
         if raw_ip in devices_by_ip:
             dev = devices_by_ip[raw_ip]
             changed = False
-            if not dev.mac or dev.mac != raw_mac:
+            if not dev.mac or dev.mac.lower() != raw_mac:
                 dev.mac = raw_mac
                 changed = True
             if not dev.vendor:

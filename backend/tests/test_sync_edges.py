@@ -164,6 +164,19 @@ async def test_rejected_ip_match_moves_the_mac_owner_and_removes_the_stale_recor
     assert [(r.id, r.ip) for r in rows] == [(owner_id, "192.0.2.41")]
 
 
+async def test_mac_match_ignores_case_of_older_relay_rows(db, scan):
+    """The agent relay used to store upper-case MACs; the scanner reports lower case."""
+    owner = DiscoveredHost(ip="192.0.2.40", mac=MAC_A.upper(), is_online=False)
+    stale = DiscoveredHost(ip="192.0.2.41", mac=MAC_B, is_online=False)
+    await add(db, owner, stale)
+    owner_id = owner.id
+
+    await scan({"ip": "192.0.2.41", "mac": MAC_A})
+
+    rows = (await db.execute(select(DiscoveredHost))).scalars().all()
+    assert [(r.id, r.ip) for r in rows] == [(owner_id, "192.0.2.41")]
+
+
 async def test_occupied_address_stands_when_the_mac_owner_is_live_in_another_subnet(db, scan):
     """A second row at the address broke the unique IP and lost the whole scan batch."""
     router = DiscoveredHost(ip="192.0.2.1", mac=MAC_A, is_online=True)

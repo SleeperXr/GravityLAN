@@ -65,13 +65,13 @@ async def test_ingest_agent_arp_table_updates_devices_and_discovered(db):
 
     # Check updated device
     await db.refresh(dev)
-    assert dev.mac == "00:11:32:AA:BB:CC"
+    assert dev.mac == "00:11:32:aa:bb:cc"
     assert dev.is_online is True
     assert dev.vendor == "Synology Inc."
 
     # Check newly created DiscoveredHost
     disc = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.168.110.20"))).scalar_one()
-    assert disc.mac == "B8:27:EB:11:22:33"
+    assert disc.mac == "b8:27:eb:11:22:33"
     assert disc.vendor == "Raspberry Pi Foundation"
     assert disc.is_online is True
 
@@ -126,7 +126,7 @@ async def test_ingest_ignored_when_no_subnet_contains_probe(db):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "relay, expected_mac",
-    [(True, "00:11:32:AA:BB:CC"), (False, "AA:BB:CC:DD:EE:FF")],
+    [(True, "00:11:32:aa:bb:cc"), (False, "AA:BB:CC:DD:EE:FF")],
     ids=["relay-on", "relay-off"],
 )
 async def test_report_endpoint_ingests_arp_table_only_with_relay(client, db, relay, expected_mac):
@@ -176,3 +176,22 @@ async def test_network_subnets_detects_agent_probe(client, db, admin_token, monk
     assert iot_sub["is_agent_probe"] is True
     assert iot_sub["probe_device_name"] == "IoT Gateway"
     assert iot_sub["probe_device_ip"] == "192.168.110.128"
+
+
+@pytest.mark.asyncio
+async def test_relay_keeps_an_upper_case_mac_that_only_differs_in_case(db):
+    """A MAC stored in upper case is the same MAC; the relay must not rewrite it every report."""
+    probe = await _add_probe(db)
+    dev = Device(ip="192.168.110.10", display_name="Plug", device_type="unknown",
+                 mac="00:11:32:AA:BB:CC", vendor="Synology Inc.", is_online=True)
+    db.add(dev)
+    await db.commit()
+
+    count = await ingest_agent_arp_table(
+        db, reporting_device_id=probe.id,
+        arp_entries=[{"ip": "192.168.110.10", "mac": "00-11-32-aa-bb-cc"}],
+    )
+
+    assert count == 0
+    await db.refresh(dev)
+    assert dev.mac == "00:11:32:AA:BB:CC"

@@ -56,7 +56,7 @@ async def test_entries_without_ip_or_mac_or_with_bad_values_are_skipped(db):
     ]
     assert await relay.ingest_agent_arp_table(db, dev.id, entries) == 1
     hosts = (await db.execute(select(DiscoveredHost))).scalars().all()
-    assert [(h.ip, h.mac) for h in hosts] == [("192.0.2.12", "AA:BB:CC:00:00:12")]
+    assert [(h.ip, h.mac) for h in hosts] == [("192.0.2.12", "aa:bb:cc:00:00:12")]
 
 
 async def test_a_known_discovered_host_is_refreshed(db, monkeypatch):
@@ -67,7 +67,7 @@ async def test_a_known_discovered_host_is_refreshed(db, monkeypatch):
 
     assert await relay.ingest_agent_arp_table(db, dev.id, [{"ip": "192.0.2.20", "mac": "aa:bb:cc:00:00:20"}]) == 1
     host = (await db.execute(select(DiscoveredHost))).scalar_one()
-    assert (host.mac, host.vendor, host.is_online) == ("AA:BB:CC:00:00:20", "Vendor", True)
+    assert (host.mac, host.vendor, host.is_online) == ("aa:bb:cc:00:00:20", "Vendor", True)
 
 
 async def test_an_unchanged_device_counts_nothing(db):

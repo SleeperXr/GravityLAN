@@ -143,6 +143,8 @@ def _configure_logging() -> None:
     access.addFilter(PollingFilter())
     access.addFilter(EnrollmentCodeLogFilter())
     access.setLevel(logging.INFO)
+    # uvicorn logs WebSocket handshakes ('"WebSocket /api/logs/ws?token=..." [accepted]') here
+    logging.getLogger("uvicorn.error").addFilter(EnrollmentCodeLogFilter())
 
     logging.getLogger().addHandler(log_handler)
 
@@ -333,6 +335,25 @@ async def gravitylan_exception_handler(request: Request, exc: GravityLANError):
         },
     )
 
+def _redact_validation_errors(errors) -> list:
+    """Drop the submitted values from Pydantic's error list.
+
+    Pydantic v2 puts the raw request value under ``input`` (a password, a router
+    secret, a whole login body), and a field_validator's exception under
+    ``ctx["error"]``. The 422 handler both logs the list, which shows up under
+    /api/logs, and sends it back. Location, type, message and the other ``ctx``
+    values (such as ``min_length``) stay.
+    """
+    redacted = []
+    for err in errors:
+        clean = {k: v for k, v in err.items() if k != "input"}
+        # A field_validator's ValueError sits in ctx["error"]; its text can quote the value
+        if isinstance(clean.get("ctx"), dict) and "error" in clean["ctx"]:
+            clean["ctx"] = {k: v for k, v in clean["ctx"].items() if k != "error"}
+        redacted.append(clean)
+    return redacted
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """
@@ -343,15 +364,16 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     ("status": "error" and "message": string) to provide compatible structure for FastAPI clients.
     """
     cid = correlation_id_ctx.get()
-    logger.error("Validation error on %s: %s", request.url.path, exc.errors())
+    errors = _redact_validation_errors(exc.errors())
+    logger.error("Validation error on %s: %s", request.url.path, errors)
     return JSONResponse(
         status_code=422,
         headers={"X-Correlation-ID": cid},
         content={
             "status": "validation_error",
-            # jsonable_encoder: a field_validator's ValueError sits in ctx["error"] and is
-            # not JSON serializable, which turned every such 422 into a 500
-            "detail": jsonable_encoder(exc.errors()),
+            # jsonable_encoder: ctx values need not be JSON serializable (a field_validator's
+            # ValueError there turned every such 422 into a 500; it is dropped above now)
+            "detail": jsonable_encoder(errors),
             "correlation_id": cid
         },
     )
