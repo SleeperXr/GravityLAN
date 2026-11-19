@@ -76,10 +76,23 @@ def invalidate_all_runtime_caches() -> None:
             logger.warning("Could not clear %s: %s", name, e)
 
 
+SQLITE_ONLY_DETAIL = (
+    "Backup and restore only work with the built-in SQLite database. "
+    "With GRAVITYLAN_DATABASE_URL, back up that database with its own tools."
+)
+
+
+def _sqlite_db_path() -> str:
+    """Path of the SQLite inventory file; 400 when an external database is configured."""
+    if not settings.uses_sqlite:
+        raise HTTPException(status_code=400, detail=SQLITE_ONLY_DETAIL)
+    return settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
+
+
 @router.get("/export", dependencies=[Depends(get_current_admin), Depends(require_step_up("instance"))])
 async def export_backup(request: Request):
     """Export the current database state as a JSON file."""
-    db_path = settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
+    db_path = _sqlite_db_path()
     if not os.path.exists(db_path):
         raise HTTPException(status_code=404, detail="Database file not found")
 
@@ -530,9 +543,8 @@ async def _retire_reassigned_devices(db: AsyncSession, reassigned: list[int], re
 
 async def restore_upload(request: Request, file: UploadFile, db: AsyncSession, actor: str | None = None) -> dict:
     """Check, write and clean up after an uploaded backup; used by the import and the setup wizard."""
+    db_path = _sqlite_db_path()
     data = await _read_backup_upload(file)
-
-    db_path = settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
     report: dict = {}
     try:
         imported = await asyncio.to_thread(_write_db, db_path, data, report)

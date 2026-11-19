@@ -200,7 +200,7 @@ Most options live in the database and are changed in the setup wizard and on the
 | Variable | Meaning | Default |
 |---|---|---|
 | `GRAVITYLAN_DATA_DIR` | Data directory (SQLite database, vault key) | `/app/data` |
-| `GRAVITYLAN_DATABASE_URL` | Full SQLAlchemy URL, if you don't want SQLite in the data directory | empty |
+| `GRAVITYLAN_DATABASE_URL` | Full SQLAlchemy URL, if you don't want SQLite in the data directory. Backup, restore and the database reset in Settings only work with SQLite and are refused with another database; back that one up with its own tools | empty |
 | `GRAVITYLAN_PORT` / `GRAVITYLAN_HOST` | Listen port and address | `8000` / `0.0.0.0` |
 | `GRAVITYLAN_DEBUG` | Verbose logging | `false` |
 | `GRAVITYLAN_SECURE_COOKIES` | Mark the session cookie `Secure`; turn on behind HTTPS. If it is off while you sign in over HTTPS, the log warns once and Settings → Access shows a hint | `false` |
@@ -216,7 +216,7 @@ Most options live in the database and are changed in the setup wizard and on the
 | `GRAVITYLAN_SCAN_TIMEOUT` | Port connect timeout per target, in seconds | `1.5` |
 | `GRAVITYLAN_SCAN_WORKERS` | Scanner concurrency | `20` |
 | `GRAVITYLAN_SCAN_INTERVAL_MINUTES` | Automatic scan interval (0 = off) | `0` |
-| `GRAVITYLAN_CORS_ORIGINS` | Extra CORS origins (not needed for the bundled UI) | empty |
+| `GRAVITYLAN_CORS_ORIGINS` | Extra CORS origins (not needed for the bundled UI), as a JSON list such as `["https://gravity.example.com"]`. WebSockets (live scan, logs, metrics, terminal) only accept pages from the address they were opened on; if a reverse proxy changes the `Host` header and sends no `X-Forwarded-Host`, add the address you open GravityLAN with here | empty |
 
 ## Security and operation
 
@@ -485,7 +485,7 @@ Die meisten Optionen liegen in der Datenbank und werden im Setup-Wizard und in d
 | Variable | Bedeutung | Standard |
 |---|---|---|
 | `GRAVITYLAN_DATA_DIR` | Datenordner (SQLite-Datenbank, Vault-Schlüssel) | `/app/data` |
-| `GRAVITYLAN_DATABASE_URL` | Vollständige SQLAlchemy-URL, falls nicht SQLite im Datenordner | leer |
+| `GRAVITYLAN_DATABASE_URL` | Vollständige SQLAlchemy-URL, falls nicht SQLite im Datenordner. Backup, Wiederherstellung und Datenbank-Reset in den Einstellungen gehen nur mit SQLite und werden mit einer anderen Datenbank abgelehnt; die mit ihren eigenen Werkzeugen sichern | leer |
 | `GRAVITYLAN_PORT` / `GRAVITYLAN_HOST` | Port und Adresse | `8000` / `0.0.0.0` |
 | `GRAVITYLAN_DEBUG` | Ausführliche Logs | `false` |
 | `GRAVITYLAN_SECURE_COOKIES` | Session-Cookie als `Secure` markieren; hinter HTTPS einschalten. Ist es aus, während du dich über HTTPS anmeldest, warnt das Log einmal und Einstellungen → Zugriff zeigt einen Hinweis | `false` |
@@ -501,7 +501,7 @@ Die meisten Optionen liegen in der Datenbank und werden im Setup-Wizard und in d
 | `GRAVITYLAN_SCAN_TIMEOUT` | Port-Timeout pro Ziel in Sekunden | `1.5` |
 | `GRAVITYLAN_SCAN_WORKERS` | Parallelität des Scanners | `20` |
 | `GRAVITYLAN_SCAN_INTERVAL_MINUTES` | Intervall für automatische Scans (0 = aus) | `0` |
-| `GRAVITYLAN_CORS_ORIGINS` | Zusätzliche CORS-Origins (für die mitgelieferte Oberfläche nicht nötig) | leer |
+| `GRAVITYLAN_CORS_ORIGINS` | Zusätzliche CORS-Origins (für die mitgelieferte Oberfläche nicht nötig), als JSON-Liste wie `["https://gravity.example.com"]`. WebSockets (Live-Scan, Logs, Metriken, Terminal) nehmen nur Seiten von der Adresse an, über die sie geöffnet wurden; ändert ein Reverse Proxy den `Host`-Header und schickt kein `X-Forwarded-Host`, hier die Adresse eintragen, unter der du GravityLAN öffnest | leer |
 
 ### Sicherheit und Betrieb
 

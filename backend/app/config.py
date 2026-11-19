@@ -172,6 +172,11 @@ class Settings(BaseSettings):
         return f"sqlite+aiosqlite:///{db_path}"
 
     @property
+    def uses_sqlite(self) -> bool:
+        """True for the built-in SQLite database; backup, restore and reset only work on it."""
+        return self.effective_database_url.startswith("sqlite+aiosqlite:///")
+
+    @property
     def telemetry_database_path(self) -> str:
         """SQLite file for measurement data (health probes, agent metrics, rollups).
 

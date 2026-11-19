@@ -19,6 +19,9 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
+        // X-Forwarded-Host carries the dev server's address, so the backend's WebSocket
+        // origin check sees the page's origin as its own
+        xfwd: true,
         ws: true,
       },
     },

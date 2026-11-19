@@ -321,6 +321,14 @@ def _drop_runtime_credentials() -> None:
 @router.post("/reset-db", status_code=200, dependencies=[Depends(get_current_admin), Depends(require_step_up("instance"))])
 async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
     """Wipe all devices, services, and reset setup status for a fresh start."""
+    from app.config import settings as app_config
+
+    # The wipe below uses SQLite statements; stop before the scheduler is touched
+    if not app_config.uses_sqlite:
+        raise HTTPException(
+            status_code=400,
+            detail="The database reset only works with the built-in SQLite database, not with GRAVITYLAN_DATABASE_URL.",
+        )
     try:
         import asyncio
         from app.scanner.scheduler import scheduler
@@ -377,7 +385,6 @@ async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
         logger.info("Database objects deleted and changes committed.")
         _drop_runtime_credentials()
         # Old credentials must not survive a reset in a copy either (#48)
-        from app.config import settings as app_config
         from app.database.migrations import CLEANUP_COPY_GLOB
         for copy in app_config.data_dir.glob(CLEANUP_COPY_GLOB):
             copy.unlink(missing_ok=True)

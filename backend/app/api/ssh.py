@@ -585,7 +585,7 @@ def _has_valid_session(conn: Request | WebSocket) -> bool:
 @ws_router.websocket("/api/ssh/terminal")
 async def ssh_terminal_websocket(websocket: WebSocket):
     """Interactive terminal. Browser sessions only: API and master tokens cannot open shells."""
-    from app.api.auth import authenticate_websocket_authorized
+    from app.api.auth import authenticate_websocket_authorized, reject_cross_origin_websocket
 
     has_cookie = bool(websocket.cookies.get("gravitylan_token"))
     if has_cookie:
@@ -593,6 +593,9 @@ async def ssh_terminal_websocket(websocket: WebSocket):
         if not auth_info:
             return
     else:
+        # The cookie path checks the origin in authenticate_websocket; the ticket path must too
+        if await reject_cross_origin_websocket(websocket):
+            return
         # Cookie missing on the upgrade only (proxy/browser policy): the ticket must come
         # from a browser session at the same address, checked when it is consumed below
         logger.info(

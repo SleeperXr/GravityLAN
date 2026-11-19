@@ -303,6 +303,60 @@ async def get_bearer_admin(
     remember_actor(conn, identity)
     return identity
 
+_DEFAULT_PORTS = {"http": "80", "https": "443", "ws": "80", "wss": "443"}
+
+
+def _host_key(scheme: str, netloc: str) -> str:
+    """``host:port`` in lower case, with the scheme's default port filled in."""
+    netloc = netloc.strip().lower()
+    if netloc.startswith("["):  # IPv6 literal: the port follows the closing bracket
+        host, _, rest = netloc.partition("]")
+        host += "]"
+        port = rest[1:] if rest.startswith(":") else ""
+    else:
+        host, _, port = netloc.partition(":")
+    return f"{host}:{port or _DEFAULT_PORTS.get(scheme, '')}"
+
+
+def websocket_origin_allowed(websocket: WebSocket) -> bool:
+    """True unless a browser opened this WebSocket from another site.
+
+    Browsers send the session cookie with a WebSocket handshake from any page and do not
+    apply CORS to it, so a page on another site could open the scanner, log or terminal
+    channels in the admin's name. Browsers always send ``Origin`` on the handshake and a
+    page cannot change it. Allowed: no ``Origin`` (scripts and agents), the address the
+    browser used (``Host``, or ``X-Forwarded-Host`` from a reverse proxy, which a page
+    cannot set either) and the origins in ``GRAVITYLAN_CORS_ORIGINS``.
+    """
+    origin = websocket.headers.get("origin")
+    if origin is None:
+        return True
+    origin = origin.strip().lower().rstrip("/")
+    if origin in {o.strip().lower().rstrip("/") for o in settings.cors_origins}:
+        return True
+    scheme, sep, netloc = origin.partition("://")
+    if not sep or scheme not in ("http", "https"):
+        return False
+    wanted = _host_key(scheme, netloc)
+    hosts = [websocket.headers.get("host", "")]
+    forwarded = websocket.headers.get("x-forwarded-host")
+    if forwarded:
+        hosts.append(forwarded.split(",")[0])
+    return any(_host_key(scheme, h) == wanted for h in hosts if h)
+
+
+async def reject_cross_origin_websocket(websocket: WebSocket) -> bool:
+    """Close a cross-site WebSocket handshake; True when it was refused."""
+    if websocket_origin_allowed(websocket):
+        return False
+    logger.warning(
+        "WebSocket %s refused: origin %s does not match this server",
+        websocket.url.path, websocket.headers.get("origin", "-")[:200],
+    )
+    await websocket.close(code=4003, reason="Origin not allowed")
+    return True
+
+
 async def authenticate_websocket(
     websocket: WebSocket,
     endpoint_type: str,  # "logs" (Logs), "scanner" (Scan Status), "agent" (Agent metrics)
@@ -327,6 +381,8 @@ async def authenticate_websocket(
                 "identity": str
             }
     """
+    if await reject_cross_origin_websocket(websocket):
+        return {"authenticated": False}
     if db is None:
         from app.database import async_session
         async with async_session() as session_ctx:
