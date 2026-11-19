@@ -64,9 +64,11 @@ export async function request<T>(path: string, options?: RequestInit, retried = 
 
 /** fetch() for the calls that cannot go through request() (downloads, uploads), with its step-up retry. */
 async function fetchWithStepUp(path: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(path, { credentials: 'include', ...init });
+  let res = await fetch(path, { credentials: 'include', ...init });
   const stepUp = res.status === 403 ? res.headers.get('X-Step-Up') : null;
-  if (stepUp && (await authHandlers.onStepUp(stepUp))) return fetch(path, { credentials: 'include', ...init });
+  if (stepUp && (await authHandlers.onStepUp(stepUp))) res = await fetch(path, { credentials: 'include', ...init });
+  // An expired session signs out here too, as in request() (a backup export used to just fail)
+  if (res.status === 401) authHandlers.onUnauthorized();
   return res;
 }
 
@@ -199,13 +201,13 @@ export const api = {
   deleteDiscoveredHost: (id: number) =>
     request<{ status: string; message: string }>(`/api/scanner/discovered/${id}`, { method: 'DELETE' }),
   quickSubnetScan: (subnets: string) =>
-    request<{ status: string; hosts_found: number }>(`/api/scanner/quick-subnet-scan?subnets=${subnets}`, { method: 'POST' }),
+    request<{ status: string; hosts_found: number }>(`/api/scanner/quick-subnet-scan?subnets=${encodeURIComponent(subnets)}`, { method: 'POST' }),
 
   // Devices
   getDevices: (includeHidden = false) =>
     request<import('../types').Device[]>(includeHidden ? '/api/devices?include_hidden=true' : '/api/devices'),
   getDevice: (id: number) => request<import('../types').Device>(`/api/devices/${id}`),
-  addDeviceFromIp: (ip: string) => request<import('../types').Device>(`/api/devices/add-from-ip?ip=${ip}`, { method: 'POST' }),
+  addDeviceFromIp: (ip: string) => request<import('../types').Device>(`/api/devices/add-from-ip?ip=${encodeURIComponent(ip)}`, { method: 'POST' }),
   updateDevice: (id: number, data: Partial<import('../types').Device>) =>
     request<import('../types').Device>(`/api/devices/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteDevice: (id: number) => request<void>(`/api/devices/${id}`, { method: 'DELETE' }),

@@ -58,7 +58,8 @@ async def get_health_summary(
     offline_devices = total_devices - online_devices
 
     # 2. Agents: active ones, and how many of those run hot
-    agents = (await db.execute(select(AgentToken))).scalars().all()
+    # Revoked tokens are no agents: they counted as agents that had stopped reporting
+    agents = (await db.execute(select(AgentToken).where(AgentToken.is_active.is_(True)))).scalars().all()
     active_device_ids = _active_agent_devices(agents, await load_intervals(db), now)
     high_cpu, high_temp = await _hot_agent_counts(db, active_device_ids)
 
@@ -66,7 +67,10 @@ async def get_health_summary(
     summary = await get_summary(token, db)
 
     # 4. Notifications
-    unread_count = (await db.execute(select(func.count(DeviceHistory.id)))).scalar_one()
+    # Unread means not marked read: it counted every entry of the history
+    unread_count = (
+        await db.execute(select(func.count(DeviceHistory.id)).where(DeviceHistory.read.is_(False)))
+    ).scalar_one()
     cutoff_30min = now.replace(tzinfo=None) - timedelta(minutes=30)
     fresh_count = (
         await db.execute(select(func.count(DeviceHistory.id)).where(DeviceHistory.timestamp >= cutoff_30min))

@@ -377,3 +377,55 @@ async def test_group_edge_cases(client, db, auth):
     # get_group_details 404
     assert (await client.get("/api/groups/9999", headers=auth)).status_code == 404
 
+
+
+# --- links a PATCH cannot set (they failed only at the commit, or broke the map or the rack) ---------
+
+@pytest.mark.asyncio
+async def test_a_device_cannot_be_its_own_parent_or_close_a_parent_loop(client, db, auth):
+    a = await _device(db, ip="192.0.2.21")
+    b = await _device(db, ip="192.0.2.22", parent_id=a.id)
+    own = await client.patch(f"/api/devices/{a.id}", json={"parent_id": a.id}, headers=auth)
+    assert own.status_code == 422
+    loop = await client.patch(f"/api/devices/{a.id}", json={"parent_id": b.id}, headers=auth)
+    assert loop.status_code == 422 and "cycle" in loop.json()["detail"]
+    missing = await client.patch(f"/api/devices/{b.id}", json={"parent_id": 99999}, headers=auth)
+    assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_a_missing_group_or_rack_is_a_404_not_a_server_error(client, db, auth):
+    dev = await _device(db, ip="192.0.2.23")
+    assert (await client.patch(f"/api/devices/{dev.id}", json={"group_id": 99999}, headers=auth)).status_code == 404
+    assert (await client.patch(f"/api/devices/{dev.id}", json={"rack_id": 99999, "rack_unit": 1}, headers=auth)).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_rack_units_taken_by_another_device_are_refused_but_moving_within_own_units_works(client, db, auth):
+    from app.models.topology import Rack
+
+    rack = Rack(name="Lab", units=12)
+    db.add(rack)
+    await db.commit()
+    # rack_unit is the top unit, the height counts downwards: units 2 and 3
+    first = await _device(db, ip="192.0.2.24", rack_id=rack.id, rack_unit=3, rack_height=2)
+    second = await _device(db, ip="192.0.2.25")
+
+    taken = await client.patch(f"/api/devices/{second.id}", json={"rack_id": rack.id, "rack_unit": 2}, headers=auth)
+    assert taken.status_code == 409
+    # One unit up overlaps only its own old place (3): allowed
+    moved = await client.patch(f"/api/devices/{first.id}", json={"rack_unit": 4}, headers=auth)
+    assert moved.status_code == 200 and moved.json()["rack_unit"] == 4
+
+
+@pytest.mark.asyncio
+async def test_a_deleted_device_is_listed_as_discovered_again(client, db, auth):
+    from app.models.device import DiscoveredHost
+
+    dev = await _device(db, ip="192.0.2.26")
+    db.add(DiscoveredHost(ip="192.0.2.26", is_online=True, is_monitored=True))
+    await db.commit()
+    assert (await client.delete(f"/api/devices/{dev.id}", headers=auth)).status_code == 204
+    host = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.0.2.26"))).scalar_one()
+    await db.refresh(host)
+    assert host.is_monitored is False

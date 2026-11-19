@@ -531,7 +531,12 @@ def _install_agent_files(deployment: _Deployment, tmp_agent: str) -> tuple[bool,
     # Ensure base directory
     runner.run(f"mkdir -p {base_dir}")
 
-    runner.run(f"mv {tmp_agent} {deployment.agent_path} && chmod 755 {deployment.agent_path}")
+    # mv keeps the owner of the staged file (the SSH user): root owns what root runs, or that user
+    # could change the script without sudo and have it run as root
+    runner.run(
+        f"mv {tmp_agent} {deployment.agent_path} && chown root:root {deployment.agent_path} "
+        f"&& chmod 755 {deployment.agent_path}"
+    )
     logger.info("Agent script deployed to %s", deployment.agent_path)
 
     # Deploy config
@@ -539,7 +544,10 @@ def _install_agent_files(deployment: _Deployment, tmp_agent: str) -> tuple[bool,
     tmp_config = f"/tmp/gravitylan_config_{device_id}.json"
     _stage_file(client, tmp_config, config_json)
     # The config holds the agent token: owner-only (the agent runs as root or as its owner)
-    runner.run(f"cp {tmp_config} {REMOTE_CONFIG_PATH} && rm -f {tmp_config} && chmod 600 {REMOTE_CONFIG_PATH}")
+    runner.run(
+        f"cp {tmp_config} {REMOTE_CONFIG_PATH} && rm -f {tmp_config} "
+        f"&& chown root:root {REMOTE_CONFIG_PATH} && chmod 600 {REMOTE_CONFIG_PATH}"
+    )
     logger.info("Agent config deployed to %s", REMOTE_CONFIG_PATH)
     return has_systemd, has_syno_rc
 

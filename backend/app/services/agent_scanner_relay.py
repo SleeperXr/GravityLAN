@@ -60,7 +60,8 @@ async def get_probe_networks(db: AsyncSession, device_id: int) -> list[ProbeNetw
         return []
 
     networks: list[ProbeNetwork] = []
-    for cidr in (await db.execute(select(Subnet.cidr))).scalars():
+    # Only the networks the scan itself sweeps: a paused one must not be updated by a relay either
+    for cidr in (await db.execute(select(Subnet.cidr).where(Subnet.is_enabled.is_(True)))).scalars():
         try:
             net = ipaddress.ip_network(cidr, strict=False)
         except ValueError:
@@ -143,6 +144,9 @@ async def ingest_agent_arp_table(
             if not dev.is_online and not dev.has_agent:
                 dev.is_online = True
                 dev.last_seen = now
+                # Back online starts the miss count again, as a scan does (register_seen); the
+                # old count made a single missed scan take it offline at once
+                dev.missed_scans = 0
                 changed = True
             if changed:
                 updated_count += 1

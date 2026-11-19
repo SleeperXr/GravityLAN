@@ -371,3 +371,42 @@ async def test_completing_a_restored_setup_keeps_its_subnets(client, db, monkeyp
     assert res.status_code == 200 and res.json()["devices_adopted"] == 0
     assert detected == []  # no local networks were added on top
     assert [s.cidr for s in (await db.execute(sa_select(Subnet))).scalars()] == ["10.0.0.0/24"]
+
+
+@pytest.mark.asyncio
+async def test_an_empty_list_in_the_backup_empties_the_table_a_missing_key_keeps_it(client, admin_token, import_endpoint_db):
+    """Restoring a backup of an instance without devices used to keep the old devices."""
+    payload = json.dumps({"metadata": {"version": "0.8.0"}, "devices": []}).encode()
+    response = await _post_backup(client, admin_token, payload)
+    assert response.status_code == 200
+    assert _query(import_endpoint_db, "SELECT COUNT(*) FROM devices") == [(0,)]
+    # device_groups was not in the backup at all: kept
+    assert _query(import_endpoint_db, "SELECT name FROM device_groups") == [("Servers",)]
+
+
+@pytest.mark.asyncio
+async def test_an_upload_without_a_file_name_is_refused_not_an_error_500(client, admin_token, import_endpoint_db):
+    response = await client.post(
+        "/api/backup/import",
+        files={"file": ("", b"{}", "application/json")},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code in (400, 422)
+
+
+@pytest.mark.asyncio
+async def test_a_table_the_export_cannot_read_is_left_out_not_written_empty(client, admin_token, import_endpoint_db, monkeypatch):
+    """An empty list empties the table on import: a table that failed to read must not look like one."""
+    real = backup._open_sqlite_connection
+
+    def open_without_device_groups(path):
+        conn = real(path)
+        conn.execute("DROP TABLE IF EXISTS device_groups")
+        return conn
+
+    monkeypatch.setattr(backup, "_open_sqlite_connection", open_without_device_groups)
+    response = await client.get("/api/backup/export", headers={"Authorization": f"Bearer {admin_token}"})
+    assert response.status_code == 200
+    data = response.json()
+    assert "device_groups" not in data
+    assert data["devices"]  # the readable tables are there

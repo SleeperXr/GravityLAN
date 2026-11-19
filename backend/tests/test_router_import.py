@@ -670,3 +670,13 @@ def test_base_lan_address_rules():
     assert base.is_lan_address(ipaddress.ip_address("192.168.1.1"))
     assert not base.is_lan_address(ipaddress.ip_address("127.0.0.1"))
     assert not base.is_lan_address(ipaddress.ip_address("100.64.0.1"))
+
+
+def test_the_unifi_client_never_takes_a_proxy_from_the_environment(monkeypatch):
+    """The console is addressed by its checked LAN IP, which NO_PROXY names do not match: a proxy
+    from the environment would get the request together with the X-API-KEY header."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.lan:3128")
+    monkeypatch.setenv("NO_PROXY", "unifi.lan")
+    conn = RouterConnection(host="unifi.lan", address="192.168.1.1", secrets={"api_key": "k"})
+    client = UnifiProvider().make_client(conn)
+    assert client._transport_for_url(httpx.URL("https://192.168.1.1/proxy/network")) is client._transport

@@ -214,7 +214,12 @@ async def test_adopting_a_legacy_plaintext_pending_token_stores_its_hash(client,
     db.add(AgentToken(device_id=208, token=hash_agent_token("old"), is_active=True, pending_token=pending_raw))
     await db.commit()
 
-    response = await client.post("/api/agent/adopt/208", headers=ADMIN)
+    # Adopting needs a browser session (step-up "remote"), like enrolling; the master token is refused
+    assert (await client.post("/api/agent/adopt/208", headers=ADMIN)).status_code == 403
+    from app.services.session_service import session_store
+    client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
+    response = await client.post("/api/agent/adopt/208")
+    client.cookies.clear()
     assert response.status_code == 200
     row = await _row(db, 208)
     assert row.token == hash_agent_token(pending_raw)

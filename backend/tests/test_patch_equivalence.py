@@ -360,10 +360,17 @@ def _prompt_scripts(longest):
         yield from itertools.product(PROMPT_STEPS, repeat=length)
 
 
+def _unchanged_scripts(longest):
+    """The scripts whose behaviour did not change on purpose: a read ending in the start of the marker
+    ("SUDO") is now held back and joined with the next read, so a split first prompt is answered
+    (it went unanswered before). Those are covered by the split tests below instead."""
+    return (steps for steps in _prompt_scripts(longest) if b"SUDO" not in steps)
+
+
 def test_apt_query_matches_for_every_way_a_prompt_can_arrive():
     outputs = _apt_outputs("", "", "")
     diffs = []
-    for steps, (user, password) in itertools.product(_prompt_scripts(4), USERS):
+    for steps, (user, password) in itertools.product(_unchanged_scripts(4), USERS):
         script = (list(steps), 1, True)
         before = _run_apt(_old_query_apt_updates, script, user, password, outputs)
         now = _run_apt(_live_query_apt_updates, script, user, password, outputs)
@@ -380,11 +387,52 @@ def test_a_second_prompt_split_across_two_reads_is_a_rejection():
     assert chan.steps == [b"never read\n"]
 
 
-def test_a_first_prompt_split_across_two_reads_goes_unanswered():
+def test_a_first_prompt_split_across_two_reads_is_answered():
+    """It used to go unanswered: the run then waited until its 90 s timeout."""
     chan = FakeChannel([b"SUDO", b"PROMPT:", b"Done\n"])
     assert ps._read_apt_update(chan, "pw") == ("SUDOPROMPT:Done\n", False)
-    assert chan.sent == []
+    assert chan.sent == ["pw\n"]
     assert not chan.closed
+
+
+def test_the_start_of_the_marker_is_held_back_only_at_the_end():
+    assert ps._hold_back_prompt_start("output\nSUDOPR") == ("output\n", "SUDOPR")
+    assert ps._hold_back_prompt_start("output\nSUDOPROMPT:") == ("output\nSUDOPROMPT:", "")
+    assert ps._hold_back_prompt_start("SUDO is a word\n") == ("SUDO is a word\n", "")
+    assert ps._hold_back_prompt_start("") == ("", "")
+
+
+@pytest.mark.asyncio
+async def test_a_split_prompt_in_the_update_stream_is_answered_and_nothing_is_lost():
+    sent, shown = [], []
+
+    class Channel:
+        def __init__(self, reads):
+            self.reads = list(reads)
+
+        def recv_ready(self):
+            return bool(self.reads)
+
+        def recv(self, size):
+            return self.reads.pop(0)
+
+        def exit_status_ready(self):
+            return not self.reads
+
+        def send(self, data):
+            sent.append(data)
+
+        def close(self):
+            pass
+
+    async def show(text):
+        shown.append(text)
+
+    rejected = await ps._pump_output(Channel([b"Reading...\nSUDO", b"PROMPT:", b"Done\nSUD"]), "pw", show)
+    assert rejected is False
+    assert sent == ["pw\n"]
+    # The prompt is taken out, ordinary text (also a trailing "SUD") comes through
+    assert "".join(shown) == "Reading...\nDone\nSUD"
 
 
 def test_without_a_password_a_prompt_is_only_text():
@@ -477,7 +525,7 @@ async def test_update_stream_matches_for_every_script_user_and_callback(monkeypa
 @pytest.mark.asyncio
 async def test_update_stream_matches_for_every_way_a_prompt_can_arrive(monkeypatch):
     diffs = []
-    for steps, (user, password) in itertools.product(_prompt_scripts(3), USERS):
+    for steps, (user, password) in itertools.product(_unchanged_scripts(3), USERS):
         script = (list(steps), 1)
         before = await _run_stream(_old_run_ssh_command_stream, monkeypatch, script, user, password, False)
         now = await _run_stream(ps.run_ssh_command_stream, monkeypatch, script, user, password, False)

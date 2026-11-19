@@ -173,19 +173,35 @@ async def _pump_output(channel, sudo_password: str | None, output_callback) -> b
     prompt marker is answered whenever it shows up, however late or localised.
     """
     password_sent = False
+    carry = ""
     while True:
         if channel.recv_ready():
-            chunk = channel.recv(4096).decode("utf-8", errors="replace")
-            if not chunk:
+            received = channel.recv(4096).decode("utf-8", errors="replace")
+            if not received:
+                await _emit(output_callback, carry)
                 return False
+            chunk, carry = _hold_back_prompt_start(carry + received)
             chunk, password_sent, rejected = await _answer_sudo_prompt(channel, chunk, sudo_password, password_sent)
             await _emit(output_callback, chunk)
             if rejected:
                 channel.close()
                 return True
         elif channel.exit_status_ready() and not channel.recv_ready():
+            await _emit(output_callback, carry)
             return False  # finished and nothing left to read
         await asyncio.sleep(0.1)
+
+
+def _hold_back_prompt_start(text: str) -> tuple[str, str]:
+    """(text, "") or, when ``text`` ends with the start of the prompt marker, (the rest, that start).
+
+    The marker can arrive split over two reads ("SUDOPR" + "OMPT:"); held back, it is seen whole
+    with the next read, so the password still goes out (the run used to wait until its timeout).
+    """
+    for size in range(len(_SUDO_PROMPT) - 1, 0, -1):
+        if text.endswith(_SUDO_PROMPT[:size]):
+            return text[:-size], text[-size:]
+    return text, ""
 
 
 async def run_ssh_command_stream(
@@ -375,11 +391,13 @@ def _read_apt_update(chan, sudo_password: str | None) -> tuple[str, bool]:
     """
     output = ""
     password_sent = False
+    carry = ""
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         if chan.recv_ready():
-            chunk = chan.recv(4096).decode("utf-8", errors="replace")
-            output += chunk
+            received = chan.recv(4096).decode("utf-8", errors="replace")
+            output += received
+            chunk, carry = _hold_back_prompt_start(carry + received)
             chunk, password_sent = _answer_first_apt_prompt(chan, chunk, sudo_password, password_sent)
             if password_sent and _sudo_asked_again(chunk, output):
                 chan.close()
@@ -451,13 +469,13 @@ def _query_apt_updates(client, result: dict[str, Any], login: _SshLogin) -> None
     _record_apt_update_failure(result, login, _AptRefresh(output, sudo_rejected, exit_code))
 
     _, stdout, _ = client.exec_command("apt list --upgradable 2>/dev/null", timeout=15)
-    result["packages"].extend(_parse_apt_upgradable(stdout.read().decode("utf-8")))
+    result["packages"].extend(_parse_apt_upgradable(stdout.read().decode("utf-8", errors="replace")))
 
     # Major release upgrade (Ubuntu only)
     _, stdout, _ = client.exec_command("which do-release-upgrade", timeout=5)
     if stdout.read().decode().strip():
         _, stdout, _ = client.exec_command("do-release-upgrade -c", timeout=10)
-        release = _parse_release_upgrade(stdout.read().decode("utf-8"))
+        release = _parse_release_upgrade(stdout.read().decode("utf-8", errors="replace"))
         if release is not None:
             result["major_upgrade_available"] = release
 
@@ -484,7 +502,7 @@ def _installed_versions(client, pkg_names: list[str]) -> dict[str, str]:
     batch_cmd = f"rpm -q --qf '%{{NAME}} %{{VERSION}}-%{{RELEASE}}\\n' {quoted_pkgs}"
     _, stdout_rpm, _ = client.exec_command(batch_cmd, timeout=10)
     versions = {}
-    for line in stdout_rpm.read().decode("utf-8").splitlines():
+    for line in stdout_rpm.read().decode("utf-8", errors="replace").splitlines():
         subparts = line.split()
         if len(subparts) == 2:
             versions[subparts[0]] = subparts[1]
@@ -494,7 +512,7 @@ def _installed_versions(client, pkg_names: list[str]) -> dict[str, str]:
 def _query_dnf_updates(client, result: dict[str, Any]) -> None:
     """Populate dnf upgrade results (check-update + batch rpm current versions); blocking."""
     _, stdout, _ = client.exec_command("dnf check-update --quiet", timeout=20)
-    upgrades = _parse_check_update(stdout.read().decode("utf-8"), skip_metadata_line=True)
+    upgrades = _parse_check_update(stdout.read().decode("utf-8", errors="replace"), skip_metadata_line=True)
     if upgrades:
         versions = _installed_versions(client, [item["package"] for item in upgrades])
         for item in upgrades:
@@ -505,4 +523,4 @@ def _query_dnf_updates(client, result: dict[str, Any]) -> None:
 def _query_yum_updates(client, result: dict[str, Any]) -> None:
     """Populate yum upgrade results (check-update); blocking."""
     _, stdout, _ = client.exec_command("yum check-update --quiet", timeout=20)
-    result["packages"] = _parse_check_update(stdout.read().decode("utf-8"), skip_metadata_line=False)
+    result["packages"] = _parse_check_update(stdout.read().decode("utf-8", errors="replace"), skip_metadata_line=False)

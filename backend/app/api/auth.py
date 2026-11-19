@@ -110,6 +110,10 @@ async def _verify_api_token(db: AsyncSession, token_val: str, conn: HTTPConnecti
 
     _enforce_token_scopes(db_token, conn)
     await _touch_api_token(db, db_token)
+    # Step-up refuses API tokens for credentials and instance changes (stepup.CONFIRMED_CLASSES)
+    state = getattr(conn, "state", None)  # every Starlette connection has one; stand-ins may not
+    if state is not None:
+        setattr(state, stepup.API_TOKEN_STATE, True)
     return f"api_token:{db_token.name}"
 
 

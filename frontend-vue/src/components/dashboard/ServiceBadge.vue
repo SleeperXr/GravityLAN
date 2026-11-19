@@ -92,6 +92,8 @@ async function onClick(event: MouseEvent) {
     document.body.appendChild(link);
     link.click();
     link.remove();
+    // The download has the file now; the object URL would otherwise stay until the page reloads
+    setTimeout(() => URL.revokeObjectURL(link.href), 0);
     showToast('success', t('notifications.rdp_started'), t('notifications.rdp_generated', { ip: props.ip }));
     return;
   }

@@ -793,7 +793,9 @@ async def download_uninstall_script(device_id: int, db: AsyncSession = Depends(g
 
     return PlainTextResponse(build_uninstall_script())
     
-@router.post("/adopt/{device_id}")
+# Adopting a pending token lets that host report as this device, like enrolling it: the same
+# password confirmation as the other agent credential actions
+@router.post("/adopt/{device_id}", dependencies=[Depends(require_step_up("remote"))])
 async def adopt_agent_token(device_id: int, db: AsyncSession = Depends(get_db), current_user: str = Depends(get_current_admin)):
     """Manually adopt a pending token for a device."""
     token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device_id))

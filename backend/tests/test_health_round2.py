@@ -215,6 +215,8 @@ async def test_summary_counts_devices_agents_issues_notifications_and_scanner(cl
         DeviceMetrics(device_id=devs[1].id, cpu_percent=99.0, temperature=99.0, timestamp=naive(now)),
         DeviceHistory(device_id=devs[1].id, status="offline", message="x", timestamp=naive(now - timedelta(minutes=10))),
         DeviceHistory(device_id=devs[1].id, status="online", message="y", timestamp=naive(now - timedelta(hours=2))),
+        # Read: not counted as unread (every entry used to be)
+        DeviceHistory(device_id=devs[1].id, status="offline", message="z", timestamp=naive(now - timedelta(hours=5)), read=True),
     ])
     await db.commit()
 
@@ -232,7 +234,8 @@ async def test_summary_counts_devices_agents_issues_notifications_and_scanner(cl
     body = res.json()
 
     assert body["devices"] == {"total": 3, "online": 2, "offline": 1}
-    assert body["agents"] == {"total": 4, "high_cpu": 1, "high_temp": 1, "offline_agents": 2}
+    # t4 is revoked: no agent at all (it used to count as one that stopped reporting)
+    assert body["agents"] == {"total": 3, "high_cpu": 1, "high_temp": 1, "offline_agents": 1}
     assert body["issues"] == {"active": 3, "by_type": {"agent_offline": 0, "service_down": 2, "ip_conflict": 1}}
     assert body["notifications"] == {"unread": 2, "fresh_30min": 1}
     assert body["scanner"]["running"] is True
