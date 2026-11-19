@@ -69,11 +69,22 @@ class ScanStateManager:
             if self.is_active:
                 return False
             self.is_active = True  # reserved while the slot is taken
-        cancel_event = await scan_slot.try_acquire(REQUESTED)
+            # Stop can arrive while a scheduled scan still makes way: it sets this event
+            pending_stop = asyncio.Event()
+            self.cancel_event = pending_stop
+        try:
+            cancel_event = await scan_slot.try_acquire(REQUESTED)
+        except BaseException:
+            # The request went away while it waited: free the reservation, or every later start is refused
+            async with self._lock:
+                self.is_active = False
+            raise
         async with self._lock:
             if cancel_event is None:
                 self.is_active = False
                 return False
+            if pending_stop.is_set():
+                cancel_event.set()  # the scan starts stopped and ends as cancelled at once
             self.cancel_event = cancel_event
             return True
 

@@ -137,6 +137,35 @@ async def test_the_quick_subnet_scan_is_refused_while_a_started_scan_runs(monkey
     assert _fresh_scan_slot.kind is None
 
 
+async def test_a_stop_while_the_start_waits_for_the_scheduled_scan_is_kept(_fresh_scan_slot):
+    """Stop during the takeover: the started scan must not run as if nothing had been pressed."""
+    scheduled = await _fresh_scan_slot.try_acquire(SCHEDULED)
+
+    async def scheduled_scan_makes_way():
+        await scheduled.wait()
+        await scanner.stop_scan()  # Stop arrives while try_start still waits
+        await _fresh_scan_slot.release(scheduled)
+
+    background = asyncio.create_task(scheduled_scan_makes_way())
+    assert await scanner.state.try_start() is True
+    await background
+
+    assert scanner.state.cancel_event.is_set()
+    await scanner.state.finish()
+    assert _fresh_scan_slot.kind is None
+
+
+async def test_a_start_cancelled_while_it_waits_frees_its_reservation(_fresh_scan_slot):
+    """The request went away during the takeover: later starts must not be refused for good."""
+    await _fresh_scan_slot.try_acquire(SCHEDULED)  # never lets go
+    waiting = asyncio.create_task(scanner.state.try_start())
+    await asyncio.sleep(0.01)
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    assert await scanner.state.get_active() is False
+
+
 async def test_stop_also_reaches_a_scheduled_scan(_fresh_scan_slot):
     held = await _fresh_scan_slot.try_acquire(SCHEDULED)
     await scanner.stop_scan()
