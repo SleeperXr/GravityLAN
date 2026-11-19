@@ -319,6 +319,24 @@ async def correlation_id_middleware(request: Request, call_next):
     finally:
         correlation_id_ctx.reset(token)
 
+# Sent with every HTTP response unless a route sets its own value. No script-src: the
+# theme bootstrap in index.html is an inline script, and a hash would break on every edit.
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "same-origin",
+    "Content-Security-Policy": "frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+}
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    for name, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
+
+
 @app.exception_handler(GravityLANError)
 async def gravitylan_exception_handler(request: Request, exc: GravityLANError):
     """Handle custom application exceptions."""
