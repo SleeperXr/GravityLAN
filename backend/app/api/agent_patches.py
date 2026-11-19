@@ -123,6 +123,8 @@ async def _resolve_patch_credentials(
         await db.commit()
         return login.host, login.port, login.username, runner_pwd, login.private_key, login.passphrase, login.pinned
 
+    if not request.ssh_user:
+        raise HTTPException(status_code=400, detail="Enter an SSH user or choose a saved connection.")
     host_ip = device.ip
     ssh_port = request.ssh_port
     ssh_user = request.ssh_user

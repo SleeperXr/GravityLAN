@@ -224,3 +224,17 @@ async def test_a_step_up_setting_change_by_an_api_token_is_refused(client, admin
     res = await client.post("/api/settings", headers={"Authorization": f"Bearer {token}"},
                             json={"security.stepup_minutes": "60"})
     assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_router_import_preview_and_forget_refuse_api_tokens(client, admin_token, monkeypatch):
+    """They use or delete the stored router credentials, like the Proxmox connection."""
+    monkeypatch.setattr("app.services.stepup.store.is_granted", lambda session_id, cls: False)
+    res = await client.post("/api/auth/tokens", headers={"Authorization": f"Bearer {admin_token}"},
+                            json={"name": "net-writer", "scopes": ["network:read", "network:write"]})
+    headers = {"Authorization": f"Bearer {res.json()['token']}"}
+    preview = await client.post("/api/network/router-import/preview", headers=headers,
+                                json={"provider": "snmp", "host": "192.168.1.1"})
+    assert preview.status_code == 403
+    forget = await client.delete("/api/network/router-import/sources/snmp", headers=headers)
+    assert forget.status_code == 403

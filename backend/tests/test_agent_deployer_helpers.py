@@ -133,7 +133,7 @@ def test_synology_install_writes_the_rc_script(staged):
     script = staged["/tmp/gravitylan_rc_3.sh"]
     assert "cd /opt/a || exit 1" in script
     assert "/bin/python3 /opt/a/agent.py > /opt/a/gravitylan-agent.log 2>&1 < /dev/null &" in script
-    assert "pkill -f /opt/a/agent.py" in script
+    assert r"pkill -f '[/]opt/a/agent\.py'" in script  # cannot match the shell running it
     assert "{start|stop|restart}" in script
     assert runner.batches[0][-1] == "/usr/local/etc/rc.d/S99gravitylan-agent.sh restart || true"
 

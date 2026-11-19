@@ -492,7 +492,7 @@ export function createScanSocket(onMessage: (data: import('../types').ScanProgre
   if (token === 'undefined') token = null;
   token = token || '';
   const wsBase = `${protocol}//${window.location.host}`;
-  const ws = new WebSocket(`${wsBase}/api/scanner/ws?token=${token}`);
+  const ws = new WebSocket(`${wsBase}/api/scanner/ws${token ? `?token=${encodeURIComponent(token)}` : ''}`);
 
   ws.onmessage = (event) => {
     try {
@@ -515,7 +515,7 @@ export function createMetricsSocket(deviceId: number, onMessage: (data: unknown)
   if (token === 'undefined') token = null;
   token = token || '';
   const wsBase = `${protocol}//${window.location.host}`;
-  const ws = new WebSocket(`${wsBase}/api/agent/ws/${deviceId}?token=${token}`);
+  const ws = new WebSocket(`${wsBase}/api/agent/ws/${deviceId}${token ? `?token=${encodeURIComponent(token)}` : ''}`);
 
   ws.onmessage = (event) => {
     try {

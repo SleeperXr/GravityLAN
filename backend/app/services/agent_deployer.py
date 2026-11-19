@@ -355,7 +355,7 @@ case "$1" in
         {python_path} {remote_agent_path} > {deployment.base_dir}/gravitylan-agent.log 2>&1 < /dev/null &
         ;;
     stop)
-        pkill -f {remote_agent_path}
+        pkill -f '{_pkill_pattern_for(remote_agent_path)}'
         ;;
     restart)
         $0 stop

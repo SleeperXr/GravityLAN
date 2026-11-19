@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
 - API tokens can no longer change credentials or the instance, whatever their scope. With `settings:write` a token could replace the Proxmox connection, add or delete webhooks with their tokens, retry outbox entries or lengthen the step-up time, all actions a browser session may only take after confirming the password. An API token has no password to confirm, so these answer 403 now; GravityUI with password confirmation and the master token work as before. Reading settings and all other `settings:write` changes stay allowed.
 - Adopting an agent's pending token (Agents → adopt) now asks for the password like enrolling or deploying an agent; adopting lets that host report as the device.
 - The SSH deploy makes root the owner of the agent script and `agent.conf`. `mv` kept the SSH user as owner, so with a non-root deploy user that user could change the script root runs without sudo.
+- The router import's fetch (which uses or saves the stored SNMP community or UniFi API key) and "forget connection" ask for the password like the Proxmox connection and refuse API tokens; applying the shown networks stays open to `network:write`.
+- SSH to the Docker host: only a host that cannot be reached at all is retried on the bridge gateway. A changed host key or a rejected login was retried there too, sending the same credentials to another machine.
+- The uninstall script download no longer tells which device ids exist (it answered 404 for unknown ones without a login).
 - The UniFi router import never sends its API key through a proxy from the environment: the console is addressed by its LAN IP, which `NO_PROXY` names did not match. IDs from the console's answers are encoded in the request path.
 
 ### Fixed
@@ -32,6 +35,11 @@ All notable changes to this project will be documented in this file.
 - `/api/health`: "unread" notifications count only unread ones (it counted every entry), and revoked agent tokens no longer count as agents that stopped reporting.
 - GravityUI: an expired session during a backup export or import signs out like any other request, the quick subnet scan and "add device by IP" encode their parameters, and the generated `.rdp` file no longer stays in memory until the page reloads.
 - On shutdown the webhook service also closes the connections of its direct client.
+- Package update checks and runs with a saved SSH connection no longer need an SSH user in the request (the connection brings it); without either, the answer is a clear 400.
+- An `apt-get update` that runs into its 90 s limit is ended on the host instead of holding the package lock.
+- Switching off "adopt agents automatically", or restoring a backup with it off, takes effect at once instead of after up to five minutes.
+- Restoring a backup keeps every column a row has; the columns of the first row decided for all rows before.
+- Synology: stopping the agent no longer matches other processes that have its path in their command line. GravityUI encodes the token of the scan and metrics WebSockets and leaves it out when there is none.
 - A scan no longer hands a device over to another box only because the name matches. A second device with the same hostname (a replacement, a default name such as `raspberrypi`, or a hostname equal to a name you gave a device) took over the documented device at its new address, with its notes, links, rack ports and probes; if the original was still online, the next scan pulled it back by its MAC, reported an IP change and handed it over again, every scan, and the second device never showed up on its own. When the MAC addresses differ, the new address now becomes a discovered host of its own and the device stays where it is. Without a MAC on either side the name still follows a device to a new address. Names are compared literally: `_` or `%` in a hostname no longer matches any character.
 
 ## [0.8.0] - 2026-11-19

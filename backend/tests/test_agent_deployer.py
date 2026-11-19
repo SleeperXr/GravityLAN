@@ -293,3 +293,16 @@ def test_verify_remote_sha256_checks_remote_digest():
 
     stdout.read.return_value = b"0" * 64 + b"\n"
     assert agent_deployer._verify_remote_sha256(client, "/tmp/agent.py", expected) is False
+
+
+def test_only_an_unreachable_host_is_retried_on_the_docker_gateway():
+    """A refused host key or login came from a host that answered: retrying it on the gateway
+    would send the same credentials to another machine."""
+    import paramiko
+    from app.services.ssh_utils import HostKeyNotTrusted, is_unreachable
+
+    assert is_unreachable(OSError("no route to host"))
+    assert is_unreachable(EOFError())
+    assert not is_unreachable(HostKeyNotTrusted("changed key"))
+    assert not is_unreachable(paramiko.AuthenticationException("bad password"))
+    assert not is_unreachable(paramiko.BadHostKeyException("h", paramiko.Ed25519Key.generate() if hasattr(paramiko.Ed25519Key, "generate") else paramiko.RSAKey.generate(1024), paramiko.RSAKey.generate(1024)))

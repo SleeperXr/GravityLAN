@@ -25,6 +25,7 @@ from app.services.ssh_utils import (
     _load_ssh_key,
     build_pinned_ssh_client,
     host_bypass_gateway,
+    is_unreachable,
 )
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,8 @@ def _connect_with_fallback(client: paramiko.SSHClient, connect_kwargs: dict, hos
     try:
         client.connect(**connect_kwargs)
     except Exception as e:
-        gateway = host_bypass_gateway(host_ip)
+        # Only an unreachable host: a refused host key or login must not be retried elsewhere
+        gateway = host_bypass_gateway(host_ip) if is_unreachable(e) else None
         if gateway:
             logger.info("Direct connection failed (%s). Trying Host Bypass gateway: %s", e, gateway)
             connect_kwargs["hostname"] = gateway
@@ -405,6 +407,8 @@ def _read_apt_update(chan, sudo_password: str | None) -> tuple[str, bool]:
         elif chan.exit_status_ready():
             return output + _drain(chan), False
         time.sleep(0.1)
+    # Timed out: end the remote apt-get, or it keeps the dpkg lock while the package list is read
+    chan.close()
     return output, False
 
 

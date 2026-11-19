@@ -786,11 +786,11 @@ async def agent_websocket(websocket: WebSocket, device_id: int):
 
 @router.get("/download/uninstall-sh/{device_id}")
 async def download_uninstall_script(device_id: int, db: AsyncSession = Depends(get_db)):
-    """Generate a shell script for easy 'curl | bash' uninstallation."""
-    device = await db.get(Device, device_id)
-    if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
+    """Generate a shell script for easy 'curl | bash' uninstallation.
 
+    The script is the same for every device and this route needs no login: it answers alike for
+    any id, so it does not tell which device ids exist (it looked the device up and answered 404).
+    """
     return PlainTextResponse(build_uninstall_script())
     
 # Adopting a pending token lets that host report as this device, like enrolling it: the same

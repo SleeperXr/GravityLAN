@@ -64,6 +64,8 @@ _RUNTIME_CACHES = (
     ("app.api.discovery", "discovery_cache"),
     ("app.api.agent", "_latest_metrics"),
     ("app.api.auth", "_setting_cache"),
+    # agent.allow_auto_adoption: a restored "off" must not stay "on" for the cache's five minutes
+    ("app.services.agent_telemetry", "_setting_cache"),
 )
 
 
@@ -390,7 +392,8 @@ def _replace_table(cursor, table: str, rows: list[dict]) -> None:
         cursor.execute(f"DELETE FROM {table}")
     if not rows:
         return
-    columns = list(rows[0].keys())
+    # Every column any row has: taking the first row's only dropped the values of columns it lacked
+    columns = list(dict.fromkeys(col for row in rows for col in row))
     placeholders = ", ".join(["?"] * len(columns))
     cursor.executemany(
         f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",

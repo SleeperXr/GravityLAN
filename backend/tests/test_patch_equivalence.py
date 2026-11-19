@@ -341,7 +341,8 @@ def test_apt_query_matches_for_every_update_run_listing_and_release_check():
         before = _run_apt(_old_query_apt_updates, script, user, password, outputs)
         now = _run_apt(_live_query_apt_updates, script, user, password, outputs)
         count += 1
-        if before != now:
+        # chan.closed changed on purpose: a run that times out now ends the remote apt-get
+        if before[:3] + before[4:] != now[:3] + now[4:]:
             diffs.append((script, user, password, before, now))
     assert count == len(UPDATE_SCRIPTS) * len(USERS) * len(UPGRADABLE) * len(RELEASE)
     assert diffs[:2] == []
@@ -551,3 +552,26 @@ async def test_update_stream_reports_a_missing_channel_and_connect_errors(monkey
 
         monkeypatch.setattr(ps, "_open_command_channel", boom)
         assert await fn(host_ip="h", ssh_user="root", command="x", output_callback=print) == (False, "connection refused")
+
+
+def test_an_apt_update_that_times_out_is_ended(monkeypatch):
+    """It used to keep running on the host (holding the dpkg lock) while the package list was read."""
+    clock = iter([0.0, 0.0, 100.0])
+    monkeypatch.setattr(ps.time, "monotonic", lambda: next(clock, 100.0))
+    monkeypatch.setattr(ps.time, "sleep", lambda s: None)
+
+    class Hanging:
+        closed = False
+
+        def recv_ready(self):
+            return False
+
+        def exit_status_ready(self):
+            return False
+
+        def close(self):
+            self.closed = True
+
+    chan = Hanging()
+    assert ps._read_apt_update(chan, "pw") == ("", False)
+    assert chan.closed
