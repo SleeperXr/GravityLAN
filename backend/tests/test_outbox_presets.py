@@ -25,9 +25,11 @@ async def _example_hosts_resolve(monkeypatch):
     documentation address, so these tests need no DNS (IP literals still resolve as they are)."""
     loop = asyncio.get_running_loop()
     real = loop.getaddrinfo
+    # Exact names, not a suffix match (CodeQL py/incomplete-url-substring-sanitization)
+    example_hosts = {"example.com", "ntfy.example.com", "gotify.example.com"}
 
     async def resolve(host, port, *args, **kwargs):
-        if host and host.endswith("example.com"):
+        if host in example_hosts:
             return [(2, 1, 6, "", ("203.0.113.10", port))]
         return await real(host, port, *args, **kwargs)
 
