@@ -170,3 +170,30 @@ async def test_stop_also_reaches_a_scheduled_scan(_fresh_scan_slot):
     held = await _fresh_scan_slot.try_acquire(SCHEDULED)
     await scanner.stop_scan()
     assert held.is_set()
+
+
+async def test_a_start_whose_first_status_message_is_cancelled_frees_the_slot(monkeypatch, _fresh_scan_slot):
+    """The first broadcast used to run between try_start and create_task: cancelled there (the client
+    went away), no finally ran and every later scan was refused until a restart."""
+    async def cancelled_broadcast(progress):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(scanner.state, "broadcast", cancelled_broadcast)
+    monkeypatch.setattr(scanner, "run_planner_scan", AsyncMock(return_value=0))
+
+    result = await scanner.start_scan(ScanRequest(subnets=["10.0.0.0/24"]))
+    assert result["status"] == "ok"
+    with pytest.raises(asyncio.CancelledError):
+        await scanner.state.task
+
+    assert await scanner.state.get_active() is False
+    assert _fresh_scan_slot.kind is None
+
+
+async def test_finish_frees_the_slot_of_its_own_scan_even_after_a_new_start_took_the_event(_fresh_scan_slot):
+    assert await scanner.state.try_start()
+    mine = scanner.state.cancel_event
+    scanner.state.cancel_event = asyncio.Event()  # what a later start would leave there
+    await scanner.state.finish(mine)
+    assert _fresh_scan_slot.kind is None
+    assert await scanner.state.get_active() is False

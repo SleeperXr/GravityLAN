@@ -6,6 +6,7 @@ import json
 import logging
 import socket
 from datetime import datetime, timedelta, timezone
+import urllib.request
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -192,10 +193,12 @@ async def _vet_target(url: str) -> tuple[str | None, str | None]:
 
     parsed = urlparse(url)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    # A name that does not resolve right now (DNS server restarting) is a failed attempt that the
+    # outbox retries, not a blocked target: raised like httpx's own connect errors
     try:
         infos = await asyncio.get_running_loop().getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
-    except (socket.gaierror, UnicodeError):
-        return f"{parsed.hostname} could not be resolved", None
+    except (socket.gaierror, UnicodeError) as e:
+        raise httpx.ConnectError(f"{parsed.hostname} could not be resolved") from e
     addresses = []
     for *_, sockaddr in infos:
         try:
@@ -206,9 +209,21 @@ async def _vet_target(url: str) -> tuple[str | None, str | None]:
         if is_blocked_webhook_ip(addr):
             return f"{parsed.hostname} resolves to {addr}, a loopback, link-local or metadata address", None
     if not addresses:
-        return f"{parsed.hostname} could not be resolved", None
+        raise httpx.ConnectError(f"{parsed.hostname} could not be resolved")
+    if _through_proxy(parsed):
+        # The proxy resolves and connects itself (and checks the certificate against what it is
+        # given): pinning the address would make it check the address. The check above still ran.
+        return None, None
     ipv4 = [a for a in addresses if a.version == 4]
     return None, str((ipv4 or addresses)[0])
+
+
+def _through_proxy(parsed) -> bool:
+    """True when httpx sends this URL through a proxy from the environment (HTTP(S)_PROXY, ALL_PROXY, NO_PROXY)."""
+    proxies = urllib.request.getproxies_environment()
+    if not (proxies.get(parsed.scheme) or proxies.get("all")):
+        return False
+    return not urllib.request.proxy_bypass_environment(parsed.hostname or "", proxies)
 
 
 async def _blocked_target_reason(url: str) -> str | None:
@@ -223,9 +238,15 @@ def _pinned_request(url: str, address: str, headers: dict[str, str] | None) -> t
     parsed = urlparse(url)
     host = f"[{address}]" if ":" in address else address
     netloc = f"{host}:{parsed.port}" if parsed.port else host
+    # Header values and the TLS server name are ASCII: an international name goes as punycode
+    name = parsed.hostname.encode("idna").decode("ascii")
+    name_in_host = f"[{name}]" if ":" in name else name  # an IPv6 literal keeps its brackets
     pinned_headers = dict(headers or {})
-    pinned_headers["Host"] = f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
-    extensions = {"sni_hostname": parsed.hostname} if parsed.scheme == "https" else {}
+    pinned_headers["Host"] = f"{name_in_host}:{parsed.port}" if parsed.port else name_in_host
+    # The pool keeps connections by address: one opened for another name on the same address
+    # (two webhooks behind one reverse proxy) would carry this request without a TLS check for it
+    pinned_headers["Connection"] = "close"
+    extensions = {"sni_hostname": name} if parsed.scheme == "https" else {}
     return urlunparse(parsed._replace(netloc=netloc)), pinned_headers, extensions
 
 

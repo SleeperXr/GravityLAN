@@ -6,6 +6,9 @@ import socket
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
+import pytest
+
 from app.services import webhook_service
 
 
@@ -47,20 +50,64 @@ async def test_the_post_goes_to_the_checked_address_not_a_second_lookup(monkeypa
 
     url, kwargs = client.calls[0]
     assert url == "https://198.51.100.7:8443/x?y=1"
-    assert kwargs["headers"] == {"X": "1", "Host": "hooks.example.test:8443"}
+    # Connection: close, so no pooled connection opened for another name on this address carries it
+    assert kwargs["headers"] == {"X": "1", "Host": "hooks.example.test:8443", "Connection": "close"}
     # TLS still names (and checks the certificate of) the host, not the address
     assert kwargs["extensions"] == {"sni_hostname": "hooks.example.test"}
 
 
-async def test_a_name_that_does_not_resolve_is_not_posted_to(monkeypatch):
-    """Resolution failed: letting httpx look it up again could reach another target."""
+async def test_a_name_that_does_not_resolve_is_a_retryable_failure_not_a_post(monkeypatch):
+    """Resolution failed: not posted (httpx could resolve to another target), but retried later:
+    a DNS server that restarts must not turn the notification into a blocked target."""
     async def fails(host, port, type=0):
         raise socket.gaierror("no such host")
 
     monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", fails)
     client = _Recorder()
-    assert await webhook_service._send_webhook_post(client, "http://hooks.example.test/x", {}) is None
+    with pytest.raises(httpx.ConnectError):
+        await webhook_service._send_webhook_post(client, "http://hooks.example.test/x", {})
     assert client.calls == []
+
+
+async def test_an_unresolvable_target_keeps_the_outbox_entry_pending_for_a_retry(monkeypatch):
+    async def fails(host, port, type=0):
+        raise socket.gaierror("temporary failure in name resolution")
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", fails)
+    entry = SimpleNamespace(attempts=0, max_attempts=3, status="pending", last_error=None,
+                            next_attempt_at=None, event_type="device.offline")
+    delivered = await webhook_service._execute_and_record_delivery(_Recorder(), "http://hooks.example.test/x", {}, {}, entry)
+    assert delivered is False
+    assert entry.status == "pending" and entry.attempts == 1
+    assert "could not be resolved" in entry.last_error
+
+
+async def test_through_a_proxy_the_address_is_not_pinned(monkeypatch):
+    """The proxy connects itself; pinned, it would check the certificate against the address."""
+    async def resolves(host, port, type=0):
+        return [(2, 1, 6, "", ("198.51.100.7", port))]
+
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", resolves)
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.lan:3128")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    client = _Recorder()
+    await webhook_service._send_webhook_post(client, "https://hooks.example.test/x", {})
+    url, kwargs = client.calls[0]
+    assert url == "https://hooks.example.test/x"
+    assert kwargs["extensions"] == {}
+
+    monkeypatch.setenv("NO_PROXY", "hooks.example.test")  # bypassed: pinned again
+    await webhook_service._send_webhook_post(client, "https://hooks.example.test/x", {})
+    assert client.calls[1][0] == "https://198.51.100.7/x"
+
+
+def test_ipv6_and_international_names_give_valid_host_headers():
+    url, headers, ext = webhook_service._pinned_request("http://[fd00::10]:8080/hook", "fd00::10", None)
+    assert url == "http://[fd00::10]:8080/hook" and headers["Host"] == "[fd00::10]:8080"
+    url, headers, ext = webhook_service._pinned_request("https://büro.example.test/hook", "198.51.100.7", None)
+    assert headers["Host"] == "xn--bro-hoa.example.test"
+    assert ext == {"sni_hostname": "xn--bro-hoa.example.test"}
 
 
 async def test_a_failure_while_queueing_is_logged_and_not_raised(caplog):

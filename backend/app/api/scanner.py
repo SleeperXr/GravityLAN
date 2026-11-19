@@ -88,10 +88,14 @@ class ScanStateManager:
             self.cancel_event = cancel_event
             return True
 
-    async def finish(self) -> None:
-        """The started scan is over: not active any more, and the scan slot is free again."""
+    async def finish(self, cancel_event: asyncio.Event | None = None) -> None:
+        """The started scan is over: the scan slot is free again, then it is no longer active.
+
+        The slot goes first and by the scan's own event: once ``is_active`` is False a new start
+        may replace ``self.cancel_event``, and releasing by that one would keep the slot taken.
+        """
+        await scan_slot.release(cancel_event or self.cancel_event)
         await self.set_active(False)
-        await scan_slot.release(self.cancel_event)
 
     async def add_client(self, ws: WebSocket) -> None:
         async with self._lock:
@@ -313,9 +317,10 @@ async def start_dashboard_scan_api(request: ScanRequest, background_tasks: Backg
     if not await state.try_start():
         return {"status": "error", "message": "A scan is already in progress"}
     cancel_event = state.cancel_event
-    state.last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Dashboard Scan...", progress=0)
-    await state.broadcast(state.last_progress)
-    
+    # No await until the task below exists: its finally is what frees the scan slot again
+    initial = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Dashboard Scan...", progress=0)
+    state.last_progress = initial
+
     async def progress_cb(msg: str):
         status = ScanStatus.RUNNING
         if msg == "EVENT:RELOAD_DEVICES":
@@ -325,6 +330,7 @@ async def start_dashboard_scan_api(request: ScanRequest, background_tasks: Backg
 
     async def run_dashboard_task():
         try:
+            await state.broadcast(initial)
             subnets = await _requested_or_enabled_subnets(request)
             found_count = await run_dashboard_scan(subnets, progress_callback=progress_cb, cancel_event=cancel_event)
             # Completed also when Stop came too late to change anything: the status matches what the scan did
@@ -339,7 +345,7 @@ async def start_dashboard_scan_api(request: ScanRequest, background_tasks: Backg
             logger.error("Dashboard scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.FAILED, message=f"Scan error: {str(e)}"))
         finally:
-            await state.finish()
+            await state.finish(cancel_event)
 
     state.task = asyncio.create_task(run_dashboard_task())
     return {"status": "ok", "message": "Dashboard scan started"}
@@ -360,9 +366,9 @@ async def start_scan(request: ScanRequest, admin: str = Depends(get_current_admi
     if not await state.try_start():
         return {"status": "error", "message": "Scan already in progress"}
     cancel_event = state.cancel_event
-
-    state.last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Planner Scan...", progress=0)
-    await state.broadcast(state.last_progress)
+    # No await until the task below exists: its finally is what frees the scan slot again
+    initial = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Planner Scan...", progress=0)
+    state.last_progress = initial
 
     # Every update carries the host count, so the setup wizard and the scan strip can show it
     counts = {"subnet": "", "scanned": 0, "total": 0}
@@ -387,6 +393,7 @@ async def start_scan(request: ScanRequest, admin: str = Depends(get_current_admi
 
     async def run_scan_task():
         try:
+            await state.broadcast(initial)
             subnets = await _requested_or_enabled_subnets(request)
             found_count = await run_planner_scan(
                 subnets, progress_callback=progress_cb, hosts_callback=hosts_cb, cancel_event=cancel_event,
@@ -398,7 +405,7 @@ async def start_scan(request: ScanRequest, admin: str = Depends(get_current_admi
             logger.error("Manual scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.FAILED, message=f"Scan error: {str(e)}"))
         finally:
-            await state.finish()
+            await state.finish(cancel_event)
 
     state.task = asyncio.create_task(run_scan_task())
     return {"status": "ok", "message": "Planner scan started"}
