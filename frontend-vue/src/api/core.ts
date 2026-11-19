@@ -187,9 +187,11 @@ export const api = {
   stopScan: () => request<{ status: string }>('/api/scanner/stop', { method: 'POST' }),
   getScanStatus: () => request<import('../types').ScanProgress>('/api/scanner/status'),
   getDiscoveredHosts: () => request<import('../types').DiscoveredHost[]>('/api/scanner/discovered'),
-  scanIp: (ip: string) => request<import('../types').DiscoveredHost>(`/api/scanner/scan-ip?ip=${ip}`),
+  // POST: the GET variants only take a Bearer token, so a link cannot start a scan (CSRF)
+  scanIp: (ip: string) =>
+    request<import('../types').DiscoveredHost>('/api/scanner/scan-ip', { method: 'POST', body: JSON.stringify({ ip }) }),
   liveDiscovery: (data: { subnets: string[] }) =>
-    request<import('../types').DiscoveredHost[]>(`/api/scanner/live-discovery?subnets=${data.subnets.join(',')}`),
+    request<import('../types').DiscoveredHost[]>('/api/scanner/live-discovery', { method: 'POST', body: JSON.stringify(data) }),
   patchDiscoveredHost: (id: number, data: { custom_name?: string; is_monitored?: boolean; is_reserved?: boolean }) =>
     request<import('../types').DiscoveredHost>(`/api/scanner/discovered/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   refreshDiscoveredHost: (id: number) =>

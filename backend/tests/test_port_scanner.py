@@ -163,6 +163,11 @@ class FakeProc:
     def kill(self):
         self.killed = True
 
+    async def wait(self):
+        if self.terminated or self.killed:
+            self.returncode = -9 if self.killed else -15
+        return self.returncode
+
 
 @pytest.mark.asyncio
 async def test_run_nmap_async_returns_the_process_output(monkeypatch):
@@ -180,7 +185,36 @@ async def test_run_nmap_async_survives_a_communication_error(monkeypatch):
     proc = FakeProc(communicate=broken)
     monkeypatch.setattr(ps.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc))
 
-    assert await ps._run_nmap_async(["nmap", IP], None, IP) == (b"", b"", None)
+    assert await ps._run_nmap_async(["nmap", IP], None, IP) == (b"", b"", -15)
+    assert proc.terminated  # nmap does not keep running behind the error
+
+
+@pytest.mark.asyncio
+async def test_run_nmap_async_stops_and_reaps_nmap_after_the_timeout(monkeypatch):
+    """A timed-out nmap used to stay behind as a zombie process."""
+    async def hangs():
+        await asyncio.sleep(3600)
+
+    proc = FakeProc(communicate=hangs)
+    monkeypatch.setattr(ps.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc))
+    monkeypatch.setattr(ps, "NMAP_PORT_SCAN_TIMEOUT", 0.01)
+
+    assert await ps._run_nmap_async(["nmap", IP], None, IP) == (b"", b"", -15)
+    assert proc.terminated and not proc.killed
+
+
+@pytest.mark.asyncio
+async def test_terminate_process_kills_what_ignores_sigterm():
+    class Stubborn(FakeProc):
+        async def wait(self):
+            if self.killed:
+                self.returncode = -9
+                return -9
+            await asyncio.sleep(3600)
+
+    proc = Stubborn()
+    await ps.terminate_process(proc, grace=0.01)
+    assert proc.terminated and proc.killed and proc.returncode == -9
 
 
 @pytest.mark.asyncio

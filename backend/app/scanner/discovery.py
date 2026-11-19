@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 # Local imports
 from app.scanner.utils import check_port_async, ping_host_async
 from app.scanner.arp import resolve_mac_addresses, trigger_arp_probe
+from app.scanner.port_scanner import terminate_process
 
 # Standard Logger setup
 logger = logging.getLogger(__name__)
@@ -100,8 +101,17 @@ async def _run_sync_nmap_fallback(cmd_args: List[str], discovered: List[Dict[str
         logger.error(f"Sync Nmap scan failed for targets: {cmd_args}")
 
 
-async def _scan_network_once(network: str, target_ips: List[str], dns_server: Optional[str], discovered: List[Dict[str, Any]], host_found_callback):
-    """Run a single async Nmap pass over one network; sync mode when unsupported."""
+# A ping sweep of one /24 normally takes seconds; a hanging nmap (unreachable DNS
+# server, a firewall dropping probes) must not keep the scan "running" forever
+NMAP_DISCOVERY_TIMEOUT = 300.0
+
+
+async def _scan_network_once(network: str, target_ips: List[str], dns_server: Optional[str], discovered: List[Dict[str, Any]], host_found_callback, cancel_event: Optional[asyncio.Event] = None):
+    """Run a single async Nmap pass over one network; sync mode when unsupported.
+
+    The pass ends at NMAP_DISCOVERY_TIMEOUT or as soon as ``cancel_event`` fires; nmap is
+    then stopped and reaped. Hosts reported until then are kept.
+    """
     cmd_args = _build_nmap_args(network, target_ips, dns_server)
 
     try:
@@ -110,18 +120,41 @@ async def _scan_network_once(network: str, target_ips: List[str], dns_server: Op
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+    except (NotImplementedError, AttributeError):
+        # FALLBACK: Sync mode if async subprocess is not supported (e.g. some Windows loops)
+        await _run_sync_nmap_fallback(cmd_args, discovered, host_found_callback)
+        return
 
+    async def _run() -> None:
         await _read_nmap_stream(proc.stdout, discovered, host_found_callback)
         # communicate() returns (stdout, stderr); stdout was already consumed above
         _, stderr_data = await proc.communicate()
-
         if proc.returncode != 0:
             err_msg = stderr_data.decode(errors='ignore')
             logger.warning(f"Nmap (async) failed with code {proc.returncode}: {err_msg}")
 
-    except (NotImplementedError, AttributeError):
-        # FALLBACK: Sync mode if async subprocess is not supported (e.g. some Windows loops)
-        await _run_sync_nmap_fallback(cmd_args, discovered, host_found_callback)
+    run = asyncio.ensure_future(_run())
+    waiters = {run}
+    cancel_wait = asyncio.ensure_future(cancel_event.wait()) if cancel_event else None
+    if cancel_wait:
+        waiters.add(cancel_wait)
+    try:
+        done, _ = await asyncio.wait(waiters, timeout=NMAP_DISCOVERY_TIMEOUT, return_when=asyncio.FIRST_COMPLETED)
+        if run in done:
+            run.result()
+            return
+        if cancel_wait is not None and cancel_wait in done:
+            logger.info("Nmap discovery of %s cancelled; stopping it", network)
+        else:
+            logger.warning("Nmap discovery of %s timed out after %ss; stopping it", network, NMAP_DISCOVERY_TIMEOUT)
+    finally:
+        if not run.done():
+            run.cancel()
+            await asyncio.gather(run, return_exceptions=True)
+        if cancel_wait is not None and not cancel_wait.done():
+            cancel_wait.cancel()
+            await asyncio.gather(cancel_wait, return_exceptions=True)
+        await terminate_process(proc)
 
 
 async def _nmap_discovery(discovered: List[Dict[str, Any]], target_ips: List[str], dns_server: Optional[str], cancel_event: Optional[asyncio.Event], host_found_callback):
@@ -134,7 +167,7 @@ async def _nmap_discovery(discovered: List[Dict[str, Any]], target_ips: List[str
             if network.startswith("169.254."):  # Skip link-local
                 continue
 
-            await _scan_network_once(network, network_ips, dns_server, discovered, host_found_callback)
+            await _scan_network_once(network, network_ips, dns_server, discovered, host_found_callback, cancel_event)
     except Exception as e:
         logger.error(f"Nmap discovery encountered a fatal error: {e}", exc_info=True)
 
