@@ -46,6 +46,17 @@ def test_the_setting_names_the_trusted_proxies(tmp_path):
     assert allowed == "172.18.0.0/16,10.0.0.2"
 
 
+@pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
+def test_an_existing_forwarded_allow_ips_is_kept_without_the_setting(tmp_path):
+    allowed, _ = _run(tmp_path, FORWARDED_ALLOW_IPS="10.0.0.2")
+    assert allowed == "10.0.0.2"
+    empty, _ = _run(tmp_path, FORWARDED_ALLOW_IPS="")
+    assert empty == ""
+    # The GravityLAN setting wins over it
+    allowed, _ = _run(tmp_path, FORWARDED_ALLOW_IPS="10.0.0.2", GRAVITYLAN_TRUSTED_PROXIES="172.18.0.0/16")
+    assert allowed == "172.18.0.0/16"
+
+
 def test_the_setting_is_a_known_option(monkeypatch):
     """An .env file with the variable must not fail the settings validation."""
     monkeypatch.setenv("GRAVITYLAN_TRUSTED_PROXIES", "172.18.0.0/16")

@@ -59,11 +59,37 @@ def _build_nmap_args(network: str, target_ips: List[str], dns_server: Optional[s
     return cmd_args
 
 
-def _run_sync_nmap(cmd_args: List[str]):
-    """Sync subprocess fallback used when async subprocess is unsupported."""
+# A ping sweep of one /24 normally takes seconds; a hanging nmap (unreachable DNS
+# server, a firewall dropping probes) must not keep the scan "running" forever
+NMAP_DISCOVERY_TIMEOUT = 300.0
+
+
+def _run_sync_nmap(cmd_args: List[str], timeout: Optional[float] = None, cancel_event: Optional[asyncio.Event] = None):
+    """Sync subprocess fallback used when async subprocess is unsupported.
+
+    Bounded like the async path: nmap is stopped and reaped at ``timeout`` or once
+    ``cancel_event`` is set (checked twice a second from this worker thread).
+    """
     import subprocess
-    res = subprocess.run(cmd_args, capture_output=True, shell=False, text=True, errors='ignore')
-    return res.stdout, res.returncode
+    import time
+
+    deadline = time.monotonic() + (timeout if timeout is not None else NMAP_DISCOVERY_TIMEOUT)
+    proc = subprocess.Popen(cmd_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, text=True, errors='ignore')
+    while True:
+        try:
+            stdout, _ = proc.communicate(timeout=0.5)
+            return stdout, proc.returncode
+        except subprocess.TimeoutExpired:
+            if time.monotonic() < deadline and not (cancel_event and cancel_event.is_set()):
+                continue
+        logger.warning("Nmap (sync) discovery stopped: %s", "cancelled" if cancel_event and cancel_event.is_set() else "timed out")
+        proc.terminate()
+        try:
+            stdout, _ = proc.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, _ = proc.communicate()
+        return stdout, proc.returncode
 
 
 async def _record_found_host(discovered: List[Dict[str, Any]], ip_addr: str, hostname: Optional[str], host_found_callback):
@@ -88,10 +114,12 @@ async def _read_nmap_stream(stream: asyncio.StreamReader, discovered: List[Dict[
             await _record_found_host(discovered, ip_addr, hostname, host_found_callback)
 
 
-async def _run_sync_nmap_fallback(cmd_args: List[str], discovered: List[Dict[str, Any]], host_found_callback):
+async def _run_sync_nmap_fallback(cmd_args: List[str], discovered: List[Dict[str, Any]], host_found_callback, cancel_event: Optional[asyncio.Event] = None):
     """Execute the sync nmap path (NotImplementedError/AttributeError fallback)."""
     loop = asyncio.get_event_loop()
-    stdout_str, returncode = await loop.run_in_executor(None, _run_sync_nmap, cmd_args)
+    stdout_str, returncode = await loop.run_in_executor(
+        None, _run_sync_nmap, cmd_args, NMAP_DISCOVERY_TIMEOUT, cancel_event
+    )
 
     if returncode == 0:
         for hostname, ip_addr, _ in _NMAP_REPORT_RE.findall(stdout_str):
@@ -99,11 +127,6 @@ async def _run_sync_nmap_fallback(cmd_args: List[str], discovered: List[Dict[str
             await _record_found_host(discovered, ip_addr, hostname, host_found_callback)
     else:
         logger.error(f"Sync Nmap scan failed for targets: {cmd_args}")
-
-
-# A ping sweep of one /24 normally takes seconds; a hanging nmap (unreachable DNS
-# server, a firewall dropping probes) must not keep the scan "running" forever
-NMAP_DISCOVERY_TIMEOUT = 300.0
 
 
 async def _scan_network_once(network: str, target_ips: List[str], dns_server: Optional[str], discovered: List[Dict[str, Any]], host_found_callback, cancel_event: Optional[asyncio.Event] = None):
@@ -122,7 +145,7 @@ async def _scan_network_once(network: str, target_ips: List[str], dns_server: Op
         )
     except (NotImplementedError, AttributeError):
         # FALLBACK: Sync mode if async subprocess is not supported (e.g. some Windows loops)
-        await _run_sync_nmap_fallback(cmd_args, discovered, host_found_callback)
+        await _run_sync_nmap_fallback(cmd_args, discovered, host_found_callback, cancel_event)
         return
 
     async def _run() -> None:

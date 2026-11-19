@@ -299,7 +299,9 @@ async def get_bearer_admin(
                 "Browser sessions must use the POST variant."
             )
         )
-    return await _authenticate_bearer(db, authorization, conn)
+    identity = await _authenticate_bearer(db, authorization, conn)
+    remember_actor(conn, identity)
+    return identity
 
 async def authenticate_websocket(
     websocket: WebSocket,

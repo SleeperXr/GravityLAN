@@ -80,7 +80,33 @@ async def test_config_get_with_the_master_token_is_audited(client, db, device):
 
     assert response.status_code == 200
     events = await _audit_actions(db, "agent.config_download")
-    assert [(e.device_id, e.detail) for e in events] == [(device.id, "master token")]
+    assert [(e.device_id, e.detail, e.actor) for e in events] == [(device.id, "master token", "master")]
+
+
+@pytest.mark.asyncio
+async def test_config_get_checks_the_bearer_token_even_with_a_valid_cookie(client, db, device):
+    """The cookie used to be checked first, so any Bearer value passed next to a session."""
+    _login(client)
+    response = await client.get(
+        f"/api/agent/download/config/{device.id}", headers={"Authorization": "Bearer not-the-master-token"}
+    )
+    assert response.status_code in (401, 403)
+    assert (await db.execute(select(AgentToken).where(AgentToken.device_id == device.id))).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_config_download_with_an_install_code_is_audited(client, db, device):
+    from app.services.enrollment_service import enrollment_store
+
+    code = enrollment_store.issue(device.id)
+    response = await client.get(f"/api/agent/download/config/{device.id}", params={"code": code})
+    assert response.status_code == 200
+    bad = await client.get(f"/api/agent/download/config/{device.id}", params={"code": code})
+    assert bad.status_code == 403
+
+    events = await _audit_actions(db, "agent.config_download")
+    assert [(e.device_id, e.detail, e.actor) for e in events] == [(device.id, "install code", "install script")]
+    assert code not in str([(e.detail, e.target) for e in events])
 
 
 # --- scanner ------------------------------------------------------------------

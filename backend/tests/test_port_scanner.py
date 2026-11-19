@@ -152,6 +152,9 @@ class FakeProc:
         self.terminated = self.killed = False
 
     async def communicate(self):
+        if self.terminated or self.killed:
+            self.returncode = -9 if self.killed else -15
+            return b"", b""
         if self._communicate:
             return await self._communicate()
         self.returncode = self._final
@@ -206,10 +209,10 @@ async def test_run_nmap_async_stops_and_reaps_nmap_after_the_timeout(monkeypatch
 @pytest.mark.asyncio
 async def test_terminate_process_kills_what_ignores_sigterm():
     class Stubborn(FakeProc):
-        async def wait(self):
+        async def communicate(self):
             if self.killed:
                 self.returncode = -9
-                return -9
+                return b"", b""
             await asyncio.sleep(3600)
 
     proc = Stubborn()
@@ -269,3 +272,19 @@ async def test_cancellation_leaves_a_finished_nmap_alone():
 @pytest.mark.asyncio
 async def test_no_cancel_event_returns_at_once():
     await asyncio.wait_for(ps._wait_for_cancel(None, FakeProc()), timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_terminate_process_gives_up_waiting_on_a_process_that_never_exits(caplog):
+    """Cleanup is bounded: a scan end or shutdown must not hang on an unkillable process."""
+    class Unkillable(FakeProc):
+        async def communicate(self):
+            await asyncio.sleep(3600)
+
+        async def wait(self):
+            await asyncio.sleep(3600)
+
+    proc = Unkillable()
+    await asyncio.wait_for(ps.terminate_process(proc, grace=0.01, reap_timeout=0.01), timeout=1.0)
+    assert proc.terminated and proc.killed
+    assert "did not exit" in caplog.text

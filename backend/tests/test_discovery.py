@@ -275,6 +275,9 @@ class HangingProc:
         await asyncio.sleep(3600)
 
     async def communicate(self):
+        if self.terminated:
+            self.returncode = -15
+            return b"", b""
         await asyncio.sleep(3600)
 
     def terminate(self):
@@ -320,3 +323,38 @@ async def test_cancelling_stops_a_running_nmap_at_once():
         await asyncio.wait_for(task, timeout=1.0)
 
     assert proc.terminated
+
+
+def test_the_sync_fallback_stops_nmap_at_the_timeout():
+    """Without async subprocesses (some Windows loops) a hanging nmap is bounded as well."""
+    import sys
+    import time
+    from app.scanner import discovery
+
+    started = time.monotonic()
+    stdout, returncode = discovery._run_sync_nmap([sys.executable, "-c", "print('x', flush=True); import time; time.sleep(30)"], timeout=0.3)
+    assert time.monotonic() - started < 10
+    assert returncode != 0
+    assert "x" in stdout
+
+
+def test_the_sync_fallback_stops_nmap_when_the_scan_is_cancelled():
+    import sys
+    import threading
+    import time
+    from app.scanner import discovery
+
+    cancel = asyncio.Event()
+    threading.Timer(0.2, cancel.set).start()
+    started = time.monotonic()
+    _, returncode = discovery._run_sync_nmap([sys.executable, "-c", "import time; time.sleep(30)"], timeout=60, cancel_event=cancel)
+    assert time.monotonic() - started < 10
+    assert returncode != 0
+
+
+def test_the_sync_fallback_returns_a_finished_scan_unchanged():
+    import sys
+    from app.scanner import discovery
+
+    stdout, returncode = discovery._run_sync_nmap([sys.executable, "-c", "print('Nmap scan report for 192.168.1.10')"], timeout=30)
+    assert returncode == 0 and "192.168.1.10" in stdout

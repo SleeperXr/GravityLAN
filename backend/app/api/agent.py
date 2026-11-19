@@ -28,7 +28,7 @@ from app.models.agent import AgentConfig, DeviceMetrics, AgentToken
 from app.models.device import Device
 from app.models.ssh import SshKnownHost
 from app.services.ssh_utils import PinnedHostKey, TofuHostKeyPolicy
-from app.api.auth import get_current_admin
+from app.api.auth import get_bearer_admin, get_current_admin
 from app.schemas.agent import (
     AgentReportPayload,
     AgentReportResponse,
@@ -515,7 +515,9 @@ async def download_agent_config(
     if code is not None:
         if not enrollment_store.consume(code, device_id):
             raise HTTPException(status_code=403, detail="Invalid, expired or already used enrollment code")
-        return await _issue_agent_config(db, device_id)
+        response = await _issue_agent_config(db, device_id)
+        await audit(request, "agent.config_download", device_id=device_id, detail="install code", actor="install script")
+        return response
 
     if not (authorization and authorization.startswith("Bearer ")):
         if request.cookies.get("gravitylan_token"):
@@ -524,7 +526,8 @@ async def download_agent_config(
                 detail="Browser sessions download the agent configuration with POST and password confirmation.",
             )
         raise HTTPException(status_code=401, detail="Not authenticated")
-    caller = await get_current_admin(conn=request, authorization=authorization, token=None, db=db)
+    # Only the header counts: a valid session cookie next to an invalid token must not pass
+    caller = await get_bearer_admin(conn=request, authorization=authorization, db=db)
     if caller.startswith("api_token:"):
         raise HTTPException(status_code=403, detail="Read-only API tokens cannot export agent configurations")
 

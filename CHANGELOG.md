@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- `GRAVITYLAN_TRUSTED_PROXIES`: behind a reverse proxy, its addresses or networks. uvicorn then takes the client address from `X-Forwarded-For` for requests from these addresses, so the login limit, the audit log, the SSH ticket binding and agent IPs see the real client instead of the proxy. Without it only localhost is trusted, as before.
+- `GRAVITYLAN_TRUSTED_PROXIES`: behind a reverse proxy, its addresses or networks. uvicorn then takes the client address from `X-Forwarded-For` for requests from these addresses, so the login limit, the audit log, the SSH ticket binding and agent IPs see the real client instead of the proxy. Without it an existing `FORWARDED_ALLOW_IPS` still applies, and otherwise only localhost is trusted, as before.
 
 ### Fixed
 - Port scans: an nmap that runs past its 45-second limit, or fails while it runs, is now stopped and reaped instead of staying behind as a process. The ping sweep of the discovery stops after 5 minutes per network and at once when a scan is cancelled; before, a hanging nmap kept the scan "running" until a restart. Hosts it reported until then are kept.
@@ -13,10 +13,10 @@ All notable changes to this project will be documented in this file.
 - Agent scanner relay: MAC addresses are stored in lower case, like the local scanner does, and MAC matching ignores case. Before, a host the agent relay saw first (upper case) and a later local scan (lower case) could become two entries, or the MAC was rewritten on every report. Upper-case MACs already in the database are still matched.
 
 ### Security
-- Downloading an agent configuration (`/api/agent/download/config/{id}`) replaces the agent's token. A browser now does that with `POST` after password confirmation (step-up "remote"); `GET` takes only an install code or the master token in the `Authorization` header. A link on another site can no longer lock a running agent out via the session cookie. Every download outside the install script is recorded in the audit log.
+- Downloading an agent configuration (`/api/agent/download/config/{id}`) replaces the agent's token. A browser now does that with `POST` after password confirmation (step-up "remote"); `GET` takes only an install code or the master token in the `Authorization` header. A link on another site can no longer lock a running agent out via the session cookie. Every download, including the install script's, is recorded in the audit log.
 - `GET /api/scanner/scan-ip` and `GET /api/scanner/live-discovery` start scans and write to the database, so they now only take a Bearer token; GravityUI uses the new `POST` routes. A link on another site can no longer start a scan with your session.
 - Backup import is refused to API tokens, also with `backup:write`, like export and database reset already were: it overwrites the whole database. Use a browser session (with password confirmation) or the master token.
-- A request that fails validation (HTTP 422) no longer writes the submitted values to the log, the live log or the response, only the field, the error type and the message. Pydantic put the raw value there, such as a too-short password or a router secret. The DNS server check no longer quotes the rejected value in its message either.
+- A request that fails validation (HTTP 422) no longer writes the submitted values to the log, the live log or the response, only the field, the error type and the message. Pydantic put the raw value there, such as a too-short password or a router secret. The DNS server, subnet, gateway and interface address checks no longer quote the rejected value in their messages either.
 - The request log now masks `token=`, `patch_token=` and `ticket=` in addition to enrollment `code=`, and it also does that for WebSocket handshakes, which uvicorn logs with their full query string. API, master and agent tokens on the log and scanner WebSockets no longer appear in the log or the log viewer. Percent-encoded parameter names such as `%74oken=` are masked as well.
 
 ## [0.8.0] - 2026-11-15
