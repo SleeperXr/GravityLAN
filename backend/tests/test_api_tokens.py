@@ -74,3 +74,33 @@ async def test_api_token_lifecycle_and_permissions(client, db, admin_token):
         headers={"Authorization": f"Bearer {plaintext_token}"}
     )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_a_second_token_with_the_same_name_is_refused(client, db, admin_token):
+    """The name identifies the token in the audit log; two of a kind made /api/auth/me fail."""
+    auth = {"Authorization": f"Bearer {admin_token}"}
+    first = await client.post("/api/auth/tokens", json={"name": "Grafana"}, headers=auth)
+    assert first.status_code == 200
+    again = await client.post("/api/auth/tokens", json={"name": "Grafana"}, headers=auth)
+    assert again.status_code == 409
+    rows = (await db.execute(select(ApiToken).where(ApiToken.name == "Grafana"))).scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_me_reports_the_scopes_of_the_token_sent_even_beside_an_old_duplicate_name(client, db, admin_token):
+    """Older instances may hold two tokens of one name; /me must neither fail nor mix them up."""
+    auth = {"Authorization": f"Bearer {admin_token}"}
+    created = await client.post(
+        "/api/auth/tokens", json={"name": "Home Assistant", "scopes": ["devices:read"]}, headers=auth,
+    )
+    sent = created.json()["token"]
+    # A duplicate from before names had to be unique, with other scopes
+    db.add(ApiToken(name="Home Assistant", token_hash="0" * 64, prefix="gl_pat_0...", is_active=True,
+                    scopes="devices:read,devices:write"))
+    await db.commit()
+
+    me = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {sent}"})
+    assert me.status_code == 200
+    assert me.json() == {"scopes": ["devices:read"]}

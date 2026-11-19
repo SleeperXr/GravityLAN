@@ -457,7 +457,7 @@ async def test_purge_device_and_all(client, db, admin_token):
 
 async def _api_token(client, admin_token, scopes) -> str:
     res = await client.post("/api/auth/tokens", headers={"Authorization": f"Bearer {admin_token}"},
-                            json={"name": "automation", "scopes": scopes})
+                            json={"name": "automation " + "+".join(scopes), "scopes": scopes})  # names are unique
     assert res.status_code == 200
     return res.json()["token"]
 

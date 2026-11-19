@@ -140,8 +140,36 @@ def _derive_v2(secret: bytes) -> tuple[bytes, bytes, bytes]:
     return key[:32], b"\0" * 16, _mac_key_v2(secret)
 
 
+# The Argon2 cost comes from the uploaded file. PuTTYgen writes 8192 KiB, 1 lane and a pass count
+# tuned to about 0.1 s; these limits leave ample room for keys made with raised settings, while a
+# crafted file can no longer make the server allocate gigabytes or hash for minutes.
+MAX_ARGON2_MEMORY_KIB = 256 * 1024
+MAX_ARGON2_PASSES = 64
+MAX_ARGON2_PARALLELISM = 8
+
+
+def _argon2_parameters(headers: dict[str, str]) -> tuple[bytes, int, int, int]:
+    """(salt, passes, memory KiB, parallelism) of a v3 key, within the limits above."""
+    try:
+        salt = bytes.fromhex(headers["Argon2-Salt"])
+        passes = int(headers["Argon2-Passes"])
+        memory = int(headers["Argon2-Memory"])
+        parallelism = int(headers["Argon2-Parallelism"])
+    except (KeyError, ValueError) as exc:
+        raise PpkError("PuTTY key is corrupt (key derivation parameters).") from exc
+    if not (1 <= passes <= MAX_ARGON2_PASSES and 1 <= parallelism <= MAX_ARGON2_PARALLELISM
+            and 8 * parallelism <= memory <= MAX_ARGON2_MEMORY_KIB):
+        raise PpkError(
+            "PuTTY key uses key derivation settings outside what GravityLAN accepts "
+            f"(at most {MAX_ARGON2_MEMORY_KIB // 1024} MiB, {MAX_ARGON2_PASSES} passes, "
+            f"{MAX_ARGON2_PARALLELISM} lanes). Save it again in PuTTYgen with the default settings."
+        )
+    return salt, passes, memory, parallelism
+
+
 def _derive_v3(secret: bytes, headers: dict[str, str]) -> tuple[bytes, bytes, bytes]:
     try:
+        from argon2.exceptions import HashingError
         from argon2.low_level import Type, hash_secret_raw
     except ImportError as exc:  # pragma: no cover - argon2-cffi ships in the image
         raise PpkError("Encrypted PPK v3 keys need argon2-cffi on the server.") from exc
@@ -150,17 +178,18 @@ def _derive_v3(secret: bytes, headers: dict[str, str]) -> tuple[bytes, bytes, by
     kdf = headers.get("Key-Derivation", "")
     if kdf not in types:
         raise PpkError(f"PuTTY key uses unsupported key derivation '{kdf}'.")
+    salt, passes, memory, parallelism = _argon2_parameters(headers)
     try:
         material = hash_secret_raw(
             secret=secret,
-            salt=bytes.fromhex(headers["Argon2-Salt"]),
-            time_cost=int(headers["Argon2-Passes"]),
-            memory_cost=int(headers["Argon2-Memory"]),
-            parallelism=int(headers["Argon2-Parallelism"]),
+            salt=salt,
+            time_cost=passes,
+            memory_cost=memory,
+            parallelism=parallelism,
             hash_len=80,
             type=types[kdf],
         )
-    except (KeyError, ValueError) as exc:
+    except HashingError as exc:  # e.g. a salt argon2 refuses
         raise PpkError("PuTTY key is corrupt (key derivation parameters).") from exc
     return material[:32], material[32:48], material[48:80]
 

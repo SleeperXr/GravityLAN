@@ -179,27 +179,59 @@ def prepare_request_for_service(
     return url, headers, {"event": event_type, "timestamp": datetime.now(timezone.utc).isoformat(), "data": data}
 
 
-async def _blocked_target_reason(url: str) -> str | None:
-    """Why ``url`` must not be posted to, or None when it may."""
+async def _vet_target(url: str) -> tuple[str | None, str | None]:
+    """(why ``url`` must not be posted to, None) or (None, the checked address to connect to).
+
+    The post then goes to that very address: a second lookup by httpx could answer with another
+    one (DNS rebinding, e.g. 127.0.0.1 after a public address passed the check).
+    """
     try:
         check_webhook_url(url)
     except ValueError as e:
-        return str(e)
+        return str(e), None
 
     parsed = urlparse(url)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     try:
         infos = await asyncio.get_running_loop().getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
-    except socket.gaierror:
-        return None  # httpx reports resolution failure
+    except (socket.gaierror, UnicodeError):
+        return f"{parsed.hostname} could not be resolved", None
+    addresses = []
     for *_, sockaddr in infos:
         try:
-            addr = ipaddress.ip_address(sockaddr[0])
+            addresses.append(ipaddress.ip_address(sockaddr[0].split("%", 1)[0]))
         except ValueError:
             continue
+    for addr in addresses:
         if is_blocked_webhook_ip(addr):
-            return f"{parsed.hostname} resolves to {addr}, a loopback, link-local or metadata address"
-    return None
+            return f"{parsed.hostname} resolves to {addr}, a loopback, link-local or metadata address", None
+    if not addresses:
+        return f"{parsed.hostname} could not be resolved", None
+    ipv4 = [a for a in addresses if a.version == 4]
+    return None, str((ipv4 or addresses)[0])
+
+
+async def _blocked_target_reason(url: str) -> str | None:
+    """Why ``url`` must not be posted to, or None when it may."""
+    return (await _vet_target(url))[0]
+
+
+def _pinned_request(url: str, address: str, headers: dict[str, str] | None) -> tuple[str, dict[str, str], dict]:
+    """The URL with ``address`` as host, plus the headers and extensions that keep the original name:
+    Host for the server and, over HTTPS, the TLS server name, so the certificate is still checked
+    against the host name and not the address."""
+    parsed = urlparse(url)
+    host = f"[{address}]" if ":" in address else address
+    netloc = f"{host}:{parsed.port}" if parsed.port else host
+    pinned_headers = dict(headers or {})
+    pinned_headers["Host"] = f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
+    extensions = {"sni_hostname": parsed.hostname} if parsed.scheme == "https" else {}
+    return urlunparse(parsed._replace(netloc=netloc)), pinned_headers, extensions
+
+
+def _is_delivered(status_code) -> bool:
+    """Only a 2xx answer delivers: redirects are not followed, so a 3xx has not reached the receiver."""
+    return isinstance(status_code, int) and 200 <= status_code < 300
 
 
 def _decrypt_token(sub: WebhookSubscription) -> str | None:
@@ -262,8 +294,8 @@ async def _execute_and_record_delivery(
             return False
 
         status_code = getattr(resp, "status_code", None)
-        # Only a real 1xx-3xx status counts as delivered; anything unreadable is a failed attempt
-        if isinstance(status_code, int) and status_code < 400:
+        # Only a 2xx status counts as delivered; a redirect or anything unreadable is a failed attempt
+        if _is_delivered(status_code):
             _record_success(entry)
             logger.debug("Notification Outbox: Successfully delivered event %s to %s", entry.event_type, eff_url)
             return True
@@ -447,17 +479,20 @@ async def _send_webhook_post(
     payload: dict | bytes,
     headers: dict[str, str] | None = None,
 ) -> httpx.Response | None:
-    """Sends a single POST request to the target webhook URL."""
-    reason = await _blocked_target_reason(url)
+    """Sends a single POST request to the target webhook URL, at the address that was checked."""
+    reason, address = await _vet_target(url)
     if reason:
         logger.warning("Webhook: refusing to post to '%s': %s", url, reason)
         return None
+    target, extensions = url, {}
+    if address:
+        target, headers, extensions = _pinned_request(url, address, headers)
     try:
         if isinstance(payload, bytes):
-            response = await client.post(url, content=payload, headers=headers)
+            response = await client.post(target, content=payload, headers=headers, extensions=extensions)
         else:
-            response = await client.post(url, json=payload, headers=headers)
-        if response.status_code >= 400:
+            response = await client.post(target, json=payload, headers=headers, extensions=extensions)
+        if not _is_delivered(response.status_code):
             logger.warning(
                 f"Webhook: Target URL '{url}' returned status code {response.status_code}"
             )

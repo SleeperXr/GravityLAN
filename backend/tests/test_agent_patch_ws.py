@@ -138,7 +138,7 @@ async def test_run_patches_websocket_success(monkeypatch):
     monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", _auth_ok)
     monkeypatch.setattr(agent_module, "list_device_updates", fake_probe)
     monkeypatch.setattr(agent_module, "run_ssh_command_stream", fake_run_stream)
-    monkeypatch.setattr(agent_module, "_clear_device_patch_state", lambda device_id: asyncio.sleep(0))
+    monkeypatch.setattr(agent_module, "_clear_device_patch_state", lambda device_id, mode="upgrade": asyncio.sleep(0))
 
     ws = FakeWebSocket(query_params={"patch_token": token})
     await agent_module.run_patches_websocket(ws, 5)
@@ -168,7 +168,7 @@ async def test_run_patches_websocket_security_only(monkeypatch):
     monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", _auth_ok)
     monkeypatch.setattr(agent_module, "list_device_updates", fake_probe)
     monkeypatch.setattr(agent_module, "run_ssh_command_stream", fake_run_stream)
-    monkeypatch.setattr(agent_module, "_clear_device_patch_state", lambda device_id: asyncio.sleep(0))
+    monkeypatch.setattr(agent_module, "_clear_device_patch_state", lambda device_id, mode="upgrade": asyncio.sleep(0))
 
     ws = FakeWebSocket(query_params={"patch_token": token})
     await agent_module.run_patches_websocket(ws, 5)
@@ -266,7 +266,7 @@ async def test_run_patches_websocket_runs_despite_failed_package_refresh(monkeyp
     monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", _auth_ok)
     monkeypatch.setattr(agent_module, "list_device_updates", fake_probe)
     monkeypatch.setattr(agent_module, "run_ssh_command_stream", fake_run_stream)
-    monkeypatch.setattr(agent_module, "_clear_device_patch_state", lambda device_id: asyncio.sleep(0))
+    monkeypatch.setattr(agent_module, "_clear_device_patch_state", lambda device_id, mode="upgrade": asyncio.sleep(0))
 
     ws = FakeWebSocket(query_params={"patch_token": token})
     await agent_module.run_patches_websocket(ws, 5)
@@ -348,7 +348,7 @@ async def test_patch_output_streams_in_order_without_orphan_tasks(monkeypatch):
 
     monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", _auth_ok)
     monkeypatch.setattr(agent_module, "list_device_updates", fake_probe)
-    monkeypatch.setattr(agent_module, "_clear_device_patch_state", lambda device_id: asyncio.sleep(0))
+    monkeypatch.setattr(agent_module, "_clear_device_patch_state", lambda device_id, mode="upgrade": asyncio.sleep(0))
 
     client = MagicMock()
     client.get_transport.return_value.open_session.return_value = _ssh_channel_with_chunks(
@@ -385,7 +385,7 @@ async def test_patch_run_survives_client_disconnect(monkeypatch):
             remaining_chunks_read.append(i)
         return True, "Success"
 
-    async def fake_clear(device_id):
+    async def fake_clear(device_id, mode="upgrade"):
         cleared.append(device_id)
 
     monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", _auth_ok)

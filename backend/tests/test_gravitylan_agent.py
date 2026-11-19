@@ -610,8 +610,41 @@ def test_report_sender_backoff_on_error(agent_mod):
 
     with patch.object(agent_mod.urllib.request, "urlopen", side_effect=URLError("down")):
         assert sender.send({"device_id": 1}) is None
+        assert sender.send({"device_id": 1}) is None
 
-    assert sender.consecutive_failures == 1
+    assert sender.consecutive_failures == 2
+    assert sender.backoff_seconds == 10
+
+
+def test_the_backoff_is_actually_waited_and_ends_with_a_success(agent_mod, monkeypatch):
+    """The backoff used to be logged only; the loop now waits it on top of the interval."""
+    config = _make_config(agent_mod)
+    config.interval = 5
+    orch = agent_mod.AgentOrchestrator(config)
+    monkeypatch.setattr(orch, "collect_all", lambda: {"device_id": 1})
+    responses = iter([None, None, {"ok": True}])
+    sleeps = []
+
+    def send(payload):
+        result = next(responses)
+        orch.reporter.backoff_seconds = 0 if result else orch.reporter.backoff_seconds + 5
+        return result
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 1 + 10 + 15 + 5:  # warm-up, two failed rounds, one good round
+            orch.running = False
+
+    monkeypatch.setattr(orch.reporter, "send", send)
+    monkeypatch.setattr(orch, "process_response", lambda response: None)
+    monkeypatch.setattr(orch.collectors["cpu_percent"], "collect", lambda config: None)
+    monkeypatch.setattr(orch.collectors["network"], "collect", lambda config: None)
+    monkeypatch.setattr(agent_mod.time, "sleep", sleep)
+
+    orch.run()
+
+    # after the 1st failure 5 s interval + 5 s backoff, after the 2nd 5 + 10, after the success 5
+    assert len(sleeps) == 1 + 10 + 15 + 5
 
 
 def test_orchestrator_collect_all(agent_mod, monkeypatch):

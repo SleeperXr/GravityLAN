@@ -248,10 +248,14 @@ async def test_deleting_an_unknown_token_is_a_404(db):
 
 @pytest.mark.asyncio
 async def test_me_reports_the_read_only_defaults_for_a_token_without_scopes(db):
-    db.add(ApiToken(name="reader", token_hash="hash", prefix="gl_pat", scopes=None))
-    await db.commit()
+    import hashlib
+    from types import SimpleNamespace
 
-    assert await auth.auth_me("api_token:reader", db) == {
+    db.add(ApiToken(name="reader", token_hash=hashlib.sha256(b"gl_pat_reader").hexdigest(), prefix="gl_pat", scopes=None))
+    await db.commit()
+    request = SimpleNamespace(headers={"authorization": "Bearer gl_pat_reader"})
+
+    assert await auth.auth_me(request, "api_token:reader", db) == {
         "scopes": ["devices:read", "topology:read", "network:read", "agent:read", "settings:read", "backup:read", "scanner:read"]
     }
 

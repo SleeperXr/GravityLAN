@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 # Constants & Logging
 # ---------------------------------------------------------------------------
 
-VERSION = "0.3.15"
+VERSION = "0.3.16"
 AGENT_NAME = "gravitylan-agent"
 DEFAULT_CONFIG_FILENAME = "agent.conf"
 DEFAULT_LOG_FILENAME = "gravitylan-agent.log"
@@ -993,6 +993,8 @@ class ReportSender:
         self.config = config
         self.base_url = f"{config.server_url}/api/agent/report"
         self.consecutive_failures = 0
+        # Extra wait before the next report after failures, on top of the interval (0 after a success)
+        self.backoff_seconds = 0
 
     def send(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Sends payload with a simple retry/backoff mechanism."""
@@ -1011,11 +1013,13 @@ class ReportSender:
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 self.consecutive_failures = 0
+                self.backoff_seconds = 0
                 return json.loads(resp.read().decode("utf-8"))
         except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout) as e:
             self.consecutive_failures += 1
-            wait_time = min(self.consecutive_failures * 5, 60)
-            logger.warning("Report delivery failed (%s). Backing off for %ds.", e, wait_time)
+            # The orchestrator waits this long on top of the interval (it used to be logged only)
+            self.backoff_seconds = min(self.consecutive_failures * 5, 60)
+            logger.warning("Report delivery failed (%s). Backing off for %ds.", e, self.backoff_seconds)
             return None
         except Exception as e:
             logger.error("Unexpected error in ReportSender: %s", e)
@@ -1131,8 +1135,8 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.error("Error in orchestrator loop: %s", e)
 
-            # Responsive sleep
-            for _ in range(self.config.interval):
+            # Responsive sleep: the interval, plus the backoff after failed reports
+            for _ in range(self.config.interval + self.reporter.backoff_seconds):
                 if not self.running: break
                 time.sleep(1)
 

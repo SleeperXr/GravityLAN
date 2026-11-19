@@ -91,7 +91,7 @@ async def test_stream_update_audits_and_clears_only_on_success(monkeypatch, succ
     async def audit(ws, action, result, **kw):
         calls["audit"].append((action, result, kw["target"], kw["detail"]))
 
-    async def clear(device_id):
+    async def clear(device_id, mode="upgrade"):
         calls["cleared"].append(device_id)
 
     async def remember(host, port, captured):
@@ -486,3 +486,40 @@ async def test_resolve_patch_credentials_stored_key_success(db, monkeypatch):
     creds = await ap._resolve_patch_credentials(db, device, req, http_req)
     assert creds[4] == "KEY_DATA"
     assert creds[5] == "PASSPHRASE"
+
+
+@pytest.mark.parametrize("mode, before, after", [
+    ("upgrade", (5, 2), (0, 0)),
+    ("security-only", (5, 2), (3, 0)),   # the three regular updates are still pending
+    ("security-only", (None, None), (0, 0)),
+    ("security-only", (1, 4), (0, 0)),   # never below zero
+])
+def test_counts_after_a_run_keep_what_security_only_did_not_install(mode, before, after):
+    assert ap._counts_after_run(*before, mode) == after
+
+
+@pytest.mark.asyncio
+async def test_a_security_only_run_leaves_the_other_updates_pending(monkeypatch):
+    metric = type("Metric", (), {"patch_available": 5, "patch_security": 2})()
+
+    class Session:
+        async def execute(self, *a, **k):
+            return type("R", (), {"scalars": lambda self: type("S", (), {"first": lambda self: metric})()})()
+
+        async def commit(self):
+            pass
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def session():
+        yield Session()
+
+    monkeypatch.setattr(ap, "async_session", session)
+    monkeypatch.setattr(ap, "_latest_metrics", {7: {"patch_available": 5, "patch_security": 2}})
+    monkeypatch.setattr(ap, "_ws_subscribers", {})
+
+    await ap._clear_device_patch_state(7, mode="security-only")
+
+    assert (metric.patch_available, metric.patch_security) == (3, 0)
+    assert ap._latest_metrics[7] == {"patch_available": 3, "patch_security": 0}

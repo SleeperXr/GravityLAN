@@ -35,7 +35,8 @@ async def test_a_response_without_a_readable_status_is_no_delivery(monkeypatch, 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("code, delivered", [(200, True), (302, True), (404, False), (500, False)])
+# Redirects are not followed, so a 3xx has not reached the receiver
+@pytest.mark.parametrize("code, delivered", [(200, True), (204, True), (302, False), (404, False), (500, False)])
 async def test_a_real_status_decides(monkeypatch, code, delivered):
     async def post(client, url, body, headers=None):
         return SimpleNamespace(status_code=code, text="")
