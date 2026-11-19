@@ -79,6 +79,19 @@ def _audit_into_test_db(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_scan_slot(monkeypatch):
+    """The scan slot is process-wide; a scan one test left running must not refuse the next one's."""
+    import app.api.scanner as api_scanner
+    import app.scanner.scan_slot as slot_module
+    import app.scanner.scheduler as scheduler_module
+
+    fresh = slot_module.ScanSlot()
+    for module in (slot_module, api_scanner, scheduler_module):
+        monkeypatch.setattr(module, "scan_slot", fresh)
+    return fresh
+
+
+@pytest.fixture(autouse=True)
 def _reset_login_rate_limit():
     """Failed logins of one test must not lock the next one out (all use the same client IP)."""
     from app.api.auth import reset_login_rate_limit

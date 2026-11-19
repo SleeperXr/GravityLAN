@@ -8,6 +8,8 @@ from app.models.device import DeviceHistory
 from app.models.webhook import NotificationOutbox
 from app.scanner.planner import run_planner_scan, run_arp_only_scan
 from app.scanner.dashboard import run_dashboard_scan
+from app.scanner.discovery import ScanCancelled
+from app.scanner.scan_slot import SCHEDULED, scan_slot
 from app.scanner.subnets import get_enabled_subnets
 from app.scanner.utils import get_auto_scan_subnets
 from app.config import settings
@@ -47,6 +49,24 @@ async def _get_retention_days(db) -> int:
 async def _get_scan_subnets(db, auto_subnets: list[str]) -> list[str]:
     """Return the enabled subnets of the Subnet table, falling back to auto-detected local subnets."""
     return await get_enabled_subnets(db) or auto_subnets
+
+async def _run_in_scan_slot(label: str, scan) -> None:
+    """Run a scheduled subnet scan only while no other scan does (see app.scanner.scan_slot).
+
+    ``scan(cancel_event)`` is skipped when the slot is taken; a scan someone starts meanwhile
+    stops it (ScanCancelled), and the round simply ends.
+    """
+    cancel = await scan_slot.try_acquire(SCHEDULED)
+    if cancel is None:
+        logger.info("%s skipped: another scan is running", label)
+        return
+    try:
+        await scan(cancel)
+    except ScanCancelled:
+        logger.info("%s stopped to make way for a requested scan", label)
+    finally:
+        await scan_slot.release(cancel)
+
 
 class ScanScheduler:
     def __init__(self):
@@ -115,7 +135,9 @@ class ScanScheduler:
                     logger.info(f"Scheduled scan starting (Interval: {interval}m)")
                     if subnets:
                         logger.info(f"Scheduled Full Scan (Dashboard) starting for: {subnets}")
-                        await run_dashboard_scan(subnets)
+                        await _run_in_scan_slot(
+                            "Scheduled full scan", lambda cancel: run_dashboard_scan(subnets, cancel_event=cancel)
+                        )
 
                     # Wait for the next interval
                     await asyncio.sleep(interval * 60)
@@ -156,7 +178,10 @@ class ScanScheduler:
                     logger.info(f"Scheduled Quick Scan (Planner) starting (Interval: {interval}s)")
 
                     if subnets:
-                        await run_planner_scan(subnets, announce=False)
+                        await _run_in_scan_slot(
+                            "Scheduled quick check",
+                            lambda cancel: run_planner_scan(subnets, announce=False, cancel_event=cancel),
+                        )
 
                     await asyncio.sleep(interval)
                 else:

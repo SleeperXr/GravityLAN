@@ -70,7 +70,9 @@ async def test_full_scan_runs_and_sleeps_the_interval(monkeypatch, sched, no_db)
     await sched._loop()
 
     # Second round finds no subnets: no scan, but still the full interval
-    scan.assert_awaited_once_with(["192.0.2.0/24"])
+    scan.assert_awaited_once()
+    assert scan.await_args.args == (["192.0.2.0/24"],)
+    assert scan.await_args.kwargs["cancel_event"] is not None  # it ran in the scan slot
     assert sleeps == [300, 300]
 
 
@@ -93,7 +95,7 @@ async def test_full_scan_releases_the_session_before_scanning_and_sleeping(monke
     monkeypatch.setattr(scheduler_module, "_get_auto_scan_subnets", lambda: [])
     seen = {}
 
-    async def scan(subnets):
+    async def scan(subnets, cancel_event=None):
         seen["scan"] = len(open_sessions)
 
     async def sleep(seconds):

@@ -120,7 +120,7 @@ async def test_quick_loop_scans_every_enabled_subnet(monkeypatch, patch_async_se
     sched._running = True
     scanned = []
 
-    async def fake_planner_scan(subnets, announce=True):
+    async def fake_planner_scan(subnets, announce=True, cancel_event=None):
         scanned.append((subnets, announce))
         sched._running = False
 
