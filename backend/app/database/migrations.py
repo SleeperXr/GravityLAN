@@ -65,15 +65,21 @@ MIGRATIONS = [
 ]
 
 
-def _fuzzy_match(n1: str, n2: str) -> bool:
-    if not n1 or not n2: return False
-    s1 = n1.lower().replace("-", "").replace("_", "").replace(" ", "")
-    s2 = n2.lower().replace("-", "").replace("_", "").replace(" ", "")
-    return s1 in s2 or s2 in s1
+def _normalised_name(name: str | None) -> str:
+    return (name or "").lower().replace("-", "").replace("_", "").replace(" ", "")
+
+
+def _same_name(n1: str | None, n2: str | None) -> bool:
+    """Equal apart from case, '-', '_' and spaces. A substring was enough before, and "AP" found "backup-app"."""
+    s1, s2 = _normalised_name(n1), _normalised_name(n2)
+    return bool(s1) and s1 == s2
 
 
 def _build_docker_container_map() -> dict:
-    """Map running local Docker container names (lowercase) to their first IP."""
+    """Map the names of running local Docker containers (lowercase) to their first IP.
+
+    A Compose container is listed under its service name too ("lancache" for "stack-lancache-1").
+    """
     from app.services.docker_service import docker_service
 
     docker_container_map = {}
@@ -85,6 +91,9 @@ def _build_docker_container_map() -> dict:
             c_ips = c.get("ips", [])
             if c_name and c_ips and c.get("status") == "running":
                 docker_container_map[c_name.lower()] = c_ips[0]
+                service = c.get("service")
+                if service:
+                    docker_container_map.setdefault(service.lower(), c_ips[0])
         if docker_container_map:
             logger.info(f"Migration: Docker socket active. Found {len(docker_container_map)} running containers: {list(docker_container_map.keys())}")
     except Exception as e:
@@ -106,10 +115,10 @@ def _next_free_placeholder_ip(used_ips: set) -> str:
         counter += 1
 
 
-def _ip_from_docker_fuzzy(dev_name: str, docker_map: dict, used_ips: set, old_corrupted_ip: str):
-    """1a. Fuzzy match against running Docker container names."""
+def _ip_from_docker_name(dev_name: str, docker_map: dict, used_ips: set, old_corrupted_ip: str):
+    """1a. A running Docker container of the same name (see _same_name)."""
     for c_name, c_ip in docker_map.items():
-        if _fuzzy_match(dev_name, c_name) and _is_free(c_ip, used_ips, old_corrupted_ip):
+        if _same_name(dev_name, c_name) and _is_free(c_ip, used_ips, old_corrupted_ip):
             return c_ip
     return None
 
@@ -136,7 +145,7 @@ def _resolve_device_repair(dev, used_ips: set, docker_map: dict):
     """
     dev_name = (dev.display_name or dev.hostname or "").lower()
 
-    docker_ip = _ip_from_docker_fuzzy(dev_name, docker_map, used_ips, dev.ip)
+    docker_ip = _ip_from_docker_name(dev_name, docker_map, used_ips, dev.ip)
     if docker_ip:
         return docker_ip, True, False
 

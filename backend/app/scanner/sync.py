@@ -714,117 +714,45 @@ async def _sync_host_internal(db, host: dict, ctx: SyncContext | None = None):
     return await _sync_discovered(db, dev, match_type, hit, ctx)
 
 
-def _fuzzy_match(n1: str | None, n2: str | None) -> bool:
-    if not n1 or not n2:
-        return False
-    s1 = n1.lower().replace("-", "").replace("_", "").replace(" ", "")
-    s2 = n2.lower().replace("-", "").replace("_", "").replace(" ", "")
-    return s1 in s2 or s2 in s1
-
-
-async def _match_disc_for_container(db, ip: str, container_name: str | None):
-    disc = await _query_by_ip(db, DiscoveredHost, ip)
-    if disc or not container_name:
-        return disc
-    cand_discs = await _query_by_name(db, DiscoveredHost, container_name, (DiscoveredHost.custom_name, DiscoveredHost.hostname))
-    if not cand_discs:
-        return None
-    placeholder = next((c for c in cand_discs if getattr(c, "ip_placeholder", False)), None)
-    return placeholder or cand_discs[0]
-
-
-async def _match_dev_for_container(db, ip: str, container_name: str | None):
-    dev = await _query_by_ip(db, Device, ip)
-    if dev or not container_name:
-        return dev
-
-    res_all_devs = await db.execute(select(Device))
-    all_devices = res_all_devs.scalars().all()
-
-    cand_devs = [
-        d for d in all_devices
-        if _fuzzy_match(container_name, d.display_name) or _fuzzy_match(container_name, d.hostname)
-    ]
-    if not cand_devs:
-        return None
-    placeholder = next((d for d in cand_devs if getattr(d, "ip_placeholder", False)), None)
-    return placeholder or cand_devs[0]
-
-
-async def _relocate_conflicting_device(db, ip: str, used_ips: set[str]):
-    """Move any other device holding `ip` to a free placeholder IP. Does NOT commit."""
-    conflict_dev = await _query_by_ip(db, Device, ip)
-    if not conflict_dev:
-        return
-
-    conflict_dev.is_online = False
-    conflict_dev.ip_placeholder = True
-    counter = 0
-    while True:
-        cand_ip = f"0.0.0.{counter}"
-        if cand_ip not in used_ips:
-            conflict_dev.ip = cand_ip
-            used_ips.add(cand_ip)
-            break
-        counter += 1
-    await db.flush()
-
-
 async def _sync_container_discovered(db, ip: str, container_name: str | None) -> None:
-    """Mark the container's DiscoveredHost online at `ip`. Does NOT commit."""
-    disc = await _match_disc_for_container(db, ip, container_name)
+    """Mark the DiscoveredHost at the container's address online. Does NOT commit."""
+    disc = await _query_by_ip(db, DiscoveredHost, ip)
     if not disc:
         return
-    await _move_discovered_host(db, disc, ip)
     _mark_seen(disc)
     if not disc.custom_name or disc.custom_name == "Unknown":
         disc.custom_name = container_name
 
 
-async def _move_container_device(db, dev, ip: str, used_ips: set[str]) -> None:
-    """Give the container's Device the address `ip`, keeping `used_ips` current. Does NOT commit."""
-    # Clear conflict on target IP if held by another device
-    await _relocate_conflicting_device(db, ip, used_ips)
-
-    if dev.ip in used_ips:
-        used_ips.remove(dev.ip)
-    dev.old_ip = dev.ip
-    dev.ip = ip
-    used_ips.add(ip)
-    dev.ip_changed_at = datetime.now(timezone.utc)
-
-
-async def _sync_container_device(db, ip: str, container_name: str | None, used_ips: set[str]) -> None:
-    """Mark the container's monitored Device online at `ip`. Does NOT commit."""
-    dev = await _match_dev_for_container(db, ip, container_name)
+async def _sync_container_device(db, ip: str, container_name: str | None) -> None:
+    """Mark the Device at the container's address online. Does NOT commit."""
+    dev = await _query_by_ip(db, Device, ip)
     if not dev:
         return
-    if dev.ip != ip:
-        await _move_container_device(db, dev, ip, used_ips)
     _mark_seen(dev)
     dev.missed_scans = 0
     logger.info(f"Docker Sync: Marked container {container_name} ({ip}) as ONLINE")
 
 
-async def _sync_container_ip(db, ip: str, container_name: str | None, used_ips: set[str]):
+async def _sync_container_ip(db, ip: str, container_name: str | None):
     """Sync one container IP against DiscoveredHost and Device tables."""
     await _sync_container_discovered(db, ip, container_name)
-    await _sync_container_device(db, ip, container_name, used_ips)
+    await _sync_container_device(db, ip, container_name)
 
 
 async def sync_docker_containers(containers: list[dict]):
-    """
-    Syncs local Docker container statuses to the database.
-    If a container is 'running', it overrides the offline status in the DB
-    and updates device IP by matching either by IP or by container name.
+    """Mark the records at the addresses of running local containers as online.
+
+    Only the address links a container to a record. A name never moves one: matching a
+    container name as a substring of device names handed unrelated devices ("AP" in
+    "grafana-api") over to container addresses, kept them online there and hid their
+    outages. Placeholder records of containers are restored by name on start instead
+    (app.database.migrations), with exact names only.
     """
     if not containers:
         return
 
     async with async_session() as db:
-        res_all_ips = await db.execute(select(Device.ip))
-        used_ips = set(res_all_ips.scalars().all())
-
         for container in containers:
             ips = container.get("ips", [])
             is_running = container.get("status") == "running"
@@ -834,7 +762,7 @@ async def sync_docker_containers(containers: list[dict]):
                 continue
 
             for ip in ips:
-                await _sync_container_ip(db, ip, container_name, used_ips)
+                await _sync_container_ip(db, ip, container_name)
 
         await db.commit()
         discovery_cache.invalidate()
