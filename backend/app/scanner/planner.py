@@ -113,8 +113,8 @@ async def _get_subnet_dns_server(subnet: str):
     return servers.get(subnet)
 
 
-async def _scan_subnet_alive_hosts(subnet: str, dns_server):
-    """Fast ARP + Ping discovery over one subnet."""
+async def _scan_subnet_alive_hosts(subnet: str, dns_server, cancel_event: asyncio.Event | None = None):
+    """Fast ARP + Ping discovery over one subnet; ``cancel_event`` stops nmap early."""
     try:
         target_ips = scan_target_ips(subnet)
     except ValueError as e:
@@ -122,7 +122,7 @@ async def _scan_subnet_alive_hosts(subnet: str, dns_server):
         return []
 
     # No more immediate per-host callback to DB to prevent locks
-    return await discover_hosts_simple(target_ips, dns_server=dns_server)
+    return await discover_hosts_simple(target_ips, dns_server=dns_server, cancel_event=cancel_event)
 
 
 async def _cleanup_discovered_hosts(db, subnets: list[str], all_alive_ips: set):
@@ -239,14 +239,16 @@ def _target_count(subnet: str) -> int:
 
 
 async def _scan_and_resolve_subnet(
-    subnet: str, dns_server: str | None, progress_callback=None
+    subnet: str, dns_server: str | None, progress_callback=None, cancel_event: asyncio.Event | None = None
 ) -> list[dict]:
     """Fast discovery (ARP+Ping), MAC resolution, and DNS hostname resolution for one subnet."""
     if progress_callback:
         await progress_callback(f"Scanner: Scanning {subnet} (ARP + Ping)...")
 
     # 1. Fast Discovery (Nmap -sn -PR -PE)
-    alive_hosts = await _scan_subnet_alive_hosts(subnet, dns_server)
+    alive_hosts = await _scan_subnet_alive_hosts(subnet, dns_server, cancel_event)
+    if _cancelled(cancel_event):
+        return alive_hosts
 
     if progress_callback:
         await progress_callback(f"Scanner: Found {len(alive_hosts)} active hosts. Resolving MACs...")
@@ -263,7 +265,7 @@ async def _scan_and_resolve_subnet(
     if nameless:
         if progress_callback:
             await progress_callback(f"Scanner: Resolving names of {len(nameless)} hosts...")
-        await resolve_hostnames(nameless, dns_server=dns_server, max_concurrent=10)
+        await resolve_hostnames(nameless, dns_server=dns_server, max_concurrent=10, cancel_event=cancel_event)
 
     return resolved_hosts
 
@@ -297,7 +299,14 @@ async def _announce_scan_complete(total_found: int) -> None:
     )
 
 
-async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_callback=None, announce: bool = True):
+def _cancelled(cancel_event: asyncio.Event | None) -> bool:
+    return bool(cancel_event and cancel_event.is_set())
+
+
+async def run_planner_scan(
+    subnets: list[str], progress_callback=None, hosts_callback=None, announce: bool = True,
+    cancel_event: asyncio.Event | None = None,
+):
     """
     Executes a lightweight discovery scan for the Network Planner.
     Uses ARP + Ping + DNS.
@@ -305,6 +314,8 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
     ``hosts_callback(subnet, hosts_scanned, hosts_total)`` is awaited when a subnet starts and
     when it is done; nmap sweeps a whole subnet at once, so the count moves per subnet.
     ``announce=False`` for the recurring quick checks: every few minutes is no news worth a scan.complete.
+    ``cancel_event`` stops the scan: the hosts found so far are kept, but nothing is marked
+    offline, since the subnets were not swept completely.
     """
     subnets = _normalize_subnets(subnets)
     logger.info(f"Planner: Starting discovery on {subnets}")
@@ -334,6 +345,8 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
     dns_servers = await _get_subnet_dns_servers(valid_subnets)
 
     for subnet in subnets:
+        if _cancelled(cancel_event):
+            break
         if subnet.startswith("169.254."):
             continue
 
@@ -341,7 +354,7 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
             await hosts_callback(subnet, hosts_scanned, hosts_total)
 
         dns_server = dns_servers.get(subnet)
-        resolved_hosts = await _scan_and_resolve_subnet(subnet, dns_server, progress_callback)
+        resolved_hosts = await _scan_and_resolve_subnet(subnet, dns_server, progress_callback, cancel_event)
 
         if resolved_hosts:
             await sync_hosts_batch(resolved_hosts, is_planner_scan=True)
@@ -355,6 +368,13 @@ async def run_planner_scan(subnets: list[str], progress_callback=None, hosts_cal
         hosts_scanned += targets.get(subnet, 0)
         if hosts_callback:
             await hosts_callback(subnet, hosts_scanned, hosts_total)
+
+    if _cancelled(cancel_event):
+        logger.info("Planner: Scan cancelled after %d hosts; no offline cleanup", total_found)
+        discovery_cache.invalidate()
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()
+        return total_found
 
     # Offline Cleanup & Cache Invalidation (Exclusive to Planner)
     await _post_scan_cleanup(subnets, all_alive_ips)

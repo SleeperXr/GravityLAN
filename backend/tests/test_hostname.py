@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 import sys
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -114,6 +114,14 @@ def test_resolve_shell_win32_delegates(monkeypatch):
     monkeypatch.setattr(hostname.sys, "platform", "win32")
     monkeypatch.setattr(hostname, "_resolve_ping_win32", lambda ip: "win-name")
     assert hostname._resolve_shell("192.168.1.1") == "win-name"
+
+
+@pytest.mark.parametrize("bad", ["--help", "-x", "192.168.1.1 -v", "", None])
+def test_resolve_shell_never_passes_a_non_address_to_a_command(monkeypatch, bad):
+    """A device IP from a tampered backup could otherwise become an option of avahi-resolve or dig."""
+    monkeypatch.setattr(hostname.sys, "platform", "linux")
+    monkeypatch.setattr(hostname.subprocess, "run", MagicMock(side_effect=AssertionError("command ran")))
+    assert hostname._resolve_shell(bad) is None
 
 
 # --- cache: found names for an hour, misses only until the next quick scan ---

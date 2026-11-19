@@ -14,7 +14,7 @@ from app.models.network import Subnet
 from app.scanner import sync
 from app.scanner.sync import (
     SyncContext,
-    _commit_with_retry,
+    commit_or_discard,
     _find_safe_placeholder_ip,
     _relocate_conflicting_device,
     _should_apply_custom_name,
@@ -81,24 +81,70 @@ def test_custom_name_needs_a_discovery_with_a_name_and_a_nameless_device():
     assert _should_apply_custom_name(SimpleNamespace(custom_name="NAS"), SimpleNamespace(display_name="Mine")) is False
 
 
-async def test_commit_retries_while_the_database_is_locked():
-    db = SimpleNamespace(commit=AsyncMock(side_effect=[locked(), None]), rollback=AsyncMock())
-    with patch("app.scanner.sync.asyncio.sleep", new=AsyncMock()) as sleep:
-        assert await _commit_with_retry(db) is True
-    sleep.assert_awaited_once_with(0.2)
+async def test_a_locked_commit_is_rolled_back_and_reported():
+    db = SimpleNamespace(commit=AsyncMock(side_effect=locked()), rollback=AsyncMock())
+    assert await commit_or_discard(db) == "locked"
     db.rollback.assert_awaited_once()
 
 
-async def test_commit_raises_on_other_errors_and_when_retries_run_out():
+async def test_commit_raises_on_other_errors():
     db = SimpleNamespace(commit=AsyncMock(side_effect=locked("disk I/O error")), rollback=AsyncMock())
     with pytest.raises(OperationalError):
-        await _commit_with_retry(db)
+        await commit_or_discard(db)
     assert db.commit.await_count == 1
 
-    db = SimpleNamespace(commit=AsyncMock(side_effect=locked()), rollback=AsyncMock())
-    with patch("app.scanner.sync.asyncio.sleep", new=AsyncMock()), pytest.raises(OperationalError):
-        await _commit_with_retry(db)
-    assert db.commit.await_count == 5
+
+async def test_a_locked_batch_is_redone_not_committed_empty(db, scan):
+    """The rollback after a lock drops the session's changes; the batch is applied again, so the host is saved."""
+    real_commit = db.commit
+    calls = 0
+
+    async def commit_locked_once():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise locked()
+        await real_commit()
+
+    with patch.object(db, "commit", new=commit_locked_once), \
+            patch("app.scanner.sync.asyncio.sleep", new=AsyncMock()) as sleep:
+        await scan({"ip": "192.0.2.50", "mac": MAC_A})
+
+    sleep.assert_awaited_once_with(0.2)
+    saved = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.0.2.50"))).scalar_one_or_none()
+    assert saved is not None
+
+
+async def test_a_lock_inside_one_host_redoes_the_batch_instead_of_skipping_the_host(db, scan):
+    """A flush or DELETE can meet the lock before the commit; the host must not just be logged and dropped."""
+    real = sync._sync_host_internal
+    calls = 0
+
+    async def locked_once(session, host, ctx):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise locked()
+        return await real(session, host, ctx)
+
+    with patch("app.scanner.sync._sync_host_internal", new=locked_once), \
+            patch("app.scanner.sync.asyncio.sleep", new=AsyncMock()):
+        results = await scan({"ip": "192.0.2.52", "mac": MAC_A})
+
+    assert [r.ip for r in results] == ["192.0.2.52"]
+    saved = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.0.2.52"))).scalar_one_or_none()
+    assert saved is not None
+
+
+async def test_a_batch_that_stays_locked_raises_and_sends_no_webhooks(db, scan):
+    commit = AsyncMock(side_effect=locked())
+    with patch.object(db, "commit", new=commit), \
+            patch("app.scanner.sync.asyncio.sleep", new=AsyncMock()), \
+            patch("app.services.webhook_service.trigger_webhooks", new=AsyncMock()) as hooks, \
+            pytest.raises(OperationalError):
+        await scan({"ip": "192.0.2.51", "mac": MAC_B})
+    assert commit.await_count == sync.BATCH_ATTEMPTS
+    hooks.assert_not_awaited()
 
 
 async def test_one_failing_host_does_not_stop_the_batch(db, scan):

@@ -5,6 +5,7 @@ Supports gentle (stealth) and fast scan modes.
 """
 
 import asyncio
+import ipaddress
 import logging
 import random
 import socket
@@ -97,7 +98,7 @@ async def scan_ports(
                 return port
         except PermissionError:
             # Fallback to nmap only when local OS permissions restrict raw TCP sockets on port 445
-            if port == 445:
+            if port == 445 and is_plain_ip(ip):
                 try:
                     nres = subprocess.run(
                         ["nmap", "-p", "445", "-Pn", "-n", "--host-timeout", "1s", ip],
@@ -136,8 +137,20 @@ def _parse_nmap_greppable(output: str) -> list[int]:
     return ports
 
 
+def is_plain_ip(value: str) -> bool:
+    """True for an IP address. Anything else, such as "--script=..." from a tampered backup, would be
+    an option to nmap and is never passed as a target."""
+    try:
+        ipaddress.ip_address(value)
+    except (ValueError, TypeError):
+        return False
+    return True
+
+
 def _build_nmap_command(ip: str, dns_server: str | None) -> list[str]:
-    """Build the nmap argument list (never interpolate into a shell string)."""
+    """Build the nmap argument list (never interpolate into a shell string); ValueError for a non-address."""
+    if not is_plain_ip(ip):
+        raise ValueError("nmap target is not an IP address")
     cmd = ["nmap", "-Pn", "--top-ports", "1000", "-oG", "-"]
     if dns_server:
         cmd += ["--dns-servers", dns_server]

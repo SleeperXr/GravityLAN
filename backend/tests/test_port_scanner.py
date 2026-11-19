@@ -119,6 +119,21 @@ def test_nmap_command_is_an_argument_list():
     assert ps._build_nmap_command(IP, "192.0.2.53")[-3:] == ["--dns-servers", "192.0.2.53", IP]
 
 
+@pytest.mark.parametrize("bad", ["--script=http-title", "-iL/etc/passwd", "192.0.2.1 -oN x", "", None])
+def test_nmap_never_gets_a_non_address_as_target(bad):
+    """A device IP from a tampered backup would otherwise be an nmap option (--script, -iL, -oN)."""
+    with pytest.raises(ValueError):
+        ps._build_nmap_command(bad, None)
+
+
+@pytest.mark.asyncio
+async def test_nmap_scan_of_a_non_address_runs_nothing(monkeypatch):
+    run = AsyncMock(side_effect=AssertionError("nmap ran"))
+    monkeypatch.setattr(ps, "_run_nmap_async", run)
+    assert await ps.nmap_scan("--script=vuln") == []
+    run.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_nmap_scan_parses_the_output(monkeypatch):
     run = AsyncMock(return_value=(b"Ports: 22/open/tcp//ssh///", b"", 0))

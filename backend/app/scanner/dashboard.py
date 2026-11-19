@@ -44,7 +44,7 @@ async def _sync_local_docker_containers():
         logger.warning(f"Dashboard: Docker container sync failed: {e}")
 
 
-async def _discover_subnet_hosts(subnet: str) -> list[dict]:
+async def _discover_subnet_hosts(subnet: str, cancel_event: asyncio.Event | None = None) -> list[dict]:
     """Ping/ARP discovery for one subnet; returns resolved hosts."""
     from app.scanner.sync import sync_hosts_batch
 
@@ -62,7 +62,7 @@ async def _discover_subnet_hosts(subnet: str) -> list[dict]:
         return []
 
     # No callback here either to prevent many commits
-    alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server)
+    alive_hosts = await discover_hosts_simple(target_ips, dns_server=dns_server, cancel_event=cancel_event)
     resolved = await resolve_mac_addresses(alive_hosts)
 
     if resolved:
@@ -152,8 +152,14 @@ async def _run_health_phase(alive_map: dict, progress_callback=None, scanned_sub
     return devices
 
 
-async def _find_new_management_devices(all_resolved_hosts: list[dict], devices) -> list[dict]:
-    """Scan unknown hosts for management ports; returns new-found hosts."""
+def _invalidate_scan_caches() -> None:
+    discovery_cache.invalidate()
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
+
+
+async def _find_new_management_devices(all_resolved_hosts: list[dict], devices, cancel_event: asyncio.Event | None = None) -> list[dict]:
+    """Scan unknown hosts for management ports; returns new-found hosts (stops early on ``cancel_event``)."""
     from app.scanner.classifier import classify_device
 
     new_found_hosts = []
@@ -161,11 +167,13 @@ async def _find_new_management_devices(all_resolved_hosts: list[dict], devices) 
     known_ips = {d.ip for d in devices} | {i.ip for d in devices for i in d.interfaces}
 
     for host in all_resolved_hosts:
+        if cancel_event and cancel_event.is_set():
+            break
         ip = host["ip"]
         if ip in known_ips:
             continue
         # For new hosts, we check management ports
-        found_ports = await scan_ports(ip, ports=MANAGEMENT_PORTS, timeout=0.5)
+        found_ports = await scan_ports(ip, ports=MANAGEMENT_PORTS, timeout=0.5, cancel_event=cancel_event)
         if found_ports:
             classification = classify_device({"ip": ip, "ports": found_ports})
             hostname = host.get("hostname") or classification.get("hostname")
@@ -179,11 +187,11 @@ async def _find_new_management_devices(all_resolved_hosts: list[dict], devices) 
     return new_found_hosts
 
 
-async def _discover_subnet_safely(subnet: str, progress_callback=None) -> list[dict]:
+async def _discover_subnet_safely(subnet: str, progress_callback=None, cancel_event: asyncio.Event | None = None) -> list[dict]:
     """Discover one subnet; logs and returns [] on failure."""
     try:
         if progress_callback: await progress_callback(f"Ping/ARP discovery on {subnet}...")
-        resolved = await _discover_subnet_hosts(subnet)
+        resolved = await _discover_subnet_hosts(subnet, cancel_event)
     except Exception as e:
         logger.error(f"Discovery failed for subnet {subnet}: {e}")
         return []
@@ -192,21 +200,26 @@ async def _discover_subnet_safely(subnet: str, progress_callback=None) -> list[d
     return resolved
 
 
-async def _run_discovery_phase(subnets: list[str], progress_callback=None) -> list[dict]:
+async def _run_discovery_phase(subnets: list[str], progress_callback=None, cancel_event: asyncio.Event | None = None) -> list[dict]:
     """Ping/ARP discovery across all subnets; returns every resolved host."""
     all_resolved_hosts = []
     for subnet in subnets:
-        resolved = await _discover_subnet_safely(subnet, progress_callback)
+        if cancel_event and cancel_event.is_set():
+            break
+        resolved = await _discover_subnet_safely(subnet, progress_callback, cancel_event)
         all_resolved_hosts.extend(resolved)
     logger.info(f"Dashboard: Discovery phase complete. Found {len(all_resolved_hosts)} potential hosts.")
     return all_resolved_hosts
 
 
-async def run_dashboard_scan(subnets: list[str], progress_callback=None):
+async def run_dashboard_scan(subnets: list[str], progress_callback=None, cancel_event: asyncio.Event | None = None):
     """
     Executes a deep scan for the Dashboard.
     1. Checks health of all existing Dashboard devices.
     2. Scans subnets for 'relevant' devices (with management ports).
+
+    ``cancel_event`` stops it after the discovery: the health phase would count every
+    device the cut-short discovery missed as offline, so it does not run.
     """
     logger.info("Dashboard: Starting hybrid strongest scan (Ping/ARP + Port Health).")
     if progress_callback: await progress_callback("Dashboard: Starting discovery...")
@@ -217,19 +230,33 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None):
     from app.scanner.sync import sync_hosts_batch
 
     # 1. Faster discovery phase
-    all_resolved_hosts = await _run_discovery_phase(subnets, progress_callback)
+    all_resolved_hosts = await _run_discovery_phase(subnets, progress_callback, cancel_event)
+    if cancel_event and cancel_event.is_set():
+        logger.info("Dashboard: Scan cancelled after discovery of %d hosts; health phase skipped", len(all_resolved_hosts))
+        _invalidate_scan_caches()
+        return 0
 
     # Map for quick lookup
     alive_map = {h["ip"]: h for h in all_resolved_hosts}
 
     # 2. Deep Health & Service Phase
     devices = await _run_health_phase(alive_map, progress_callback, scanned_subnets=subnets)
+    # The health phase judged against a complete discovery, so what it saved stands; stopped
+    # during it, the search for new devices and the scan.complete announcement are left out
+    if cancel_event and cancel_event.is_set():
+        logger.info("Dashboard: Scan cancelled after the health phase; no search for new devices")
+        _invalidate_scan_caches()
+        return 0
 
     # 3. Intelligent Discovery Phase (New Finds)
     logger.info("Dashboard: Scanning for new management devices.")
     if progress_callback: await progress_callback("Searching for new devices...")
 
-    new_found_hosts = await _find_new_management_devices(all_resolved_hosts, devices)
+    new_found_hosts = await _find_new_management_devices(all_resolved_hosts, devices, cancel_event)
+    if cancel_event and cancel_event.is_set():
+        logger.info("Dashboard: Scan cancelled while searching for new devices; nothing new saved")
+        _invalidate_scan_caches()
+        return 0
 
     if new_found_hosts:
         await sync_hosts_batch(new_found_hosts, is_planner_scan=False)

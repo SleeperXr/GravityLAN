@@ -203,6 +203,16 @@ async def test_ping_needs_a_ttl_reply(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bad", ["-f", "-i0.001", "192.0.2.1 -f", "", None])
+async def test_ping_never_gets_a_non_address(monkeypatch, bad):
+    """A device IP from a tampered backup would otherwise be an option of ping (-f floods)."""
+    seen = _ping_result(monkeypatch, 0, "Reply from 192.0.2.1: bytes=32 time=3ms TTL=64")
+    assert await utils.ping_host_async(bad) is False
+    assert await utils.measure_ping_latency_ms(bad) is None
+    assert "command" not in seen
+
+
+@pytest.mark.asyncio
 async def test_ping_survives_a_broken_ping(monkeypatch):
     def broken(*_a, **_k):
         raise FileNotFoundError("ping")

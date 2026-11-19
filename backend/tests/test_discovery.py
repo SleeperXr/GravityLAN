@@ -249,7 +249,8 @@ async def test_discover_hosts_simple_cancel_event_skips_scanning():
 
     assert hosts == []
     create_proc.assert_not_awaited()
-    resolve_mac.assert_awaited_once()
+    # Stopped: no ARP pass either, it would collect the neighbour cache as finds
+    resolve_mac.assert_not_awaited()
 
 
 @pytest.mark.asyncio

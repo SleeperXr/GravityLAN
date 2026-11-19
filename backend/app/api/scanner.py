@@ -58,6 +58,15 @@ class ScanStateManager:
         async with self._lock:
             return self.is_active
 
+    async def try_start(self) -> bool:
+        """Mark a scan active unless one is; True when this caller may start it (one check and set)."""
+        async with self._lock:
+            if self.is_active:
+                return False
+            self.is_active = True
+            self.cancel_event = asyncio.Event()
+            return True
+
     async def add_client(self, ws: WebSocket) -> None:
         async with self._lock:
             self.ws_clients.append(ws)
@@ -266,11 +275,9 @@ async def _requested_or_enabled_subnets(request: ScanRequest) -> list[str]:
 @router.post("/start-dashboard", dependencies=[Depends(get_current_admin)])
 async def start_dashboard_scan_api(request: ScanRequest, background_tasks: BackgroundTasks) -> Dict[str, str]:
     """Manually trigger the high-intensity Dashboard scan."""
-    if await state.get_active():
+    if not await state.try_start():
         return {"status": "error", "message": "A scan is already in progress"}
-
-    await state.set_active(True)
-    state.cancel_event = asyncio.Event()
+    cancel_event = state.cancel_event
     state.last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Dashboard Scan...", progress=0)
     await state.broadcast(state.last_progress)
     
@@ -284,12 +291,15 @@ async def start_dashboard_scan_api(request: ScanRequest, background_tasks: Backg
     async def run_dashboard_task():
         try:
             subnets = await _requested_or_enabled_subnets(request)
-            found_count = await run_dashboard_scan(subnets, progress_callback=progress_cb)
-            await state.broadcast(ScanProgress(
-                status=ScanStatus.COMPLETED, 
-                message=f"Dashboard scan complete: {found_count} devices updated", 
-                devices_found=found_count
-            ))
+            found_count = await run_dashboard_scan(subnets, progress_callback=progress_cb, cancel_event=cancel_event)
+            if cancel_event.is_set():
+                await state.broadcast(ScanProgress(status=ScanStatus.CANCELLED, message="Dashboard scan cancelled"))
+            else:
+                await state.broadcast(ScanProgress(
+                    status=ScanStatus.COMPLETED,
+                    message=f"Dashboard scan complete: {found_count} devices updated",
+                    devices_found=found_count
+                ))
         except Exception as e:
             logger.error("Dashboard scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.FAILED, message=f"Scan error: {str(e)}"))
@@ -312,12 +322,10 @@ async def start_scan(request: ScanRequest, admin: str = Depends(get_current_admi
                 status_code=403,
                 detail=f"Before the setup is completed only private networks can be scanned: {', '.join(refused)}",
             )
-    if await state.get_active():
+    if not await state.try_start():
         return {"status": "error", "message": "Scan already in progress"}
+    cancel_event = state.cancel_event
 
-    await state.set_active(True)
-    state.cancel_event = asyncio.Event()
-    
     state.last_progress = ScanProgress(status=ScanStatus.RUNNING, message="Initializing Planner Scan...", progress=0)
     await state.broadcast(state.last_progress)
 
@@ -345,8 +353,13 @@ async def start_scan(request: ScanRequest, admin: str = Depends(get_current_admi
     async def run_scan_task():
         try:
             subnets = await _requested_or_enabled_subnets(request)
-            found_count = await run_planner_scan(subnets, progress_callback=progress_cb, hosts_callback=hosts_cb)
-            await state.broadcast(snapshot(ScanStatus.COMPLETED, "Scan complete", devices_found=found_count))
+            found_count = await run_planner_scan(
+                subnets, progress_callback=progress_cb, hosts_callback=hosts_cb, cancel_event=cancel_event,
+            )
+            if cancel_event.is_set():
+                await state.broadcast(snapshot(ScanStatus.CANCELLED, "Scan cancelled", devices_found=found_count))
+            else:
+                await state.broadcast(snapshot(ScanStatus.COMPLETED, "Scan complete", devices_found=found_count))
         except Exception as e:
             logger.error("Manual scan failed: %s", e, exc_info=True)
             await state.broadcast(ScanProgress(status=ScanStatus.FAILED, message=f"Scan error: {str(e)}"))

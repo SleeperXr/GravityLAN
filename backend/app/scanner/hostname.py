@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import ipaddress
 import logging
 import re
 import socket
@@ -162,7 +163,11 @@ def _resolve_ping_win32(ip: str) -> Optional[str]:
 
 
 def _resolve_shell(ip: str, dns_server: str | None = None) -> Optional[str]:
-    """Try OS-specific shell commands (ping -a, avahi, dig)."""
+    """Try OS-specific shell commands (ping -a, avahi, dig); only for an IP address, never an option."""
+    try:
+        ipaddress.ip_address(ip)
+    except (ValueError, TypeError):
+        return None
     if sys.platform == "win32":
         return _resolve_ping_win32(ip)
     return _resolve_linux_shell(ip, dns_server)

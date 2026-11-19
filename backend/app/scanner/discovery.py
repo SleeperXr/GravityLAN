@@ -257,9 +257,11 @@ async def discover_hosts_simple(
     # -- 1. Nmap Discovery (Primary) ------------------------------------------
     await _nmap_discovery(discovered, target_ips, dns_server, cancel_event, host_found_callback)
 
+    # Stopped: no fallback sweep and no MAC resolution, what nmap reported so far is the result
+    if cancel_event and cancel_event.is_set():
+        return discovered
+
     if discovered:
-        if cancel_event and cancel_event.is_set():
-            return discovered
         logger.info(f"Nmap found {len(discovered)} hosts. Resolving MACs via ARP/Neighbors...")
         await resolve_mac_addresses(discovered, target_ips)
         return discovered

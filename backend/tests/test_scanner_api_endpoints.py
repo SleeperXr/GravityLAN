@@ -1,5 +1,6 @@
 """Endpoint tests for app.api.scanner: manual IP scan, discovered hosts, scan jobs, live discovery, WebSocket."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
@@ -284,7 +285,7 @@ async def test_planner_scan_reports_host_counts_and_device_events(monkeypatch):
 
     monkeypatch.setattr(scanner.state, "broadcast", record)
 
-    async def fake_planner(subnets, progress_callback, hosts_callback):
+    async def fake_planner(subnets, progress_callback, hosts_callback, cancel_event):
         await hosts_callback("10.0.0.0/24", 64, 256)
         await progress_callback("EVENT:RELOAD_DEVICES")
         await progress_callback("probing")
@@ -311,7 +312,7 @@ async def test_dashboard_scan_without_subnets_uses_the_enabled_ones(monkeypatch,
     monkeypatch.setattr(scanner, "get_scan_subnets", AsyncMock(return_value=["192.168.1.0/24"]))
     seen_subnets = []
 
-    async def fake_dashboard(subnets, progress_callback):
+    async def fake_dashboard(subnets, progress_callback, cancel_event):
         seen_subnets.extend(subnets)
         await progress_callback("EVENT:RELOAD_DEVICES")
         return 4
@@ -325,6 +326,34 @@ async def test_dashboard_scan_without_subnets_uses_the_enabled_ones(monkeypatch,
     assert scanner.state.last_progress.status == ScanStatus.COMPLETED
     assert scanner.state.last_progress.devices_found == 4
     assert "4 devices" in scanner.state.last_progress.message
+
+
+@pytest.mark.asyncio
+async def test_stop_reaches_the_running_planner_scan_and_reports_cancelled(monkeypatch):
+    """POST /stop sets the event the running scan was given; the scan ends as cancelled, not completed."""
+    started = asyncio.Event()
+
+    async def fake_planner(subnets, progress_callback, hosts_callback, cancel_event):
+        started.set()
+        await asyncio.wait_for(cancel_event.wait(), timeout=2)
+        return 1
+
+    monkeypatch.setattr(scanner, "run_planner_scan", fake_planner)
+
+    await scanner.start_scan(ScanRequest(subnets=["10.0.0.0/24"]))
+    await started.wait()
+    await scanner.stop_scan()
+    await scanner.state.task
+
+    assert scanner.state.last_progress.status == ScanStatus.CANCELLED
+    assert await scanner.state.get_active() is False
+
+
+@pytest.mark.asyncio
+async def test_try_start_lets_only_one_caller_through():
+    results = await asyncio.gather(*(scanner.state.try_start() for _ in range(5)))
+    assert results.count(True) == 1
+    await scanner.state.set_active(False)
 
 
 # --- live discovery ------------------------------------------------------------------
