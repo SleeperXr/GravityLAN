@@ -103,24 +103,24 @@ class ScanScheduler:
                     await asyncio.sleep(10)
                     continue
 
+                # Read the settings, then let the session go: it used to stay open (and hold a
+                # pool connection) through the whole scan and the minutes-long sleep after it
                 async with async_session() as db:
                     # Get interval from settings (in minutes)
                     interval = await _get_setting_int(db, "scan_interval", 0)
+                    # Get subnets to scan (fallback to all if not set)
+                    subnets = await _get_scan_subnets(db, _get_auto_scan_subnets()) if interval > 0 else []
 
-                    if interval > 0:
-                        logger.info(f"Scheduled scan starting (Interval: {interval}m)")
+                if interval > 0:
+                    logger.info(f"Scheduled scan starting (Interval: {interval}m)")
+                    if subnets:
+                        logger.info(f"Scheduled Full Scan (Dashboard) starting for: {subnets}")
+                        await run_dashboard_scan(subnets)
 
-                        # Get subnets to scan (fallback to all if not set)
-                        subnets = await _get_scan_subnets(db, _get_auto_scan_subnets())
-
-                        if subnets:
-                            logger.info(f"Scheduled Full Scan (Dashboard) starting for: {subnets}")
-                            await run_dashboard_scan(subnets)
-
-                        # Wait for the next interval
-                        await asyncio.sleep(interval * 60)
-                    else:
-                        await asyncio.sleep(60)
+                    # Wait for the next interval
+                    await asyncio.sleep(interval * 60)
+                else:
+                    await asyncio.sleep(60)
 
             except Exception as e:
                 logger.error(f"Error in scan scheduler loop: {e}")
@@ -179,7 +179,8 @@ class ScanScheduler:
                 continue
             try:
                 if docker_service.is_available():
-                    containers = docker_service.get_local_containers()
+                    # The Docker SDK blocks on the socket; keep it off the event loop
+                    containers = await asyncio.to_thread(docker_service.get_local_containers)
                     if containers:
                         logger.info(f"Docker Sync: Syncing {len(containers)} local containers...")
                         await sync_docker_containers(containers)

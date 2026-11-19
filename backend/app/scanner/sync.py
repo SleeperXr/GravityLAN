@@ -401,7 +401,7 @@ async def _upsert_discovered_host(db, disc, dev, hit: ScanHit):
     disc = DiscoveredHost(
         ip=hit.ip, mac=hit.mac, hostname=hit.hostname,
         custom_name=inherited_name,
-        vendor=hit.vendor or (get_vendor(hit.mac) if hit.mac else None),
+        vendor=hit.vendor or (await asyncio.to_thread(get_vendor, hit.mac) if hit.mac else None),
         is_online=True,
         is_monitored=dev is not None,
         last_seen=datetime.now(timezone.utc),

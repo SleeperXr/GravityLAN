@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { ArrowRight, History, Network, Save, Server, Settings2, Trash2, Waypoints } from 'lucide-vue-next';
 import { api } from '@/api/client';
 import type { Device, DeviceGroup, DeviceInterface, HostnameSource, Rack } from '@/types';
@@ -56,12 +56,25 @@ watch(
   },
 );
 
+// Reopened within the leave delay, the pending afterLeave must not fire: the parent would
+// drop the device and unmount the sheet the user just opened again
+let leaveTimer: number | undefined;
+function cancelLeave() {
+  if (leaveTimer !== undefined) window.clearTimeout(leaveTimer);
+  leaveTimer = undefined;
+}
+onBeforeUnmount(cancelLeave);
+
 watch(
   open,
   (isOpen) => {
+    cancelLeave();
     if (!isOpen) {
       // Sheet leave animation is ~160 ms
-      window.setTimeout(() => emit('afterLeave'), 200);
+      leaveTimer = window.setTimeout(() => {
+        leaveTimer = undefined;
+        emit('afterLeave');
+      }, 200);
       return;
     }
     api.getGroups().then((g) => (groups.value = g)).catch(() => (groups.value = []));

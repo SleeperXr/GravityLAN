@@ -86,3 +86,15 @@ async def test_a_failing_broadcast_keeps_the_ingest(db, monkeypatch):
     monkeypatch.setattr("app.api.scanner.state.broadcast", broken)
     assert await relay.ingest_agent_arp_table(db, dev.id, [{"ip": "192.0.2.40", "mac": "aa:bb:cc:00:00:40"}]) == 1
     assert (await db.execute(select(DiscoveredHost.ip))).scalars().all() == ["192.0.2.40"]
+
+
+async def test_vendor_lookup_runs_off_the_event_loop(db, monkeypatch):
+    """get_vendor may wait on the rate-limited vendor API (time.sleep, HTTP)."""
+    import threading
+
+    dev = await _probe(db, "192.0.2.5")
+    threads = []
+    monkeypatch.setattr(relay, "get_vendor", lambda mac: threads.append(threading.current_thread()) or "Vendor")
+
+    assert await relay.ingest_agent_arp_table(db, dev.id, [{"ip": "192.0.2.30", "mac": "aa:bb:cc:00:00:30"}]) == 1
+    assert threads and all(t is not threading.main_thread() for t in threads)

@@ -74,6 +74,40 @@ async def test_full_scan_runs_and_sleeps_the_interval(monkeypatch, sched, no_db)
     assert sleeps == [300, 300]
 
 
+async def test_full_scan_releases_the_session_before_scanning_and_sleeping(monkeypatch, sched):
+    """The session used to stay open through the scan and the minutes-long sleep after it."""
+    open_sessions = []
+
+    @asynccontextmanager
+    async def tracked_session():
+        open_sessions.append(1)
+        try:
+            yield MagicMock()
+        finally:
+            open_sessions.pop()
+
+    monkeypatch.setattr(scheduler_module, "async_session", tracked_session)
+    setup_states(monkeypatch, sched, True)
+    monkeypatch.setattr(scheduler_module, "_get_setting_int", AsyncMock(return_value=5))
+    monkeypatch.setattr(scheduler_module, "_get_scan_subnets", AsyncMock(return_value=["192.0.2.0/24"]))
+    monkeypatch.setattr(scheduler_module, "_get_auto_scan_subnets", lambda: [])
+    seen = {}
+
+    async def scan(subnets):
+        seen["scan"] = len(open_sessions)
+
+    async def sleep(seconds):
+        seen["sleep"] = len(open_sessions)
+        sched._running = False
+
+    monkeypatch.setattr(scheduler_module, "run_dashboard_scan", scan)
+    monkeypatch.setattr(scheduler_module.asyncio, "sleep", sleep)
+
+    await sched._loop()
+
+    assert seen == {"scan": 0, "sleep": 0}
+
+
 async def test_full_scan_backs_off_a_minute_on_errors(monkeypatch, sched, no_db):
     setup_states(monkeypatch, sched, True)
     monkeypatch.setattr(scheduler_module, "_get_setting_int", AsyncMock(side_effect=RuntimeError("db locked")))
@@ -163,6 +197,20 @@ async def test_docker_loop_skips_without_docker_or_containers(monkeypatch, sched
 
     docker["sync"].assert_not_called()
     assert sleeps == [60]
+
+
+async def test_docker_loop_reads_containers_off_the_event_loop(monkeypatch, sched, docker):
+    import threading
+    from app.services.docker_service import docker_service
+
+    threads = []
+    monkeypatch.setattr(docker_service, "get_local_containers", lambda: threads.append(threading.current_thread()) or [])
+    setup_states(monkeypatch, sched, True)
+    stop_after(monkeypatch, sched, 1)
+
+    await sched._docker_loop()
+
+    assert threads and threads[0] is not threading.main_thread()
 
 
 async def test_docker_loop_stops_when_cancelled(monkeypatch, sched, docker):

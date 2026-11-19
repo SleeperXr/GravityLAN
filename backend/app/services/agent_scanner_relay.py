@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 from datetime import datetime, timezone
@@ -137,7 +138,7 @@ async def ingest_agent_arp_table(
                 dev.mac = raw_mac
                 changed = True
             if not dev.vendor:
-                dev.vendor = get_vendor(raw_mac)
+                dev.vendor = await asyncio.to_thread(get_vendor, raw_mac)
                 changed = True
             if not dev.is_online and not dev.has_agent:
                 dev.is_online = True
@@ -152,7 +153,7 @@ async def ingest_agent_arp_table(
             disc = disc_by_ip[raw_ip]
             disc.mac = raw_mac
             if not disc.vendor:
-                disc.vendor = get_vendor(raw_mac)
+                disc.vendor = await asyncio.to_thread(get_vendor, raw_mac)
             disc.is_online = True
             disc.last_seen = now
             updated_count += 1
@@ -160,7 +161,7 @@ async def ingest_agent_arp_table(
             new_disc = DiscoveredHost(
                 ip=raw_ip,
                 mac=raw_mac,
-                vendor=get_vendor(raw_mac),
+                vendor=await asyncio.to_thread(get_vendor, raw_mac),
                 is_online=True,
                 first_seen=now,
                 last_seen=now,

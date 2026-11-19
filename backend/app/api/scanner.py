@@ -234,7 +234,7 @@ async def refresh_discovered_host(host_id: int) -> DiscoveredHost:
             await resolve_mac_addresses(found)
             host.mac = found[0]["mac"] or host.mac
         if host.mac:
-            host.vendor = get_vendor(host.mac) or host.vendor
+            host.vendor = await asyncio.to_thread(get_vendor, host.mac) or host.vendor
 
         await db.commit()
         discovery_cache.invalidate()

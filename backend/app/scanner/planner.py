@@ -1,5 +1,6 @@
 """Network Planner Scan logic — Fast discovery via ARP/Ping/DNS."""
 
+import asyncio
 import logging
 import ipaddress
 from datetime import datetime, timezone
@@ -79,7 +80,7 @@ async def _sync_local_docker_containers():
     if not docker_service.is_available():
         return
     try:
-        local_c = docker_service.get_local_containers()
+        local_c = await asyncio.to_thread(docker_service.get_local_containers)  # blocking Docker API
         if local_c:
             logger.info(f"Planner: Syncing {len(local_c)} local Docker containers...")
             await sync_docker_containers(local_c)
