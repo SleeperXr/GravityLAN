@@ -332,6 +332,13 @@ def _run_apt(fn, script, user, password, outputs):
 
 def _live_query_apt_updates(client, result, host_ip, ssh_user, ssh_password):
     ps._query_apt_updates(client, result, ps._SshLogin(host_ip, ssh_user, ssh_password=ssh_password))
+    # Since 0.8.0 a failure also names its kind (the API answers 400/502 by it); the frozen copy
+    # predates that, so the kind is checked here and left out of the comparison
+    kind = result.pop("error_kind", None)
+    if "error" not in result:
+        assert kind is None
+    else:
+        assert kind == (ps.ERROR_SUDO if result.get("sudo_rejected") else ps.ERROR_REMOTE)
 
 
 def test_apt_query_matches_for_every_update_run_listing_and_release_check():

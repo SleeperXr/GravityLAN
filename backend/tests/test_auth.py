@@ -298,11 +298,17 @@ async def test_login_rate_limit_resets_on_success_and_after_the_window(client, d
 
 # --- Scopes ---------------------------------------------------------------------
 
+def _route_scope(method: str, path: str) -> str | None:
+    from app.api.policy import iter_route_policies
+    from app.main import app
+
+    return next(e.policy.scope for e in iter_route_policies(app) if (e.method, e.path) == (method, path))
+
+
 def test_webhook_test_endpoint_needs_write_scope_even_for_get():
-    assert auth_api._required_scope_for("/api/webhooks/test", "GET") == "settings:write"
-    assert auth_api._required_scope_for("/api/webhooks/test/", "GET") == "settings:write"
-    assert auth_api._required_scope_for("/api/webhooks/test", "POST") == "settings:write"
-    assert auth_api._required_scope_for("/api/webhooks", "GET") == "settings:read"
+    assert _route_scope("GET", "/api/webhooks/test") == "settings:write"
+    assert _route_scope("POST", "/api/webhooks/test") == "settings:write"
+    assert _route_scope("GET", "/api/webhooks") == "settings:read"
 
 
 @pytest.mark.asyncio
@@ -318,5 +324,5 @@ async def test_read_only_token_cannot_fire_test_webhooks(client, db, admin_token
 
 
 def test_interface_routes_map_to_device_scopes():
-    assert auth_api._required_scope_for("/api/interfaces/suggestions", "GET") == "devices:read"
-    assert auth_api._required_scope_for("/api/interfaces/suggestions/dismiss", "POST") == "devices:write"
+    assert _route_scope("GET", "/api/interfaces/suggestions") == "devices:read"
+    assert _route_scope("POST", "/api/interfaces/suggestions/dismiss") == "devices:write"

@@ -277,7 +277,7 @@ async def test_query_device_patches_success_and_error(db, monkeypatch):
     monkeypatch.setattr(ap, "_get_agent_attr", lambda name, default: mock_list_updates_err)
     with pytest.raises(HTTPException) as exc:
         await ap.query_device_patches(device.id, request, http_req, db)
-    assert exc.value.status_code == 500
+    assert exc.value.status_code == 502  # the host failed, not the server
 
 
 @pytest.mark.asyncio

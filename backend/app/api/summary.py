@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
+from app.api.policy import policy
 from app.database import get_db
 from app.api.auth import get_current_admin
 from app.models.device import Device, Service
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/summary", tags=["summary"])
 
-@router.get("", response_model=SummaryResponse)
+@router.get("", response_model=SummaryResponse, dependencies=[policy(scope="devices:read")])
 async def get_summary(
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
@@ -152,7 +153,7 @@ async def get_summary(
 
 issues_router = APIRouter(prefix="/api/issues", tags=["issues"])
 
-@issues_router.get("", response_model=list[ActiveIssue])
+@issues_router.get("", response_model=list[ActiveIssue], dependencies=[policy(scope="devices:read")])
 async def get_active_issues(
     device_id: int | None = None,
     type: str | None = None,

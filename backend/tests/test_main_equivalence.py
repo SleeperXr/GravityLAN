@@ -136,8 +136,10 @@ async def test_vue_route_without_build_or_index_matches(builds, monkeypatch):
 # --- log WebSocket ------------------------------------------------------------------------
 
 def _log_app():
+    """The log WebSocket with its access policy, as main.app declares it."""
+    route = next(r for r in main.app.routes if getattr(r, "path", None) == "/api/logs/ws")
     app = FastAPI()
-    app.add_api_websocket_route("/api/logs/ws", main.logs_websocket)
+    app.add_api_websocket_route("/api/logs/ws", main.logs_websocket, dependencies=route.dependencies)
     return app
 
 
@@ -145,7 +147,7 @@ def test_logs_websocket_sends_history_then_streams_until_the_client_leaves(monke
     from app.services import log_streamer
 
     subscribed = []
-    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", AsyncMock(return_value={"auth_type": "session"}))
+    monkeypatch.setattr("app.api.auth.authenticate_websocket", AsyncMock(return_value={"authenticated": True, "auth_type": "session", "identity": "session_x"}))
     monkeypatch.setattr(log_streamer.log_handler, "get_history", lambda: ["line one", "line two"])
     monkeypatch.setattr(log_streamer.log_handler, "subscribe", lambda ws: subscribed.append(ws))
     monkeypatch.setattr(log_streamer.log_handler, "unsubscribe", lambda ws: subscribed.remove(ws))
@@ -165,10 +167,10 @@ def test_logs_websocket_stops_without_authorization(monkeypatch):
 
     async def refuse(websocket, **_kw):
         await websocket.close(code=4003)
-        return None
+        return {"authenticated": False}
 
     history = []
-    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", refuse)
+    monkeypatch.setattr("app.api.auth.authenticate_websocket", refuse)
     monkeypatch.setattr(log_streamer.log_handler, "get_history", lambda: history.append("read") or [])
 
     with pytest.raises(WebSocketDisconnect):

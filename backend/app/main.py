@@ -21,13 +21,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import asyncio
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from fastapi import WebSocket, WebSocketDisconnect
 
+from app.api.policy import policy, PUBLIC
 from app.config import settings
 from app.version import VERSION
 from app.database import init_db
@@ -463,38 +464,38 @@ from app.api.router_import import router as router_import_router  # noqa: E402
 from app.api.telemetry import router as telemetry_router  # noqa: E402
 from app.api.proxmox import router as proxmox_router  # noqa: E402
 
-from app.api.auth import get_current_admin
-
+# Every route declares who may call it with dependencies=[policy(...)] (app.api.policy);
+# tests/test_policy_matrix.py fails for a route without one.
 app.include_router(auth_router)
-app.include_router(backup_router, dependencies=[Depends(get_current_admin)])
-app.include_router(network_router, dependencies=[Depends(get_current_admin)])
-app.include_router(router_import_router, dependencies=[Depends(get_current_admin)])
-app.include_router(topology_router, dependencies=[Depends(get_current_admin)])
-app.include_router(rack_cabling_router, dependencies=[Depends(get_current_admin)])
-app.include_router(devices_router, dependencies=[Depends(get_current_admin)])
-app.include_router(interfaces_router, dependencies=[Depends(get_current_admin)])
-app.include_router(groups_router, dependencies=[Depends(get_current_admin)])
-app.include_router(router_services, dependencies=[Depends(get_current_admin)])
-app.include_router(scanner_router, dependencies=[Depends(get_current_admin)])
-app.include_router(settings_router, dependencies=[Depends(get_current_admin)])
-app.include_router(telemetry_router)  # Settings > Measurement data; guards itself with get_current_admin
-app.include_router(proxmox_router)  # Settings > Proxmox VE; guards itself with get_current_admin
-app.include_router(webhooks_router, dependencies=[Depends(get_current_admin)])
-app.include_router(audit_router, dependencies=[Depends(get_current_admin)])
-app.include_router(summary_router, dependencies=[Depends(get_current_admin)])
-app.include_router(issues_router, dependencies=[Depends(get_current_admin)])
-app.include_router(logs_router, dependencies=[Depends(get_current_admin)])
-app.include_router(agents_router, dependencies=[Depends(get_current_admin)])
-app.include_router(notifications_router, dependencies=[Depends(get_current_admin)])
-app.include_router(health_router, dependencies=[Depends(get_current_admin)])
-app.include_router(ssh_router, dependencies=[Depends(get_current_admin)])
-app.include_router(ssh_ws_router)  # Terminal WebSocket authenticates itself (browser sessions only)
-app.include_router(setup_router) # Setup manages its own logic
-app.include_router(agent_router) # Contains both public report and protected metrics (internally handled)
+app.include_router(backup_router)
+app.include_router(network_router)
+app.include_router(router_import_router)
+app.include_router(topology_router)
+app.include_router(rack_cabling_router)
+app.include_router(devices_router)
+app.include_router(interfaces_router)
+app.include_router(groups_router)
+app.include_router(router_services)
+app.include_router(scanner_router)
+app.include_router(settings_router)
+app.include_router(telemetry_router)
+app.include_router(proxmox_router)
+app.include_router(webhooks_router)
+app.include_router(audit_router)
+app.include_router(summary_router)
+app.include_router(issues_router)
+app.include_router(logs_router)
+app.include_router(agents_router)
+app.include_router(notifications_router)
+app.include_router(health_router)
+app.include_router(ssh_router)
+app.include_router(ssh_ws_router)
+app.include_router(setup_router)
+app.include_router(agent_router)
 logger.info("Registered Agent API routes under /api/agent")
 
 
-@app.get("/api/health")
+@app.get("/api/health", dependencies=[policy(callers=PUBLIC, note="Docker and monitoring health check")])
 async def health_check() -> dict:
     """Health check endpoint for Docker and monitoring."""
     return {
@@ -505,19 +506,9 @@ async def health_check() -> dict:
     }
 
 
-@app.websocket("/api/logs/ws")
+@app.websocket("/api/logs/ws", dependencies=[policy(scope="settings:read", channel="logs")])
 async def logs_websocket(websocket: WebSocket):
     """WebSocket endpoint for real-time backend log streaming with authentication."""
-    from app.api.auth import authenticate_websocket_authorized
-
-    # Logs are strictly restricted to browser-sessions, master tokens, legacy master tokens, or API tokens
-    auth_info = await authenticate_websocket_authorized(
-        websocket, endpoint_type="logs",
-        allowed_levels=("session", "master", "master_legacy", "api_token"),
-    )
-    if not auth_info:
-        return
-
     from app.services.log_streamer import log_handler
     await websocket.accept()
     
@@ -545,7 +536,7 @@ NO_CACHE_FILES = frozenset({"index.html", "sw.js", "manifest.webmanifest"})
 GRAVITYUI_PATH = "/frontend-vue/"
 
 
-@app.get("/")
+@app.get("/", dependencies=[policy(callers=PUBLIC, note="redirects to GravityUI")])
 async def root():
     """Root endpoint: GravityUI, else status JSON.
 
@@ -595,8 +586,8 @@ def _build_file_response(path: str) -> FileResponse:
     return FileResponse(path, headers=headers, media_type=media_type)
 
 
-@app.get("/frontend-vue")
-@app.get("/frontend-vue/")
+@app.get("/frontend-vue", dependencies=[policy(callers=PUBLIC, note="GravityUI files")])
+@app.get("/frontend-vue/", dependencies=[policy(callers=PUBLIC, note="GravityUI files")])
 async def serve_vue_root():
     """Serve GravityUI (Vue + shadcn-vue) entry point."""
     vue_dir = _resolve_frontend_vue_dir()
@@ -606,7 +597,7 @@ async def serve_vue_root():
     raise HTTPException(status_code=404, detail="GravityUI build not found in frontend-vue/dist")
 
 
-@app.get("/frontend-vue/{full_path:path}")
+@app.get("/frontend-vue/{full_path:path}", dependencies=[policy(callers=PUBLIC, note="GravityUI files")])
 async def serve_vue_spa(full_path: str):
     """Serve assets or SPA fallback for GravityUI under /frontend-vue/."""
     _reject_unsafe_path(full_path)
@@ -633,5 +624,7 @@ async def redirect_to_gravityui(full_path: str):
 
 if _resolve_frontend_vue_dir().exists():
     # Registered last, so every API route, /docs and the GravityUI routes above win
-    app.get("/{full_path:path}")(redirect_to_gravityui)
+    app.get("/{full_path:path}", dependencies=[policy(callers=PUBLIC, note="old addresses open GravityUI")])(
+        redirect_to_gravityui
+    )
     logger.info("Serving GravityUI from: %s", _resolve_frontend_vue_dir())

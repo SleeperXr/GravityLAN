@@ -1,5 +1,7 @@
 """Agent Patches API — Package update query, preparation, and WebSocket execution stream."""
 
+import hashlib
+import hmac
 import inspect
 import logging
 import sys
@@ -20,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.policy import policy, SESSION_ONLY, ws_auth
 from app.api.auth import get_current_admin
 from app.config import settings
 from app.database import async_session, get_db
@@ -36,6 +39,7 @@ from app.schemas.agent import (
 from app.services.agent_telemetry import _latest_metrics, _ws_subscribers
 from app.services.audit import actor_from_identity
 from app.services.audit import record as audit
+from app.services import patch_service
 from app.services.patch_service import list_device_updates, run_ssh_command_stream
 from app.services.session_service import has_browser_session
 from app.services.ssh_credentials import (
@@ -44,7 +48,6 @@ from app.services.ssh_credentials import (
     resolve_stored_key,
 )
 from app.services.ssh_utils import PinnedHostKey, TofuHostKeyPolicy
-from app.services.stepup import require_step_up
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +183,23 @@ def _format_package_updates(packages_data: list[dict[str, Any]]) -> list[Package
     ]
 
 
-@patch_router.post("/patches/{device_id}/query", response_model=DevicePatchesResponse, dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
+# A failed package query is the host's or the request's problem, not the server's: never a 500.
+# A refused SSH login is a 400, not a 401, which GravityUI would take for its own session ending.
+_QUERY_ERROR_STATUS = {
+    patch_service.ERROR_CREDENTIALS: 400,
+    patch_service.ERROR_LOGIN: 400,
+    patch_service.ERROR_SUDO: 400,
+    patch_service.ERROR_HOST_KEY: 409,
+    patch_service.ERROR_UNREACHABLE: 502,
+    patch_service.ERROR_REMOTE: 502,
+}
+
+
+def _query_error_status(result: dict[str, Any]) -> int:
+    return _QUERY_ERROR_STATUS.get(result.get("error_kind"), 502)
+
+
+@patch_router.post("/patches/{device_id}/query", response_model=DevicePatchesResponse, dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
 async def query_device_patches(
     device_id: int,
     request: AgentDeployRequest,
@@ -216,7 +235,7 @@ async def query_device_patches(
 
     result = await list_updates_fn(**call_kwargs)
     if "error" in result:
-        raise HTTPException(status_code=500, detail=result["error"])
+        raise HTTPException(status_code=_query_error_status(result), detail=result["error"])
 
     if tofu and tofu.captured:
         await _persist_captured_host_key(db, host_ip, ssh_port, tofu.captured)
@@ -229,7 +248,7 @@ async def query_device_patches(
     )
 
 
-@patch_router.post("/patches/{device_id}/prepare", dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
+@patch_router.post("/patches/{device_id}/prepare", dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
 async def prepare_patch_action(
     device_id: int,
     request: PatchActionRequest,
@@ -249,9 +268,13 @@ async def prepare_patch_action(
     # Generate a unique token
     token = f"patch_tok_{uuid.uuid4().hex}"
 
-    # Store credentials and parameters temporarily (expires in 60s)
+    # Store credentials and parameters temporarily (expires in 60s). The token only opens the
+    # update WebSocket for the browser session that asked for it, from the same address: one
+    # that leaks (a proxy log of the WebSocket URL) is useless to anyone else.
     _temp_patch_tokens[token] = {
         "device_id": device_id,
+        "session": _session_digest(current_admin),
+        "client": _client_host(http_request),
         "host_ip": host_ip,
         "ssh_user": ssh_user,
         "ssh_password": ssh_password,
@@ -281,22 +304,42 @@ async def _send_ws_text(websocket: WebSocket, text: str) -> bool:
         return False
 
 
-async def _consume_patch_session(websocket: WebSocket, device_id: int) -> dict | None:
-    """Validate and consume the one-shot patch session token; returns session data or None.
+def _session_digest(session_id) -> str:
+    """What a patch token remembers of the browser session that asked for it (not the session id itself)."""
+    return hashlib.sha256((session_id if isinstance(session_id, str) else "").encode()).hexdigest()
 
-    The error message is awaited (not a fire-and-forget task), so it reaches the
-    client before the caller closes the WebSocket.
+
+def _client_host(conn) -> str | None:
+    return conn.client.host if getattr(conn, "client", None) else None
+
+
+async def _consume_patch_session(websocket: WebSocket, device_id: int) -> dict | None:
+    """The data of the one-shot patch token in the URL, used up; None when it does not open this socket.
+
+    Runs before the WebSocket is accepted. The token must exist, be younger than
+    PATCH_TOKEN_TTL_SECONDS, name this device, and come from the same browser session and client
+    address as this handshake. A token presented by another session or address stays valid for its
+    owner (it is not used up), so a leaked URL cannot be used to burn it either.
     """
     patch_token = websocket.query_params.get("patch_token")
-    session_data = _temp_patch_tokens.pop(patch_token, None) if patch_token else None
-    if session_data is None or time.time() - session_data["created_at"] > PATCH_TOKEN_TTL_SECONDS:
-        await _send_ws_text(websocket, "\r\n[Error] Invalid or expired patch session token. Please try again.\r\n")
+    session_data = _temp_patch_tokens.get(patch_token) if patch_token else None
+    if session_data is None:
         return None
-
-    if session_data["device_id"] != device_id:
-        await _send_ws_text(websocket, "\r\n[Error] Session token device ID mismatch.\r\n")
+    if time.time() - session_data["created_at"] > PATCH_TOKEN_TTL_SECONDS:
+        _temp_patch_tokens.pop(patch_token, None)
         return None
-    return session_data
+    session_ok = hmac.compare_digest(
+        session_data.get("session") or "", _session_digest(websocket.cookies.get("gravitylan_token"))
+    )
+    client_ok = session_data.get("client") == _client_host(websocket)
+    if session_data["device_id"] != device_id or not session_ok or not client_ok:
+        logger.warning(
+            "Patch WebSocket for device %s refused: token issued for device %s%s%s",
+            device_id, session_data["device_id"],
+            "" if session_ok else ", another browser session", "" if client_ok else ", another address",
+        )
+        return None
+    return _temp_patch_tokens.pop(patch_token, None)
 
 
 def _build_update_command(pkg_manager: str, mode: str) -> str | None:
@@ -507,28 +550,19 @@ async def _stream_update(params: PatchStreamParams) -> None:
         await _report_result(params.websocket, success, msg)
 
 
-@patch_router.websocket("/patches/{device_id}/run-ws")
+@patch_router.websocket("/patches/{device_id}/run-ws", dependencies=[policy(callers=SESSION_ONLY, channel="agent", credential="one-shot patch token from POST /api/agent/patches/{device_id}/prepare")])
 async def run_patches_websocket(websocket: WebSocket, device_id: int):
     """WebSocket endpoint to run updates and stream output live to the frontend."""
-    # Authenticate websocket first (standard browser-session/API-token check)
-    from app.api.auth import authenticate_websocket_authorized
+    auth_info = ws_auth(websocket)  # the policy admitted a browser session
 
-    auth_info = await authenticate_websocket_authorized(
-        websocket,
-        endpoint_type="agent",
-        device_id=device_id,
-        allowed_levels=("session",),
-    )
-    if not auth_info:
-        return
-
-    await websocket.accept()
-
-    # Validate and consume the one-shot patch session token
+    # The one-shot token is checked before the handshake is accepted: a socket that brings
+    # none, or one issued to another device, session or address, is never opened
     session_data = await _consume_patch_session(websocket, device_id)
     if not session_data:
         await websocket.close(code=4001, reason="Invalid session token")
         return
+
+    await websocket.accept()
 
     mode = session_data["mode"]
     actor = actor_from_identity(auth_info.get("identity"))

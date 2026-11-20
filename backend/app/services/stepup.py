@@ -1,9 +1,10 @@
 """Step-up: a browser session confirms the admin password again before sensitive actions (AP-12, AP-13).
 
 A confirmation grants one class of actions to one session for ``security.stepup_minutes`` (default 10,
-1 to 60). Grants live in memory next to the sessions themselves and end with them. Endpoints declare
-their class with ``Depends(require_step_up("remote"))``; without a grant they answer 403 with the
-header ``X-Step-Up: <class>``, which GravityUI answers with its password dialog and a retry.
+1 to 60). Grants live in memory next to the sessions themselves and end with them. Routes declare
+their class in their access policy, ``policy(step_up="remote", ...)`` (app.api.policy); without a
+grant they answer 403 with the header ``X-Step-Up: <class>``, which GravityUI answers with its
+password dialog and a retry.
 
 Remote actions (terminal, agent install/removal, install codes, package updates) require a browser
 session with confirmation: master and API tokens are refused with 403 and recorded in the audit log
@@ -12,11 +13,10 @@ session with confirmation: master and API tokens are refused with 403 and record
 
 import time
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from sqlalchemy import select
 from starlette.requests import HTTPConnection
 
-from app.services.audit import record as audit
 from app.services.session_service import session_store
 
 # remote: terminals, agent install/removal, install codes, package updates; credentials: SSH keys and
@@ -44,25 +44,6 @@ API_TOKEN_STATE = "api_token"  # set on the request by the authentication of an 
 
 def _marked_api_token(conn: HTTPConnection) -> bool:
     return bool(getattr(conn.state, API_TOKEN_STATE, False))
-
-
-async def _sends_api_token(request: Request, db) -> bool:
-    """True when the request authenticates with an API token.
-
-    The mark the authentication leaves covers routes that authenticate first; on others the step-up
-    runs before it, so the sent bearer token is looked up here the same way (by its hash).
-    """
-    if _marked_api_token(request):
-        return True
-    authorization = request.headers.get("authorization") or ""
-    if not authorization.startswith("Bearer "):
-        return False
-    import hashlib
-
-    from app.models.api_token import ApiToken
-    digest = hashlib.sha256(authorization.removeprefix("Bearer ").strip().encode()).hexdigest()
-    found = await db.execute(select(ApiToken.id).where(ApiToken.token_hash == digest))
-    return found.first() is not None
 
 
 class StepUpStore:
@@ -143,28 +124,3 @@ def check(conn: HTTPConnection, cls: str) -> None:
     session_id = session_of(conn)
     if session_id is not None and not store.is_granted(session_id, cls):
         raise HTTPException(status_code=403, detail=MESSAGE, headers={HEADER: cls})
-
-
-def require_step_up(cls: str):
-    """FastAPI dependency for an endpoint of class ``cls``."""
-    if cls not in CLASSES:
-        raise ValueError(f"Unknown step-up class {cls!r}")
-    from fastapi import Depends
-    from app.database import get_db
-
-    async def dependency(request: Request, db=Depends(get_db)) -> None:
-        if cls == "remote" and session_of(request) is None:
-            await audit(
-                request,
-                _remote_audit_action(request.url.path),
-                "denied",
-                device_id=_device_id_of(request),
-                detail="browser session required",
-            )
-            raise HTTPException(status_code=403, detail=NO_TOKEN_MESSAGE)
-        if cls in CONFIRMED_CLASSES and session_of(request) is None and await _sends_api_token(request, db):
-            await audit(request, f"stepup.{cls}", "denied", detail="API token")
-            raise HTTPException(status_code=403, detail=API_TOKEN_MESSAGE)
-        check(request, cls)
-
-    return dependency

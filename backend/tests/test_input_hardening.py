@@ -1,4 +1,4 @@
-"""Router-level auth (defense in depth) and input validation for values that reach shells.
+"""Per-route auth (defense in depth) and input validation for values that reach shells.
 
 server.url is embedded into the root agent install script; dns.server / a subnet's
 dns_server is passed to `nmap --dns-servers`. Both must be rejected unless they are
@@ -12,7 +12,6 @@ from sqlalchemy import select
 
 from app.api import devices as devices_api
 from app.api import topology as topology_api
-from app.api.auth import get_current_admin
 from app.database import get_db
 from app.models.device import Device
 from app.models.setting import Setting
@@ -33,8 +32,11 @@ def _admin_headers(token):
     devices_api.groups_router,
     topology_api.router,
 ])
-def test_routers_require_admin_dependency(router):
-    assert any(dep.dependency is get_current_admin for dep in router.dependencies)
+def test_routers_declare_a_login_policy_on_every_route(router):
+    """Each route carries its own access policy (app.api.policy), so no mount can leave it open."""
+    for route in router.routes:
+        policies = [d.dependency.policy for d in route.dependencies if hasattr(d.dependency, "policy")]
+        assert len(policies) == 1 and not policies[0].public, route.path
 
 
 @pytest.mark.asyncio

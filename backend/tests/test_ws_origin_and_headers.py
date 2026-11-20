@@ -13,8 +13,13 @@ from app.api.auth import websocket_origin_allowed
 HEADERS = {"Authorization": "Bearer test-admin-token-12345"}
 
 
-def _ws(**headers):
-    return SimpleNamespace(headers={k.replace("_", "-"): v for k, v in headers.items()})
+def _ws(client="127.0.0.1", **headers):
+    """A handshake from ``client`` (by default localhost, which counts as a trusted proxy when
+    GRAVITYLAN_TRUSTED_PROXIES is empty, as uvicorn's own default does)."""
+    return SimpleNamespace(
+        headers={k.replace("_", "-"): v for k, v in headers.items()},
+        client=SimpleNamespace(host=client) if client else None,
+    )
 
 
 @pytest.mark.parametrize("headers", [
@@ -43,6 +48,36 @@ def test_cross_site_handshakes_are_refused(headers):
     assert not websocket_origin_allowed(_ws(**headers))
 
 
+PROXIED = {"origin": "https://gravity.example.com", "host": "10.0.0.5:8000", "x_forwarded_host": "gravity.example.com"}
+
+
+def test_forwarded_host_from_an_untrusted_address_is_ignored(monkeypatch):
+    monkeypatch.setattr(auth.settings, "trusted_proxies", "")
+    assert not websocket_origin_allowed(_ws(client="192.168.1.50", **PROXIED))
+    assert not websocket_origin_allowed(_ws(client=None, **PROXIED))
+
+
+def test_forwarded_host_from_a_configured_proxy_network_counts(monkeypatch):
+    monkeypatch.setattr(auth.settings, "trusted_proxies", "172.18.0.0/16, 10.0.0.2")
+    assert websocket_origin_allowed(_ws(client="172.18.0.3", **PROXIED))
+    assert websocket_origin_allowed(_ws(client="10.0.0.2", **PROXIED))
+    assert not websocket_origin_allowed(_ws(client="127.0.0.1", **PROXIED))  # no longer trusted once configured
+    assert not websocket_origin_allowed(_ws(client="172.19.0.3", **PROXIED))
+
+
+def test_forwarded_host_counts_when_uvicorn_took_the_client_from_a_trusted_proxy(monkeypatch):
+    """uvicorn has replaced the proxy's address with the browser's from X-Forwarded-For by then."""
+    monkeypatch.setattr(auth.settings, "trusted_proxies", "172.18.0.0/16")
+    assert websocket_origin_allowed(_ws(client="192.168.1.50", x_forwarded_for="192.168.1.50", **PROXIED))
+
+
+def test_star_trusts_every_proxy_and_a_typo_trusts_none(monkeypatch):
+    monkeypatch.setattr(auth.settings, "trusted_proxies", "*")
+    assert websocket_origin_allowed(_ws(client="203.0.113.9", **PROXIED))
+    monkeypatch.setattr(auth.settings, "trusted_proxies", "proxy.local")
+    assert not websocket_origin_allowed(_ws(client="203.0.113.9", **PROXIED))
+
+
 def test_configured_cors_origins_are_allowed(monkeypatch):
     monkeypatch.setattr(auth.settings, "cors_origins", ["http://localhost:5173"])
     assert websocket_origin_allowed(_ws(origin="http://localhost:5173", host="127.0.0.1:8000"))
@@ -53,8 +88,9 @@ def _ws_app():
     from app import main
     from app.api.ssh import ws_router
 
+    route = next(r for r in main.app.routes if getattr(r, "path", None) == "/api/logs/ws")
     app = FastAPI()
-    app.add_api_websocket_route("/api/logs/ws", main.logs_websocket)
+    app.add_api_websocket_route("/api/logs/ws", main.logs_websocket, dependencies=route.dependencies)
     app.include_router(ws_router)
     return app
 

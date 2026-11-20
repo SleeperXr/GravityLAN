@@ -4,7 +4,7 @@ from sqlalchemy import select, delete, or_, and_
 from sqlalchemy.exc import IntegrityError
 from typing import List
 
-from app.api.auth import get_current_admin
+from app.api.policy import policy
 from app.database import get_db
 from app.models.topology import Rack as RackModel, TopologyLink as LinkModel
 from app.models.device import Device as DeviceModel
@@ -13,9 +13,9 @@ from app.schemas.topology import Rack as RackSchema, RackCreate, TopologyLink as
 from app.services.cache_service import topology_cache
 
 # Auth on the router itself (defense in depth); main.py adds it again on include.
-router = APIRouter(prefix="/api/topology", tags=["topology"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(prefix="/api/topology", tags=["topology"])
 
-@router.get("/map")
+@router.get("/map", dependencies=[policy(scope="topology:read")])
 async def get_topology_map(db: AsyncSession = Depends(get_db)):
     """Unified endpoint for the topology map, backed by in-memory cache."""
     if not topology_cache.is_stale():
@@ -41,12 +41,12 @@ async def get_topology_map(db: AsyncSession = Depends(get_db)):
 
 # --- Rack Endpoints ---
 
-@router.get("/racks", response_model=List[RackSchema])
+@router.get("/racks", response_model=List[RackSchema], dependencies=[policy(scope="topology:read")])
 async def get_racks(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(RackModel))
     return result.scalars().all()
 
-@router.post("/racks", response_model=RackSchema)
+@router.post("/racks", response_model=RackSchema, dependencies=[policy(scope="topology:write")])
 async def create_rack(rack: RackCreate, db: AsyncSession = Depends(get_db)):
     db_rack = RackModel(**rack.model_dump())
     db.add(db_rack)
@@ -55,7 +55,7 @@ async def create_rack(rack: RackCreate, db: AsyncSession = Depends(get_db)):
     await db.refresh(db_rack)
     return db_rack
 
-@router.patch("/racks/{rack_id}", response_model=RackSchema)
+@router.patch("/racks/{rack_id}", response_model=RackSchema, dependencies=[policy(scope="topology:write")])
 async def update_rack(rack_id: int, patch: RackPatch, db: AsyncSession = Depends(get_db)):
     """Rename a rack or change its height (units) and width; refused while something in it would not fit."""
     rack = await db.get(RackModel, rack_id)
@@ -79,7 +79,7 @@ async def update_rack(rack_id: int, patch: RackPatch, db: AsyncSession = Depends
     await db.refresh(rack)
     return rack
 
-@router.delete("/racks/{rack_id}")
+@router.delete("/racks/{rack_id}", dependencies=[policy(scope="topology:write")])
 async def delete_rack(rack_id: int, db: AsyncSession = Depends(get_db)):
     await db.execute(delete(RackModel).where(RackModel.id == rack_id))
     await db.commit()
@@ -88,12 +88,12 @@ async def delete_rack(rack_id: int, db: AsyncSession = Depends(get_db)):
 
 # --- Link Endpoints ---
 
-@router.get("/links", response_model=List[LinkSchema])
+@router.get("/links", response_model=List[LinkSchema], dependencies=[policy(scope="topology:read")])
 async def get_links(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(LinkModel))
     return result.scalars().all()
 
-@router.post("/links", response_model=LinkSchema)
+@router.post("/links", response_model=LinkSchema, dependencies=[policy(scope="topology:write")])
 async def create_link(link: TopologyLinkCreate, db: AsyncSession = Depends(get_db)):
     """Link two devices. A link is undirected: one already there in either direction is a 409, never a second row."""
     if link.source_id == link.target_id:
@@ -116,7 +116,7 @@ async def create_link(link: TopologyLinkCreate, db: AsyncSession = Depends(get_d
     await db.refresh(db_link)
     return db_link
 
-@router.patch("/links/{link_id}", response_model=LinkSchema)
+@router.patch("/links/{link_id}", response_model=LinkSchema, dependencies=[policy(scope="topology:write")])
 async def update_link(link_id: int, link_update: TopologyLinkUpdate, db: AsyncSession = Depends(get_db)):
     # TopologyLinkUpdate allows partial updates
     db_link = await db.get(LinkModel, link_id)
@@ -134,20 +134,20 @@ async def update_link(link_id: int, link_update: TopologyLinkUpdate, db: AsyncSe
     await db.refresh(db_link)
     return db_link
 
-@router.delete("/links/{link_id}")
+@router.delete("/links/{link_id}", dependencies=[policy(scope="topology:write")])
 async def delete_link(link_id: int, db: AsyncSession = Depends(get_db)):
     await db.execute(delete(LinkModel).where(LinkModel.id == link_id))
     await db.commit()
     topology_cache.invalidate()
     return {"message": "Link deleted"}
 
-@router.get("/nodes")
+@router.get("/nodes", dependencies=[policy(scope="topology:read")])
 async def get_topology_nodes(db: AsyncSession = Depends(get_db)):
     """Fetch all nodes (devices) from the topology map."""
     map_data = await get_topology_map(db)
     return map_data["devices"]
 
-@router.get("/edges")
+@router.get("/edges", dependencies=[policy(scope="topology:read")])
 async def get_topology_edges(db: AsyncSession = Depends(get_db)):
     """Fetch all edges (links) from the topology map."""
     map_data = await get_topology_map(db)
