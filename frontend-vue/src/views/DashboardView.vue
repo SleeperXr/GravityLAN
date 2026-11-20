@@ -31,6 +31,7 @@ import LineStatusBoard from '@/components/dashboard/LineStatusBoard.vue';
 import ServiceNotices from '@/components/dashboard/ServiceNotices.vue';
 import NetworkPulse from '@/components/dashboard/NetworkPulse.vue';
 import OrbitMap from '@/components/orbit/OrbitMap.vue';
+import MacConflictsPanel from '@/components/mac/MacConflictsPanel.vue';
 import type { EditorTab } from '@/lib/deviceForm';
 import { t } from '@/i18n';
 
@@ -317,6 +318,12 @@ function clearFilters() {
       <div class="space-y-3">
         <NetworkPulse v-if="!isMobile" :devices="store.devices" :updated="store.lastUpdated" :failed="!!store.error" @open="(d) => openEditor(d)" />
         <LineStatusBoard v-if="store.subnets.length > 0" :subnets="store.subnets" :devices="store.devices" :active="lineFilter" @select="(id) => (lineFilter = id)" />
+        <MacConflictsPanel
+          v-if="store.macConflicts.length > 0"
+          :groups="store.macConflicts"
+          @open-device="(id) => openDeviceById(id)"
+          @resolved="store.loadData(true)"
+        />
       </div>
       <!-- Collapsed banner: slim bar when the orbit map and notices are folded away -->
       <div

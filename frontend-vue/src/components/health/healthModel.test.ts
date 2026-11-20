@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DeviceHistoryResponse, HealthIncident } from '@/types';
-import { historyEntry, incidentEntry, sharedIncidentTime } from './healthModel';
+import { historyEntry, incidentEntry, sharedIncidentTime, statusWord } from './healthModel';
 import { relativeTimeText } from '@/lib/relativeTime';
 
 const incident = (over: Partial<HealthIncident>): HealthIncident => ({
@@ -31,6 +31,14 @@ describe('historyEntry', () => {
     expect(historyEntry(rec('online'))).toMatchObject({ key: 7, tone: 'accent', hollow: true });
     expect(historyEntry(rec('UP')).hollow).toBe(true);
     expect(historyEntry(rec('offline'))).toMatchObject({ tone: 'danger', hollow: false });
+    expect(historyEntry(rec('mac_conflict'))).toMatchObject({ tone: 'warn', hollow: false });
+    expect(historyEntry(rec('mac_changed'))).toMatchObject({ tone: 'info', hollow: true });
+  });
+
+  it('translates mac_conflict and mac_changed and keeps unknown status words as sent', () => {
+    expect(statusWord('mac_conflict')).not.toBe('mac_conflict');
+    expect(statusWord('mac_changed')).not.toBe('mac_changed');
+    expect(statusWord('future_status')).toBe('future_status');
   });
 });
 

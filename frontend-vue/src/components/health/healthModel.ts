@@ -44,9 +44,9 @@ export function statusWord(status: string): string {
   const key = status.toLowerCase();
   if (key === 'online' || key === 'up') return t('network.online');
   if (key === 'offline' || key === 'down') return t('network.offline');
-  if (key === 'flapping' || key === 'service_up' || key === 'service_down') return t(`gv.status.${key}`);
-  if (key === 'ip_changed') return t('gv.status.ip_changed');
-  if (key === 'new_device') return t('gv.status.new_device');
+  if (['flapping', 'service_up', 'service_down', 'ip_changed', 'new_device', 'mac_conflict', 'mac_changed'].includes(key)) {
+    return t(`gv.status.${key}`);
+  }
   return status;
 }
 
@@ -81,10 +81,11 @@ export function sharedIncidentTime(incidents: Pick<HealthIncident, 'timestamp'>[
   return { text: best.text, all: best.count === incidents.length };
 }
 
-/** Timeline dot of a status history record: up is a hollow green dot, anything else a red one. */
+/** Timeline dot of a status history record: up is green, info/mac_changed blue, mac_conflict amber, outages red. */
 export function historyEntry(item: DeviceHistoryResponse): TimelineEntry<DeviceHistoryResponse> {
   const key = item.status.toLowerCase();
   const up = isRecovery(key);
-  const info = key === 'ip_changed' || key === 'new_device' || key === 'info';
-  return { key: item.id, tone: up ? 'accent' : info ? 'info' : 'danger', hollow: up || info, data: item };
+  const info = key === 'ip_changed' || key === 'new_device' || key === 'info' || key === 'mac_changed';
+  const warn = key === 'mac_conflict' || key === 'flapping';
+  return { key: item.id, tone: up ? 'accent' : warn ? 'warn' : info ? 'info' : 'danger', hollow: up || info, data: item };
 }

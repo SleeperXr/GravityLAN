@@ -7,6 +7,7 @@ export const AUDIT_CATEGORIES = {
   remote: ['agent', 'ssh.terminal'],
   credentials: ['ssh.key', 'ssh.connection', 'ssh.known_host', 'auth.token', 'auth.master_token', 'auth.password', 'webhook'],
   instance: ['backup', 'database'],
+  devices: ['device'],
   logins: ['auth.login'],
 } as const satisfies Record<string, readonly string[]>;
 

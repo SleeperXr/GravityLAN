@@ -86,7 +86,7 @@ def _build_docker_container_map() -> dict:
     if not docker_service.is_available():
         return docker_container_map
     try:
-        services: dict[str, set[str]] = {}
+        services: dict[str, list[str]] = {}  # service name -> first IP of each container carrying it
         for c in docker_service.get_local_containers():
             c_name = c.get("name")
             c_ips = c.get("ips", [])
@@ -94,12 +94,12 @@ def _build_docker_container_map() -> dict:
                 docker_container_map[c_name.lower()] = c_ips[0]
                 service = c.get("service")
                 if service:
-                    services.setdefault(service.lower(), set()).add(c_ips[0])
+                    services.setdefault(service.lower(), []).append(c_ips[0])
         # A service name is unique only within one Compose project, and --scale runs replicas of it:
         # only a name that one running container answers to points at an address
         for service, ips in services.items():
             if len(ips) == 1:
-                docker_container_map.setdefault(service, next(iter(ips)))
+                docker_container_map.setdefault(service, ips[0])
         if docker_container_map:
             logger.info(f"Migration: Docker socket active. Found {len(docker_container_map)} running containers: {list(docker_container_map.keys())}")
     except Exception as e:
@@ -122,11 +122,16 @@ def _next_free_placeholder_ip(used_ips: set) -> str:
 
 
 def _ip_from_docker_name(dev_name: str, docker_map: dict, used_ips: set, old_corrupted_ip: str):
-    """1a. A running Docker container of the same name (see _same_name)."""
-    for c_name, c_ip in docker_map.items():
-        if _same_name(dev_name, c_name) and _is_free(c_ip, used_ips, old_corrupted_ip):
-            return c_ip
-    return None
+    """1a. The one running Docker container of the same name (see _same_name).
+
+    "foo-bar" and "foo_bar" are both the same name as a device "foo bar": when the names that
+    match point at more than one address, none of them is taken.
+    """
+    ips = {c_ip for c_name, c_ip in docker_map.items() if _same_name(dev_name, c_name)}
+    if len(ips) != 1:
+        return None
+    c_ip = next(iter(ips))
+    return c_ip if _is_free(c_ip, used_ips, old_corrupted_ip) else None
 
 
 def _restorable_old_ip(dev, used_ips: set):

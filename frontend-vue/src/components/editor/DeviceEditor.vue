@@ -20,6 +20,9 @@ import ServicesTab from './ServicesTab.vue';
 import InterfacesTab from './InterfacesTab.vue';
 import HistoryTab from './HistoryTab.vue';
 import AgentTab from './AgentTab.vue';
+import DeviceMacConflictBanner from '@/components/mac/DeviceMacConflictBanner.vue';
+import MacManualDialog from '@/components/mac/MacManualDialog.vue';
+import { conflictsForDevice } from '@/lib/macConflicts';
 import { useAgentPanel } from '@/composables/useAgentPanel';
 import { useNetworkStore } from '@/stores/network';
 import { useToast } from '@/composables/useToast';
@@ -45,6 +48,8 @@ const refreshing = ref(false);
 const scanningServices = ref(false);
 const groups = ref<DeviceGroup[]>([]);
 const racks = ref<Rack[]>([]);
+const manualMacOpen = ref(false);
+const deviceConflicts = computed(() => conflictsForDevice(store.macConflicts ?? [], current.value.id));
 
 watch(
   () => [props.device, props.initialTab] as const,
@@ -79,6 +84,7 @@ watch(
     }
     api.getGroups().then((g) => (groups.value = g)).catch(() => (groups.value = []));
     api.getRacks().then((r) => (racks.value = Array.isArray(r) ? r : [])).catch(() => (racks.value = []));
+    void store.loadMacConflicts?.();
   },
   { immediate: true },
 );
@@ -114,6 +120,18 @@ function onInterfaces(list: DeviceInterface[]) {
 async function ackIpChange() {
   await api.updateDevice(current.value.id, { old_ip: null, ip_changed_at: null }).catch(() => {});
   current.value = { ...current.value, old_ip: null, ip_changed_at: null };
+  emit('saved');
+}
+
+async function onMacResolved() {
+  try {
+    if (typeof api.getDevice === 'function') {
+      current.value = await api.getDevice(current.value.id);
+    }
+  } catch {
+    // keep current device data; parent refresh will catch up
+  }
+  await store.loadMacConflicts?.();
   emit('saved');
 }
 
@@ -239,6 +257,8 @@ async function remove() {
       </nav>
     </template>
 
+    <DeviceMacConflictBanner :conflicts="deviceConflicts" @resolved="onMacResolved" />
+
     <div v-if="current.old_ip" class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-info/40 bg-info/10 px-3.5 py-2.5 text-xs text-fg">
       <div class="flex items-center gap-2">
         <ArrowRight class="size-4 shrink-0 text-info-text" aria-hidden="true" />
@@ -248,12 +268,14 @@ async function remove() {
     </div>
 
     <div class="py-1">
-      <SettingsTab v-if="tab === 'settings'" v-model:form="form" :device="current" :devices="store.devices" :groups="groups" :racks="racks" :refreshing="refreshing" :saving-source="savingSource" @refresh-info="refreshInfo" @hostname-source="setHostnameSource" @submit="save" />
+      <SettingsTab v-if="tab === 'settings'" v-model:form="form" :device="current" :devices="store.devices" :groups="groups" :racks="racks" :refreshing="refreshing" :saving-source="savingSource" @refresh-info="refreshInfo" @hostname-source="setHostnameSource" @edit-mac="manualMacOpen = true" @submit="save" />
       <ServicesTab v-else-if="tab === 'services'" v-model:device="current" :scanning="scanningServices" @changed="emit('saved')" @scan="scanServices" />
       <InterfacesTab v-else-if="tab === 'interfaces'" :device="current" @changed="emit('saved')" @merged-away="open = false" @interfaces="onInterfaces" />
       <HistoryTab v-else-if="tab === 'history'" :device-id="current.id" :active="tab === 'history'" />
       <AgentTab v-else-if="tab === 'agent'" :device-id="current.id" :panel="agentPanel" />
     </div>
+
+    <MacManualDialog v-model:open="manualMacOpen" :device="current" @changed="onMacResolved" />
 
     <template #footer>
       <Button variant="danger-ghost" class="mr-auto" @click="remove"><Trash2 aria-hidden="true" />{{ t('common.delete') }}</Button>

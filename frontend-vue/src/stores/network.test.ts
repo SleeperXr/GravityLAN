@@ -6,6 +6,7 @@ const api = vi.hoisted(() => ({
   getDevices: vi.fn(),
   getGroups: vi.fn(),
   getSubnetsList: vi.fn(),
+  getMacConflicts: vi.fn(),
   getScanStatus: vi.fn(),
   stopScan: vi.fn(),
 }));
@@ -37,6 +38,7 @@ describe('network store', () => {
       { id: 1, name: 'A', sort_order: 1 },
     ]);
     api.getSubnetsList.mockResolvedValue([{ cidr: '10.0.0.0/24' }]);
+    api.getMacConflicts.mockResolvedValue([]);
     api.getScanStatus.mockResolvedValue(progress('idle'));
     api.stopScan.mockResolvedValue(undefined);
   });
