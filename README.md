@@ -22,8 +22,8 @@ Self-hosted network radar, device inventory, interactive orbit topology, and rac
 > [!NOTE]
 > **Active development & published images.** This branch documents the upcoming **0.8.0** release:
 > - `sleeperxr/gravitylan:latest` currently serves **`0.7.0`** (the last final release).
-> - `sleeperxr/gravitylan:next` currently serves **`0.8.0-rc.2`** (includes GravityUI-only, Proxmox VE sync, `Ctrl+K` search, Starlight/Aurora/custom themes, secondary DNS, and pre-migration DB backups).
-> - Changes merged to `main` after `0.8.0-rc.2` (**MAC conflict review and manual MAC correction**, **newest-on-top live log**, **central route security matrix**, and **agent `0.3.17`**) will ship with the next release candidate / final `0.8.0` image.
+> - `sleeperxr/gravitylan:next` currently serves **`0.8.0-rc.3`** (includes GravityUI-only, Proxmox VE sync, `Ctrl+K` search, Starlight/Aurora/custom themes, secondary DNS, pre-migration DB backups, MAC conflict review and manual MAC correction, the newest-on-top live log, the central route security matrix, and agent `0.3.17`).
+> - Changes merged to `main` after `0.8.0-rc.3` are listed under `[Unreleased]` in the [changelog](CHANGELOG.md) and ship with the next release candidate or the final `0.8.0` image.
 >
 > Always stop the container and back up your data directory before upgrading.
 
@@ -65,7 +65,7 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-*Image tags:* `:latest` runs **`0.7.0`** (until `v0.8.0` is tagged); `:next` runs **`0.8.0-rc.2`** (note that `main` commits after `rc.2`, such as MAC conflict handling and agent `0.3.17`, are not in `:next` yet).
+*Image tags:* `:latest` runs **`0.7.0`** (until `v0.8.0` is tagged); `:next` runs **`0.8.0-rc.3`** (`main` commits after `rc.3` are not in `:next` yet; see `[Unreleased]` in the changelog).
 
 Open `http://<your-host>:8000` and complete the setup wizard: it detects local subnets, runs the initial scan (or restores a JSON backup), and sets the admin password.
 
