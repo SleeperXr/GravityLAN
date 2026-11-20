@@ -115,6 +115,7 @@ const activeSlot = computed(() => (active.value === null ? null : slots.value[ac
     <div v-if="!compact && (title || uptime !== null)" class="mb-1.5 flex items-baseline justify-between gap-2 text-xs">
       <span v-if="title" class="truncate font-semibold text-fg">{{ title }}</span>
       <span v-if="uptime !== null" class="ml-auto shrink-0 font-mono font-semibold text-fg-muted tabular">{{ t('gv.status_monitor.uptime', { pct: pct(uptime) }) }}</span>
+      <span v-else-if="title" class="ml-auto shrink-0 font-mono font-semibold text-fg-subtle tabular">{{ t('gv.status_monitor.empty') }}</span>
     </div>
 
     <div

@@ -226,10 +226,12 @@ def _report(when: datetime) -> SimpleNamespace:
 
 
 def test_compute_uptime_pct_just_born_no_heartbeats():
-    # created == now -> window clamped to 60s -> expected=2 heartbeats -> 0/2 = 0%
+    # created == now or zero reports in window -> None (no arbitrary 60s clamp or synthetic 0 %)
     now = datetime.now(timezone.utc)
     token = _fake_token(created_at=now)
-    assert agent_module._compute_uptime_pct(token, now, now - timedelta(hours=24), []) == 0.0
+    assert agent_module._compute_uptime_pct(token, now, now - timedelta(hours=24), []) is None
+    older_token = _fake_token(created_at=now - timedelta(hours=2))
+    assert agent_module._compute_uptime_pct(older_token, now, now - timedelta(hours=24), []) is None
 
 
 def test_compute_uptime_pct_below_100_with_fewer_heartbeats():
@@ -278,10 +280,14 @@ def test_compute_uptime_history_follows_the_agents_interval():
     assert _history_of(60, interval=60) == [100.0] * 24
 
 
-def test_compute_uptime_history_assumes_up_before_the_install():
-    history = _history_of(0, born_hours_ago=2)
-    assert history[:22] == [100.0] * 22
-    assert history[22:] == [0.0, 0.0]
+def test_compute_uptime_history_returns_none_before_registration_and_on_empty_buckets():
+    """Buckets before token.created_at and measurement-free buckets within runtime return None (A1)."""
+    history_with_reports = _history_of(60, born_hours_ago=2)
+    assert history_with_reports[:22] == [None] * 22
+    assert history_with_reports[22:] == [50.0, 50.0]
+
+    history_empty = _history_of(0, born_hours_ago=2)
+    assert history_empty == [None] * 24
 
 
 # --- downsample_metrics edge cases ------------------------------------------

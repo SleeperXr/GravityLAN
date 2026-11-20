@@ -117,7 +117,7 @@
     "col_agent": "Agent",
     "col_connection": "Connection",
     "col_performance": "Load (live)",
-    "col_uptime": "Uptime (24 h)",
+    "col_uptime": "Report coverage (24 h)",
     "col_activity": "Last report",
     "connected": "Connected",
     "disconnected": "Disconnected"

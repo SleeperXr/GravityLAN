@@ -544,7 +544,7 @@
         "title": "Install and update the agent",
         "summary": "One Python script per Linux host reports CPU, RAM, disks, network and temperature.",
         "steps": "Open the device in the device editor, tab \"Agent\".\nOver SSH: pick a saved key connection or type in user and password. Typed-in credentials are used for that request only.\nOr copy the one-line installer and run it on the host. It carries a one-time code valid for 30 minutes.\nWithout HTTPS the one-liner stops (see \"HTTPS with a reverse proxy\"); installing over SSH works anyway.\nUpdates: the Agent Update Center updates all outdated agents together, and an open SSH terminal offers an \"Agent update\" button.",
-        "hint": "The agent version only changes when the agent script changes. Not every server update needs an agent update."
+        "hint": "The 24-hour bars on the Agents page show report coverage (received against expected reports since token registration); hours without reports appear as \"No data\". The agent version only changes when the agent script changes."
       },
       "updates": {
         "title": "Package updates",
@@ -561,7 +561,7 @@
       "health": {
         "title": "Health Radar",
         "summary": "Availability, latency and incidents of all devices at a glance.",
-        "steps": "Pick the period: 24 hours, 7 or 30 days.\nThe table shows status, score, uptime bars, latency with jitter and services per device; a click opens the details.\nThe details show the latency history, services with SSL expiry, agent values and incidents.\nTurn off 24/7 monitoring for clients like a TV or laptop. Asleep, they then count as standby instead of an outage.",
+        "steps": "Pick the period: 24 hours, 7 or 30 days.\nThe table shows status, score, availability bars, latency with jitter and services per device; slots without probes appear neutrally as \"No data\". A click opens the details.\nThe details show the measured 24h, 7d and 30d availability, the latency history, services with SSL expiry, agent values and incidents.\nTurn off 24/7 monitoring for clients like a TV or laptop. Asleep, they then count as standby instead of an outage.",
         "hint": "Incidents of the last 7 days are listed below as a timeline; clicking a card opens the device."
       },
       "telemetry": {

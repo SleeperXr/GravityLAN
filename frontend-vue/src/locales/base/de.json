@@ -117,7 +117,7 @@
     "col_agent": "Agent",
     "col_connection": "Verbindung",
     "col_performance": "Auslastung (live)",
-    "col_uptime": "Verfügbarkeit (24 Std.)",
+    "col_uptime": "Meldequote (24 Std.)",
     "col_activity": "Letzte Meldung",
     "connected": "Verbunden",
     "disconnected": "Getrennt"

@@ -151,6 +151,13 @@ def _points(rnd, window):
 
 @pytest.mark.parametrize("seed", range(150))
 def test_latency_and_uptime_match_the_frozen_versions(seed):
+    """Measured buckets and windows match the 0.7.0-rc.7 calculation; unmeasured gaps intentionally yield None.
+
+    Intentional semantic changes vs. 0.7.0-rc.7 (_old_uptime):
+    - H1: Buckets without probes (samples == 0) always return None instead of extrapolating dev.is_online.
+    - U2: Windows without probes (total == 0) return None instead of falling back to uptime_pct or dev.is_online.
+    - W2: uptime_30d evaluates the 30d cutoff instead of blindly copying uptime_pct.
+    """
     rnd = random.Random(seed)
     period, window, buckets = rnd.choice([("24h", timedelta(hours=24), 24), ("7d", timedelta(days=7), 28), ("30d", timedelta(days=30), 30)])
     points = _points(rnd, window) if rnd.random() < 0.9 else []
@@ -159,7 +166,40 @@ def test_latency_and_uptime_match_the_frozen_versions(seed):
     window_start = NOW - window
 
     assert _latency_stats(points) == _old_latency_stats(points)
-    assert _compute_uptime_and_latency(dev, points, NOW, window_start, buckets) == _old_uptime(dev, points, NOW, window_start, buckets)
+
+    uptime, lat = _compute_uptime_and_latency(dev, points, NOW, window_start, buckets)
+    old_uptime, old_lat = _old_uptime(dev, points, NOW, window_start, buckets)
+    assert lat == old_lat
+
+    bucket_sec = (NOW - window_start).total_seconds() / buckets
+    bucket_samples = [0] * buckets
+    total_24h = total_7d = total_30d = online_30d = 0
+    for p in points:
+        p_time = ensure_utc(p.timestamp)
+        if not p_time:
+            continue
+        if p_time >= NOW - timedelta(hours=24):
+            total_24h += p.samples
+        if p_time >= NOW - timedelta(days=7):
+            total_7d += p.samples
+        if p_time >= NOW - timedelta(days=30):
+            total_30d += p.samples
+            online_30d += p.online
+        idx = int((p_time - window_start).total_seconds() // bucket_sec)
+        if 0 <= idx < buckets:
+            bucket_samples[idx] += p.samples
+
+    for i in range(buckets):
+        if bucket_samples[i] > 0:
+            assert uptime.history_bars[i] == old_uptime.history_bars[i]
+        else:
+            assert uptime.history_bars[i] is None
+
+    total_samples = sum(p.samples for p in points)
+    assert uptime.uptime_pct == (old_uptime.uptime_pct if total_samples > 0 else None)
+    assert uptime.uptime_24h == (old_uptime.uptime_24h if total_24h > 0 else None)
+    assert uptime.uptime_7d == (old_uptime.uptime_7d if total_7d > 0 else None)
+    assert uptime.uptime_30d == (_pct(online_30d, total_30d) if total_30d > 0 else None)
 
 
 def _item(rnd, i):

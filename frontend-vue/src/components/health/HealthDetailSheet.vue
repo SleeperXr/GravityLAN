@@ -12,7 +12,7 @@ import HealthStatusBadge from './HealthStatusBadge.vue';
 import LatencyChart from './LatencyChart.vue';
 import IncidentList from './IncidentList.vue';
 import StatusMonitor from '@/components/common/StatusMonitor.vue';
-import { ms, periodHours, scoreText } from './healthModel';
+import { ms, pct, periodHours, scoreText } from './healthModel';
 import { formatDateTime, t } from '@/i18n';
 
 /** Telemetry of one device: uptime, latency chart, service probes with SSL, agent health, incidents. */
@@ -110,8 +110,8 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
       <div class="grid grid-cols-2 gap-3">
         <div class="rounded-md border border-line bg-raised p-3">
           <p class="gl-eyebrow">{{ t('health_page.table_uptime') }}</p>
-          <p class="mt-1 font-mono text-xl font-semibold text-accent-text tabular">{{ dev.uptime.uptime_pct.toFixed(1) }}%</p>
-          <p class="mt-0.5 font-mono text-xs text-fg-subtle">24h {{ dev.uptime.uptime_24h.toFixed(1) }}% · 7d {{ dev.uptime.uptime_7d.toFixed(1) }}%</p>
+          <p class="mt-1 font-mono text-xl font-semibold tabular" :class="dev.uptime.uptime_pct === null ? 'text-fg-subtle' : 'text-accent-text'">{{ pct(dev.uptime.uptime_pct, 1) }}</p>
+          <p class="mt-0.5 font-mono text-xs text-fg-subtle">24h {{ pct(dev.uptime.uptime_24h, 1) }} · 7d {{ pct(dev.uptime.uptime_7d, 1) }} · 30d {{ pct(dev.uptime.uptime_30d, 1) }}</p>
         </div>
         <div class="rounded-md border border-line bg-raised p-3">
           <p class="gl-eyebrow">{{ t('health_page.avg_latency') }}</p>

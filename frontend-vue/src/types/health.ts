@@ -11,10 +11,10 @@ export interface LatencyStats {
 }
 
 export interface UptimeStats {
-  uptime_pct: number;
-  uptime_24h: number;
-  uptime_7d: number;
-  uptime_30d: number;
+  uptime_pct: number | null;
+  uptime_24h: number | null;
+  uptime_7d: number | null;
+  uptime_30d: number | null;
   history_bars: (number | null)[];
 }
 

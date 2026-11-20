@@ -52,6 +52,23 @@ export function statusWord(status: string): string {
 
 export const ms = (value: number | null | undefined, digits = 1) => (value === null || value === undefined ? '–' : `${value.toFixed(digits)} ms`);
 
+/** Format an availability percentage; null/undefined means no probes exist in that window ('–'), while 0 is formatted as '0%' / '0.0%'. */
+export const pct = (value: number | null | undefined, digits = 1) => (value === null || value === undefined ? '–' : `${value.toFixed(digits)}%`);
+
+/**
+ * Null-safe uptime comparison: devices with measured uptime (including 0 %) sort according to `dir`;
+ * unmeasured devices (`null` / `undefined`) always sort after measured ones so missing data never
+ * impersonates a 0 % outage or a 100 % leader.
+ */
+export function compareUptime(a: number | null | undefined, b: number | null | undefined, dir: 1 | -1): number {
+  const aNull = a === null || a === undefined;
+  const bNull = b === null || b === undefined;
+  if (aNull && bNull) return 0;
+  if (aNull) return 1;
+  if (bNull) return -1;
+  return (a - b) * dir;
+}
+
 /** Hours covered by a health period, for the status monitor's time axis. */
 export const periodHours = (period: '24h' | '7d' | '30d') => ({ '24h': 24, '7d': 168, '30d': 720 })[period];
 

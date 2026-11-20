@@ -14,7 +14,7 @@ By default, the agent reports every 30 seconds (`POST /api/agent/report` authent
 - **Pending package updates:** Counts regular and security updates (`apt`, `dnf`, `yum`), whether a system reboot is required, and whether a major OS release upgrade is available.
 - **Optional Layer-2 ARP probe:** When enabled for a device inside a routed VLAN, reports local ARP neighbour pairs (`IP` + `MAC`) so GravityLAN resolves real MAC addresses and vendors across routers.
 
-Measurement snapshots are stored in `telemetry.db` (separate from `gravitylan.db`): raw values are kept for 48 hours and then rolled up into hourly (30 days) and daily (365 days) aggregates (see [docs/metrics-history-downsampling.md](metrics-history-downsampling.md)). If an installed agent stops reporting for three intervals (at least two minutes) while its host still answers network checks, GravityUI shows an *"agent not reporting"* notice on the Overview page.
+Measurement snapshots are stored in `telemetry.db` (separate from `gravitylan.db`): raw values are kept for 48 hours and then rolled up into hourly (30 days) and daily (365 days) aggregates (see [docs/metrics-history-downsampling.md](metrics-history-downsampling.md)). On `/api/agent/overview`, `uptime_pct` and the 24 hourly `uptime_history` slots report the agent's 24-hour report coverage (received against expected reports since token registration; hours before registration or without reports are `null`). If an installed agent stops reporting for three intervals (at least two minutes) while its host still answers network checks, GravityUI shows an *"agent not reporting"* notice on the Overview page.
 
 ### Installation & Enrollment
 
@@ -66,7 +66,7 @@ Standardmäßig sendet der Agent alle 30 Sekunden einen Bericht (`POST /api/agen
 - **Offene Paket-Updates:** Anzahl regulärer Updates und Sicherheits-Updates (`apt`, `dnf`, `yum`), Hinweis auf einen ausstehenden Neustart (`Reboot required`) sowie verfügbare Distributions-Upgrades.
 - **Optionale Layer-2-ARP-Probe:** Meldet in gerouteten VLANs lokale ARP-Nachbarn (`IP` + `MAC`), damit GravityLAN auch hinter einem Router echte MAC-Adressen und Hersteller auflösen kann.
 
-Die Messwerte landen in einer separaten `telemetry.db`: Rohwerte bleiben 48 Stunden erhalten und werden danach in Stundenwerte (30 Tage) und Tageswerte (365 Tage) verdichtet (siehe [docs/metrics-history-downsampling.md](metrics-history-downsampling.md)). Meldet sich ein installierter Agent drei Intervalle lang nicht (mindestens zwei Minuten), während das Gerät im Netz weiter antwortet, zeigt GravityUI in der Übersicht den Hinweis *„Agent meldet sich nicht“*.
+Die Messwerte landen in einer separaten `telemetry.db`: Rohwerte bleiben 48 Stunden erhalten und werden danach in Stundenwerte (30 Tage) und Tageswerte (365 Tage) verdichtet (siehe [docs/metrics-history-downsampling.md](metrics-history-downsampling.md)). Unter `/api/agent/overview` geben `uptime_pct` und die 24 Stundenwerte in `uptime_history` die 24-Stunden-Meldequote des Agenten an (eingetroffene gegen erwartete Berichte seit Token-Registrierung; Stunden vor der Registrierung oder ohne Meldung sind `null`). Meldet sich ein installierter Agent drei Intervalle lang nicht (mindestens zwei Minuten), während das Gerät im Netz weiter antwortet, zeigt GravityUI in der Übersicht den Hinweis *„Agent meldet sich nicht“*.
 
 ### Installation & Anmeldung
 

@@ -30,7 +30,12 @@ from app.schemas.health import (
     ServiceHealthItem,
     UptimeStats,
 )
-from app.services.telemetry_query import HealthPoint, health_point_from_sample, load_health_points
+from app.services.telemetry_query import (
+    HealthPoint,
+    health_point_from_sample,
+    load_health_points,
+    load_health_window_uptimes,
+)
 from app.version import VERSION
 
 logger = logging.getLogger(__name__)
@@ -197,41 +202,51 @@ def _compute_uptime_and_latency(
     samples: list,
     now: datetime,
     window_start: datetime,
-    bucket_count: int
+    bucket_count: int,
+    window_uptimes: dict[str, float | None] | None = None,
 ) -> tuple[UptimeStats, LatencyStats]:
     """Calculate availability SLA and latency metrics from time-series points.
 
     ``samples`` are HealthPoints (raw probes and hourly/daily rollups, see
-    app.services.telemetry_query) or raw DeviceHealthSample rows; every value is
-    weighted by the number of probes behind it.
+    app.services.telemetry_query) or raw DeviceHealthSample rows for the selected
+    ``period``; every value is weighted by the number of probes behind it. Windows
+    or buckets without probes yield ``None`` rather than extrapolating from ``dev.is_online``.
     """
     points = _as_points(samples)
     timed = [(p, t) for p in points if (t := ensure_utc(p.timestamp))]
-    current = 100.0 if dev.is_online else 0.0
 
     total_samples = sum(p.samples for p in points)
-    uptime_pct = _uptime_pct(sum(p.online for p in points), total_samples) if total_samples else current
+    uptime_pct = _uptime_pct(sum(p.online for p in points), total_samples) if total_samples else None
+    if window_uptimes is not None:
+        uptime_24h = window_uptimes.get("24h")
+        uptime_7d = window_uptimes.get("7d")
+        uptime_30d = window_uptimes.get("30d")
+    else:
+        uptime_24h = _uptime_since(timed, now - timedelta(hours=24))
+        uptime_7d = _uptime_since(timed, now - timedelta(days=7))
+        uptime_30d = _uptime_since(timed, now - timedelta(days=30))
+
     uptime_stats = UptimeStats(
         uptime_pct=uptime_pct,
-        uptime_24h=_uptime_since(timed, now - timedelta(hours=24), uptime_pct),
-        uptime_7d=_uptime_since(timed, now - timedelta(days=7), uptime_pct),
-        uptime_30d=uptime_pct,
+        uptime_24h=uptime_24h,
+        uptime_7d=uptime_7d,
+        uptime_30d=uptime_30d,
         history_bars=_heartbeat_bars(dev, timed, now, window_start, bucket_count),
     )
     return uptime_stats, _latency_stats(points)
 
 
-def _uptime_since(timed: list[tuple[HealthPoint, datetime]], cutoff: datetime, fallback: float) -> float:
-    """Uptime of the points at or after ``cutoff``; ``fallback`` when there are none."""
+def _uptime_since(timed: list[tuple[HealthPoint, datetime]], cutoff: datetime) -> float | None:
+    """Uptime of the points at or after ``cutoff``; ``None`` when there are none."""
     recent = [p for p, t in timed if t >= cutoff]
     total = sum(p.samples for p in recent)
-    return _uptime_pct(sum(p.online for p in recent), total) if total else fallback
+    return _uptime_pct(sum(p.online for p in recent), total) if total else None
 
 
 def _heartbeat_bars(
     dev: Device, timed: list[tuple[HealthPoint, datetime]], now: datetime, window_start: datetime, bucket_count: int,
 ) -> list[float | None]:
-    """Availability per bucket; a bucket without probes shows the current status once the device existed."""
+    """Availability per bucket; a bucket without probes is None (never extrapolated from current online state)."""
     bucket_sec = (now - window_start).total_seconds() / bucket_count
     online = [0] * bucket_count
     samples = [0] * bucket_count
@@ -241,17 +256,10 @@ def _heartbeat_bars(
             online[idx] += p.online
             samples[idx] += p.samples
 
-    first_seen = ensure_utc(dev.first_seen) or now
-    current = 100.0 if dev.is_online else 0.0
-    bars: list[float | None] = []
-    for i in range(bucket_count):
-        if samples[i]:
-            bars.append(_uptime_pct(online[i], samples[i]))
-        elif first_seen <= window_start + timedelta(seconds=(i + 1) * bucket_sec):
-            bars.append(current)
-        else:
-            bars.append(None)
-    return bars
+    return [
+        _uptime_pct(online[i], samples[i]) if samples[i] else None
+        for i in range(bucket_count)
+    ]
 
 
 def _certificate_penalty(svc: ServiceHealthItem) -> int:
@@ -307,11 +315,11 @@ def _score_part_time_device(
 
 
 def _reachability_penalty(dev: Device, uptime: UptimeStats, latency: LatencyStats) -> int:
-    """Points lost for missed scans, uptime below 99 % and high latency."""
+    """Points lost for missed scans, measured uptime below 99 % and high latency."""
     penalty = 0
     if dev.missed_scans > 0:
         penalty += min(30, dev.missed_scans * 15)
-    if uptime.uptime_pct < 99.0:
+    if uptime.uptime_pct is not None and uptime.uptime_pct < 99.0:
         penalty += int((99.0 - uptime.uptime_pct) * 0.8)
     if latency.avg_ms is not None:
         if latency.avg_ms > 150:
@@ -611,8 +619,12 @@ async def get_health_overview(
     metrics_by_dev = {m.device_id: m for m in res_metrics.scalars().all()}
 
     # 3. Health history of the window in bulk: raw probes, or hourly/daily rollups for long windows
+    naive_now = now.replace(tzinfo=None)
     samples_by_dev = await load_health_points(
-        db, device_ids, window_start.replace(tzinfo=None), now.replace(tzinfo=None)
+        db, device_ids, window_start.replace(tzinfo=None), naive_now
+    )
+    window_uptimes_by_dev = await load_health_window_uptimes(
+        db, device_ids, naive_now, preloaded_period=period, preloaded_points=samples_by_dev
     )
 
     # 4. Fetch recent incidents (last 7 days of DeviceHistory for visible devices)
@@ -633,7 +645,12 @@ async def get_health_overview(
     device_items: list[DeviceHealthItem] = []
     for dev in devices:
         uptime_stats, latency_stats = _compute_uptime_and_latency(
-            dev, samples_by_dev.get(dev.id, []), now, window_start, bucket_count
+            dev,
+            samples_by_dev.get(dev.id, []),
+            now,
+            window_start,
+            bucket_count,
+            window_uptimes=window_uptimes_by_dev.get(dev.id),
         )
         service_items = _service_items(dev)
         agent_alerts = _agent_alerts(dev, tokens_by_dev.get(dev.id), metrics_by_dev.get(dev.id), now, intervals.get(dev.id))
@@ -704,8 +721,12 @@ async def get_device_health_detail(
     latest_metric = m_res.scalar_one_or_none()
 
     # 3. Health history (raw probes, or hourly/daily rollups for long windows)
+    naive_now = now.replace(tzinfo=None)
     points_by_dev = await load_health_points(
-        db, [device_id], window_start.replace(tzinfo=None), now.replace(tzinfo=None)
+        db, [device_id], window_start.replace(tzinfo=None), naive_now
+    )
+    window_uptimes_by_dev = await load_health_window_uptimes(
+        db, [device_id], naive_now, preloaded_period=period, preloaded_points=points_by_dev
     )
     samples = points_by_dev.get(device_id, [])
 
@@ -724,7 +745,9 @@ async def get_device_health_detail(
     ]
 
     # Compute stats
-    uptime_stats, latency_stats = _compute_uptime_and_latency(dev, samples, now, window_start, bucket_count)
+    uptime_stats, latency_stats = _compute_uptime_and_latency(
+        dev, samples, now, window_start, bucket_count, window_uptimes=window_uptimes_by_dev.get(device_id)
+    )
     services = _service_items(dev)
     intervals = await load_intervals(db) if agent_token else {}
     agent_alerts = _agent_alerts(dev, agent_token, latest_metric, now, intervals.get(dev.id))

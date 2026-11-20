@@ -273,8 +273,10 @@ class AgentSummary(BaseModel):
     cpu_usage: float = 0.0
     ram_usage: float = 0.0
     temp: float | None = None
-    uptime_pct: float = 100.0
-    uptime_history: list[float] = []
+    # 24h agent report coverage (received vs. expected reports in the observed window; None when no reports exist)
+    uptime_pct: float | None = None
+    # Hourly report coverage over the last 24h (0..100, or None before token registration / in measurement-free hours)
+    uptime_history: list[float | None] = []
     metrics_count: int = 0
     has_pending_token: bool = False
     pending_at: datetime | None = None

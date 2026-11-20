@@ -41,7 +41,7 @@ curl -s -H "Authorization: Bearer gl_pat_..." http://gravitylan.local:8000/api/d
 - `GET /api/summary` — High-level counts of online/offline devices, subnets, and active issues.
 - `GET /api/devices` — Full inventory with status, services, interfaces, and latest agent metrics.
 - `GET /api/devices/mac-conflicts` — Open MAC conflict observations grouped by documented and observed MAC.
-- `GET /api/health/summary` & `GET /api/health/overview` — Network health score, SLA availability, latency, and single points of failure.
+- `GET /api/health/summary` & `GET /api/health/overview` — Network health score, measured probe availability (`uptime_pct`, `uptime_24h`, `uptime_7d`, `uptime_30d` and `history_bars`; slots or windows without probes return `null`), latency, and single points of failure.
 - `GET /api/topology/map` & `GET /api/topology/racks` — Topology nodes/links and rack layouts.
 - `GET /api/network/subnets` & `GET /api/network/gateways` — Configured subnets (with L2/L3 reachability mode) and gateways.
 
@@ -113,7 +113,7 @@ curl -s -H "Authorization: Bearer gl_pat_..." http://gravitylan.local:8000/api/d
 - `GET /api/summary` — Kompakte Übersicht (Online-/Offline-Zähler, Subnetze, aktive Probleme).
 - `GET /api/devices` — Komplettes Inventar mit Status, Diensten, Schnittstellen und aktuellen Agent-Metriken.
 - `GET /api/devices/mac-conflicts` — Offene MAC-Konflikte, gruppiert nach dokumentierter und beobachteter MAC.
-- `GET /api/health/summary` & `GET /api/health/overview` — Netzwerk-Health-Score, Verfügbarkeit, Latenz und Single Points of Failure.
+- `GET /api/health/summary` & `GET /api/health/overview` — Netzwerk-Health-Score, gemessene Verfügbarkeit (`uptime_pct`, `uptime_24h`, `uptime_7d`, `uptime_30d` und `history_bars`; Zeiträume oder Abschnitte ohne Proben liefern `null`), Latenz und Single Points of Failure.
 - `GET /api/topology/map` & `GET /api/topology/racks` — Topologie-Knoten/-Verbindungen und Rack-Belegung.
 - `GET /api/network/subnets` & `GET /api/network/gateways` — Konfigurierte Subnetze (inkl. L2/L3-Erreichbarkeit) und Gateways.
 

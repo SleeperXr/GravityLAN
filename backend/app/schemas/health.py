@@ -49,11 +49,13 @@ class LatencyStats(BaseModel):
 
 
 class UptimeStats(BaseModel):
-    uptime_pct: float = 100.0
-    uptime_24h: float = 100.0
-    uptime_7d: float = 100.0
-    uptime_30d: float = 100.0
-    # Bucketed availability (e.g. 24 or 30 blocks: 100=up, >0=partial, 0=down, null=no data)
+    # Measured probe availability in the selected period / 24h / 7d / 30d window (0..100);
+    # None when no health probes exist in that window (never extrapolated from current online state)
+    uptime_pct: float | None = None
+    uptime_24h: float | None = None
+    uptime_7d: float | None = None
+    uptime_30d: float | None = None
+    # Bucketed probe availability over the selected period (100=up, >0=partial, 0=down, null=no data)
     history_bars: list[float | None] = []
 
 

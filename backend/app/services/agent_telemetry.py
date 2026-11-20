@@ -376,39 +376,77 @@ def _is_agent_active(token: AgentToken, now: datetime, interval: int | None = No
     return is_token_reporting(token, interval, now)
 
 
+def _metric_naive_utc(m) -> datetime:
+    ts = m.timestamp
+    return ensure_utc(ts).replace(tzinfo=None) if getattr(ts, "tzinfo", None) else ts
+
+
 def _compute_uptime_pct(
     token: AgentToken, now: datetime, cutoff_24h: datetime, device_metrics_24h: list, interval: int | None = None,
-) -> float:
-    """Uptime % for the last 24h: the reports since the agent was installed against what its interval promises."""
-    agent_birth = ensure_utc(token.created_at) or cutoff_24h
-    relevant_window = min(timedelta(hours=24), now - agent_birth)
-    window_seconds = max(60, relevant_window.total_seconds())
-    expected = window_seconds / (interval or DEFAULT_INTERVAL)
-    since = agent_birth.replace(tzinfo=None)
-    day_count = sum(1 for m in device_metrics_24h if m.timestamp >= since)
+) -> float | None:
+    """24h agent report coverage (%): received reports vs. expected reports in the observed window.
+
+    ``token.created_at`` marks the start of the token's registration in GravityLAN (not a verified
+    host installation timestamp). Measures reporting coverage rather than guaranteed host availability.
+    Returns ``None`` when the observation window has not started or holds zero reports.
+    """
+    now_utc = ensure_utc(now)
+    cutoff_utc = ensure_utc(cutoff_24h)
+    agent_birth = ensure_utc(token.created_at) or cutoff_utc
+    start = max(cutoff_utc, agent_birth)
+    end = now_utc
+    if end <= start:
+        return None
+
+    start_naive = start.replace(tzinfo=None)
+    end_naive = end.replace(tzinfo=None)
+    day_count = sum(1 for m in device_metrics_24h if start_naive <= _metric_naive_utc(m) < end_naive)
+    if day_count == 0:
+        return None
+
+    eff_interval = interval if (interval and interval > 0) else DEFAULT_INTERVAL
+    expected = (end - start).total_seconds() / eff_interval
+    if expected <= 0:
+        return None
     return min(100.0, (day_count / expected) * 100.0)
 
 
 def _compute_uptime_history(
     token: AgentToken, now: datetime, cutoff_24h: datetime, device_metrics_24h: list, interval: int | None = None,
-) -> list[float]:
-    """Hourly uptime history computed in Python from pre-fetched data (0 extra queries)."""
-    created_at = ensure_utc(token.created_at)
-    agent_birth = created_at or cutoff_24h
-    expected = 3600 / (interval or DEFAULT_INTERVAL)
-    uptime_history: list[float] = []
+) -> list[float | None]:
+    """Hourly agent report coverage over 24 one-hour buckets starting at ``cutoff_24h``.
+
+    Buckets before ``token.created_at``, future buckets at or after ``now``, and buckets without any
+    recorded reports return ``None`` (no data) instead of synthetic 100 % or 0 % values. Partial buckets
+    (registration mid-hour or a running hour ending at ``now``) scale expected reports to ``end - start``.
+    """
+    now_utc = ensure_utc(now)
+    cutoff_utc = ensure_utc(cutoff_24h)
+    agent_birth = ensure_utc(token.created_at) or cutoff_utc
+    eff_interval = interval if (interval and interval > 0) else DEFAULT_INTERVAL
+    uptime_history: list[float | None] = []
     for h in range(24):
-        h_start = cutoff_24h + timedelta(hours=h)
+        h_start = cutoff_utc + timedelta(hours=h)
         h_end = h_start + timedelta(hours=1)
-        if h_start < agent_birth:
-            uptime_history.append(100.0)  # unknown period → assume up
+        start = max(h_start, agent_birth)
+        end = min(h_end, now_utc)
+        if end <= start:
+            uptime_history.append(None)
             continue
-        h_count = sum(1 for m in device_metrics_24h if h_start.replace(tzinfo=None) <= m.timestamp < h_end.replace(tzinfo=None))
-        uptime_history.append(min(100.0, (h_count / expected) * 100.0))
+
+        start_naive = start.replace(tzinfo=None)
+        end_naive = end.replace(tzinfo=None)
+        h_count = sum(1 for m in device_metrics_24h if start_naive <= _metric_naive_utc(m) < end_naive)
+        if h_count == 0:
+            uptime_history.append(None)
+            continue
+
+        expected = (end - start).total_seconds() / eff_interval
+        uptime_history.append(min(100.0, (h_count / expected) * 100.0) if expected > 0 else None)
     return uptime_history
 
 
-def _build_agent_summary(device: Device, token: AgentToken, last_m: DeviceMetrics | None, m_count: int, is_active: bool, uptime_pct: float, uptime_history: list[float]) -> AgentSummary:
+def _build_agent_summary(device: Device, token: AgentToken, last_m: DeviceMetrics | None, m_count: int, is_active: bool, uptime_pct: float | None, uptime_history: list[float | None]) -> AgentSummary:
     """Assemble a single AgentSummary entry from prefetched data."""
     m = last_m or _NO_METRICS
     return AgentSummary(
@@ -496,7 +534,7 @@ def assemble_agents_overview_data(
             uptime_pct = _compute_uptime_pct(token, now, cutoff_24h, device_metrics_24h, interval)
             uptime_history = _compute_uptime_history(token, now, cutoff_24h, device_metrics_24h, interval)
         else:
-            uptime_pct = 0.0
+            uptime_pct = None
             uptime_history = []
         agents_list.append(
             _build_agent_summary(device_map[device_id], token, last_m, m_count, is_active, uptime_pct, uptime_history)

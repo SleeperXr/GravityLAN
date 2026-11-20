@@ -348,8 +348,8 @@ export interface AgentSummary {
   cpu_usage: number;
   ram_usage: number;
   temp: number | null;
-  uptime_pct: number;
-  uptime_history: number[];
+  uptime_pct: number | null;
+  uptime_history: (number | null)[];
   metrics_count: number;
   patch_available: number;
   patch_security: number;
