@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useSlashFocus } from '@/composables/useSlashFocus';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowDown, Copy, Pause, Play, ScrollText, Search, Terminal, Trash2 } from 'lucide-vue-next';
+import { ArrowUp, Copy, Pause, Play, ScrollText, Search, Terminal, Trash2 } from 'lucide-vue-next';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import Button from '@/components/ui/Button.vue';
 import Tabs from '@/components/ui/Tabs.vue';
@@ -14,8 +14,9 @@ import { formatDateTime, t } from '@/i18n';
 
 /**
  * Two tabs: the live backend log over /api/logs/ws (last 500 lines, for debugging) and the audit log
- * (who did what). The live log follows the newest line while scrolled to the bottom; scrolling up
- * holds the view until "jump to newest". Its stream only runs while its tab is open.
+ * (who did what). The live log shows the newest line on top and grows upwards; scrolled down into
+ * older lines it holds the view until "jump to newest". Copying keeps the time order (oldest
+ * first). Its stream only runs while its tab is open.
  */
 const { showToast } = useToast();
 const lines = ref<LogLine[]>([]);
@@ -77,22 +78,31 @@ watch(streaming, (on) => (on ? open() : close()), { immediate: true });
 onBeforeUnmount(close);
 
 const visible = computed(() => filterLogs(lines.value, level.value, search.value));
+// Newest first: the live state is at the top, where the view opens; with a full log there is
+// nothing to scroll through first (it used to start at the oldest of 500 lines)
+const newestFirst = computed(() => [...visible.value].reverse());
 const counts = computed(() => countLevels(lines.value));
 
 function onScroll() {
   const el = box.value;
-  if (el) follow.value = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  if (el) follow.value = el.scrollTop < 24;
 }
 
 function jumpToNewest() {
   follow.value = true;
-  if (box.value) box.value.scrollTop = box.value.scrollHeight;
+  if (box.value) box.value.scrollTop = 0;
 }
 
+// Reading further down, new lines arriving on top would push the text away: the view moves by
+// their height, so what is being read stays where it is. At the top it simply stays at the top.
+let heightBefore = 0;
+watch(visible, () => (heightBefore = box.value?.scrollHeight ?? 0), { flush: 'pre' });
 watch(visible, async () => {
-  if (!follow.value) return;
   await nextTick();
-  if (box.value) box.value.scrollTop = box.value.scrollHeight;
+  const el = box.value;
+  if (!el) return;
+  if (follow.value) el.scrollTop = 0;
+  else el.scrollTop += el.scrollHeight - heightBefore;
 });
 
 async function copyVisible() {
@@ -159,7 +169,7 @@ const fullTime = (line: LogLine) =>
         <p v-if="lines.length === 0" class="px-4 py-3 text-fg-subtle italic">{{ paused ? t('gv.logs.paused_hint') : t('gv.logs.waiting') }}</p>
         <p v-else-if="visible.length === 0" class="px-4 py-3 text-fg-subtle italic">{{ t('gv.logs.no_match') }}</p>
         <div
-          v-for="line in visible"
+          v-for="line in newestFirst"
           :key="line.id"
           class="grid grid-cols-[auto_1fr] gap-x-3 px-4 py-px hover:bg-control-hover/60 sm:grid-cols-[4.5rem_3.5rem_minmax(0,11rem)_1fr]"
           :class="line.level ? levelRow[line.level] : ''"
@@ -174,8 +184,8 @@ const fullTime = (line: LogLine) =>
           <span v-else class="col-span-full [overflow-wrap:anywhere] whitespace-pre-wrap" :class="line.level ? levelText[line.level] : 'text-fg-muted'">{{ line.raw }}</span>
         </div>
       </div>
-      <Button v-if="!follow && visible.length > 0" size="sm" variant="primary" class="absolute right-4 bottom-4 shadow-pop" @click="jumpToNewest">
-        <ArrowDown aria-hidden="true" />{{ t('gv.logs.jump') }}
+      <Button v-if="!follow && visible.length > 0" size="sm" variant="primary" class="absolute top-4 right-4 shadow-pop" @click="jumpToNewest">
+        <ArrowUp aria-hidden="true" />{{ t('gv.logs.jump') }}
       </Button>
     </section>
     </div>
