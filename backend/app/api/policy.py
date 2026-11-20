@@ -77,26 +77,28 @@ class Policy:
         return not self.callers
 
 
+# Declarations that contradict themselves fail at import time: (is broken, why)
+_POLICY_RULES = (
+    (lambda p: bool(p.callers - ADMIN), lambda p: f"Unknown caller kinds {sorted(p.callers - ADMIN)}"),
+    (lambda p: p.step_up not in (None, *stepup.CLASSES), lambda p: f"Unknown step-up class {p.step_up!r}"),
+    (lambda p: p.setup not in SETUP_STATES, lambda p: f"Unknown setup state {p.setup!r}"),
+    (lambda p: p.step_up == "remote" and p.callers != SESSION_ONLY,
+     lambda p: "step_up='remote' is for browser sessions only: callers=SESSION_ONLY"),
+    (lambda p: p.step_up in stepup.CONFIRMED_CLASSES and API_TOKEN in p.callers,
+     lambda p: f"step_up={p.step_up!r} refuses API tokens: leave api_token out of callers"),
+    (lambda p: p.public and bool(p.step_up or p.scope or p.bearer_only),
+     lambda p: "A public route has no scope, step-up or bearer rule"),
+    (lambda p: p.public and p.setup in ("closed", "open"),
+     lambda p: "A public route answers in every setup state ('any') or checks it itself ('only')"),
+    (lambda p: not p.public and p.setup in ("only", "any"), lambda p: "setup='only'/'any' is for public routes"),
+    (lambda p: p.agent_token and p.channel is None, lambda p: "agent_token is a WebSocket channel option"),
+)
+
+
 def _validated(p: Policy) -> Policy:
-    unknown = p.callers - ADMIN
-    if unknown:
-        raise ValueError(f"Unknown caller kinds {sorted(unknown)}")
-    if p.step_up not in (None, *stepup.CLASSES):
-        raise ValueError(f"Unknown step-up class {p.step_up!r}")
-    if p.setup not in SETUP_STATES:
-        raise ValueError(f"Unknown setup state {p.setup!r}")
-    if p.step_up == "remote" and p.callers != SESSION_ONLY:
-        raise ValueError("step_up='remote' is for browser sessions only: callers=SESSION_ONLY")
-    if p.step_up in stepup.CONFIRMED_CLASSES and API_TOKEN in p.callers:
-        raise ValueError(f"step_up={p.step_up!r} refuses API tokens: leave api_token out of callers")
-    if p.public and (p.step_up or p.scope or p.bearer_only):
-        raise ValueError("A public route has no scope, step-up or bearer rule")
-    if p.public and p.setup in ("closed", "open"):
-        raise ValueError("A public route answers in every setup state ('any') or checks it itself ('only')")
-    if not p.public and p.setup in ("only", "any"):
-        raise ValueError("setup='only'/'any' is for public routes")
-    if p.agent_token and p.channel is None:
-        raise ValueError("agent_token is a WebSocket channel option")
+    for broken, why in _POLICY_RULES:
+        if broken(p):
+            raise ValueError(why(p))
     return p
 
 

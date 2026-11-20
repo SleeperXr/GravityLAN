@@ -76,6 +76,25 @@ def test_websocket_routes_have_websocket_policies_and_http_routes_do_not():
         assert e.policy.channel is None, e.path
 
 
+@pytest.mark.parametrize("kwargs", [
+    {},  # API tokens allowed by default: the scope must be named
+    {"scope": "devices:read", "callers": frozenset({"session"})},  # a scope without API tokens
+    {"scope": None, "callers": frozenset({"session", "robot"})},
+    {"scope": None, "step_up": "sometimes"},
+    {"scope": None, "step_up": "remote"},  # remote is for browser sessions only
+    {"scope": None, "step_up": "credentials"},  # credentials refuses API tokens
+    {"callers": frozenset(), "step_up": "instance"},
+    {"callers": frozenset(), "setup": "closed"},
+    {"scope": None, "setup": "only"},
+    {"scope": None, "agent_token": True},  # a WebSocket option
+])
+def test_contradictory_declarations_fail_when_the_route_is_defined(kwargs):
+    from app.api.policy import policy
+
+    with pytest.raises(ValueError):
+        policy(**kwargs)
+
+
 def test_security_matrix_document_is_current():
     script = _matrix_script()
     assert (ROOT / "docs" / "security-matrix.md").read_text(encoding="utf-8") == script.render(app), (
@@ -288,6 +307,22 @@ def _ws_expected(p, caller: str, done: bool) -> str:
     return "ok" if allowed else "refused"
 
 
+def _ws_credentials(p, caller: str) -> tuple[str | None, str]:
+    """(session cookie, query string) a caller of this kind brings to the handshake."""
+    if caller == "session":
+        return session_store.create_session(user_agent=None), ""
+    query_tokens = {
+        "anon": None,
+        "master_cookie": None,
+        "master_query": MASTER_TOKEN,
+        "token_query": _token_name(p.scope or "settings:read"),
+        "token_without_scope": _token_name("nothing:here"),
+        "agent_token": "agent-raw",
+    }
+    token = query_tokens[caller]
+    return (MASTER_TOKEN if caller == "master_cookie" else None), (f"?token={token}" if token else "")
+
+
 def test_every_websocket_answers_every_caller_as_its_policy_says(ws_database, monkeypatch):
     device_id, set_setup = ws_database
     # Past the policy the patch channel checks its one-shot token (before accepting); the matrix only
@@ -311,19 +346,7 @@ def test_every_websocket_answers_every_caller_as_its_policy_says(ws_database, mo
                 continue  # the SSH terminal checks its cookie or ticket itself (test_ssh_api)
             path = entry.path.replace("{device_id}", str(device_id))
             for caller in WS_CALLERS if done else ("anon",):
-                cookie, query = None, ""
-                if caller == "session":
-                    cookie = session_store.create_session(user_agent=None)
-                elif caller == "master_cookie":
-                    cookie = MASTER_TOKEN
-                elif caller == "master_query":
-                    query = f"?token={MASTER_TOKEN}"
-                elif caller == "token_query":
-                    query = f"?token={_token_name(p.scope or 'settings:read')}"
-                elif caller == "token_without_scope":
-                    query = f"?token={_token_name('nothing:here')}"
-                elif caller == "agent_token":
-                    query = "?token=agent-raw"
+                cookie, query = _ws_credentials(p, caller)
                 # "ok": the policy let the handshake through (accepted, or handed to the patch token check)
                 reached.clear()
                 got = "ok" if _ws_connect(path, cookie, query) == "ok" or reached else "refused"
