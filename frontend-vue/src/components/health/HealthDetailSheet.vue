@@ -9,6 +9,7 @@ import Badge from '@/components/ui/Badge.vue';
 import StatusDot from '@/components/common/StatusDot.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
 import HealthStatusBadge from './HealthStatusBadge.vue';
+import PresenceFrozenBadge from '@/components/mac/PresenceFrozenBadge.vue';
 import LatencyChart from './LatencyChart.vue';
 import IncidentList from './IncidentList.vue';
 import StatusMonitor from '@/components/common/StatusMonitor.vue';
@@ -41,6 +42,9 @@ watch(() => [props.device?.id, props.period, open.value] as const, ([id, , isOpe
 });
 
 const dev = computed(() => (detail.value && detail.value.device.id === props.device?.id ? detail.value.device : props.device));
+// The overview row is reloaded while the sheet stays open, the detail only when device or period change:
+// a conflict opened or resolved meanwhile shows in the row first
+const presenceFrozen = computed(() => (props.device ?? dev.value)?.presence_frozen ?? false);
 const alertOn = computed(() => dev.value?.alert_offline ?? true);
 const uniqueServices = computed(() => {
   const seen = new Set<string>();
@@ -88,6 +92,7 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
       <div class="mt-2 flex flex-wrap items-center gap-2">
         <HealthStatusBadge :status="dev.health_status" />
         <span class="font-mono text-xs font-semibold" :class="scoreText(dev.health_score)">Score {{ dev.health_score }}</span>
+        <PresenceFrozenBadge v-if="presenceFrozen" />
       </div>
     </template>
 

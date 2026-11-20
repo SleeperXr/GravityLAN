@@ -2,6 +2,7 @@
 import { Cpu, MemoryStick, Pencil } from 'lucide-vue-next';
 import type { Device } from '@/types';
 import StatusDot from '@/components/common/StatusDot.vue';
+import PresenceFrozenBadge from '@/components/mac/PresenceFrozenBadge.vue';
 import ServiceBadge from './ServiceBadge.vue';
 import { deviceLabel } from '@/lib/networks';
 import { t } from '@/i18n';
@@ -29,7 +30,9 @@ const emit = defineEmits<{ edit: [device: Device] }>();
         >
           {{ deviceLabel(device) }}
         </button>
-        <p class="font-mono text-xs text-fg-subtle">{{ device.ip }}</p>
+        <p class="flex flex-wrap items-center gap-2 font-mono text-xs text-fg-subtle">
+          {{ device.ip }}<PresenceFrozenBadge v-if="device.presence_frozen" class="font-sans" />
+        </p>
       </div>
 
       <div v-if="device.has_agent && device.agent_info?.metrics" class="hidden shrink-0 gap-2 lg:flex">

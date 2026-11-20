@@ -239,6 +239,9 @@ class DeviceResponse(BaseModel):
     # Parent host (for VMs)
     parent_id: int | None = None
     parent_name: str | None = None
+    # Another MAC answered at the device's address (open MAC conflict): its online state is not
+    # checked until the MAC is adopted or the conflict dismissed, so is_online is the last known one
+    presence_frozen: bool = False
     # Subnet of the primary ip and the device's further addresses (multi-VLAN gateways)
     subnet_id: int | None = None
     subnet_name: str | None = None

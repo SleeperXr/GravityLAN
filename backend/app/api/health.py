@@ -17,6 +17,7 @@ from app.models.agent import AgentToken, DeviceMetrics
 from app.models.device import Device, DeviceHistory
 from app.scanner.utils import ensure_utc
 from app.services.agent_activity import has_active_token, is_token_reporting, load_intervals
+from app.services.mac_observations import open_conflict_device_ids
 from app.schemas.health import (
     AgentHealthAlerts,
     DeviceHealthDetailResponse,
@@ -470,6 +471,7 @@ def _device_item(
     uptime: UptimeStats,
     services: list[ServiceHealthItem],
     agent: AgentHealthAlerts | None,
+    presence_frozen: bool = False,
 ) -> DeviceHealthItem:
     return DeviceHealthItem(
         id=dev.id,
@@ -480,6 +482,7 @@ def _device_item(
         group_id=dev.group_id,
         group_name=dev.group.name if dev.group else None,
         is_online=dev.is_online,
+        presence_frozen=presence_frozen,
         alert_offline=bool(dev.alert_offline),
         missed_scans=dev.missed_scans or 0,
         health_score=score,
@@ -641,7 +644,8 @@ async def get_health_overview(
     )
     recent_incidents = _overview_incidents(res_incidents.all(), now)
 
-    # 5. Assemble per-device health models
+    # 5. Assemble per-device health models (an open MAC conflict freezes the online state: not probed)
+    frozen_ids = await open_conflict_device_ids(db, device_ids)
     device_items: list[DeviceHealthItem] = []
     for dev in devices:
         uptime_stats, latency_stats = _compute_uptime_and_latency(
@@ -655,7 +659,10 @@ async def get_health_overview(
         service_items = _service_items(dev)
         agent_alerts = _agent_alerts(dev, tokens_by_dev.get(dev.id), metrics_by_dev.get(dev.id), now, intervals.get(dev.id))
         score, status = _calculate_health_score(dev, uptime_stats, latency_stats, service_items, agent_alerts)
-        device_items.append(_device_item(dev, score, status, latency_stats, uptime_stats, service_items, agent_alerts))
+        device_items.append(_device_item(
+            dev, score, status, latency_stats, uptime_stats, service_items, agent_alerts,
+            presence_frozen=dev.id in frozen_ids,
+        ))
 
     return HealthOverviewResponse(
         kpis=_overview_kpis(device_items),
@@ -753,8 +760,9 @@ async def get_device_health_detail(
     agent_alerts = _agent_alerts(dev, agent_token, latest_metric, now, intervals.get(dev.id))
     score, status = _calculate_health_score(dev, uptime_stats, latency_stats, services, agent_alerts)
 
+    frozen = dev.id in await open_conflict_device_ids(db, [dev.id])
     return DeviceHealthDetailResponse(
-        device=_device_item(dev, score, status, latency_stats, uptime_stats, services, agent_alerts),
+        device=_device_item(dev, score, status, latency_stats, uptime_stats, services, agent_alerts, presence_frozen=frozen),
         time_series=[_sample_point(s, now) for s in _downsample(samples)],
         incidents=incidents
     )

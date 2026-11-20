@@ -6,6 +6,7 @@ import type { Device } from '@/types';
 import { api } from '@/api/client';
 import StatusDot from '@/components/common/StatusDot.vue';
 import Badge from '@/components/ui/Badge.vue';
+import PresenceFrozenBadge from '@/components/mac/PresenceFrozenBadge.vue';
 import DeviceMetrics from './DeviceMetrics.vue';
 import NetworkChips from './NetworkChips.vue';
 import ServiceBadge from './ServiceBadge.vue';
@@ -138,7 +139,8 @@ async function clearIpChange() {
 
     <NetworkChips :device="device" />
 
-    <div v-if="agentUpdate || pendingKey || securityUpdates || device.old_ip" class="flex flex-wrap gap-1.5">
+    <div v-if="device.presence_frozen || agentUpdate || pendingKey || securityUpdates || device.old_ip" class="flex flex-wrap gap-1.5">
+      <PresenceFrozenBadge v-if="device.presence_frozen" />
       <Badge v-if="securityUpdates" tone="warn" :title="t('gv.dashboard.security_updates_title', { count: securityUpdates, total: patchState(device)?.available ?? securityUpdates })">
         <ShieldAlert aria-hidden="true" />{{ t('gv.dashboard.security_updates', { count: securityUpdates }) }}
       </Badge>

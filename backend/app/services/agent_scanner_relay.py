@@ -100,6 +100,7 @@ async def ingest_agent_arp_table(
     now = datetime.now(timezone.utc)
     updated_count = 0
     conflicts_seen = False  # only last_seen of an observation may have moved: commit, but no broadcast
+    presence_changed = False  # a conflict opened or closed: the cached device lists show presence_frozen
     reported = ReportedPairs()
     out_of_scope: list[str] = []
 
@@ -146,6 +147,7 @@ async def ingest_agent_arp_table(
                 conflicts_seen = True
                 if await record_mac_conflict(db, dev, raw_mac, "relay", reported):
                     updated_count += 1
+                    presence_changed = True
                 continue
             if any(macs_differ(dev.mac, m) for m in seen_macs_by_ip.get(raw_ip, ())):
                 # Same batch saw both the documented MAC and a conflicting MAC at this IP:
@@ -154,6 +156,7 @@ async def ingest_agent_arp_table(
             changed = False
             if is_usable_mac(dev.mac) and await clear_open_observations(db, dev.id):
                 conflicts_seen = True
+                presence_changed = True
                 changed = True
             if not is_usable_mac(dev.mac):
                 dev.mac = raw_mac
@@ -207,6 +210,10 @@ async def ingest_agent_arp_table(
         await db.commit()
     if updated_count > 0:
         await db.commit()
+    if presence_changed:
+        from app.services.cache_service import dashboard_cache
+        dashboard_cache.invalidate_all()
+    if updated_count > 0:
         logger.info(f"Agent probe {reporting_device_id} updated {updated_count} L2 neighbors.")
         try:
             from app.api.scanner import state as scan_state
