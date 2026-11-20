@@ -53,6 +53,8 @@ SESSION_REQUIRED_MESSAGE = "Only a logged-in browser session can do this."
 NO_POLICY_MESSAGE = "This route has no access policy."
 STATE_IDENTITY = "gl_identity"
 STATE_WS_AUTH = "gl_ws_auth"
+# Internal observability flag set only after enforce_policy succeeds (never used for auth decisions)
+STATE_POLICY_PASSED = "gl_policy_passed"
 _UNSET: Any = object()
 
 
@@ -179,6 +181,7 @@ async def _refuse(conn: HTTPConnection, p: Policy, kind: str) -> None:
 def _http_dependency(p: Policy):
     async def enforce_policy(conn: HTTPConnection, db: AsyncSession = Depends(get_db)) -> str | None:
         if p.public:
+            _set_state(conn, STATE_POLICY_PASSED, True)
             return None
         from app.api import auth
 
@@ -192,6 +195,7 @@ def _http_dependency(p: Policy):
         remember_actor(conn, identity)
         _set_state(conn, STATE_IDENTITY, identity)
         if identity == "setup_mode":
+            _set_state(conn, STATE_POLICY_PASSED, True)
             return identity
 
         kind = caller_kind(identity)
@@ -203,6 +207,7 @@ def _http_dependency(p: Policy):
                 raise auth._missing_scope_error(p.scope, conn.scope.get("method", "GET"))
         if p.step_up:
             stepup.check(conn, p.step_up)
+        _set_state(conn, STATE_POLICY_PASSED, True)
         return identity
 
     return enforce_policy

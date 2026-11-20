@@ -614,17 +614,20 @@ async def serve_vue_spa(full_path: str):
     raise HTTPException(status_code=404, detail="GravityUI index.html not found")
 
 
+@app.get("/{full_path:path}", dependencies=[policy(callers=PUBLIC, note="old addresses open GravityUI")])
 async def redirect_to_gravityui(full_path: str):
-    """Old addresses of the classic view (bookmarks such as /devices) open GravityUI; unknown API paths stay 404."""
+    """Old addresses of the classic view (bookmarks such as /devices) open GravityUI; unknown API paths stay 404.
+
+    Registered unconditionally (like /frontend-vue/ above) so the route table and security matrix do not
+    depend on whether a frontend build exists on disk; without a build, non-API fallback paths return 404.
+    """
     _reject_unsafe_path(full_path)
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="API endpoint not found")
+    if not _resolve_frontend_vue_dir().exists():
+        raise HTTPException(status_code=404, detail="Not Found")
     return RedirectResponse(GRAVITYUI_PATH, status_code=307)
 
 
 if _resolve_frontend_vue_dir().exists():
-    # Registered last, so every API route, /docs and the GravityUI routes above win
-    app.get("/{full_path:path}", dependencies=[policy(callers=PUBLIC, note="old addresses open GravityUI")])(
-        redirect_to_gravityui
-    )
     logger.info("Serving GravityUI from: %s", _resolve_frontend_vue_dir())
