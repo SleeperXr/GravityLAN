@@ -39,11 +39,29 @@ export function groupSources(group: MacConflictGroup): string[] {
   return sources;
 }
 
-/** Build the payload for PUT /api/devices/{id}/mac; apply_to_shared is only ever true for multi-device groups. */
-export function buildAdoptPayload(group: MacConflictGroup, applyToShared: boolean): MacChangeRequest {
+/**
+ * Build the payload for PUT /api/devices/{id}/mac from a confirmed conflict snapshot.
+ * GravityUI always binds adoptions to explicit confirmed targets (never dynamic apply_to_shared).
+ */
+export function buildAdoptPayload(
+  group: MacConflictGroup,
+  applyToShared: boolean,
+  singleDevice?: MacConflictDevice | null,
+): MacChangeRequest {
+  const chosen =
+    hasSharedDevices(group) && applyToShared
+      ? group.devices
+      : singleDevice
+        ? [singleDevice]
+        : group.devices.slice(0, 1);
   return {
     mac: group.observed_mac,
-    apply_to_shared: hasSharedDevices(group) && applyToShared,
+    apply_to_shared: false,
+    targets: chosen.map((d) => ({
+      id: d.id,
+      ip: d.ip,
+      documented_mac: group.documented_mac,
+    })),
   };
 }
 

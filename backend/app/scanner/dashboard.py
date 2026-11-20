@@ -21,6 +21,7 @@ from app.scanner.presence import (
     update_interface_presence,
 )
 from app.services.cache_service import discovery_cache, dashboard_cache, topology_cache
+from app.services.mac_observations import collect_usable_macs_by_ip, macs_differ
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +90,24 @@ def _mark_device_online(dev, alive_host):
             dev.vendor = alive_host.get("vendor")
 
 
+def _has_mac_conflict_in_scan(dev, alive_map: dict, macs_by_ip: dict[str, set[str]] | None = None) -> bool:
+    """True when this scan saw a usable MAC at ``dev.ip`` that conflicts with ``dev.mac``."""
+    if macs_by_ip is not None:
+        observed = macs_by_ip.get(dev.ip, ())
+    else:
+        alive_host = alive_map.get(dev.ip)
+        observed = (alive_host.get("mac"),) if alive_host else ()
+    return any(macs_differ(dev.mac, m) for m in observed)
+
+
 async def _update_device_health(
-    dev, alive_map: dict, open_ports: list, db, offline_threshold: int = DEFAULT_OFFLINE_THRESHOLD
+    dev, alive_map: dict, open_ports: list, db, offline_threshold: int = DEFAULT_OFFLINE_THRESHOLD,
+    macs_by_ip: dict[str, set[str]] | None = None,
 ):
     """Update online state, MAC/vendor backfill and service status for one device."""
+    if _has_mac_conflict_in_scan(dev, alive_map, macs_by_ip):
+        # Conflicting L2 MAC at this IP: stay neutral (no online confirmation, no miss, no foreign ports)
+        return
     is_online = dev.ip in alive_map or bool(open_ports) or _is_docker_host(dev.ip)
 
     if is_online:
@@ -114,14 +129,19 @@ def _is_set(cancel_event: asyncio.Event | None) -> bool:
 async def _check_health_batch(
     batch, alive_map: dict, db, offline_threshold: int = DEFAULT_OFFLINE_THRESHOLD,
     cancel_event: asyncio.Event | None = None,
+    macs_by_ip: dict[str, set[str]] | None = None,
 ) -> bool:
     """Port-scan one batch of devices and update their health; False when stopped before applying it.
 
     A port scan cut short by Stop finds nothing, so its results are not applied: they would
     count every device of the batch as a miss.
     """
+    checkable = [dev for dev in batch if not _has_mac_conflict_in_scan(dev, alive_map, macs_by_ip)]
+    if not checkable:
+        return not _is_set(cancel_event)
+
     health_tasks = []
-    for dev in batch:
+    for dev in checkable:
         is_ping_alive = dev.ip in alive_map
         target_ports = [s.port for s in dev.services]
         if not target_ports:
@@ -133,14 +153,15 @@ async def _check_health_batch(
     batch_results = await asyncio.gather(*health_tasks)
     if _is_set(cancel_event):
         return False
-    for dev, open_ports in zip(batch, batch_results):
-        await _update_device_health(dev, alive_map, open_ports, db, offline_threshold)
+    for dev, open_ports in zip(checkable, batch_results):
+        await _update_device_health(dev, alive_map, open_ports, db, offline_threshold, macs_by_ip=macs_by_ip)
     return True
 
 
 async def _run_health_phase(
     alive_map: dict, progress_callback=None, scanned_subnets: list[str] | None = None,
     cancel_event: asyncio.Event | None = None,
+    macs_by_ip: dict[str, set[str]] | None = None,
 ):
     """Verify health of all known dashboard devices; returns the device list.
 
@@ -163,7 +184,9 @@ async def _run_health_phase(
         for i in range(0, len(devices), batch_size):
             if _is_set(cancel_event):
                 break
-            if not await _check_health_batch(devices[i:i+batch_size], alive_map, db, offline_threshold, cancel_event):
+            if not await _check_health_batch(
+                devices[i:i+batch_size], alive_map, db, offline_threshold, cancel_event, macs_by_ip=macs_by_ip,
+            ):
                 break
             # One commit per batch
             await db.commit()
@@ -273,11 +296,14 @@ async def run_dashboard_scan(subnets: list[str], progress_callback=None, cancel_
     if _is_set(cancel_event):
         _stopped(f"after discovery of {len(all_resolved_hosts)} hosts; health phase skipped")
 
-    # Map for quick lookup
+    # Map for quick lookup (and all observed usable MACs per IP for conflict detection)
     alive_map = {h["ip"]: h for h in all_resolved_hosts}
+    macs_by_ip = collect_usable_macs_by_ip(all_resolved_hosts)
 
     # 2. Deep Health & Service Phase (judged against a complete discovery)
-    devices = await _run_health_phase(alive_map, progress_callback, scanned_subnets=subnets, cancel_event=cancel_event)
+    devices = await _run_health_phase(
+        alive_map, progress_callback, scanned_subnets=subnets, cancel_event=cancel_event, macs_by_ip=macs_by_ip,
+    )
     if _is_set(cancel_event):
         _stopped("during the health phase; no search for new devices")
 

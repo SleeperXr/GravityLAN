@@ -18,7 +18,15 @@ from app.scanner.gateways import detect_default_gateways, effective_gateway
 from app.scanner.vendor import get_vendor
 from app.scanner.hostname import is_ip_like
 from app.services.cache_service import discovery_cache, dashboard_cache, topology_cache
-from app.services.mac_observations import ReportedPairs, record_mac_conflict
+from app.services.mac_observations import (
+    ReportedPairs,
+    clear_observations,
+    clear_open_observations,
+    collect_usable_macs_by_ip,
+    macs_differ,
+    open_conflict_device_ids,
+    record_mac_conflict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +43,8 @@ class SyncContext:
     pending_webhooks: list = field(default_factory=list)  # [(event_type, data)]
     # (device id, MAC) conflicts already noted in this batch (app.services.mac_observations)
     reported_macs: ReportedPairs = field(default_factory=ReportedPairs)
+    # All usable normalised MACs seen per IP in this batch (detects ambiguous A+B passes)
+    batch_macs_by_ip: dict[str, set[str]] = field(default_factory=dict)
 
     def subnet_for(self, ip: str | None):
         try:
@@ -193,6 +203,7 @@ async def _sync_batch_once(hosts: list[dict]) -> tuple[str, list, "SyncContext"]
     results = []
     async with async_session() as db:
         ctx = await load_sync_context(db)
+        ctx.batch_macs_by_ip = collect_usable_macs_by_ip(hosts)
         for position, host in enumerate(hosts, start=1):
             try:
                 res = await _sync_host_internal(db, host, ctx)
@@ -529,7 +540,9 @@ async def _resolve_ip_conflict(db, ip: str, dev):
     conflict_dev.is_online = False
     conflict_dev.ip_placeholder = True
     safe_ip = await _find_safe_placeholder_ip(db, conflict_dev)
-    conflict_dev.ip = safe_ip
+    if conflict_dev.ip != safe_ip:
+        conflict_dev.ip = safe_ip
+        await clear_observations(db, conflict_dev.id)
     await db.flush()
     logger.warning(f"Sync: Resolved IP conflict. Moved conflicting device {conflict_dev.id} to placeholder IP {conflict_dev.ip}")
 
@@ -589,6 +602,7 @@ async def _move_device_to_scanned_ip(db, dev, hit: ScanHit, match_type: str | No
     dev.old_ip = dev.ip
     dev.ip = hit.ip
     dev.ip_changed_at = datetime.now(timezone.utc)
+    await clear_observations(db, dev.id)
 
     # ONLY emit DeviceHistory event if IP change is VERIFIED
     if is_verified_change:
@@ -602,9 +616,19 @@ async def _update_dashboard_device(db, dev, disc, hit: ScanHit, match_type: str 
     if not dev:
         return
     if match_type == "ip" and _macs_conflict(dev.mac, hit.mac, hit.is_valid_mac):
-        # The address match stands (see _match_ip_with_mac_conflict), but another MAC answered
-        # there: the device keeps its MAC, the sighting is noted once for the user to decide
+        # Another valid MAC answered at this IP: record the conflict once, but do not confirm
+        # the documented device as online, update last_seen/missed_scans, or adopt a foreign name.
         await record_mac_conflict(db, dev, hit.mac, "scan", ctx.reported_macs)
+        return
+    batch_macs = ctx.batch_macs_by_ip.get(dev.ip, ()) if dev.ip else ()
+    batch_has_conflict = any(macs_differ(dev.mac, m) for m in batch_macs)
+    if dev.ip == hit.ip and batch_has_conflict:
+        # Both the documented MAC and a conflicting MAC were seen for this IP in the same pass:
+        # treat the pass as ambiguous regardless of entry order (no confirmation, no auto-recovery).
+        return
+    if match_type == "exact":
+        # Clean matching L2 sighting at the unchanged IP resolves open conflicts automatically.
+        await clear_open_observations(db, dev.id)
     _refresh_device(dev, disc, hit)
     if dev.ip != hit.ip:
         await _move_device_to_scanned_ip(db, dev, hit, match_type, ctx)
@@ -666,6 +690,17 @@ async def _sync_interface_hit(db, iface, hit: ScanHit, ctx: SyncContext):
 
 async def _sync_discovered(db, dev, match_type: str | None, hit: ScanHit, ctx: SyncContext):
     """Record the hit as a DiscoveredHost and carry it over to the matched Device, if any."""
+    if dev is not None and dev.ip == hit.ip:
+        batch_macs = ctx.batch_macs_by_ip.get(dev.ip, ())
+        has_conflict = (match_type == "ip" and _macs_conflict(dev.mac, hit.mac, hit.is_valid_mac)) or any(
+            macs_differ(dev.mac, m) for m in batch_macs
+        )
+        if has_conflict:
+            # Conflicting or ambiguous L2 MAC at a monitored device's IP: record the conflict
+            # on the device and leave DiscoveredHost untouched (matching the agent relay).
+            await _update_dashboard_device(db, dev, None, hit, match_type, ctx)
+            return None
+
     disc = await _match_discovered_host(db, hit, ctx)
     is_new_discovery = disc is None and dev is None
 
@@ -732,9 +767,11 @@ async def _sync_container_discovered(db, ip: str, container_name: str | None) ->
 
 
 async def _sync_container_device(db, ip: str, container_name: str | None) -> None:
-    """Mark the Device at the container's address online. Does NOT commit."""
+    """Mark the Device at the container's address online unless it has an open MAC conflict. Does NOT commit."""
     dev = await _query_by_ip(db, Device, ip)
     if not dev:
+        return
+    if await open_conflict_device_ids(db, (dev.id,)):
         return
     _mark_seen(dev)
     dev.missed_scans = 0

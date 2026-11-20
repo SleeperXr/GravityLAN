@@ -126,9 +126,16 @@ export interface MacConflictGroup {
   devices: MacConflictDevice[];
 }
 
+export interface MacChangeTarget {
+  id: number;
+  ip: string;
+  documented_mac: string | null;
+}
+
 export interface MacChangeRequest {
   mac: string;
   apply_to_shared?: boolean;
+  targets?: MacChangeTarget[];
 }
 
 export interface MacObservationDismiss {
@@ -137,6 +144,7 @@ export interface MacObservationDismiss {
 
 export interface MacChangeResult {
   changed_device_ids: number[];
+  skipped_device_ids?: number[];
 }
 
 export type MergeReason = 'same_mac' | 'same_hostname' | 'same_host_key' | 'subnet_gateway';

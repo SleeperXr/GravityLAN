@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { AlertTriangle, ArrowRight, Check, X } from 'lucide-vue-next';
-import { api } from '@/api/client';
+import { ApiError, api } from '@/api/client';
 import type { MacConflictGroup } from '@/types';
 import { groupSources, hasSharedDevices, macConflictGroupKey, sourceLabel } from '@/lib/macConflicts';
 import Badge from '@/components/ui/Badge.vue';
@@ -44,16 +44,51 @@ async function dismissGroup(group: MacConflictGroup) {
   });
   if (!ok) return;
   dismissingKey.value = key;
+  const targets = group.devices.map((d) => ({ ...d }));
+  let confirmed = 0;
+  let failed = 0;
+  let lastError: Error | null = null;
+  let authError: Error | null = null;
   try {
-    for (const dev of group.devices) {
-      await api.dismissMacObservation(dev.id, group.observed_mac);
+    for (const dev of targets) {
+      try {
+        await api.dismissMacObservation(dev.id, group.observed_mac);
+        confirmed += 1;
+      } catch (err) {
+        const error = err as Error;
+        const status = err instanceof ApiError ? err.status : (err as { status?: number })?.status;
+        if (status === 401 || status === 403) {
+          // Session expired / auth failure: stop immediately instead of firing remaining requests
+          authError = error;
+          failed += targets.length - confirmed - failed;
+          break;
+        }
+        failed += 1;
+        lastError = error;
+      }
     }
-    showToast('success', t('gv.mac_conflicts.dismiss_title'), t('gv.mac_conflicts.dismiss_success'));
-    emit('resolved');
-  } catch (err) {
-    showToast('error', t('common.error'), (err as Error).message);
+
+    if (authError) {
+      const msg =
+        confirmed > 0
+          ? t('gv.mac_conflicts.dismiss_partial', { confirmed, total: targets.length, failed })
+          : authError.message;
+      showToast('error', t('common.error'), msg);
+    } else if (failed === 0) {
+      showToast('success', t('gv.mac_conflicts.dismiss_title'), t('gv.mac_conflicts.dismiss_success'));
+    } else if (confirmed > 0) {
+      showToast(
+        'info',
+        t('gv.mac_conflicts.dismiss_title'),
+        t('gv.mac_conflicts.dismiss_partial', { confirmed, total: targets.length, failed }),
+      );
+    } else {
+      showToast('error', t('common.error'), lastError?.message ?? t('gv.mac_conflicts.dismiss_failed'));
+    }
   } finally {
     dismissingKey.value = null;
+    // Always refresh backend state once a dismiss run started (full success, partial or failure)
+    emit('resolved');
   }
 }
 </script>
@@ -129,7 +164,7 @@ async function dismissGroup(group: MacConflictGroup) {
       v-model:open="adoptOpen"
       :group="adoptGroup"
       :default-scope="adoptGroup && hasSharedDevices(adoptGroup) ? 'all' : 'single'"
-      @adopted="emit('resolved')"
+      @refresh="emit('resolved')"
     />
   </section>
 </template>

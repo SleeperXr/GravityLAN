@@ -13,10 +13,11 @@ recorded here; only a different valid MAC at a device's own address is.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,6 +53,63 @@ def is_usable_mac(mac: str | None) -> bool:
 def macs_differ(documented: str | None, observed: str | None) -> bool:
     """True when both are usable MACs and not the same one: a conflict, not a gap to fill."""
     return is_usable_mac(documented) and is_usable_mac(observed) and normalise_mac(documented) != normalise_mac(observed)
+
+
+def collect_usable_macs_by_ip(entries: Iterable[dict]) -> dict[str, set[str]]:
+    """Map each IP in a scan/ARP batch to all usable normalised MACs observed for it."""
+    by_ip: dict[str, set[str]] = {}
+    for entry in entries:
+        ip = entry.get("ip") if isinstance(entry, dict) else getattr(entry, "ip", None)
+        mac = entry.get("mac") if isinstance(entry, dict) else getattr(entry, "mac", None)
+        if not ip or not is_usable_mac(mac):
+            continue
+        normalised = normalise_mac(mac)
+        if normalised:
+            by_ip.setdefault(str(ip).strip(), set()).add(normalised)
+    return by_ip
+
+
+async def clear_observations(db: AsyncSession, device_id: int | None) -> int:
+    """Remove all MAC observations (open and dismissed) for ``device_id`` after its IP or MAC changed.
+
+    ``DeviceHistory`` is left untouched so past conflicts remain auditable. Does NOT commit.
+    """
+    if device_id is None:
+        return 0
+    res = await db.execute(delete(DeviceMacObservation).where(DeviceMacObservation.device_id == device_id))
+    return res.rowcount or 0
+
+
+async def clear_open_observations(db: AsyncSession, device_id: int | None) -> int:
+    """Remove open MAC conflicts for ``device_id`` after a clean matching L2 sighting.
+
+    Dismissed observations in the same (IP, MAC) context stay intact. Does NOT commit.
+    """
+    if device_id is None:
+        return 0
+    res = await db.execute(
+        delete(DeviceMacObservation).where(
+            DeviceMacObservation.device_id == device_id,
+            DeviceMacObservation.state == OPEN,
+        )
+    )
+    return res.rowcount or 0
+
+
+async def open_conflict_device_ids(db: AsyncSession, device_ids: Iterable[int]) -> set[int]:
+    """Subset of ``device_ids`` that currently have at least one open MAC conflict."""
+    ids = [i for i in device_ids if i is not None]
+    if not ids:
+        return set()
+    rows = await db.execute(
+        select(DeviceMacObservation.device_id)
+        .where(
+            DeviceMacObservation.device_id.in_(ids),
+            DeviceMacObservation.state == OPEN,
+        )
+        .distinct()
+    )
+    return set(rows.scalars().all())
 
 
 @dataclass
@@ -129,7 +187,11 @@ async def _shared_targets(db: AsyncSession, device: Device, old: str, new: str) 
 
 
 async def _apply_mac(db: AsyncSession, device: Device, new: str, origin: str) -> bool:
-    """Set ``new`` on the device (and its discovered host); True when the MAC changed. Does NOT commit."""
+    """Set ``new`` on the device (and its discovered host); True when the MAC changed. Does NOT commit.
+
+    Only an actual MAC change clears all observations (open and dismissed) for ``device``; a no-op
+    leaves existing observations untouched.
+    """
     previous = device.mac
     changed = normalise_mac(previous) != new
     if changed:
@@ -143,13 +205,7 @@ async def _apply_mac(db: AsyncSession, device: Device, new: str, origin: str) ->
             read=False,
             message=f"MAC changed from {previous or 'none'} to {new} ({origin})"[:255],
         ))
-    observation = (await db.execute(
-        select(DeviceMacObservation).where(
-            DeviceMacObservation.device_id == device.id, DeviceMacObservation.observed_mac == new,
-        )
-    )).scalar_one_or_none()
-    if observation is not None:
-        await db.delete(observation)
+        await clear_observations(db, device.id)
     return changed
 
 
@@ -176,6 +232,70 @@ async def set_device_mac(
         if await _apply_mac(db, target, new, origin):
             changed.append(target)
     return changed
+
+
+async def adopt_confirmed_targets(
+    db: AsyncSession, mac: str, targets: list[tuple[int, str, str | None]],
+) -> tuple[list[Device], list[int]]:
+    """Adopt ``mac`` only for explicitly confirmed ``(id, ip, documented_mac)`` targets.
+
+    Each target is updated via a single conditional SQL UPDATE checking id, IP, documented MAC
+    and the existence of an open observation for ``mac`` atomically at write time. Concurrent
+    context changes therefore cause rowcount == 0 (skipped) instead of a silent overwrite, even
+    under SQLite's deferred transaction defaults. Technical/DB errors propagate so the caller
+    rolls back the whole transaction. Does NOT commit.
+    """
+    new = normalise_mac(mac)
+    if not is_usable_mac(new):
+        raise MacChangeError("Not a usable MAC address (six hex pairs, unicast, not all zeros).")
+
+    changed: list[Device] = []
+    skipped: list[int] = []
+    for target_id, expected_ip, expected_doc_mac in targets:
+        clean_ip = expected_ip.strip()
+        expected_mac = normalise_mac(expected_doc_mac)
+        if expected_mac == new:
+            skipped.append(target_id)
+            continue
+
+        mac_match = func.lower(Device.mac) == expected_mac if expected_mac is not None else Device.mac.is_(None)
+        open_obs_exists = exists(
+            select(DeviceMacObservation.id).where(
+                DeviceMacObservation.device_id == Device.id,
+                DeviceMacObservation.observed_mac == new,
+                DeviceMacObservation.state == OPEN,
+            )
+        )
+        res = await db.execute(
+            update(Device)
+            .where(
+                Device.id == target_id,
+                Device.ip == clean_ip,
+                mac_match,
+                open_obs_exists,
+            )
+            .values(mac=new)
+        )
+        if (res.rowcount or 0) == 0:
+            skipped.append(target_id)
+            continue
+
+        disc = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == clean_ip))).scalar_one_or_none()
+        if disc is not None and (not is_usable_mac(disc.mac) or normalise_mac(disc.mac) == expected_mac):
+            disc.mac = new
+        db.add(DeviceHistory(
+            device_id=target_id,
+            status="mac_changed",
+            read=False,
+            message=f"MAC changed from {expected_mac or 'none'} to {new} (adopted)"[:255],
+        ))
+        await clear_observations(db, target_id)
+        dev = (await db.execute(
+            select(Device).where(Device.id == target_id).execution_options(populate_existing=True)
+        )).scalar_one()
+        changed.append(dev)
+
+    return changed, skipped
 
 
 async def has_open_observation(db: AsyncSession, device: Device, mac: str) -> bool:

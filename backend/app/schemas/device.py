@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.dns_answers import stored_dns_answers
 from app.schemas.interface import DeviceInterfaceResponse
@@ -108,12 +108,40 @@ class DeviceHistoryResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MacChangeTarget(BaseModel):
+    """Confirmed device snapshot bound to a MAC adoption request."""
+
+    id: int = Field(..., ge=1)
+    ip: str = Field(..., min_length=1, max_length=64)
+    documented_mac: str | None = Field(default=None, max_length=17)
+
+
 class MacChangeRequest(BaseModel):
-    """Set a device's MAC by hand, or adopt a MAC that was seen at its address."""
+    """Set a device's MAC by hand, or adopt a MAC that was seen at its address.
+
+    Direct API callers may still pass ``apply_to_shared=True`` without ``targets`` for
+    backwards-compatible dynamic lookup of devices sharing the old MAC. UI clients should pass
+    explicit ``targets`` snapshots instead: when ``targets`` is set, ``apply_to_shared`` is
+    ignored and only listed devices whose (id, ip, documented_mac, open observation) still match
+    are updated.
+    """
 
     mac: str = Field(..., max_length=17, description="aa:bb:cc:dd:ee:ff (dashes allowed)")
-    # Also give it to the devices that share the old MAC and saw the same new one (an ipvlan host's containers)
+    # Legacy dynamic lookup when `targets` is omitted; ignored whenever `targets` is provided
     apply_to_shared: bool = False
+    targets: list[MacChangeTarget] | None = None
+
+    @model_validator(mode="after")
+    def _validate_targets(self) -> "MacChangeRequest":
+        if self.targets is not None:
+            if not self.targets:
+                raise ValueError("targets must not be empty")
+            seen: set[int] = set()
+            for target in self.targets:
+                if target.id in seen:
+                    raise ValueError(f"Duplicate device id in targets: {target.id}")
+                seen.add(target.id)
+        return self
 
 
 class MacObservationDismiss(BaseModel):
@@ -124,6 +152,7 @@ class MacObservationDismiss(BaseModel):
 
 class MacChangeResult(BaseModel):
     changed_device_ids: list[int]
+    skipped_device_ids: list[int] = []
 
 
 class MacConflictDevice(BaseModel):

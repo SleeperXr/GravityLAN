@@ -261,7 +261,10 @@ async def test_ip_reuse_seen_by_the_relay_still_lets_the_scan_find_the_device_ag
     await db.refresh(nas)
     assert (nas.ip, nas.mac) == ("192.168.110.20", MAC_A)
     assert len(await history(db, "ip_changed")) == 1
-    assert await observations(db) == [(nas.id, MAC_B, "relay", "open")]
+    assert len(await history(db, "mac_conflict")) == 1
+    # Changed from keeping the stale IP-A observation open (AP 3.1): after moving to IP B,
+    # observations from the old address are cleared while DeviceHistory keeps the audit trail.
+    assert await observations(db) == []
 
 
 async def test_the_scan_records_another_mac_at_a_device_once(db, scan):

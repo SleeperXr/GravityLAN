@@ -34,18 +34,24 @@ describe('macConflicts helpers', () => {
     expect(hasSharedDevices(sharedGroup)).toBe(true);
   });
 
-  it('never enables apply_to_shared for single-device groups', () => {
+  it('always builds explicit confirmed targets and never uses dynamic apply_to_shared', () => {
     expect(buildAdoptPayload(singleGroup, true)).toEqual({
       mac: 'aa:bb:cc:dd:ee:02',
       apply_to_shared: false,
+      targets: [{ id: 10, ip: '192.168.1.10', documented_mac: 'aa:bb:cc:dd:ee:01' }],
     });
-    expect(buildAdoptPayload(sharedGroup, false)).toEqual({
+    expect(buildAdoptPayload(sharedGroup, false, sharedGroup.devices[1])).toEqual({
       mac: '11:22:33:44:55:02',
       apply_to_shared: false,
+      targets: [{ id: 21, ip: '192.168.1.21', documented_mac: '11:22:33:44:55:01' }],
     });
     expect(buildAdoptPayload(sharedGroup, true)).toEqual({
       mac: '11:22:33:44:55:02',
-      apply_to_shared: true,
+      apply_to_shared: false,
+      targets: [
+        { id: 20, ip: '192.168.1.20', documented_mac: '11:22:33:44:55:01' },
+        { id: 21, ip: '192.168.1.21', documented_mac: '11:22:33:44:55:01' },
+      ],
     });
   });
 

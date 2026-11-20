@@ -388,19 +388,46 @@ async def set_device_mac(
 ) -> MacChangeResult:
     """Correct a device's MAC by hand, or adopt one that was seen at its address; the device keeps its id.
 
-    A MAC that was observed at the device counts as adopted, any other as a manual correction; both
-    write a history entry. ``apply_to_shared`` also changes the devices that share the old MAC and
-    saw the same new one.
+    When ``targets`` is provided, only those confirmed ``(id, ip, documented_mac)`` snapshots with a
+    still-open observation for ``req.mac`` are updated (``device_id`` must be listed in ``targets``;
+    ``apply_to_shared`` is ignored, and stale/deleted targets are returned in ``skipped_device_ids``).
+    Without ``targets``, a MAC observed at ``device_id`` counts as adopted and any other as manual;
+    ``apply_to_shared`` keeps its legacy dynamic lookup for direct API callers.
     """
+    if req.targets is not None:
+        if not any(t.id == device_id for t in req.targets):
+            raise HTTPException(status_code=422, detail="URL device_id must be included in targets")
+        try:
+            changed, skipped = await mac_observations.adopt_confirmed_targets(
+                db, req.mac, [(t.id, t.ip, t.documented_mac) for t in req.targets],
+            )
+            await db.commit()
+        except mac_observations.MacChangeError as exc:
+            await db.rollback()
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception:
+            await db.rollback()
+            raise
+        for dev in changed:
+            await audit(request, "device.mac_changed", device_id=dev.id, target=device_label(dev),
+                        detail=f"{dev.mac} (adopted)")
+        if changed:
+            _invalidate_device_caches()
+        return MacChangeResult(changed_device_ids=[d.id for d in changed], skipped_device_ids=skipped)
+
     device = await _device_or_404(db, device_id)
     adopted = await mac_observations.has_open_observation(db, device, req.mac)
     try:
         changed = await mac_observations.set_device_mac(
             db, device, req.mac, adopted=adopted, apply_to_shared=req.apply_to_shared,
         )
+        await db.commit()
     except mac_observations.MacChangeError as exc:
+        await db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     for dev in changed:
         await audit(request, "device.mac_changed", device_id=dev.id, target=device_label(dev),
                     detail=f"{dev.mac} ({'adopted' if adopted else 'manual'})")

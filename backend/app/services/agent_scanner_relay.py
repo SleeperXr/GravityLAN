@@ -15,7 +15,14 @@ from app.models.agent import AgentConfig
 from app.models.device import Device, DiscoveredHost
 from app.models.network import Subnet
 from app.scanner.vendor import get_vendor
-from app.services.mac_observations import ReportedPairs, is_usable_mac, macs_differ, record_mac_conflict
+from app.services.mac_observations import (
+    ReportedPairs,
+    clear_open_observations,
+    collect_usable_macs_by_ip,
+    is_usable_mac,
+    macs_differ,
+    record_mac_conflict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +111,9 @@ async def ingest_agent_arp_table(
     disc_res = await db.execute(select(DiscoveredHost))
     disc_by_ip = {h.ip: h for h in disc_res.scalars().all()}
 
+    # Pre-collect all usable MACs per IP in this batch so ambiguous A+B passes are order-independent
+    seen_macs_by_ip = collect_usable_macs_by_ip(arp_entries)
+
     for entry in arp_entries:
         raw_ip = entry.get("ip") if isinstance(entry, dict) else getattr(entry, "ip", None)
         raw_mac = entry.get("mac") if isinstance(entry, dict) else getattr(entry, "mac", None)
@@ -137,7 +147,14 @@ async def ingest_agent_arp_table(
                 if await record_mac_conflict(db, dev, raw_mac, "relay", reported):
                     updated_count += 1
                 continue
+            if any(macs_differ(dev.mac, m) for m in seen_macs_by_ip.get(raw_ip, ())):
+                # Same batch saw both the documented MAC and a conflicting MAC at this IP:
+                # treat the pass as ambiguous (no online confirmation, no auto-recovery).
+                continue
             changed = False
+            if is_usable_mac(dev.mac) and await clear_open_observations(db, dev.id):
+                conflicts_seen = True
+                changed = True
             if not is_usable_mac(dev.mac):
                 dev.mac = raw_mac
                 changed = True
