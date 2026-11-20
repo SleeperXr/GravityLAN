@@ -2,6 +2,7 @@
 never change a device's valid MAC, they record the sighting once; the user adopts it or corrects the
 MAC by hand. One MAC at several addresses (ipvlan) is normal and never a conflict."""
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -282,6 +283,43 @@ async def test_the_same_conflict_twice_in_one_batch_is_one_row(db):
     assert await observations(db) == [(server.id, MAC_B, "scan", "open")]
 
 
+@pytest.mark.parametrize("group_mac", ["01:80:c2:00:00:00", "ff:ff:ff:ff:ff:ff"])
+async def test_a_group_address_is_never_recorded(db, group_mac):
+    """The scan's own check lets some group addresses through (only 01:00:5e and 33:33 are refused)."""
+    (server,) = await add(db, Device(ip="192.168.110.54", mac=MAC_A, display_name="Server"))
+    assert await mac_observations.record_mac_conflict(db, server, group_mac, "scan") is False
+    await db.commit()
+    assert await observations(db) == []
+
+
+async def test_a_sighting_another_pass_saved_first_does_not_abort_this_pass(db, monkeypatch):
+    """The relay and a scan run in their own sessions; the second insert of one pair must not fail the pass."""
+    (server,) = await add(db, Device(ip="192.168.110.55", mac=MAC_A, display_name="Server", notes="before"))
+    await add(db, DeviceMacObservation(device_id=server.id, observed_mac=MAC_B, source="relay",
+                                       first_seen=datetime.now(UTC), last_seen=datetime.now(UTC)))
+    real_execute = db.execute
+
+    class NothingYet:
+        def scalar_one_or_none(self):
+            return None
+
+    async def lookup_misses_the_other_pass(statement, *args, **kwargs):
+        if "device_mac_observations" in str(statement) and statement.is_select:
+            return NothingYet()  # the other pass committed after this one looked
+        return await real_execute(statement, *args, **kwargs)
+
+    server.notes = "changed in this pass"
+    monkeypatch.setattr(db, "execute", lookup_misses_the_other_pass)
+    assert await mac_observations.record_mac_conflict(db, server, MAC_B, "scan") is False
+    monkeypatch.setattr(db, "execute", real_execute)
+    await db.commit()
+
+    await db.refresh(server)
+    assert server.notes == "changed in this pass"
+    assert await observations(db) == [(server.id, MAC_B, "relay", "open")]
+    assert await history(db, "mac_conflict") == []
+
+
 async def test_the_scan_records_a_parent_mac_change_for_each_device_once(db, scan):
     devices = await add(db, *ipvlan_group(M1))
     for _ in range(2):
@@ -305,6 +343,19 @@ async def test_deleting_a_device_removes_its_observations(db, relay, client, aut
 def test_observations_of_reassigned_devices_go_on_restore_and_stay_out_of_the_export():
     assert "device_mac_observations" in backup.DEVICE_BOUND_DELETE
     assert "device_mac_observations" not in backup.ALLOWED_TABLE_MAP.values()
+
+
+def test_a_restore_that_swaps_two_containers_sharing_a_mac_counts_both_as_reassigned():
+    """The MAC alone cannot tell ipvlan containers apart: their agent tokens, history and sightings must go."""
+    before = {1: (M1, "192.168.110.5"), 2: (M1, "192.168.110.6"), 3: (M1, "192.168.110.7")}
+    after = {1: (M1, "192.168.110.6"), 2: (M1, "192.168.110.5"), 3: (M1, "192.168.110.7")}
+    assert backup._reassigned_ids(before, after) == [1, 2]
+
+
+def test_a_device_with_its_own_mac_may_change_its_address_in_a_restore():
+    before = {1: (MAC_A, "192.168.110.10"), 2: (M1, "192.168.110.5"), 3: (M1, "192.168.110.6")}
+    after = {1: (MAC_A, "192.168.110.99"), 2: (M1, "192.168.110.5"), 3: (M1, "192.168.110.6")}
+    assert backup._reassigned_ids(before, after) == []
 
 
 @pytest.mark.parametrize("mac, usable", [

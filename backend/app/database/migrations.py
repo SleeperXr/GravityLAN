@@ -86,6 +86,7 @@ def _build_docker_container_map() -> dict:
     if not docker_service.is_available():
         return docker_container_map
     try:
+        services: dict[str, set[str]] = {}
         for c in docker_service.get_local_containers():
             c_name = c.get("name")
             c_ips = c.get("ips", [])
@@ -93,7 +94,12 @@ def _build_docker_container_map() -> dict:
                 docker_container_map[c_name.lower()] = c_ips[0]
                 service = c.get("service")
                 if service:
-                    docker_container_map.setdefault(service.lower(), c_ips[0])
+                    services.setdefault(service.lower(), set()).add(c_ips[0])
+        # A service name is unique only within one Compose project, and --scale runs replicas of it:
+        # only a name that one running container answers to points at an address
+        for service, ips in services.items():
+            if len(ips) == 1:
+                docker_container_map.setdefault(service, next(iter(ips)))
         if docker_container_map:
             logger.info(f"Migration: Docker socket active. Found {len(docker_container_map)} running containers: {list(docker_container_map.keys())}")
     except Exception as e:

@@ -320,11 +320,30 @@ def _device_identities(cursor) -> dict[int, tuple[str, str]]:
     return {row[0]: ((row[1] or "").strip().lower(), (row[2] or "").strip()) for row in cursor.fetchall()}
 
 
-def _same_device(before: tuple[str, str], after: tuple[str, str]) -> bool:
-    """Same device when the MACs match; the IP decides only if one side has no MAC."""
+def _same_device(before: tuple[str, str], after: tuple[str, str], shared_macs: frozenset[str] = frozenset()) -> bool:
+    """Same device when the MACs match; the IP decides only if one side has no MAC.
+
+    A MAC that several devices carry (ipvlan containers share their host's) cannot tell them
+    apart: a backup that swapped two such containers' ids would keep each one's agent token,
+    history and MAC sightings on the other. For those the IP has to match as well.
+    """
     if before[0] and after[0]:
-        return before[0] == after[0]
+        if before[0] != after[0]:
+            return False
+        return before[0] not in shared_macs or before[1] == after[1]
     return before[1] == after[1]
+
+
+def _shared_macs(*identities: dict[int, tuple[str, str]]) -> frozenset[str]:
+    """MACs that more than one device carries on either side."""
+    shared: set[str] = set()
+    for side in identities:
+        seen: set[str] = set()
+        for mac, _ in side.values():
+            if mac and mac in seen:
+                shared.add(mac)
+            seen.add(mac)
+    return frozenset(shared)
 
 
 def _existing_tables(cursor) -> set[str]:
@@ -334,9 +353,10 @@ def _existing_tables(cursor) -> set[str]:
 
 def _reassigned_ids(before: dict[int, tuple[str, str]], after: dict[int, tuple[str, str]]) -> list[int]:
     """Device ids of ``before`` that are gone or name another device in ``after``."""
+    shared = _shared_macs(before, after)
     return sorted(
         device_id for device_id, identity in before.items()
-        if device_id not in after or not _same_device(identity, after[device_id])
+        if device_id not in after or not _same_device(identity, after[device_id], shared)
     )
 
 

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device import Device, DeviceHistory, DeviceMacObservation, DiscoveredHost
@@ -72,7 +73,8 @@ async def record_mac_conflict(
     A known pair only moves ``last_seen``; a dismissed one stays quiet. Does NOT commit.
     """
     observed = normalise_mac(mac)
-    if observed is None or device.id is None:
+    # A group address (multicast, broadcast) is no card's MAC; the scan lets some through
+    if not is_usable_mac(observed) or device.id is None:
         return False
     key = (device.id, observed)
     if reported is not None:
@@ -91,9 +93,16 @@ async def record_mac_conflict(
             row.last_seen = now
         return False
 
-    db.add(DeviceMacObservation(
-        device_id=device.id, observed_mac=observed, source=source, first_seen=now, last_seen=now, state=OPEN,
-    ))
+    # The relay and a scan run in sessions of their own: the other one may have added the same
+    # pair since the lookup. A savepoint keeps that duplicate from taking the whole pass down.
+    await db.flush()
+    try:
+        async with db.begin_nested():
+            db.add(DeviceMacObservation(
+                device_id=device.id, observed_mac=observed, source=source, first_seen=now, last_seen=now, state=OPEN,
+            ))
+    except IntegrityError:
+        return False
     db.add(DeviceHistory(
         device_id=device.id,
         status="mac_conflict",

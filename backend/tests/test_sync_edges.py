@@ -491,11 +491,13 @@ async def test_a_device_at_the_container_address_is_not_pushed_aside(db, docker)
     pi = Device(ip="192.0.2.40", mac=MAC_A, display_name="Pi", is_online=True)
     await add(db, printer, pi)
 
-    await docker(running("pi-backup", "192.0.2.61"))
+    # The container runs at the printer's address: before, "Pi" was moved there and the printer
+    # pushed aside to a 0.0.0.N placeholder
+    await docker(running("pi-backup", "192.0.2.60"))
 
     await db.refresh(printer)
     await db.refresh(pi)
-    assert (printer.ip, printer.ip_placeholder) == ("192.0.2.60", False)
+    assert (printer.ip, printer.ip_placeholder, printer.old_ip) == ("192.0.2.60", False, None)
     assert (pi.ip, pi.old_ip) == ("192.0.2.40", None)
 
 
