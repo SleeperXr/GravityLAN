@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_admin
+from app.api.policy import policy
 from app.database import get_db
 from app.models.device import Device, DeviceInterface
 from app.schemas.interface import (
@@ -21,7 +21,7 @@ from app.services import interface_service
 from app.services.cache_service import dashboard_cache, discovery_cache, topology_cache
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["interfaces"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(prefix="/api", tags=["interfaces"])
 
 
 def _invalidate_caches() -> None:
@@ -48,13 +48,13 @@ def _raise(err: interface_service.InterfaceError):
     raise HTTPException(status_code=err.status_code, detail=err.detail)
 
 
-@router.get("/devices/{device_id}/interfaces", response_model=list[DeviceInterfaceResponse])
+@router.get("/devices/{device_id}/interfaces", response_model=list[DeviceInterfaceResponse], dependencies=[policy(scope="devices:read")])
 async def list_interfaces(device_id: int, db: AsyncSession = Depends(get_db)):
     device = await _get_device(db, device_id)
     return device.interfaces
 
 
-@router.post("/devices/{device_id}/interfaces", response_model=DeviceInterfaceResponse, status_code=201)
+@router.post("/devices/{device_id}/interfaces", response_model=DeviceInterfaceResponse, status_code=201, dependencies=[policy(scope="devices:write")])
 async def add_interface(device_id: int, data: InterfaceCreate, db: AsyncSession = Depends(get_db)):
     """Add an address of this device in another subnet (e.g. its gateway address in a VLAN)."""
     device = await _get_device(db, device_id)
@@ -66,7 +66,7 @@ async def add_interface(device_id: int, data: InterfaceCreate, db: AsyncSession 
     return iface
 
 
-@router.post("/devices/{device_id}/interfaces/merge", response_model=DeviceInterfaceResponse, status_code=201)
+@router.post("/devices/{device_id}/interfaces/merge", response_model=DeviceInterfaceResponse, status_code=201, dependencies=[policy(scope="devices:write")])
 async def merge_into_device(device_id: int, data: InterfaceMergeRequest, db: AsyncSession = Depends(get_db)):
     """Make a duplicate device, or a discovered address, an interface of this device."""
     if (data.source_device_id is None) == (data.ip is None):
@@ -84,7 +84,7 @@ async def merge_into_device(device_id: int, data: InterfaceMergeRequest, db: Asy
     return iface
 
 
-@router.patch("/devices/{device_id}/interfaces/{interface_id}", response_model=DeviceInterfaceResponse)
+@router.patch("/devices/{device_id}/interfaces/{interface_id}", response_model=DeviceInterfaceResponse, dependencies=[policy(scope="devices:write")])
 async def update_interface(
     device_id: int, interface_id: int, data: InterfaceUpdate, db: AsyncSession = Depends(get_db)
 ):
@@ -97,7 +97,7 @@ async def update_interface(
     return iface
 
 
-@router.delete("/devices/{device_id}/interfaces/{interface_id}", status_code=204)
+@router.delete("/devices/{device_id}/interfaces/{interface_id}", status_code=204, dependencies=[policy(scope="devices:write")])
 async def delete_interface(device_id: int, interface_id: int, db: AsyncSession = Depends(get_db)) -> None:
     """Detach an interface. The address stays in the IP overview as a discovered host."""
     iface = await _get_interface(db, device_id, interface_id)
@@ -105,18 +105,18 @@ async def delete_interface(device_id: int, interface_id: int, db: AsyncSession =
     _invalidate_caches()
 
 
-@router.get("/interfaces/suggestions", response_model=list[MergeSuggestion])
+@router.get("/interfaces/suggestions", response_model=list[MergeSuggestion], dependencies=[policy(scope="devices:read")])
 async def list_merge_suggestions(db: AsyncSession = Depends(get_db)):
     """Devices and addresses that look like further interfaces of another device."""
     return await interface_service.find_merge_suggestions(db)
 
 
-@router.post("/interfaces/suggestions/dismiss", status_code=204)
+@router.post("/interfaces/suggestions/dismiss", status_code=204, dependencies=[policy(scope="devices:write")])
 async def dismiss_merge_suggestion(data: SuggestionDismiss, db: AsyncSession = Depends(get_db)) -> None:
     await interface_service.dismiss_suggestion(db, data.target_id, data.kind, data.candidate_ip)
 
 
-@router.get("/network/gateways", response_model=list[GatewayEntry])
+@router.get("/network/gateways", response_model=list[GatewayEntry], dependencies=[policy(scope="network:read")])
 async def list_subnet_gateways(db: AsyncSession = Depends(get_db)):
     """The gateway address of every configured subnet and which device answers there."""
     return await interface_service.list_gateways(db)

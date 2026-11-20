@@ -15,7 +15,6 @@ from sqlalchemy.exc import OperationalError
 import app.api.auth as auth
 from app.models.api_token import ApiToken
 from app.models.setting import Setting
-from app.schemas.api_token import ApiTokenCreate
 from app.services.auth_service import verify_password
 from app.services.session_service import session_store
 
@@ -110,7 +109,7 @@ async def test_refused_token_is_named_in_the_log_even_with_a_percent_sign(db, ca
 
     ws = _Ws(query=raw)
     with caplog.at_level(logging.WARNING, logger="app.api.auth"):
-        result = await auth._authenticate_websocket_impl(ws, "logs", None, db)
+        result = await auth._authenticate_websocket_impl(ws, "logs", None, db, "settings:read")
 
     assert result == {"authenticated": False}
     assert ws.closed == (4003, "Insufficient token scopes")
@@ -224,18 +223,23 @@ async def test_step_up_password_check_is_false_when_nothing_is_configured(db):
 # --- token routes reached directly --------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_token_routes_refuse_an_api_token_that_reaches_them(db):
-    caller = "api_token:reader"
-    request = SimpleNamespace()
-    calls = (
-        auth.list_api_tokens(caller, db),
-        auth.create_api_token(ApiTokenCreate(name="new"), request, caller, db),
-        auth.delete_api_token(1, request, caller, db),
-    )
-    for call in calls:
-        with pytest.raises(HTTPException) as exc:
-            await call
-        assert exc.value.status_code == 403
+async def test_token_routes_refuse_an_api_token_that_reaches_them(client, db, admin_token):
+    import hashlib
+
+    from app.models.api_token import ApiToken
+
+    raw = "gl_pat_full_settings"
+    db.add(ApiToken(name="reader", token_hash=hashlib.sha256(raw.encode()).hexdigest(), prefix="gl_pat_ful...",
+                    is_active=True, scopes="settings:read,settings:write"))
+    await db.commit()
+    headers = {"Authorization": f"Bearer {raw}"}
+    for res in (
+        await client.get("/api/auth/tokens", headers=headers),
+        await client.post("/api/auth/tokens", json={"name": "new"}, headers=headers),
+        await client.delete("/api/auth/tokens/1", headers=headers),
+    ):
+        assert res.status_code == 403
+        assert res.json()["detail"] == auth.TOKENS_DENIED
 
 
 @pytest.mark.asyncio

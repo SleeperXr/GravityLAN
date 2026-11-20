@@ -150,6 +150,8 @@ async def _old_run_patches_websocket(websocket, device_id):
 class FakeWebSocket:
     def __init__(self, token, disconnect_after=None):
         self.query_params = {"patch_token": token} if token else {}
+        # What the route's policy leaves on the socket after admitting a browser session
+        self.state = SimpleNamespace(gl_ws_auth={"authenticated": True, "auth_type": "session", "identity": "session"})
         self.events = []
         self.disconnect_after = disconnect_after
 
@@ -309,11 +311,12 @@ async def test_patch_run_matches_without_auth_or_with_a_bad_token(monkeypatch):
     async def auth_refused(websocket, endpoint_type, device_id=None, allowed_levels=()):
         return None
 
-    for fn in (_old_run_patches_websocket, ap.run_patches_websocket):
-        monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", auth_refused)
-        ws = FakeWebSocket("anything")
-        await fn(ws, 5)
-        assert ws.events == []
+    # The live endpoint no longer authenticates: its policy refuses the handshake before it runs
+    # (test_policy_matrix, test_stepup). The frozen copy still shows what that looked like.
+    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", auth_refused)
+    ws = FakeWebSocket("anything")
+    await _old_run_patches_websocket(ws, 5)
+    assert ws.events == []
 
     results = []
     for fn in (_old_run_patches_websocket, ap.run_patches_websocket):

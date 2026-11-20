@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_admin
+from app.api.policy import policy, NO_API_TOKEN
 from app.database import get_db
 from app.models.proxmox import ProxmoxIntegration
 from app.services.audit import record as audit
@@ -14,9 +14,8 @@ from app.services.cache_service import discovery_cache
 from app.services import proxmox as proxmox_service
 from app.services.proxmox import ProxmoxError, sync_lock, sync_proxmox, write_lock
 from app.services.secret_vault import VaultError, vault
-from app.services.stepup import require_step_up
 
-router = APIRouter(prefix="/api/settings/proxmox", tags=["proxmox"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(prefix="/api/settings/proxmox", tags=["proxmox"])
 
 TOKEN_ID_PATTERN = re.compile(r"[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+![A-Za-z0-9_.-]+")
 
@@ -65,12 +64,12 @@ def public_settings(connection: ProxmoxIntegration | None) -> dict:
             "last_sync": connection.last_sync, "last_error": connection.last_error}
 
 
-@router.get("")
+@router.get("", dependencies=[policy(scope="settings:read")])
 async def get_settings(db: AsyncSession = Depends(get_db)):
     return public_settings(await db.get(ProxmoxIntegration, 1))
 
 
-@router.put("", dependencies=[Depends(require_step_up("credentials"))])
+@router.put("", dependencies=[policy(callers=NO_API_TOKEN, step_up="credentials")])
 async def save_settings(body: ProxmoxSettings, request: Request, db: AsyncSession = Depends(get_db)):
     async with write_lock:
         connection = await db.get(ProxmoxIntegration, 1)
@@ -106,7 +105,7 @@ async def save_settings(body: ProxmoxSettings, request: Request, db: AsyncSessio
     return result
 
 
-@router.delete("", status_code=204, dependencies=[Depends(require_step_up("credentials"))])
+@router.delete("", status_code=204, dependencies=[policy(callers=NO_API_TOKEN, step_up="credentials")])
 async def disconnect(request: Request, db: AsyncSession = Depends(get_db)):
     async with write_lock:
         connection = await db.get(ProxmoxIntegration, 1)
@@ -120,7 +119,7 @@ async def disconnect(request: Request, db: AsyncSession = Depends(get_db)):
     await audit(request, "proxmox.delete", target=host)
 
 
-@router.get("/report")
+@router.get("/report", dependencies=[policy(scope="settings:read")])
 async def last_sync_report():
     """What the last sync found per guest; null until a sync ran since the start."""
     return {"report": proxmox_service.last_report}
@@ -130,7 +129,7 @@ class AddToDashboard(BaseModel):
     ips: list[str] = Field(..., min_length=1, max_length=proxmox_service.MAX_ADD_AT_ONCE)
 
 
-@router.post("/add-to-dashboard")
+@router.post("/add-to-dashboard", dependencies=[policy(scope="settings:write")])
 async def add_to_dashboard(body: AddToDashboard, request: Request, db: AsyncSession = Depends(get_db)):
     """Put chosen guests of the last sync on the dashboard (Settings > Proxmox VE > Last sync)."""
     try:
@@ -142,7 +141,7 @@ async def add_to_dashboard(body: AddToDashboard, request: Request, db: AsyncSess
     return {"added": added}
 
 
-@router.post("/sync")
+@router.post("/sync", dependencies=[policy(scope="settings:write")])
 async def synchronize(db: AsyncSession = Depends(get_db)):
     if sync_lock.locked():
         raise HTTPException(409, "A Proxmox sync is already running. Try again shortly.")

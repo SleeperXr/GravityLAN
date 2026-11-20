@@ -7,7 +7,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_bearer_admin, get_current_admin
+from app.api.policy import policy, NO_API_TOKEN
+from app.api.auth import get_current_admin
 from app.database import get_db
 from app.models.webhook import NotificationOutbox, WebhookSubscription
 from app.schemas.webhook import (
@@ -17,14 +18,13 @@ from app.schemas.webhook import (
 )
 from app.services.audit import record as audit
 from app.services.secret_vault import vault
-from app.services.stepup import require_step_up
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
 
-@router.get("", response_model=list[WebhookSubscriptionResponse])
+@router.get("", response_model=list[WebhookSubscriptionResponse], dependencies=[policy(scope="settings:read")])
 async def list_webhooks(
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
@@ -34,7 +34,7 @@ async def list_webhooks(
     return result.scalars().all()
 
 
-@router.post("", response_model=WebhookSubscriptionResponse, dependencies=[Depends(require_step_up("credentials"))])
+@router.post("", response_model=WebhookSubscriptionResponse, dependencies=[policy(callers=NO_API_TOKEN, step_up="credentials")])
 async def create_webhook(
     payload: WebhookSubscriptionCreate,
     request: Request,
@@ -60,7 +60,7 @@ async def create_webhook(
     return new_sub
 
 
-@router.delete("/{webhook_id}", dependencies=[Depends(require_step_up("credentials"))])
+@router.delete("/{webhook_id}", dependencies=[policy(callers=NO_API_TOKEN, step_up="credentials")])
 async def delete_webhook(
     webhook_id: int,
     request: Request,
@@ -85,7 +85,7 @@ async def delete_webhook(
     return {"status": "ok", "message": "Webhook subscription deleted successfully"}
 
 
-@router.get("/outbox", response_model=list[NotificationOutboxResponse])
+@router.get("/outbox", response_model=list[NotificationOutboxResponse], dependencies=[policy(scope="settings:read")])
 async def list_outbox_notifications(
     limit: int = Query(50, ge=1, le=200),
     token: str = Depends(get_current_admin),
@@ -103,7 +103,7 @@ def is_orphaned(entry: NotificationOutbox) -> bool:
     return entry.service_type == "webhook" and entry.subscription_id is None
 
 
-@router.delete("/outbox/failed")
+@router.delete("/outbox/failed", dependencies=[policy(scope="settings:write")])
 async def clear_failed_outbox(
     request: Request,
     token: str = Depends(get_current_admin),
@@ -117,7 +117,7 @@ async def clear_failed_outbox(
     return {"status": "ok", "removed": removed}
 
 
-@router.post("/outbox/{outbox_id}/retry", dependencies=[Depends(require_step_up("credentials"))])
+@router.post("/outbox/{outbox_id}/retry", dependencies=[policy(callers=NO_API_TOKEN, step_up="credentials")])
 async def retry_outbox_notification(
     outbox_id: int,
     token: str = Depends(get_current_admin),
@@ -144,7 +144,7 @@ async def retry_outbox_notification(
     return {"status": "ok", "message": f"Outbox entry {outbox_id} reset for retry"}
 
 
-@router.post("/test")
+@router.post("/test", dependencies=[policy(scope="settings:write")])
 async def test_webhook_dispatch(
     event: str = Body("test.event", embed=True),
     data: dict = Body({"status": "testing"}, embed=True),
@@ -157,10 +157,10 @@ async def test_webhook_dispatch(
     return {"status": "ok", "message": f"Webhook test event '{event}' scheduled for dispatch."}
 
 
-@router.get("/test")
+@router.get("/test", dependencies=[policy(scope="settings:write", bearer_only=True)])
 async def test_webhook_dispatch_get(
     event: str = "test.event",
-    token: str = Depends(get_bearer_admin),
+    token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger a mock/test webhook event via GET query parameter. Raises 404 if no webhooks exist.

@@ -2,9 +2,10 @@
 
 Frozen copies of _required_scope_for, _enforce_token_scopes, _resolve_admin and
 _authenticate_websocket_impl as of 0.7.0-rc.7, and of login, change_password and
-_admin_password_matches as of 0.7.0, are run next to the live functions over every app route
+_admin_password_matches as of 0.7.0, are run next to the live code over every app route
 and a grid of cookies, headers, query tokens, setup states, token scopes and stored passwords.
-Results, HTTP errors, WebSocket close codes, stored rows and audit entries must match exactly.
+Since 0.8.0 the scope, caller and step-up rules are declared per route (app.api.policy); the
+frozen path-prefix rules are compared with those declarations route by route.
 """
 
 import hashlib
@@ -38,6 +39,21 @@ _READONLY_DEFAULT_SCOPES = {
 
 
 # --- frozen copies (0.7.0-rc.7) -------------------------------------------------
+
+# Routes the first-run wizard calls before any admin credential exists (0.8.0: policy setup="open")
+_SETUP_WIZARD_ROUTES = frozenset({
+    ("GET", "/api/scanner/subnets"),
+    ("GET", "/api/scanner/discovered"),
+    ("POST", "/api/scanner/start"),
+    ("POST", "/api/scanner/stop"),
+    ("WEBSOCKET", "/api/scanner/ws"),
+})
+
+
+def _old_is_setup_wizard_route(conn) -> bool:
+    method = conn.scope.get("method") or conn.scope.get("type", "").upper()
+    return (method, conn.url.path) in _SETUP_WIZARD_ROUTES
+
 
 def _old_required_scope_for(path: str, method: str) -> str | None:
     read_methods = ("GET", "HEAD")
@@ -124,7 +140,7 @@ async def _old_resolve_admin(conn, authorization, token, db) -> str:
     is_setup_done = setup_setting is not None and setup_setting.value == "true"
 
     if not is_setup_done:
-        if auth._is_setup_wizard_route(conn):
+        if _old_is_setup_wizard_route(conn):
             return "setup_mode"
         raise HTTPException(status_code=403, detail="Initial setup not completed.")
 
@@ -388,22 +404,65 @@ def _sync_outcome(fn, *args):
 
 # --- the comparisons ---------------------------------------------------------------
 
+def _route_policies():
+    """(method, concrete path, policy) of every logged-in HTTP route of the app."""
+    from app.api.policy import iter_route_policies
+    from app.main import app
+
+    return [
+        (e.method, re.sub(r"\{[^}]+\}", "1", e.path), e.policy)
+        for e in iter_route_policies(app)
+        if e.method != "WS" and not e.policy.public
+    ]
+
+
+# Routes that refused API tokens (and master tokens) in their own code before 0.8.0
+_OLD_IN_ROUTE_SESSION_ONLY = {("POST", "/api/auth/password"), ("POST", "/api/auth/step-up"), ("POST", "/api/auth/master-token/rotate")}
+_OLD_IN_ROUTE_NO_TOKEN = {("GET", "/api/auth/tokens"), ("POST", "/api/auth/tokens"), ("DELETE", "/api/auth/tokens/1")}
+
+
+def _old_api_token_outcome(method, path, policy, scopes) -> int:
+    """200 or 403 for an API token with ``scopes`` under the frozen rules (scopes, then step-up, then route code)."""
+    token = SimpleNamespace(scopes=scopes)
+    if _sync_outcome(_old_enforce_token_scopes, token, _http_conn(path, method))[0] != "ok":
+        return 403
+    if policy.step_up:  # step-up classes are unchanged; every class refuses API tokens since #268
+        return 403
+    if (method, path) in _OLD_IN_ROUTE_SESSION_ONLY | _OLD_IN_ROUTE_NO_TOKEN:
+        return 403
+    return 200
+
+
+def _new_api_token_outcome(policy, scopes) -> int:
+    from app.api.policy import API_TOKEN
+
+    granted = auth._token_scopes(SimpleNamespace(scopes=scopes))
+    if API_TOKEN not in policy.callers:
+        return 403
+    return 403 if policy.scope and policy.scope not in granted else 200
+
+
 def test_required_scope_matches_for_every_route_and_method():
-    paths = _all_paths()
-    assert len(paths) > 100
-    diffs = [(p, m) for p in paths for m in METHODS if auth._required_scope_for(p, m) != _old_required_scope_for(p, m)]
+    from app.api.policy import API_TOKEN
+
+    routes = _route_policies()
+    assert len(routes) > 100
+    diffs = [
+        (m, p, policy.scope, _old_required_scope_for(p, m))
+        for m, p, policy in routes
+        if API_TOKEN in policy.callers and policy.scope != _old_required_scope_for(p, m)
+        and (m, p) not in {("POST", "/api/auth/check"), ("GET", "/api/auth/me")}  # exempt: any token
+    ]
     assert diffs == []
 
 
 def test_token_scope_enforcement_matches_for_every_route_method_and_scope_set():
     diffs = []
-    for path, method, kind, scopes in itertools.product(_all_paths(), METHODS, ("http", "websocket"), TOKEN_SCOPES):
-        token = SimpleNamespace(scopes=scopes)
-        conn = _http_conn(path, method, kind)
-        before = _sync_outcome(_old_enforce_token_scopes, token, conn)
-        now = _sync_outcome(auth._enforce_token_scopes, token, conn)
+    for (method, path, policy), scopes in itertools.product(_route_policies(), TOKEN_SCOPES):
+        before = _old_api_token_outcome(method, path, policy, scopes)
+        now = _new_api_token_outcome(policy, scopes)
         if before != now:
-            diffs.append((path, method, kind, scopes, before, now))
+            diffs.append((method, path, scopes, before, now))
     assert diffs[:3] == []
 
 
@@ -448,7 +507,7 @@ async def test_admin_resolution_matches_for_every_credential_combination(db, cre
             def conn():
                 return _http_conn(path, method, kind, {"gravitylan_token": cookie} if cookie else {}, {"user-agent": ua})
             before = await _outcome(_old_resolve_admin(conn(), header, query, db))
-            now = await _outcome(auth._resolve_admin(conn(), header, query, db))
+            now = await _outcome(auth._resolve_admin(conn(), header, query, db, setup_open=_old_is_setup_wizard_route(conn())))
             count += 1
             if before != now:
                 diffs.append((done, kind, method, path, cookie, header, query, before, now))
@@ -469,7 +528,8 @@ async def test_websocket_auth_matches_for_every_credential_combination(db, crede
         ):
             old_ws, new_ws = _FakeWs(cookie, query, ua), _FakeWs(cookie, query, ua)
             before = await auth_outcome(_old_authenticate_websocket_impl(old_ws, endpoint, device_id, db), old_ws)
-            now = await auth_outcome(auth._authenticate_websocket_impl(new_ws, endpoint, device_id, db), new_ws)
+            scope = {"logs": "settings:read", "scanner": "scanner:read", "agent": "agent:read"}.get(endpoint)
+            now = await auth_outcome(auth._authenticate_websocket_impl(new_ws, endpoint, device_id, db, scope), new_ws)
             count += 1
             if before != now:
                 diffs.append((done, endpoint, device_id, cookie, query, before, now))
@@ -574,8 +634,10 @@ async def _change_outcome(fn, db, audits, master, admin, token_kind, current, ne
 async def test_password_change_matches_for_every_stored_password_combination(db, audits):
     diffs, count = [], 0
     currents = ("master-plain", "admin-plain", "hashed-pw", "wrong-password")
+    # Only browser sessions reach change_password since 0.8.0: its policy refuses the others
+    # (test_password_change_is_declared_for_browser_sessions_only)
     for master, admin, token_kind, current in itertools.product(
-        STORED_MASTERS, STORED_ADMINS, ("session", "bogus", "master"), currents
+        STORED_MASTERS, STORED_ADMINS, ("session",), currents
     ):
         for new in ("        ", "new-password-1", current):
             case = (master, admin, token_kind, current, new)
@@ -585,8 +647,18 @@ async def test_password_change_matches_for_every_stored_password_combination(db,
             if before != now:
                 diffs.append((case, before, now))
     session_store.delete_all_except(None)
-    assert count == 576
+    assert count == 192
     assert diffs[:3] == []
+
+
+def test_password_change_is_declared_for_browser_sessions_only():
+    from app.api.policy import SESSION_ONLY, iter_route_policies
+    from app.main import app
+
+    policy = next(e.policy for e in iter_route_policies(app) if (e.method, e.path) == ("POST", "/api/auth/password"))
+    assert policy.callers == SESSION_ONLY
+    assert policy.denied == "Only a logged-in browser session can change the password."
+    assert policy.audit_action == "auth.password"
 
 
 @pytest.mark.asyncio

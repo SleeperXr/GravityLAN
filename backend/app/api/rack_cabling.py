@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.policy import policy
 from app.database import get_db
 from app.models.device import Device as DeviceModel
 from app.models.rack_cabling import RackCable, RackItem, RackPort
@@ -82,7 +83,7 @@ async def _set_ports(db: AsyncSession, owner_field: str, owner_id: int, count: i
             db.add(RackPort(**{owner_field: owner_id}, number=number, kind=kind, side=side))
 
 
-@router.get("/cabling", response_model=CablingOut)
+@router.get("/cabling", response_model=CablingOut, dependencies=[policy(scope="topology:read")])
 async def get_cabling(db: AsyncSession = Depends(get_db)):
     """Rack items, every port and every cable: what the rack view needs in one request."""
     items = (await db.execute(select(RackItem))).scalars().all()
@@ -91,7 +92,7 @@ async def get_cabling(db: AsyncSession = Depends(get_db)):
     return {"items": items, "ports": ports, "cables": cables}
 
 
-@router.post("/rack-items", response_model=RackItemOut)
+@router.post("/rack-items", response_model=RackItemOut, dependencies=[policy(scope="topology:write")])
 async def create_rack_item(data: RackItemIn, db: AsyncSession = Depends(get_db)):
     await _check_placement(db, data.rack_id, data.rack_unit, data.rack_height)
     item = RackItem(
@@ -110,7 +111,7 @@ async def create_rack_item(data: RackItemIn, db: AsyncSession = Depends(get_db))
     return item
 
 
-@router.patch("/rack-items/{item_id}", response_model=RackItemOut)
+@router.patch("/rack-items/{item_id}", response_model=RackItemOut, dependencies=[policy(scope="topology:write")])
 async def update_rack_item(item_id: int, patch: RackItemPatch, db: AsyncSession = Depends(get_db)):
     item = await db.get(RackItem, item_id)
     if item is None:
@@ -132,7 +133,7 @@ async def update_rack_item(item_id: int, patch: RackItemPatch, db: AsyncSession 
     return item
 
 
-@router.delete("/rack-items/{item_id}")
+@router.delete("/rack-items/{item_id}", dependencies=[policy(scope="topology:write")])
 async def delete_rack_item(item_id: int, db: AsyncSession = Depends(get_db)):
     item = await db.get(RackItem, item_id)
     if item is None:
@@ -147,7 +148,7 @@ async def delete_rack_item(item_id: int, db: AsyncSession = Depends(get_db)):
     return {"message": "Rack item deleted"}
 
 
-@router.put("/ports", response_model=list[PortOut])
+@router.put("/ports", response_model=list[PortOut], dependencies=[policy(scope="topology:write")])
 async def set_ports(data: PortsIn, db: AsyncSession = Depends(get_db)):
     """Set how many ports a device or rack item has, and what kind they are."""
     if data.owner_type == "device":
@@ -162,7 +163,7 @@ async def set_ports(data: PortsIn, db: AsyncSession = Depends(get_db)):
     return (await db.execute(select(RackPort).where(column == data.owner_id).order_by(RackPort.number))).scalars().all()
 
 
-@router.post("/rack-cables", response_model=CableOut)
+@router.post("/rack-cables", response_model=CableOut, dependencies=[policy(scope="topology:write")])
 async def create_cable(data: CableIn, db: AsyncSession = Depends(get_db)):
     if data.a_port_id == data.b_port_id:
         raise HTTPException(status_code=422, detail="A cable needs two different ports")
@@ -184,7 +185,7 @@ async def create_cable(data: CableIn, db: AsyncSession = Depends(get_db)):
     return cable
 
 
-@router.patch("/rack-cables/{cable_id}", response_model=CableOut)
+@router.patch("/rack-cables/{cable_id}", response_model=CableOut, dependencies=[policy(scope="topology:write")])
 async def update_cable(cable_id: int, patch: CablePatch, db: AsyncSession = Depends(get_db)):
     cable = await db.get(RackCable, cable_id)
     if cable is None:
@@ -199,7 +200,7 @@ async def update_cable(cable_id: int, patch: CablePatch, db: AsyncSession = Depe
     return cable
 
 
-@router.delete("/rack-cables/{cable_id}")
+@router.delete("/rack-cables/{cable_id}", dependencies=[policy(scope="topology:write")])
 async def delete_cable(cable_id: int, db: AsyncSession = Depends(get_db)):
     cable = await db.get(RackCable, cable_id)
     if cable is None:

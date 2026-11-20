@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.policy import policy, SESSION_ONLY, ws_auth
 from app.api.auth import get_current_admin
 from app.config import settings
 from app.database import async_session, get_db
@@ -44,7 +45,6 @@ from app.services.ssh_credentials import (
     resolve_stored_key,
 )
 from app.services.ssh_utils import PinnedHostKey, TofuHostKeyPolicy
-from app.services.stepup import require_step_up
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ def _format_package_updates(packages_data: list[dict[str, Any]]) -> list[Package
     ]
 
 
-@patch_router.post("/patches/{device_id}/query", response_model=DevicePatchesResponse, dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
+@patch_router.post("/patches/{device_id}/query", response_model=DevicePatchesResponse, dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
 async def query_device_patches(
     device_id: int,
     request: AgentDeployRequest,
@@ -229,7 +229,7 @@ async def query_device_patches(
     )
 
 
-@patch_router.post("/patches/{device_id}/prepare", dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
+@patch_router.post("/patches/{device_id}/prepare", dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
 async def prepare_patch_action(
     device_id: int,
     request: PatchActionRequest,
@@ -507,21 +507,10 @@ async def _stream_update(params: PatchStreamParams) -> None:
         await _report_result(params.websocket, success, msg)
 
 
-@patch_router.websocket("/patches/{device_id}/run-ws")
+@patch_router.websocket("/patches/{device_id}/run-ws", dependencies=[policy(callers=SESSION_ONLY, channel="agent", credential="one-shot patch token from POST /api/agent/patches/{device_id}/prepare")])
 async def run_patches_websocket(websocket: WebSocket, device_id: int):
     """WebSocket endpoint to run updates and stream output live to the frontend."""
-    # Authenticate websocket first (standard browser-session/API-token check)
-    from app.api.auth import authenticate_websocket_authorized
-
-    auth_info = await authenticate_websocket_authorized(
-        websocket,
-        endpoint_type="agent",
-        device_id=device_id,
-        allowed_levels=("session",),
-    )
-    if not auth_info:
-        return
-
+    auth_info = ws_auth(websocket)  # the policy admitted a browser session
     await websocket.accept()
 
     # Validate and consume the one-shot patch session token

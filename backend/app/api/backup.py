@@ -8,14 +8,13 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.policy import policy, NO_API_TOKEN
 from app.database import get_db
 from app.config import settings
 from app.database.migrations import unique_column_sets
 
-from app.api.auth import get_current_admin
 from app.schemas.device import is_safe_url_template
 from app.services.audit import record as audit
-from app.services.stepup import require_step_up
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/backup", tags=["backup"])
@@ -91,7 +90,7 @@ def _sqlite_db_path() -> str:
     return settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
 
 
-@router.get("/export", dependencies=[Depends(get_current_admin), Depends(require_step_up("instance"))])
+@router.get("/export", dependencies=[policy(callers=NO_API_TOKEN, step_up="instance")])
 async def export_backup(request: Request):
     """Export the current database state as a JSON file."""
     db_path = _sqlite_db_path()
@@ -498,7 +497,7 @@ def _validate_backup_shape(data) -> None:
             raise HTTPException(status_code=400, detail=f"Invalid backup file: '{key}' must be a list of rows")
 
 
-@router.post("/import", dependencies=[Depends(get_current_admin), Depends(require_step_up("instance"))])
+@router.post("/import", dependencies=[policy(callers=NO_API_TOKEN, step_up="instance")])
 async def import_backup(request: Request, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     """Import a JSON backup file into the database."""
     return await restore_upload(request, file, db)

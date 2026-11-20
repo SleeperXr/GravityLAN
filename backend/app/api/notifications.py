@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
+from app.api.policy import policy
 from app.database import get_db
 from app.api.auth import get_current_admin
 from app.models.device import DeviceHistory
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 
-@router.get("", response_model=list[NotificationResponse])
+@router.get("", response_model=list[NotificationResponse], dependencies=[policy(scope="devices:read")])
 async def list_notifications(
     since: datetime | None = None,
     unread: bool | None = None,
@@ -103,7 +104,7 @@ async def list_notifications(
     return notifications
 
 
-@router.post("/{notification_id}/read")
+@router.post("/{notification_id}/read", dependencies=[policy(scope="devices:write")])
 async def mark_notification_read(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
@@ -118,7 +119,7 @@ async def mark_notification_read(
     return {"status": "success", "id": notification_id, "read": True}
 
 
-@router.post("/read-all")
+@router.post("/read-all", dependencies=[policy(scope="devices:write")])
 async def mark_all_notifications_read(
     device_id: int | None = None,
     db: AsyncSession = Depends(get_db),

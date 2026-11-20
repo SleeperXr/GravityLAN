@@ -53,8 +53,9 @@ def _ws_app():
     from app import main
     from app.api.ssh import ws_router
 
+    route = next(r for r in main.app.routes if getattr(r, "path", None) == "/api/logs/ws")
     app = FastAPI()
-    app.add_api_websocket_route("/api/logs/ws", main.logs_websocket)
+    app.add_api_websocket_route("/api/logs/ws", main.logs_websocket, dependencies=route.dependencies)
     app.include_router(ws_router)
     return app
 

@@ -42,7 +42,7 @@ async def test_readonly_api_token_cannot_download_agent_config(client, db):
         headers={"Authorization": f"Bearer {raw_token}"},
     )
     assert res.status_code == 403
-    assert "not authorized" in res.text.lower()
+    assert "cannot export agent configurations" in res.text.lower()
 
 
 @pytest.mark.asyncio
@@ -111,6 +111,7 @@ async def test_websocket_rejects_out_of_scope_api_token(db):
         endpoint_type="logs",
         device_id=None,
         db=db,
+        token_scope="settings:read",  # what the log channel's policy asks of an API token
     )
     assert res.get("authenticated") is False
     mock_ws.close.assert_awaited_with(code=4003, reason="Insufficient token scopes")

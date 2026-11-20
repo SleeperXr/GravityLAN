@@ -273,16 +273,12 @@ async def test_setup_mode_keeps_wizard_routes_open(client, db, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_setup_mode_allows_scanner_websocket_only(db):
-    """The wizard's live scan progress WebSocket passes the admin dependency before setup."""
-    from types import SimpleNamespace
-    from fastapi import HTTPException
-    from app.api.auth import get_current_admin
+    """The wizard's live scan progress WebSocket answers before setup; no other channel does.
 
-    def ws_conn(path):
-        return SimpleNamespace(scope={"type": "websocket"}, url=SimpleNamespace(path=path), cookies={}, headers={})
+    test_policy_matrix connects to every WebSocket before and after setup.
+    """
+    from app.api.policy import iter_route_policies
+    from app.main import app
 
-    assert await get_current_admin(conn=ws_conn("/api/scanner/ws"), authorization=None, token=None, db=db) == "setup_mode"
-
-    with pytest.raises(HTTPException) as exc:
-        await get_current_admin(conn=ws_conn("/api/agent/ws/1"), authorization=None, token=None, db=db)
-    assert exc.value.status_code == 403
+    open_during_setup = {e.path for e in iter_route_policies(app) if e.method == "WS" and e.policy.setup == "open"}
+    assert open_during_setup == {"/api/scanner/ws"}

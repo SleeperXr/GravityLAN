@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.policy import policy
 from app.database import get_db
 from app.models.audit import AuditEvent
 from app.services.audit import RETENTION_DAYS
@@ -40,7 +41,7 @@ class AuditPage(BaseModel):
     retention_days: int
 
 
-@router.get("", response_model=AuditPage)
+@router.get("", response_model=AuditPage, dependencies=[policy(scope="settings:read")])
 async def list_audit_events(
     action: str | None = Query(
         None, max_length=200, description="Actions or their prefixes, comma-separated, e.g. 'agent,ssh.terminal'",

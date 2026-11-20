@@ -52,7 +52,7 @@ async def test_api_token_lifecycle_and_permissions(client, db, admin_token):
         headers={"Authorization": f"Bearer {plaintext_token}"}
     )
     assert response.status_code == 403
-    assert "Read-only token is not authorized for this administrative action" in response.json()["detail"]
+    assert "API tokens cannot change credentials or instance data" in response.json()["detail"]
 
     # Read-only tokens must also be blocked from managing tokens
     response = await client.get(

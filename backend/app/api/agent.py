@@ -4,8 +4,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 
+from app.api.policy import policy, PUBLIC, SESSION_ONLY
 from app.services.audit import device_label, record as audit
-from app.services.stepup import require_step_up
 from app.scanner.utils import ensure_utc
 from app.version import normalize_version
 
@@ -100,7 +100,7 @@ _INSTALL_CODE_REJECTED_SCRIPT = INSTALL_CODE_REJECTED_SCRIPT
 # Report Endpoint (Agent -> Server)
 # ---------------------------------------------------------------------------
 
-@router.post("/report", response_model=AgentReportResponse)
+@router.post("/report", response_model=AgentReportResponse, dependencies=[policy(callers=PUBLIC, credential="agent token of the device (Authorization header)")])
 async def receive_report(
     payload: AgentReportPayload,
     request: Request,
@@ -167,7 +167,7 @@ async def receive_report(
     )
 
 
-@router.get("/config/{device_id}", response_model=AgentConfigResponse)
+@router.get("/config/{device_id}", response_model=AgentConfigResponse, dependencies=[policy(scope="agent:read")])
 async def get_agent_config(
     device_id: int,
     db: AsyncSession = Depends(get_db),
@@ -194,7 +194,7 @@ async def get_agent_config(
     )
 
 
-@router.patch("/config/{device_id}", response_model=AgentConfigResponse)
+@router.patch("/config/{device_id}", response_model=AgentConfigResponse, dependencies=[policy(scope="agent:write")])
 async def update_agent_config(
     device_id: int, 
     update: AgentConfigUpdate, 
@@ -237,7 +237,7 @@ async def update_agent_config(
     )
 
 
-@router.get("/overview", response_model=AgentsOverviewResponse)
+@router.get("/overview", response_model=AgentsOverviewResponse, dependencies=[policy(scope="agent:read")])
 async def get_agents_overview(
     db: AsyncSession = Depends(get_db),
     current_admin: str = Depends(get_current_admin)
@@ -301,7 +301,7 @@ async def get_agents_overview(
     )
 
 
-@router.get("/global-metrics", response_model=GlobalMetricsResponse)
+@router.get("/global-metrics", response_model=GlobalMetricsResponse, dependencies=[policy(scope="agent:read")])
 async def get_global_metrics(
     db: AsyncSession = Depends(get_db),
     current_admin: str = Depends(get_current_admin)
@@ -324,7 +324,7 @@ async def get_global_metrics(
 # UI Endpoints (Dashboard -> Server)
 # ---------------------------------------------------------------------------
 
-@router.get("/status/{device_id}", response_model=AgentStatusResponse)
+@router.get("/status/{device_id}", response_model=AgentStatusResponse, dependencies=[policy(scope="agent:read")])
 async def get_agent_status(
     device_id: int,
     db: AsyncSession = Depends(get_db),
@@ -371,7 +371,7 @@ async def get_agent_status(
     )
 
 
-@router.get("/metrics/{device_id}", response_model=MetricsHistoryResponse)
+@router.get("/metrics/{device_id}", response_model=MetricsHistoryResponse, dependencies=[policy(scope="agent:read")])
 async def get_metrics_history(
     device_id: int, 
     limit: int = 60, 
@@ -425,7 +425,7 @@ async def get_metrics_history(
     )
 
 
-@router.get("/download/agent")
+@router.get("/download/agent", dependencies=[policy(callers=PUBLIC, note="the agent script itself; carries no secret")])
 async def download_agent_file():
     from app.services.agent_deployer import AGENT_SCRIPT_PATH
     agent_path = AGENT_SCRIPT_PATH
@@ -440,7 +440,7 @@ async def download_agent_file():
     )
 
 
-@router.post("/enroll/{device_id}", response_model=AgentEnrollmentResponse, dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
+@router.post("/enroll/{device_id}", response_model=AgentEnrollmentResponse, dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
 async def create_enrollment_code(
     device_id: int,
     request: Request,
@@ -495,7 +495,7 @@ async def _issue_agent_config(db: AsyncSession, device_id: int) -> PlainTextResp
     return PlainTextResponse(build_agent_config_json(server_url, raw_token, device_id))
 
 
-@router.get("/download/config/{device_id}")
+@router.get("/download/config/{device_id}", dependencies=[policy(callers=PUBLIC, credential="single-use install code, or the master token in the Authorization header (API tokens refused)")])
 async def download_agent_config(
     device_id: int,
     request: Request,
@@ -538,7 +538,7 @@ async def download_agent_config(
 
 @router.post(
     "/download/config/{device_id}",
-    dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))],
+    dependencies=[policy(callers=SESSION_ONLY, step_up="remote")],
 )
 async def download_agent_config_session(device_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """agent.conf for a browser session that confirmed its password; replaces the agent token."""
@@ -548,7 +548,7 @@ async def download_agent_config_session(device_id: int, request: Request, db: As
     return response
 
 
-@router.get("/download/install-sh/{device_id}")
+@router.get("/download/install-sh/{device_id}", dependencies=[policy(callers=PUBLIC, credential="install code (checked, not used up)")])
 async def download_install_script(device_id: int, code: str | None = None, db: AsyncSession = Depends(get_db)):
     """Generate a shell script for easy 'curl | bash' installation.
 
@@ -651,7 +651,7 @@ def _ssh_error_code(success: bool, message: str) -> str | None:
     return HOST_KEY_CHANGED if not success and is_host_key_refusal(message) else None
 
 
-@router.post("/deploy/{device_id}", response_model=AgentDeployResponse, dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
+@router.post("/deploy/{device_id}", response_model=AgentDeployResponse, dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
 async def deploy_agent_endpoint(
     device_id: int,
     request: AgentInstallRequest,
@@ -716,7 +716,7 @@ async def deploy_agent_endpoint(
         return AgentDeployResponse(status="failed", message=message, error_code=_ssh_error_code(success, message))
 
 
-@router.post("/uninstall/{device_id}", dependencies=[Depends(get_current_admin), Depends(require_step_up("remote"))])
+@router.post("/uninstall/{device_id}", dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
 async def uninstall_agent_endpoint(
     device_id: int,
     request: AgentInstallRequest,
@@ -755,19 +755,9 @@ async def uninstall_agent_endpoint(
         return {"status": "failed", "message": message, "error_code": _ssh_error_code(success, message)}
 
 
-@router.websocket("/ws/{device_id}")
+@router.websocket("/ws/{device_id}", dependencies=[policy(scope="agent:read", channel="agent", agent_token=True)])
 async def agent_websocket(websocket: WebSocket, device_id: int):
     """WebSocket for real-time metric streaming to the dashboard with authentication."""
-    from app.api.auth import authenticate_websocket_authorized
-
-    # Agent websocket is restricted to browser-sessions, legacy master cookie, master token query params, agent-specific tokens, or API tokens
-    auth_info = await authenticate_websocket_authorized(
-        websocket, endpoint_type="agent", device_id=device_id,
-        allowed_levels=("session", "master_legacy", "agent", "master", "api_token"),
-    )
-    if not auth_info:
-        return
-
     await websocket.accept()
     if device_id not in _ws_subscribers:
         _ws_subscribers[device_id] = set()
@@ -784,7 +774,7 @@ async def agent_websocket(websocket: WebSocket, device_id: int):
             _ws_subscribers[device_id].discard(websocket)
 
 
-@router.get("/download/uninstall-sh/{device_id}")
+@router.get("/download/uninstall-sh/{device_id}", dependencies=[policy(callers=PUBLIC, note="the same script for every device id")])
 async def download_uninstall_script(device_id: int, db: AsyncSession = Depends(get_db)):
     """Generate a shell script for easy 'curl | bash' uninstallation.
 
@@ -795,7 +785,7 @@ async def download_uninstall_script(device_id: int, db: AsyncSession = Depends(g
     
 # Adopting a pending token lets that host report as this device, like enrolling it: the same
 # password confirmation as the other agent credential actions
-@router.post("/adopt/{device_id}", dependencies=[Depends(require_step_up("remote"))])
+@router.post("/adopt/{device_id}", dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
 async def adopt_agent_token(device_id: int, db: AsyncSession = Depends(get_db), current_user: str = Depends(get_current_admin)):
     """Manually adopt a pending token for a device."""
     token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device_id))

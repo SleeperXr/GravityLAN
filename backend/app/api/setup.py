@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.policy import policy, PUBLIC
 from app.api.auth import PASSWORD_MIN_LENGTH
 from app.database import get_db
 from app.models.device import Device
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/setup", tags=["setup"])
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[policy(callers=PUBLIC, note="whether the first-run wizard is done")])
 async def get_setup_status(db: AsyncSession = Depends(get_db)) -> dict:
     """Check if the initial setup has been completed.
 
@@ -248,7 +249,7 @@ async def _setup_done(db: AsyncSession) -> bool:
     return row is not None and row.value == "true"
 
 
-@router.post("/restore")
+@router.post("/restore", dependencies=[policy(callers=PUBLIC, setup="only", note="first-run wizard only; 403 once setup is complete")])
 async def restore_during_setup(http_request: Request, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)) -> dict:
     """First start: bring back a backup instead of scanning (GravityUI setup wizard).
 
@@ -353,7 +354,7 @@ async def _finalize_scanned_setup(db: AsyncSession, request: SetupCompleteReques
         return 0
 
 
-@router.post("/complete")
+@router.post("/complete", dependencies=[policy(callers=PUBLIC, setup="only", note="first-run wizard only; 400 once setup is complete")])
 async def mark_setup_complete(
     request: SetupCompleteRequest,
     http_request: Request,

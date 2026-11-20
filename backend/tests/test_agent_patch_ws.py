@@ -8,6 +8,7 @@ SSH command streaming. The last two agent bug-fixes lived in this flow
 
 import asyncio
 import time
+from types import SimpleNamespace
 
 import pytest
 from fastapi import WebSocketDisconnect
@@ -21,6 +22,8 @@ class FakeWebSocket:
 
     def __init__(self, query_params=None, disconnect_after=None):
         self.query_params = query_params or {}
+        # What the route's policy leaves on the socket after admitting a browser session
+        self.state = SimpleNamespace(gl_ws_auth={"authenticated": True, "auth_type": "session", "identity": "session"})
         self._sent = []
         self._accepted = False
         self.close_code = None
