@@ -109,6 +109,36 @@ export interface DeviceInterface {
   first_seen: string | null;
 }
 
+export type MacObservationSource = 'relay' | 'scan';
+
+export interface MacConflictDevice {
+  id: number;
+  ip: string;
+  name: string;
+  source: MacObservationSource | (string & {});
+}
+
+export interface MacConflictGroup {
+  documented_mac: string | null;
+  observed_mac: string;
+  first_seen: string;
+  last_seen: string;
+  devices: MacConflictDevice[];
+}
+
+export interface MacChangeRequest {
+  mac: string;
+  apply_to_shared?: boolean;
+}
+
+export interface MacObservationDismiss {
+  mac: string;
+}
+
+export interface MacChangeResult {
+  changed_device_ids: number[];
+}
+
 export type MergeReason = 'same_mac' | 'same_hostname' | 'same_host_key' | 'subnet_gateway';
 
 export interface MergeSuggestion {

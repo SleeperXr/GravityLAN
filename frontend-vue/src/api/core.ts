@@ -217,6 +217,17 @@ export const api = {
   refreshAllDevices: () => request<{status: string, updated_count: number}>('/api/devices/refresh-all', { method: 'POST' }),
   getDeviceHistory: (id: number) => request<import('../types').DeviceHistoryResponse[]>(`/api/devices/${id}/history`),
   markDeviceHistoryRead: (id: number) => request<{ status: string; marked_read: number }>(`/api/devices/${id}/history/read-all`, { method: 'POST' }),
+  getMacConflicts: () => request<import('../types').MacConflictGroup[]>('/api/devices/mac-conflicts'),
+  setDeviceMac: (id: number, data: import('../types').MacChangeRequest) =>
+    request<import('../types').MacChangeResult>(`/api/devices/${id}/mac`, {
+      method: 'PUT',
+      body: JSON.stringify({ mac: data.mac, apply_to_shared: Boolean(data.apply_to_shared) }),
+    }),
+  dismissMacObservation: (id: number, mac: string) =>
+    request<void>(`/api/devices/${id}/mac-observations/dismiss`, {
+      method: 'POST',
+      body: JSON.stringify({ mac }),
+    }),
 
   // Interfaces (further addresses of one device) and subnet gateways
   getDeviceInterfaces: (deviceId: number) =>

@@ -4,6 +4,8 @@ import { AUDIT_CATEGORIES, actionLabel, actorLabel } from './auditModel';
 describe('audit labels', () => {
   it('names known actions and keeps unknown ones as they are', () => {
     expect(actionLabel('agent.deploy')).not.toBe('agent.deploy');
+    expect(actionLabel('device.mac_changed')).not.toBe('device.mac_changed');
+    expect(actionLabel('device.mac_conflict_dismissed')).not.toBe('device.mac_conflict_dismissed');
     expect(actionLabel('something.new')).toBe('something.new');
   });
 
@@ -17,6 +19,7 @@ describe('audit labels', () => {
     const recorded = [
       'auth.login', 'auth.password', 'auth.token.create', 'webhook.delete', 'ssh.key.import', 'ssh.connection.update',
       'ssh.known_host.delete', 'ssh.terminal.open', 'agent.deploy', 'agent.patches', 'backup.export', 'database.reset',
+      'device.mac_changed', 'device.mac_conflict_dismissed',
     ];
     const prefixes = Object.values(AUDIT_CATEGORIES).flat();
     for (const action of recorded) {

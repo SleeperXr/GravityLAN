@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { api, createScanSocket } from '@/api/client';
-import type { Device, DeviceGroup, ScanProgress, Subnet } from '@/types';
+import type { Device, DeviceGroup, MacConflictGroup, ScanProgress, Subnet } from '@/types';
 
 /** Scan states that mean the scan is still going (the backend sends 'devices_updated' mid-scan). */
 export const SCAN_ACTIVE: ScanProgress['status'][] = ['running', 'discovering', 'identifying', 'devices_updated'];
@@ -13,6 +13,7 @@ export const useNetworkStore = defineStore('network', () => {
   const hiddenDevices = ref<Device[]>([]);
   const groups = ref<DeviceGroup[]>([]);
   const subnets = ref<Subnet[]>([]);
+  const macConflicts = ref<MacConflictGroup[]>([]);
   const isLoading = ref(true);
   const loaded = ref(false);
   const error = ref<string | null>(null);
@@ -29,21 +30,23 @@ export const useNetworkStore = defineStore('network', () => {
   const isScanning = computed(() => !!scanProgress.value && SCAN_ACTIVE.includes(scanProgress.value.status));
   const sortedGroups = computed(() => [...groups.value].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
 
-  /** Devices, groups and subnets. `silent` keeps the current view while reloading. */
+  /** Devices, groups, subnets and open MAC conflicts. `silent` keeps the current view while reloading. */
   function loadData(silent = false): Promise<void> {
     if (inflight) return inflight;
     if (!silent && !loaded.value) isLoading.value = true;
     inflight = (async () => {
       try {
-        const [devs, grps, subs] = await Promise.all([
+        const [devs, grps, subs, conflicts] = await Promise.all([
           api.getDevices(true),
           api.getGroups(),
           api.getSubnetsList().catch(() => subnets.value),
+          api.getMacConflicts().catch(() => macConflicts.value),
         ]);
         devices.value = devs.filter((d) => !d.is_hidden);
         hiddenDevices.value = devs.filter((d) => d.is_hidden);
         groups.value = grps;
         subnets.value = subs;
+        macConflicts.value = Array.isArray(conflicts) ? conflicts : [];
         loaded.value = true;
         lastUpdated.value = new Date();
         error.value = null;
@@ -55,6 +58,16 @@ export const useNetworkStore = defineStore('network', () => {
       }
     })();
     return inflight;
+  }
+
+  /** Reload only the open MAC conflict groups. */
+  async function loadMacConflicts(): Promise<void> {
+    try {
+      const conflicts = await api.getMacConflicts();
+      macConflicts.value = Array.isArray(conflicts) ? conflicts : [];
+    } catch {
+      // keep previous list on transient failure
+    }
   }
 
   /** First load after sign-in, plus the current scan state. */
@@ -106,6 +119,7 @@ export const useNetworkStore = defineStore('network', () => {
     groups,
     sortedGroups,
     subnets,
+    macConflicts,
     isLoading,
     loaded,
     lastUpdated,
@@ -117,6 +131,7 @@ export const useNetworkStore = defineStore('network', () => {
     agentCount,
     isScanning,
     loadData,
+    loadMacConflicts,
     fetchInventory,
     patchDevice,
     markScanStarted,

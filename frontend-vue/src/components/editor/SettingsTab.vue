@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { Bell, BellOff, Orbit, Radio, RefreshCw, Server, Wifi } from 'lucide-vue-next';
+import { Bell, BellOff, Orbit, Pencil, Radio, RefreshCw, Server, Wifi } from 'lucide-vue-next';
 import type { Device, DeviceGroup, HostnameSource, Rack } from '@/types';
 import type { DeviceFormData } from '@/lib/deviceForm';
 import Button from '@/components/ui/Button.vue';
@@ -19,7 +19,7 @@ import { t } from '@/i18n';
 /** "General" tab: identity, placement, role and monitoring of a device. */
 const form = defineModel<DeviceFormData>('form', { required: true });
 const props = defineProps<{ device: Device; devices: Device[]; groups: DeviceGroup[]; racks: Rack[]; refreshing: boolean; savingSource?: boolean }>();
-const emit = defineEmits<{ refreshInfo: []; submit: []; hostnameSource: [source: HostnameSource] }>();
+const emit = defineEmits<{ refreshInfo: []; submit: []; hostnameSource: [source: HostnameSource]; editMac: [] }>();
 
 /** Orbit map visibility is an appearance setting, saved right away rather than with the form */
 const appearance = useAppearance();
@@ -178,7 +178,14 @@ function intOrNull(value: string | number | null | undefined): number | null {
         <dt class="gl-eyebrow mb-1.5">{{ t('editor.system_info') }}</dt>
         <dd class="grid grid-cols-[3.5rem_1fr] gap-y-1">
           <span class="text-fg-subtle">IP</span><span class="font-mono text-fg">{{ device.ip }}</span>
-          <span class="text-fg-subtle">MAC</span><span class="font-mono text-fg">{{ device.mac || 'N/A' }}</span>
+          <span class="text-fg-subtle">MAC</span>
+          <span class="flex flex-wrap items-center gap-2">
+            <span class="font-mono text-fg">{{ device.mac || 'N/A' }}</span>
+            <Button size="sm" variant="ghost" class="h-6 px-2 text-xs" @click="emit('editMac')">
+              <Pencil class="size-3" aria-hidden="true" />
+              {{ t('gv.mac_conflicts.manual_button') }}
+            </Button>
+          </span>
         </dd>
       </div>
       <div>
