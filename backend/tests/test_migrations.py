@@ -134,6 +134,45 @@ async def test_repair_device_ignores_a_compose_service_name_several_containers_a
     assert (dev.ip, dev.is_online, dev.ip_placeholder) == ("0.0.0.0", False, True)
 
 
+async def test_repair_device_counts_containers_not_addresses_for_a_service_name(db, monkeypatch):
+    """Two containers carrying one service name stay ambiguous even when they report the same address."""
+    docker_with(
+        monkeypatch,
+        {"name": "stack-nextcloud-1", "service": "nextcloud", "ips": ["10.0.0.7"], "status": "running"},
+        {"name": "other-nextcloud-1", "service": "nextcloud", "ips": ["10.0.0.7"], "status": "running"},
+    )
+    assert "nextcloud" not in migrations._build_docker_container_map()
+
+
+async def test_repair_device_takes_nothing_when_several_names_match_different_addresses(db, monkeypatch):
+    docker_with(
+        monkeypatch,
+        {"name": "foo-bar", "ips": ["10.0.0.7"], "status": "running"},
+        {"name": "foo_bar", "ips": ["10.0.0.8"], "status": "running"},
+    )
+    db.add(Device(ip="offline-aa:bb:cc", ip_placeholder=True, display_name="foo bar"))
+    await db.commit()
+
+    await migrations._clean_corrupted_ip_placeholders(db)
+    await db.commit()
+
+    dev = (await db.execute(select(Device))).scalar_one()
+    assert (dev.ip, dev.is_online, dev.ip_placeholder) == ("0.0.0.0", False, True)
+
+
+async def test_repair_device_takes_a_container_found_by_its_name_and_its_service(db, monkeypatch):
+    """The container name and its service alias pointing at one address are one match, not two."""
+    docker_with(monkeypatch, {"name": "lancache", "service": "lancache", "ips": ["10.0.0.9"], "status": "running"})
+    db.add(Device(ip="offline-aa:bb:cc", ip_placeholder=True, display_name="Lancache"))
+    await db.commit()
+
+    await migrations._clean_corrupted_ip_placeholders(db)
+    await db.commit()
+
+    dev = (await db.execute(select(Device))).scalar_one()
+    assert (dev.ip, dev.is_online) == ("10.0.0.9", True)
+
+
 @pytest.mark.parametrize("device_name, container_name", [
     ("AP", "backup-app"),          # a short name inside a container name
     ("Nextcloud", "nextcloud-aio"),  # a longer container name
