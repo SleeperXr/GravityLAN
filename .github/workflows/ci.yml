@@ -137,8 +137,22 @@ jobs:
   build-docker:
     runs-on: ubuntu-latest
     needs: lint-and-test
+    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Build the Docker image
       run: docker build . --file Dockerfile --tag gravitylan:ci
+
+    - name: Smoke-test the built Docker image
+      timeout-minutes: 5
+      run: python3 scripts/smoke_container.py gravitylan:ci --diagnostics-dir /tmp/container-smoke-diagnostics
+
+    - name: Keep sanitized smoke-test diagnostics on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: container-smoke-diagnostics
+        path: /tmp/container-smoke-diagnostics
+        retention-days: 7
+        if-no-files-found: ignore
