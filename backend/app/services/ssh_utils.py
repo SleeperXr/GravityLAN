@@ -8,10 +8,12 @@ Extracted from agent_deployer.py to:
 
 from __future__ import annotations
 
+import errno
 import io
 import logging
 import os
 import shlex
+import socket
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -197,15 +199,58 @@ def build_connect_kwargs(
     return connect_kwargs, None
 
 
-def is_unreachable(error: BaseException) -> bool:
-    """True when the host could not be reached at all: only then is the Docker gateway worth a try.
+_PERMITTED_TCP_ERRNOS = {
+    errno.ECONNREFUSED,
+    errno.EHOSTUNREACH,
+    errno.ENETUNREACH,
+    errno.ETIMEDOUT,
+}
+if hasattr(errno, "EHOSTDOWN"):
+    _PERMITTED_TCP_ERRNOS.add(getattr(errno, "EHOSTDOWN"))
 
-    A host key that is not the confirmed one, or a rejected login, came from a host that answered;
-    retrying them on the gateway would send the same credentials to another machine.
-    """
-    if isinstance(error, (HostKeyNotTrusted, paramiko.BadHostKeyException, paramiko.AuthenticationException)):
+
+def _is_direct_tcp_failure(err: BaseException) -> bool:
+    """True ONLY if `err` is a confirmed low-level network failure before any SSH exchange."""
+    # Explicit exclusions: authentication, host keys, EOF, protocol errors
+    if isinstance(err, (
+        HostKeyNotTrusted,
+        paramiko.BadHostKeyException,
+        paramiko.AuthenticationException,
+        paramiko.PasswordRequiredException,
+        EOFError,
+    )):
         return False
-    return isinstance(error, (OSError, EOFError, paramiko.ssh_exception.NoValidConnectionsError))
+
+    # Confirmed network connection exceptions
+    if isinstance(err, (ConnectionRefusedError, TimeoutError, socket.timeout)):
+        return True
+
+    # Generic OSError only if errno matches network unreachable/refused/timed out
+    if isinstance(err, OSError) and getattr(err, "errno", None) in _PERMITTED_TCP_ERRNOS:
+        return True
+
+    return False
+
+
+def is_unreachable(error: BaseException) -> bool:
+    """True ONLY when the host could not be reached at all on the network.
+
+    Retrying on the Docker bridge gateway sends the credentials to another IP.
+    Therefore, any error that indicates the remote host answered (host key check,
+    protocol handshake, banner, authentication, or EOF during communication) or
+    a local resource/file failure MUST NOT trigger a fallback.
+    """
+    if _is_direct_tcp_failure(error):
+        return True
+
+    if isinstance(error, paramiko.ssh_exception.NoValidConnectionsError):
+        underlying = getattr(error, "errors", None)
+        if not underlying:
+            return False
+        # Every underlying socket attempt must be an allowed TCP failure
+        return all(_is_direct_tcp_failure(e) for e in underlying.values())
+
+    return False
 
 
 def host_bypass_gateway(host_ip: str) -> Optional[str]:
@@ -237,10 +282,10 @@ def connect_with_gateway_fallback(
         gateway = host_bypass_gateway(host_ip) if is_unreachable(e) else None
         if not gateway:
             raise
-
-    logger.info("Direct connection failed. Attempting Host Bypass via bridge gateway: %s", gateway)
-    connect_kwargs["hostname"] = gateway
-    client.connect(**connect_kwargs)
+        logger.info("Direct connection failed (%s). Attempting Host Bypass via bridge gateway: %s", e, gateway)
+        retry_kwargs = dict(connect_kwargs)
+        retry_kwargs["hostname"] = gateway
+        client.connect(**retry_kwargs)
 
 
 class RemoteRunner:
@@ -270,7 +315,7 @@ class RemoteRunner:
         return f"sudo -n -- sh -c {shlex.quote(command)}"
 
     def run(self, command: str, timeout: int = 15) -> str:
-        """Execute a single command, raising on non-zero exit (except benign 1 for 'not found')."""
+        """Execute a single command, raising on non-zero exit."""
         wrapped = self._wrap_sudo(command)
         return _exec_impl(self._client, wrapped, timeout, self._sudo_password)
 
@@ -316,24 +361,165 @@ def _feed_sudo_password(stdin, command: str, sudo_pass: Optional[str]) -> None:
             logger.debug("Closing stdin channel failed: %s", exc)
 
 
+MAX_STREAM_BYTES = 1024 * 1024  # 1 MiB per stream
+_TRUNCATED_MARKER = b"\n[... output truncated ...]\n"
+
+
+class _BoundedStreamDrain:
+    """Captures up to MAX_STREAM_BYTES, retaining the head and tail when truncated."""
+
+    __slots__ = ("_head", "_tail", "_total_bytes", "_max_bytes", "_half")
+
+    def __init__(self, max_bytes: int = MAX_STREAM_BYTES) -> None:
+        self._max_bytes = max_bytes
+        self._half = (max_bytes - len(_TRUNCATED_MARKER)) // 2
+        self._head = bytearray()
+        self._tail = bytearray()
+        self._total_bytes = 0
+
+    @property
+    def total_bytes(self) -> int:
+        return self._total_bytes
+
+    def feed(self, chunk: bytes) -> None:
+        if not chunk:
+            return
+        self._total_bytes += len(chunk)
+        if len(self._head) < self._half:
+            needed = self._half - len(self._head)
+            take = chunk[:needed]
+            self._head.extend(take)
+            remaining = chunk[needed:]
+        else:
+            remaining = chunk
+
+        if remaining:
+            self._tail.extend(remaining)
+            if len(self._tail) > self._half:
+                del self._tail[:-self._half]
+
+    def get_value(self) -> bytes:
+        if self._total_bytes <= self._max_bytes:
+            return bytes(self._head + self._tail)
+        return bytes(self._head + _TRUNCATED_MARKER + self._tail)
+
+
 def _wait_for_exit(stdout, command: str, timeout: int) -> None:
     """Wait until the command ends; close the channel and raise RemoteTimeoutError after ``timeout`` seconds."""
-    start_time = time.time()
-    while not stdout.channel.exit_status_ready():
-        if time.time() - start_time > timeout:
-            stdout.channel.close()
-            logger.warning("Remote command timed out after %ds", timeout)
+    channel = getattr(stdout, "channel", stdout)
+    start_time = time.monotonic()
+    while not channel.exit_status_ready():
+        if time.monotonic() - start_time > timeout:
+            if hasattr(channel, "close"):
+                channel.close()
+            logger.warning(
+                "Remote command timed out after %ds (local channel closed; remote process termination cannot be guaranteed)",
+                timeout,
+            )
             hint = " sudo may be waiting for a password." if "sudo -n" in command else ""
             raise RemoteTimeoutError(f"A command on the host did not finish within {timeout}s.{hint}")
         time.sleep(0.1)
 
 
-def _is_benign_not_found(exit_code: int, err: str) -> bool:
-    """Return True if exit code 1 represents a benign 'not found' / 'no such' command result."""
-    if exit_code != 1:
-        return False
-    # Case matters for "not found": a capitalised "Not Found" is an HTTP 404 from wget and the like, a real failure.
-    return "not found" in err or "no such" in err.lower()
+def _drain_channel(
+    stdout,
+    stderr,
+    command: str,
+    timeout: int,
+) -> tuple[int, str, str]:
+    """Drain stdout and stderr fairly until exit or timeout, bounded to MAX_STREAM_BYTES per stream."""
+    channel = getattr(stdout, "channel", stdout)
+    start_time = time.monotonic()
+    stdout_drain = _BoundedStreamDrain(MAX_STREAM_BYTES)
+    stderr_drain = _BoundedStreamDrain(MAX_STREAM_BYTES)
+    chunk_size = 32768
+
+    if hasattr(channel, "recv_ready"):
+        while True:
+            had_data = False
+
+            if channel.recv_ready():
+                chunk = channel.recv(chunk_size)
+                if chunk:
+                    stdout_drain.feed(chunk)
+                    had_data = True
+
+            if hasattr(channel, "recv_stderr_ready") and channel.recv_stderr_ready():
+                chunk = channel.recv_stderr(chunk_size)
+                if chunk:
+                    stderr_drain.feed(chunk)
+                    had_data = True
+
+            if channel.exit_status_ready():
+                # Process ended; drain all remaining pending bytes
+                while channel.recv_ready() or (hasattr(channel, "recv_stderr_ready") and channel.recv_stderr_ready()):
+                    drained_any = False
+                    if channel.recv_ready():
+                        c = channel.recv(chunk_size)
+                        if c:
+                            stdout_drain.feed(c)
+                            drained_any = True
+                    if hasattr(channel, "recv_stderr_ready") and channel.recv_stderr_ready():
+                        c = channel.recv_stderr(chunk_size)
+                        if c:
+                            stderr_drain.feed(c)
+                            drained_any = True
+                    if not drained_any:
+                        break
+                break
+
+            if time.monotonic() - start_time > timeout:
+                if hasattr(channel, "close"):
+                    channel.close()
+                logger.warning(
+                    "Remote command timed out after %ds (local channel closed; remote process termination cannot be guaranteed)",
+                    timeout,
+                )
+                hint = " sudo may be waiting for a password." if "sudo -n" in command else ""
+                raise RemoteTimeoutError(f"A command on the host did not finish within {timeout}s.{hint}")
+
+            if hasattr(channel, "closed") and channel.closed and not channel.recv_ready() and not (
+                hasattr(channel, "recv_stderr_ready") and channel.recv_stderr_ready()
+            ):
+                break
+
+            if not had_data:
+                time.sleep(0.02)
+    else:
+        # Fallback for minimal test stubs lacking recv_ready
+        while not channel.exit_status_ready():
+            if time.monotonic() - start_time > timeout:
+                if hasattr(channel, "close"):
+                    channel.close()
+                logger.warning(
+                    "Remote command timed out after %ds (local channel closed; remote process termination cannot be guaranteed)",
+                    timeout,
+                )
+                hint = " sudo may be waiting for a password." if "sudo -n" in command else ""
+                raise RemoteTimeoutError(f"A command on the host did not finish within {timeout}s.{hint}")
+            time.sleep(0.02)
+
+        if hasattr(stdout, "read"):
+            out_raw = stdout.read()
+            stdout_drain.feed(out_raw if isinstance(out_raw, bytes) else str(out_raw).encode())
+        if hasattr(stderr, "read"):
+            err_raw = stderr.read()
+            stderr_drain.feed(err_raw if isinstance(err_raw, bytes) else str(err_raw).encode())
+
+    if not channel.exit_status_ready():
+        if hasattr(channel, "close"):
+            channel.close()
+        raise RemoteCommandError("Remote channel closed without a valid exit status.")
+
+    exit_code = channel.recv_exit_status()
+    if exit_code is None or exit_code < 0:
+        if hasattr(channel, "close"):
+            channel.close()
+        raise RemoteCommandError(f"Remote command ended with invalid exit status {exit_code}.")
+
+    out = stdout_drain.get_value().decode(errors="ignore").strip()
+    err = stderr_drain.get_value().decode(errors="ignore").strip()
+    return exit_code, out, err
 
 
 def _extract_error_detail(output_text: str) -> str:
@@ -346,7 +532,7 @@ def _extract_error_detail(output_text: str) -> str:
 
 def _check_exit(exit_code: int, out: str, err: str) -> str:
     """The output of a finished command, or the readable error its exit code and stderr stand for."""
-    if exit_code == 0 or _is_benign_not_found(exit_code, err):
+    if exit_code == 0:
         return out
 
     err_lower = (err or out).lower()
@@ -366,12 +552,13 @@ def _check_exit(exit_code: int, out: str, err: str) -> str:
 
 
 def _exec_impl(client: paramiko.SSHClient, command: str, timeout: int, sudo_pass: Optional[str]) -> str:
-    """Low-level command execution with sudo password support and timeout handling."""
+    """Low-level command execution with sudo password support, continuous stream drain, and timeout handling."""
     stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
-    _feed_sudo_password(stdin, command, sudo_pass)
-    _wait_for_exit(stdout, command, timeout)
-
-    exit_code = stdout.channel.recv_exit_status()
-    out = stdout.read().decode(errors='ignore').strip()
-    err = stderr.read().decode(errors='ignore').strip()
-    return _check_exit(exit_code, out, err)
+    channel = getattr(stdout, "channel", stdout)
+    try:
+        _feed_sudo_password(stdin, command, sudo_pass)
+        exit_code, out, err = _drain_channel(stdout, stderr, command, timeout)
+        return _check_exit(exit_code, out, err)
+    finally:
+        if hasattr(channel, "closed") and not channel.closed:
+            channel.close()

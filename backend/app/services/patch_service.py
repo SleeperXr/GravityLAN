@@ -136,8 +136,9 @@ def _connect_with_fallback(client: paramiko.SSHClient, connect_kwargs: dict, hos
         gateway = host_bypass_gateway(host_ip) if is_unreachable(e) else None
         if gateway:
             logger.info("Direct connection failed (%s). Trying Host Bypass gateway: %s", e, gateway)
-            connect_kwargs["hostname"] = gateway
-            client.connect(**connect_kwargs)
+            retry_kwargs = dict(connect_kwargs)
+            retry_kwargs["hostname"] = gateway
+            client.connect(**retry_kwargs)
         else:
             raise e
 
@@ -432,7 +433,8 @@ def _read_apt_update(chan, sudo_password: str | None) -> tuple[str, bool]:
         elif chan.exit_status_ready():
             return output + _drain(chan), False
         time.sleep(0.1)
-    # Timed out: end the remote apt-get, or it keeps the dpkg lock while the package list is read
+    # Timed out: close the local channel to abandon the read. Note: closing the local
+    # channel does not guarantee termination of the remote apt-get process.
     chan.close()
     return output, False
 

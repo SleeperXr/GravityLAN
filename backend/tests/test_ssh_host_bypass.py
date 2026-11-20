@@ -1,13 +1,19 @@
 """The Docker bridge gateway fallback only applies to the Docker host itself (#46)."""
+import errno
 import socket
 from unittest.mock import MagicMock
 
+import paramiko
 import pytest
 
 from app.config import settings
 from app.services import patch_service, ssh_terminal
 from app.services.docker_service import docker_service
-from app.services.ssh_utils import connect_with_gateway_fallback, host_bypass_gateway
+from app.services.ssh_utils import (
+    HostKeyNotTrusted,
+    connect_with_gateway_fallback,
+    host_bypass_gateway,
+)
 
 GATEWAY = "172.17.0.1"
 DEVICE = "192.168.1.80"
@@ -51,12 +57,46 @@ def test_docker_host_itself_retries_on_gateway(monkeypatch, configure):
     assert [c.kwargs["hostname"] for c in client.connect.call_args_list] == [DOCKER_HOST, GATEWAY]
 
 
-def test_docker_host_retries_when_the_handshake_is_cut_off(monkeypatch):
+@pytest.mark.parametrize("connect_fn", [connect_with_gateway_fallback, patch_service._connect_with_fallback])
+@pytest.mark.parametrize("error", [
+    EOFError("connection closed during handshake"),
+    paramiko.AuthenticationException("bad password"),
+    HostKeyNotTrusted("host key changed"),
+    paramiko.ssh_exception.SSHException("Error reading SSH protocol banner"),
+    OSError(errno.ENOENT, "local private key not found"),
+])
+def test_docker_host_never_retries_on_eof_auth_or_protocol_error(monkeypatch, connect_fn, error):
     monkeypatch.setattr(settings, "docker_host_ip", DOCKER_HOST)
     client = MagicMock()
-    client.connect.side_effect = [EOFError(), None]  # paramiko re-raises this when the key exchange is closed
-    connect_with_gateway_fallback(client, {"hostname": DOCKER_HOST, "port": 22, "username": "root"}, DOCKER_HOST)
+    client.connect.side_effect = error
+    with pytest.raises(type(error)):
+        connect_fn(client, {"hostname": DOCKER_HOST, "port": 22, "username": "root"}, DOCKER_HOST)
+    # Exactly one connect attempt to DOCKER_HOST, never sending credentials to GATEWAY
+    assert [c.kwargs["hostname"] for c in client.connect.call_args_list] == [DOCKER_HOST]
+
+
+@pytest.mark.parametrize("connect_fn", [connect_with_gateway_fallback, patch_service._connect_with_fallback])
+def test_docker_host_retries_on_nested_no_valid_connections(monkeypatch, connect_fn):
+    monkeypatch.setattr(settings, "docker_host_ip", DOCKER_HOST)
+    client = MagicMock()
+    # Allowed nested errors
+    client.connect.side_effect = [
+        paramiko.ssh_exception.NoValidConnectionsError({("192.168.1.10", 22): ConnectionRefusedError()}),
+        None,
+    ]
+    connect_fn(client, {"hostname": DOCKER_HOST, "port": 22, "username": "root"}, DOCKER_HOST)
     assert [c.kwargs["hostname"] for c in client.connect.call_args_list] == [DOCKER_HOST, GATEWAY]
+
+
+@pytest.mark.parametrize("connect_fn", [connect_with_gateway_fallback, patch_service._connect_with_fallback])
+def test_docker_host_refuses_fallback_on_unallowed_nested_errors(monkeypatch, connect_fn):
+    monkeypatch.setattr(settings, "docker_host_ip", DOCKER_HOST)
+    client = MagicMock()
+    unallowed_nested = paramiko.ssh_exception.NoValidConnectionsError({("192.168.1.10", 22): EOFError()})
+    client.connect.side_effect = unallowed_nested
+    with pytest.raises(paramiko.ssh_exception.NoValidConnectionsError):
+        connect_fn(client, {"hostname": DOCKER_HOST, "port": 22, "username": "root"}, DOCKER_HOST)
+    assert [c.kwargs["hostname"] for c in client.connect.call_args_list] == [DOCKER_HOST]
 
 
 def test_terminal_does_not_open_docker_host_for_offline_device(monkeypatch):

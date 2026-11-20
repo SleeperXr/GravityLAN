@@ -42,13 +42,13 @@ def test_a_failing_stdin_shutdown_is_ignored():
     assert stdin.written == ["pw\n"]
 
 
-@pytest.mark.parametrize("err", ["rm: cannot remove: not found", "No such file or directory"])
-def test_exit_1_with_a_missing_file_still_returns_the_output(err):
-    assert su._check_exit(1, "partial", err) == "partial"
-
-
-@pytest.mark.parametrize("err", ["wget: server returned error: HTTP/1.1 404 Not Found", "Not Found"])
-def test_exit_1_with_a_capitalised_not_found_is_a_failure(err):
+@pytest.mark.parametrize("err", [
+    "rm: cannot remove: not found",
+    "No such file or directory",
+    "wget: server returned error: HTTP/1.1 404 Not Found",
+    "Not Found",
+])
+def test_exit_1_always_raises_remote_command_error(err):
     with pytest.raises(su.RemoteCommandError, match=r"failed \(exit 1\)"):
         su._check_exit(1, "partial", err)
 
@@ -120,3 +120,163 @@ def test_remote_runner_run_batch():
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(runner, "run", lambda cmd, timeout=15: f"out:{cmd}")
         assert runner.run_batch(["c1", "c2"]) == ["out:c1", "out:c2"]
+
+
+# --- Non-blocking stream drain, bounded memory and timeout tests ----------------
+
+
+class MockDrainChannel:
+    def __init__(
+        self,
+        stdout_chunks=None,
+        stderr_chunks=None,
+        exit_code=0,
+        ready_after=0,
+        never_ready=False,
+    ):
+        self.stdout_chunks = list(stdout_chunks or [])
+        self.stderr_chunks = list(stderr_chunks or [])
+        self.exit_code = exit_code
+        self.ready_after = ready_after
+        self.never_ready = never_ready
+        self.calls = 0
+        self.closed = False
+        self.shut_write = False
+
+    def recv_ready(self):
+        return len(self.stdout_chunks) > 0
+
+    def recv(self, size):
+        if self.stdout_chunks:
+            return self.stdout_chunks.pop(0)
+        return b""
+
+    def recv_stderr_ready(self):
+        return len(self.stderr_chunks) > 0
+
+    def recv_stderr(self, size):
+        if self.stderr_chunks:
+            return self.stderr_chunks.pop(0)
+        return b""
+
+    def exit_status_ready(self):
+        if self.never_ready:
+            return False
+        self.calls += 1
+        return self.calls > self.ready_after
+
+    def recv_exit_status(self):
+        return self.exit_code
+
+    def close(self):
+        self.closed = True
+
+    def shutdown_write(self):
+        self.shut_write = True
+
+
+def test_drain_channel_large_stdout():
+    # 5 chunks of 32 KB each = 160 KB
+    chunks = [b"A" * 32768 for _ in range(5)]
+    channel = MockDrainChannel(stdout_chunks=chunks, exit_code=0, ready_after=6)
+    exit_code, out, err = su._drain_channel(channel, channel, "test_cmd", timeout=5)
+    assert exit_code == 0
+    assert len(out) == 160 * 1024
+    assert out.startswith("AAAA")
+    assert err == ""
+
+
+def test_drain_channel_large_stderr():
+    chunks = [b"E" * 32768 for _ in range(5)]
+    channel = MockDrainChannel(stderr_chunks=chunks, exit_code=0, ready_after=6)
+    exit_code, out, err = su._drain_channel(channel, channel, "test_cmd", timeout=5)
+    assert exit_code == 0
+    assert out == ""
+    assert len(err) == 160 * 1024
+
+
+def test_drain_channel_fair_interleaving():
+    out_chunks = [b"out1\n", b"out2\n", b"out3\n"]
+    err_chunks = [b"err1\n", b"err2\n", b"err3\n"]
+    channel = MockDrainChannel(stdout_chunks=out_chunks, stderr_chunks=err_chunks, exit_code=0, ready_after=4)
+    exit_code, out, err = su._drain_channel(channel, channel, "test_cmd", timeout=5)
+    assert exit_code == 0
+    assert out == "out1\nout2\nout3"
+    assert err == "err1\nerr2\nerr3"
+
+
+def test_drain_channel_memory_limit_bounded_and_truncated():
+    # 2.5 MiB in chunks
+    chunk = b"X" * 65536
+    chunks = [b"START-HEADER\n"] + [chunk for _ in range(40)] + [b"\nFINAL-FOOTER"]
+    channel = MockDrainChannel(stdout_chunks=chunks, exit_code=0, ready_after=45)
+    exit_code, out, err = su._drain_channel(channel, channel, "test_cmd", timeout=5)
+    assert exit_code == 0
+    # Strict 1 MiB retention
+    assert len(out.encode()) <= su.MAX_STREAM_BYTES
+    assert "START-HEADER" in out
+    assert "FINAL-FOOTER" in out
+    assert "[... output truncated ...]" in out
+
+
+def test_drain_channel_timeout_with_continuous_output(monkeypatch):
+    class InfiniteChannel(MockDrainChannel):
+        def recv_ready(self):
+            return True
+
+        def recv(self, size):
+            return b"stream-data-never-stops\n"
+
+        def exit_status_ready(self):
+            return False
+
+    clock = iter([0.0, 0.05, 0.1, 0.15, 10.0])
+    monkeypatch.setattr(su.time, "monotonic", lambda: next(clock, 10.0))
+    monkeypatch.setattr(su.time, "sleep", lambda s: None)
+
+    channel = InfiniteChannel()
+    with pytest.raises(su.RemoteTimeoutError, match="did not finish within 5s"):
+        su._drain_channel(channel, channel, "infinite_cmd", timeout=5)
+    assert channel.closed is True
+
+
+def test_drain_channel_pending_bytes_after_exit_status_ready():
+    # Channel immediately signals exit_status_ready=True, but chunks are still pending
+    channel = MockDrainChannel(stdout_chunks=[b"first-chunk\n", b"second-chunk\n"], exit_code=0, ready_after=0)
+    exit_code, out, err = su._drain_channel(channel, channel, "test_cmd", timeout=5)
+    assert exit_code == 0
+    assert out == "first-chunk\nsecond-chunk"
+
+
+def test_drain_channel_closed_without_exit_status():
+    channel = MockDrainChannel(never_ready=True)
+    channel.closed = True
+    with pytest.raises(su.RemoteCommandError, match="without a valid exit status"):
+        su._drain_channel(channel, channel, "test_cmd", timeout=5)
+    assert channel.closed is True
+
+
+def test_drain_channel_invalid_negative_exit_status():
+    channel = MockDrainChannel(exit_code=-1, ready_after=1)
+    with pytest.raises(su.RemoteCommandError, match="invalid exit status -1"):
+        su._drain_channel(channel, channel, "test_cmd", timeout=5)
+
+
+def test_exec_impl_cleanup_on_error(monkeypatch):
+    from unittest.mock import MagicMock
+    channel = MockDrainChannel(never_ready=True)
+    stdout = SimpleNamespace(channel=channel)
+    stderr = SimpleNamespace(channel=channel)
+    stdin = SimpleNamespace(write=lambda s: None, flush=lambda: None, channel=channel)
+
+    client = MagicMock()
+    client.exec_command.return_value = (stdin, stdout, stderr)
+
+    clock = iter([0.0, 100.0])
+    monkeypatch.setattr(su.time, "monotonic", lambda: next(clock, 100.0))
+    monkeypatch.setattr(su.time, "sleep", lambda s: None)
+
+    with pytest.raises(su.RemoteTimeoutError):
+        su._exec_impl(client, "fail_cmd", timeout=5, sudo_pass=None)
+
+    assert channel.closed is True

@@ -561,8 +561,8 @@ async def test_update_stream_reports_a_missing_channel_and_connect_errors(monkey
         assert await fn(host_ip="h", ssh_user="root", command="x", output_callback=print) == (False, "connection refused")
 
 
-def test_an_apt_update_that_times_out_is_ended(monkeypatch):
-    """It used to keep running on the host (holding the dpkg lock) while the package list was read."""
+def test_an_apt_update_that_times_out_closes_local_channel(monkeypatch):
+    """A timeout closes the local channel to abandon reading (without proving remote process termination)."""
     clock = iter([0.0, 0.0, 100.0])
     monkeypatch.setattr(ps.time, "monotonic", lambda: next(clock, 100.0))
     monkeypatch.setattr(ps.time, "sleep", lambda s: None)
