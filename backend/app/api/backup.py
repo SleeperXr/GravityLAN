@@ -250,7 +250,7 @@ def _clean_row(table: str, row: dict, table_info: dict, now_str: str) -> dict:
 
 # Rows outside the backup that belong to one device (#47): when a device id names another
 # device after the import, these are deleted, the saved SSH connections are only unbound.
-DEVICE_BOUND_DELETE = ("agent_tokens", "device_interfaces", "device_history", "rack_ports")
+DEVICE_BOUND_DELETE = ("agent_tokens", "device_interfaces", "device_history", "rack_ports", "device_mac_observations")
 DEVICE_BOUND_UNLINK = ("ssh_profiles", "ssh_history")
 
 

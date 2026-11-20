@@ -108,6 +108,41 @@ class DeviceHistoryResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MacChangeRequest(BaseModel):
+    """Set a device's MAC by hand, or adopt a MAC that was seen at its address."""
+
+    mac: str = Field(..., max_length=17, description="aa:bb:cc:dd:ee:ff (dashes allowed)")
+    # Also give it to the devices that share the old MAC and saw the same new one (an ipvlan host's containers)
+    apply_to_shared: bool = False
+
+
+class MacObservationDismiss(BaseModel):
+    """Keep the device's MAC; this MAC is not reported at the device again."""
+
+    mac: str = Field(..., max_length=17)
+
+
+class MacChangeResult(BaseModel):
+    changed_device_ids: list[int]
+
+
+class MacConflictDevice(BaseModel):
+    id: int
+    ip: str
+    name: str
+    source: str
+
+
+class MacConflictGroup(BaseModel):
+    """Devices whose documented MAC is ``documented_mac`` and at whose address ``observed_mac`` answered."""
+
+    documented_mac: str | None
+    observed_mac: str
+    first_seen: datetime
+    last_seen: datetime
+    devices: list[MacConflictDevice]
+
+
 class AgentInfo(BaseModel):
     """Simplified agent status for device lists."""
     agent_version: str | None = None

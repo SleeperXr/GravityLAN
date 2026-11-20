@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import select
 
-from app.models.device import Device, DiscoveredHost
+from app.models.device import Device, DeviceMacObservation, DiscoveredHost
 from app.models.agent import AgentConfig, AgentToken
 from app.models.network import Subnet
 from app.models.setting import Setting
@@ -125,11 +125,12 @@ async def test_ingest_ignored_when_no_subnet_contains_probe(db):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "relay, expected_mac",
-    [(True, "00:11:32:aa:bb:cc"), (False, "AA:BB:CC:DD:EE:FF")],
+    "relay, observations",
+    [(True, 1), (False, 0)],
     ids=["relay-on", "relay-off"],
 )
-async def test_report_endpoint_ingests_arp_table_only_with_relay(client, db, relay, expected_mac):
+async def test_report_endpoint_ingests_arp_table_only_with_relay(client, db, relay, observations):
+    """Another MAC at the device's address never replaces its MAC; with the relay it is recorded once."""
     db.add(Setting(key="setup.complete", value="true"))
     probe = await _add_probe(db, relay=relay)
     known = await _add_known_device(db, "192.168.110.10")
@@ -147,8 +148,9 @@ async def test_report_endpoint_ingests_arp_table_only_with_relay(client, db, rel
     )
 
     assert response.status_code == 200
-    await db.refresh(known)
-    assert known.mac == expected_mac
+    await _assert_untouched(db, known)
+    rows = (await db.execute(select(DeviceMacObservation))).scalars().all()
+    assert [(r.device_id, r.observed_mac, r.source) for r in rows] == [(known.id, "00:11:32:aa:bb:cc", "relay")] * observations
 
 
 @pytest.mark.asyncio

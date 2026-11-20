@@ -18,6 +18,7 @@ from app.scanner.gateways import detect_default_gateways, effective_gateway
 from app.scanner.vendor import get_vendor
 from app.scanner.hostname import is_ip_like
 from app.services.cache_service import discovery_cache, dashboard_cache, topology_cache
+from app.services.mac_observations import ReportedPairs, record_mac_conflict
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,8 @@ class SyncContext:
     is_initial: bool = True
     # Sent once the batch is committed: a rollback must not announce what the next scan finds again
     pending_webhooks: list = field(default_factory=list)  # [(event_type, data)]
+    # (device id, MAC) conflicts already noted in this batch (app.services.mac_observations)
+    reported_macs: ReportedPairs = field(default_factory=ReportedPairs)
 
     def subnet_for(self, ip: str | None):
         try:
@@ -598,6 +601,10 @@ async def _update_dashboard_device(db, dev, disc, hit: ScanHit, match_type: str 
     """Apply cross-sync updates to a monitored Device. Does NOT commit."""
     if not dev:
         return
+    if match_type == "ip" and _macs_conflict(dev.mac, hit.mac, hit.is_valid_mac):
+        # The address match stands (see _match_ip_with_mac_conflict), but another MAC answered
+        # there: the device keeps its MAC, the sighting is noted once for the user to decide
+        await record_mac_conflict(db, dev, hit.mac, "scan", ctx.reported_macs)
     _refresh_device(dev, disc, hit)
     if dev.ip != hit.ip:
         await _move_device_to_scanned_ip(db, dev, hit, match_type, ctx)
