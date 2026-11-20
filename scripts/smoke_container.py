@@ -93,23 +93,52 @@ def _check_health(timeout):
     return {"status": data.get("status"), "version": data.get("version")}
 
 
-def _check_server_process(expected_uid, expected_gid):
+def _parse_proc_cmdline(raw_bytes):
+    if not raw_bytes:
+        return []
+    return [part.decode("utf-8", errors="replace") for part in raw_bytes.split(b"\x00") if part]
+
+
+def _is_uvicorn_server_argv(argv):
+    if not argv:
+        return False
+    exe = os.path.basename(argv[0])
+    if exe == "uvicorn":
+        return "app.main:app" in argv[1:]
+    if exe.startswith("python") and len(argv) >= 3:
+        if os.path.basename(argv[1]) == "uvicorn":
+            return "app.main:app" in argv[2:]
+        if argv[1] == "-m" and argv[2] == "uvicorn":
+            return "app.main:app" in argv[3:]
+    return False
+
+
+def _check_server_process(expected_uid, expected_gid, proc_root="/proc", data_dir=None):
+    self_pid = os.getpid()
     matches = []
-    for entry in Path("/proc").iterdir():
+    for entry in Path(proc_root).iterdir():
         if not entry.name.isdigit():
             continue
+        pid = int(entry.name)
+        if pid == self_pid:
+            continue
         try:
-            cmdline = (entry / "cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", errors="replace")
-            if "uvicorn" not in cmdline or "app.main:app" not in cmdline:
-                continue
+            argv = _parse_proc_cmdline((entry / "cmdline").read_bytes())
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        if not _is_uvicorn_server_argv(argv):
+            continue
+        try:
             status_text = (entry / "status").read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        except (FileNotFoundError, ProcessLookupError):
             continue
         uid_line = next((ln for ln in status_text.splitlines() if ln.startswith("Uid:")), "")
         gid_line = next((ln for ln in status_text.splitlines() if ln.startswith("Gid:")), "")
         uids = [int(v) for v in uid_line.split()[1:5]]
         gids = [int(v) for v in gid_line.split()[1:5]]
-        matches.append({"pid": int(entry.name), "uids": uids, "gids": gids})
+        if len(uids) != 4 or len(gids) != 4:
+            raise RuntimeError(f"Could not parse Uid/Gid lines for server process PID {pid}")
+        matches.append({"pid": pid, "uids": uids, "gids": gids})
 
     if not matches:
         raise RuntimeError("Could not find running uvicorn app.main:app process in /proc")
@@ -121,15 +150,15 @@ def _check_server_process(expected_uid, expected_gid):
                 f"expected Uid={expected_uid} Gid={expected_gid}"
             )
 
-    data_dir = Path(os.environ.get("GRAVITYLAN_DATA_DIR", "/app/data"))
-    db_path = data_dir / "gravitylan.db"
+    resolved_data_dir = Path(data_dir if data_dir is not None else os.environ.get("GRAVITYLAN_DATA_DIR", "/app/data"))
+    db_path = resolved_data_dir / "gravitylan.db"
     if not db_path.is_file():
         raise RuntimeError(f"Expected SQLite database not found at {db_path}")
-    dir_stat = data_dir.stat()
+    dir_stat = resolved_data_dir.stat()
     db_stat = db_path.stat()
     if (dir_stat.st_uid, dir_stat.st_gid) != (expected_uid, expected_gid):
         raise RuntimeError(
-            f"{data_dir} is owned by {dir_stat.st_uid}:{dir_stat.st_gid}, expected {expected_uid}:{expected_gid}"
+            f"{resolved_data_dir} is owned by {dir_stat.st_uid}:{dir_stat.st_gid}, expected {expected_uid}:{expected_gid}"
         )
     if (db_stat.st_uid, db_stat.st_gid) != (expected_uid, expected_gid):
         raise RuntimeError(
