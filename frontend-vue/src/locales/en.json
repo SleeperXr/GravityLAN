@@ -359,11 +359,15 @@
       "adopt_confirm": "Adopt MAC",
       "adopt_success_one": "MAC address updated.",
       "adopt_success_other": "MAC address updated for {{count}} devices.",
+      "adopt_partial": "MAC address updated for {{changed}} device(s); {{skipped}} skipped (state changed or conflict no longer open).",
+      "adopt_none": "No devices were updated — the conflict is no longer open or the device state changed in the meantime.",
       "dismiss_title": "Dismiss MAC conflict",
-      "dismiss_message": "Keep the documented MAC? The observed MAC {{mac}} will no longer be reported for this device.",
-      "dismiss_group_message": "Keep the documented MAC? The observed MAC {{mac}} will no longer be reported for any of the {{count}} devices in this group.",
+      "dismiss_message": "Keep the documented MAC? The observed MAC {{mac}} will be ignored in the current context (IP/MAC) and no longer reported; reachability probes (ping/port) will treat this device normally again.",
+      "dismiss_group_message": "Keep the documented MAC? The observed MAC {{mac}} will be ignored in the current context (IP/MAC) for all {{count}} devices in this group and no longer reported; reachability probes (ping/port) will treat these devices normally again.",
       "dismiss_confirm": "Dismiss",
       "dismiss_success": "MAC conflict dismissed.",
+      "dismiss_partial": "Dismissal confirmed for {{confirmed}} of {{total}} devices; {{failed}} failed. View refreshed.",
+      "dismiss_failed": "Could not dismiss MAC conflict.",
       "manual_button": "Correct MAC",
       "manual_title": "Manually correct MAC address",
       "manual_desc": "The device's identity does not change (same device ID, entry in history).",
@@ -540,7 +544,7 @@
         "title": "Install and update the agent",
         "summary": "One Python script per Linux host reports CPU, RAM, disks, network and temperature.",
         "steps": "Open the device in the device editor, tab \"Agent\".\nOver SSH: pick a saved key connection or type in user and password. Typed-in credentials are used for that request only.\nOr copy the one-line installer and run it on the host. It carries a one-time code valid for 30 minutes.\nWithout HTTPS the one-liner stops (see \"HTTPS with a reverse proxy\"); installing over SSH works anyway.\nUpdates: the Agent Update Center updates all outdated agents together, and an open SSH terminal offers an \"Agent update\" button.",
-        "hint": "The agent version only changes when the agent script changes. Not every server update needs an agent update."
+        "hint": "The 24-hour bars on the Agents page show report coverage (received against expected reports since token registration); hours without reports appear as \"No data\". The agent version only changes when the agent script changes."
       },
       "updates": {
         "title": "Package updates",
@@ -557,7 +561,7 @@
       "health": {
         "title": "Health Radar",
         "summary": "Availability, latency and incidents of all devices at a glance.",
-        "steps": "Pick the period: 24 hours, 7 or 30 days.\nThe table shows status, score, uptime bars, latency with jitter and services per device; a click opens the details.\nThe details show the latency history, services with SSL expiry, agent values and incidents.\nTurn off 24/7 monitoring for clients like a TV or laptop. Asleep, they then count as standby instead of an outage.",
+        "steps": "Pick the period: 24 hours, 7 or 30 days.\nThe table shows status, score, availability bars, latency with jitter and services per device; slots without probes appear neutrally as \"No data\". A click opens the details.\nThe details show the measured 24h, 7d and 30d availability, the latency history, services with SSL expiry, agent values and incidents.\nTurn off 24/7 monitoring for clients like a TV or laptop. Asleep, they then count as standby instead of an outage.",
         "hint": "Incidents of the last 7 days are listed below as a timeline; clicking a card opens the device."
       },
       "telemetry": {

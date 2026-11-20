@@ -91,56 +91,80 @@ def _sqlite_db_path() -> str:
     return settings.effective_database_url.replace("sqlite+aiosqlite:///", "")
 
 
-@router.get("/export", dependencies=[policy(callers=NO_API_TOKEN, step_up="instance")])
-async def export_backup(request: Request):
-    """Export the current database state as a JSON file."""
-    db_path = _sqlite_db_path()
-    if not os.path.exists(db_path):
-        raise HTTPException(status_code=404, detail="Database file not found")
+class BackupExportError(RuntimeError):
+    """A table of the backup could not be read; the export has to fail rather than come out partial."""
 
-    def _read_db() -> dict:
+    def __init__(self, table: str):
+        super().__init__(f"table {table} could not be read")
+        self.table = table
+
+
+EXPORT_FAILED_DETAIL = (
+    "Backup export failed: the database could not be read completely, so no backup file was created. "
+    "Details are in the server log."
+)
+
+
+def _export_snapshot(db_path: str) -> dict:
+    """Every backup table, read inside one read transaction.
+
+    A deferred ``BEGIN`` pins one snapshot at the first SELECT: in WAL mode (the app's mode) all tables
+    come from the same database state while writers are not blocked; without it each SELECT would see
+    whatever was committed in between. A table that cannot be read (missing, locked, corrupt) raises
+    :class:`BackupExportError` instead of being left out: an incomplete file must not pass as a backup.
+    """
+    conn = None
+    table = "(transaction)"
+    try:
         conn = _open_sqlite_connection(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        cursor.execute("BEGIN")
         data: dict = {
             "metadata": {
                 "exported_at": datetime.now(timezone.utc).isoformat(),
                 "version": settings.app_version,
                 "source": "GravityLAN Dashboard",
             },
-            "device_groups": [],
-            "devices": [],
-            "services": [],
-            "discovered_hosts": [],
-            "settings": [],
         }
         # The tables an import may restore; agent_tokens is excluded for security (Issue 13)
         for key, table in ALLOWED_TABLE_MAP.items():
-            try:
-                cursor.execute(f"SELECT * FROM {table}")
-                rows = [dict(row) for row in cursor.fetchall()]
-                if key == "settings":
-                    # The instance's credentials stay out of the file; an import ignores them anyway
-                    rows = [r for r in rows if r.get("key") not in PROTECTED_SETTING_KEYS]
-                data[key] = rows
-            except sqlite3.OperationalError as e:
-                # Left out, not written as []: an empty list empties the table on import
-                data.pop(key, None)
-                logger.warning(f"Backup: Table {table} skipped ({e})")
-        conn.close()
+            cursor.execute(f"SELECT * FROM {table}")
+            rows = [dict(row) for row in cursor.fetchall()]
+            if key == "settings":
+                # The instance's credentials stay out of the file; an import ignores them anyway
+                rows = [r for r in rows if r.get("key") not in PROTECTED_SETTING_KEYS]
+            data[key] = rows
         return data
+    except sqlite3.Error as exc:
+        raise BackupExportError(table) from exc
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@router.get("/export", dependencies=[policy(callers=NO_API_TOKEN, step_up="instance")])
+async def export_backup(request: Request):
+    """Export the current database state as a JSON file; complete, or a visible failure (HTTP 500)."""
+    db_path = _sqlite_db_path()
+    if not os.path.exists(db_path):
+        raise HTTPException(status_code=404, detail="Database file not found")
 
     try:
-        data = await asyncio.to_thread(_read_db)
-        await audit(request, "backup.export", detail=f"{len(data.get('devices', []))} devices")
+        data = await asyncio.to_thread(_export_snapshot, db_path)
         filename = f"gravitylan_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
-        return JSONResponse(
+        response = JSONResponse(
             content=data,
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
-    except Exception as e:
-        logger.error(f"Backup: Export failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        # The cause stays in the log; the client only learns that no backup was made
+        logger.error("Backup: export failed, no file created: %s (%s)", exc, exc.__cause__ or "no further cause")
+        reason = str(exc) if isinstance(exc, BackupExportError) else "unexpected error"
+        await audit(request, "backup.export", "failed", detail=reason)
+        raise HTTPException(status_code=500, detail=EXPORT_FAILED_DETAIL) from exc
+    await audit(request, "backup.export", detail=f"{len(data.get('devices', []))} devices")
+    return response
 
 
 def _read_protected_settings(cursor) -> dict[str, str]:
@@ -481,11 +505,12 @@ def _replace_table(cursor, table: str, rows: list[dict]) -> None:
     )
 
 
-def _restorable_table(key: str, rows) -> str | None:
+def _restorable_table(key: str) -> str | None:
     """The table a backup key restores, or None when this key is to be skipped."""
     # A key the backup has replaces its table, also when its list is empty (the instance had none of
-    # these: restoring it means none now); a key it leaves out (an older backup) keeps the table
-    if key == "metadata" or rows is None:
+    # these: restoring it means none now); a key it leaves out (an older backup) keeps the table.
+    # Only lists get here: validate_backup_payload refuses every other value of a table key.
+    if key == "metadata":
         return None
     if key not in ALLOWED_TABLE_MAP:
         logger.warning(f"Backup: Skipping unauthorized table key '{key}'")
@@ -497,12 +522,15 @@ def _import_tables(cursor, data: dict) -> tuple[dict[str, int], dict[str, int], 
     """Replace each table the backup has.
 
     Returns (table -> rows imported, table -> duplicates dropped, table -> invalid rows dropped).
+    Raises :class:`BackupFormatError` before the first table is touched when a table key is not a list
+    of rows (an internal caller must not turn ``{}``, ``false`` or ``null`` into an emptied table).
     """
+    validate_backup_payload(data)
     imported: dict[str, int] = {}
     duplicates: dict[str, int] = {}
     invalid: dict[str, int] = {}
     for key, rows in data.items():
-        table = _restorable_table(key, rows)
+        table = _restorable_table(key)
         if table is None:
             continue
         checked, rejected = _validated_rows(table, rows) if rows else ([], 0)
@@ -575,15 +603,38 @@ def _write_db(db_path: str, data: dict, report: dict | None = None) -> dict[str,
             conn.close()
 
 
-def _validate_backup_shape(data) -> None:
-    """Reject payloads that are not {table_key: [row, ...]} before touching the database."""
+class BackupFormatError(ValueError):
+    """The payload is not a backup of the shape {table_key: [row, ...]}."""
+
+
+def validate_backup_payload(data, *, require_table: bool = False) -> None:
+    """Check a backup payload before any table is touched; raises :class:`BackupFormatError`.
+
+    Shared by the upload check (HTTP 400, ``require_table=True``) and the import itself, so no caller
+    can reach the tables with a wrong shape. For every supported table key the value must be a list of
+    objects: ``[]`` is valid and empties the table on purpose; ``null``, ``{}``, ``false``, ``0``,
+    ``""`` and the like are not (they used to pass as "empty" and wiped the table). A key the backup
+    leaves out keeps its table; unknown keys are ignored. ``metadata`` may be missing, else an object.
+    """
     if not isinstance(data, dict):
-        raise HTTPException(status_code=400, detail="Invalid backup file: expected a JSON object")
-    for key, rows in data.items():
-        if key == "metadata" or key not in ALLOWED_TABLE_MAP or not rows:
-            continue
+        raise BackupFormatError("Invalid backup file: expected a JSON object")
+    if "metadata" in data and not isinstance(data["metadata"], dict):
+        raise BackupFormatError("Invalid backup file: 'metadata' must be an object")
+    present = [key for key in data if key in ALLOWED_TABLE_MAP]
+    for key in present:
+        rows = data[key]
         if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
-            raise HTTPException(status_code=400, detail=f"Invalid backup file: '{key}' must be a list of rows")
+            raise BackupFormatError(f"Invalid backup file: '{key}' must be a list of rows")
+    if require_table and not present:
+        raise BackupFormatError("Invalid backup file: it contains no supported table data")
+
+
+def _validate_backup_shape(data) -> None:
+    """Reject uploads that are no usable backup (HTTP 400) before touching the database."""
+    try:
+        validate_backup_payload(data, require_table=True)
+    except BackupFormatError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/import", dependencies=[policy(callers=NO_API_TOKEN, step_up="instance")])
@@ -678,6 +729,10 @@ async def _restore(request: Request, data: dict, db: AsyncSession, db_path: str,
     report: dict = {}
     try:
         imported = await asyncio.to_thread(_write_db, db_path, data, report)
+    except BackupFormatError as e:
+        logger.error(f"Backup: Import refused, wrong format, nothing changed: {e}")
+        await audit(request, "backup.import", "failed", detail="invalid format", actor=actor)
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Backup: Import failed, all changes rolled back: {e}")
         await audit(request, "backup.import", "failed", detail="rolled back", actor=actor)

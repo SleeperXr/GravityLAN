@@ -62,8 +62,10 @@ describe('MacAdoptDialog', () => {
     expect(mocked.setDeviceMac).toHaveBeenCalledWith(10, {
       mac: 'aa:bb:cc:dd:ee:02',
       apply_to_shared: false,
+      targets: [{ id: 10, ip: '192.168.1.10', documented_mac: 'aa:bb:cc:dd:ee:01' }],
     });
     expect(wrapper.emitted('adopted')).toEqual([[[10]]]);
+    expect(wrapper.emitted('refresh')).toHaveLength(1);
   });
 
   it('lists all devices in a shared group and lets the user pick single or all', async () => {
@@ -89,8 +91,13 @@ describe('MacAdoptDialog', () => {
 
     expect(mocked.setDeviceMac).toHaveBeenCalledWith(20, {
       mac: '11:22:33:44:55:02',
-      apply_to_shared: true,
+      apply_to_shared: false,
+      targets: [
+        { id: 20, ip: '192.168.1.20', documented_mac: '11:22:33:44:55:01' },
+        { id: 21, ip: '192.168.1.21', documented_mac: '11:22:33:44:55:01' },
+      ],
     });
     expect(wrapper.emitted('adopted')).toEqual([[[20, 21]]]);
+    expect(wrapper.emitted('refresh')).toHaveLength(1);
   });
 });

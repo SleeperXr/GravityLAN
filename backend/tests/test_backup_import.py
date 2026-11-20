@@ -395,18 +395,18 @@ async def test_an_upload_without_a_file_name_is_refused_not_an_error_500(client,
 
 
 @pytest.mark.asyncio
-async def test_a_table_the_export_cannot_read_is_left_out_not_written_empty(client, admin_token, import_endpoint_db, monkeypatch):
-    """An empty list empties the table on import: a table that failed to read must not look like one."""
+async def test_a_table_the_export_cannot_read_fails_the_export_instead_of_leaving_it_out(client, admin_token, import_endpoint_db, monkeypatch):
+    """Changed from "left out, not written empty" (AP 2): leaving it out kept the export green but
+    incomplete. Now the export fails visibly, so nobody restores from a file that lacks a table."""
     real = backup._open_sqlite_connection
 
-    def open_without_device_groups(path):
-        conn = real(path)
+    def open_without_device_groups(path, isolation_level=""):
+        conn = real(path, isolation_level)
         conn.execute("DROP TABLE IF EXISTS device_groups")
         return conn
 
     monkeypatch.setattr(backup, "_open_sqlite_connection", open_without_device_groups)
     response = await client.get("/api/backup/export", headers={"Authorization": f"Bearer {admin_token}"})
-    assert response.status_code == 200
-    data = response.json()
-    assert "device_groups" not in data
-    assert data["devices"]  # the readable tables are there
+    assert response.status_code == 500
+    assert "devices" not in response.json()
+    assert "content-disposition" not in response.headers

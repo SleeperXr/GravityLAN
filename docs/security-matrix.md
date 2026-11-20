@@ -295,3 +295,4 @@ check a credential of their own, named under *Notes*.
 | GET | `/frontend-vue` | public | public | public | - | always | GravityUI files. |
 | GET | `/frontend-vue/` | public | public | public | - | always | GravityUI files. |
 | GET | `/frontend-vue/{full_path:path}` | public | public | public | - | always | GravityUI files. |
+| GET | `/{full_path:path}` | public | public | public | - | always | Old addresses open GravityUI. |

@@ -18,7 +18,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import DeviceMetrics
@@ -224,6 +224,92 @@ async def load_health_points(
     for dev_points in points.values():
         dev_points.sort(key=lambda p: p.timestamp)
     return points
+
+
+HEALTH_WINDOWS: dict[str, timedelta] = {
+    "24h": timedelta(hours=24),
+    "7d": timedelta(days=7),
+    "30d": timedelta(days=30),
+}
+
+
+async def load_health_window_uptimes(
+    db: AsyncSession,
+    device_ids: list[int],
+    now: datetime,
+    retention: TelemetryRetention | None = None,
+    *,
+    preloaded_period: str | None = None,
+    preloaded_points: dict[int, list[HealthPoint]] | None = None,
+) -> dict[int, dict[str, float | None]]:
+    """Measured probe availability (%) per device for each of the 24h, 7d and 30d windows ending at ``now`` (naive UTC).
+
+    Each window is evaluated on its own tier plan (raw for 24h, hourly/daily rollups for 7d/30d) using
+    bulk SQL GROUP BY queries so 30 days of raw rows are never loaded per device. A rollup bucket whose
+    ``bucket_start < window_start`` (straddling the window's start edge) is excluded by ``_range_filter``
+    so pre-window measurements are never attributed to a newer window. Returns ``None`` for any window
+    that has zero recorded probes.
+    """
+    if not device_ids:
+        return {}
+    retention = retention or await get_retention(db)
+    coverage = await _coverage(db, DeviceHealthSample.timestamp, DeviceHealthRollup)
+    result: dict[int, dict[str, float | None]] = {
+        dev_id: {"24h": None, "7d": None, "30d": None} for dev_id in device_ids
+    }
+
+    for period_key, delta in HEALTH_WINDOWS.items():
+        if period_key == preloaded_period and preloaded_points is not None:
+            for dev_id in device_ids:
+                pts = preloaded_points.get(dev_id, [])
+                total = sum(p.samples for p in pts)
+                if total:
+                    result[dev_id][period_key] = round(sum(p.online for p in pts) / total * 100.0, 1)
+            continue
+
+        w_start = now - delta
+        preferred = choose_resolution(delta, retention)
+        totals: dict[int, list[int]] = defaultdict(lambda: [0, 0])  # [online, samples]
+
+        for segment in plan_segments(w_start, preferred, coverage):
+            if segment.tier == RAW:
+                s = DeviceHealthSample
+                res = await db.execute(
+                    select(
+                        s.device_id,
+                        func.count(),
+                        func.sum(case((s.is_online, 1), else_=0)),
+                    )
+                    .where(s.device_id.in_(device_ids), *_range_filter(s.timestamp, segment))
+                    .group_by(s.device_id)
+                )
+                for dev_id, samples, online in res.all():
+                    totals[dev_id][0] += int(online or 0)
+                    totals[dev_id][1] += int(samples or 0)
+            else:
+                r = DeviceHealthRollup
+                res = await db.execute(
+                    select(
+                        r.device_id,
+                        func.sum(r.samples),
+                        func.sum(r.online),
+                    )
+                    .where(
+                        r.device_id.in_(device_ids),
+                        r.resolution == segment.tier,
+                        *_range_filter(r.bucket_start, segment),
+                    )
+                    .group_by(r.device_id)
+                )
+                for dev_id, samples, online in res.all():
+                    totals[dev_id][0] += int(online or 0)
+                    totals[dev_id][1] += int(samples or 0)
+
+        for dev_id, (online, samples) in totals.items():
+            if samples:
+                result[dev_id][period_key] = round(online / samples * 100.0, 1)
+
+    return result
 
 
 # ---------------------------------------------------------------------------

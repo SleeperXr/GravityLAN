@@ -221,7 +221,11 @@ export const api = {
   setDeviceMac: (id: number, data: import('../types').MacChangeRequest) =>
     request<import('../types').MacChangeResult>(`/api/devices/${id}/mac`, {
       method: 'PUT',
-      body: JSON.stringify({ mac: data.mac, apply_to_shared: Boolean(data.apply_to_shared) }),
+      body: JSON.stringify({
+        mac: data.mac,
+        apply_to_shared: Boolean(data.apply_to_shared),
+        ...(data.targets !== undefined ? { targets: data.targets } : {}),
+      }),
     }),
   dismissMacObservation: (id: number, mac: string) =>
     request<void>(`/api/devices/${id}/mac-observations/dismiss`, {

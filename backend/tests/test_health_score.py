@@ -51,7 +51,7 @@ def _reference_score(dev, uptime, latency, services, agent):
     if dev.missed_scans > 0:
         score -= min(30, dev.missed_scans * 15)
 
-    if uptime.uptime_pct < 99.0:
+    if uptime.uptime_pct is not None and uptime.uptime_pct < 99.0:
         score -= int((99.0 - uptime.uptime_pct) * 0.8)
 
     if latency.avg_ms is not None:
@@ -107,7 +107,7 @@ DEVICES = [
     for alert, online, missed in itertools.product([True, False], [True, False], [0, 1, 3, None])
 ] + [SimpleNamespace(is_online=True, missed_scans=0)]  # no alert_offline attribute: counts as monitored
 
-UPTIMES = [UptimeStats(uptime_pct=p) for p in (100.0, 99.0, 98.9, 50.0, 0.0)]
+UPTIMES = [UptimeStats(uptime_pct=p) for p in (None, 100.0, 99.0, 98.9, 50.0, 0.0)]
 
 LATENCIES = [
     LatencyStats(current_ms=current, avg_ms=avg)

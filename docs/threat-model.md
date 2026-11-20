@@ -30,6 +30,6 @@ This document details the threat modeling, potential attack vectors, security co
 
 | Feature | Homelab/Default Mode | Hardened / Strict Mode | Trade-off Impact |
 | :--- | :--- | :--- | :--- |
-| **SSH Key Policy** | `WarningPolicy` (Auto-accept new keys, log mismatch warning) | `RejectPolicy` (Strict matching against loaded `known_hosts`) | WarningPolicy is highly convenient but vulnerable to MITM. Strict mode shields against MITM but requires manual pre-seeding of keys. |
+| **SSH Key Policy** | DB-backed TOFU (`TofuHostKeyPolicy` / `PinnedHostKeyPolicy` in `ssh_known_hosts`) | `RejectPolicy` (Strict matching against `/home/gravitylan/.ssh/known_hosts`) | TOFU learns the key on first contact and blocks later key changes without manual file seeding, but remains exposed on the very first unverified connection. Strict mode rejects any host not pre-seeded in `known_hosts` (or confirmed via saved key connections). |
 | **CORS Origins** | Strict Origin Isolation (Production) / Configurable List | Custom whitelist only | Limits public web dashboard access unless explicitly permitted by the administrator. |
 | **SQLite Retention** | Configurable Retention (Default 30 days) | Compact historical retention | Keeps databases small and highly performance-optimized, at the cost of losing historical time-series metric tracking for deep retroactive analysis. |

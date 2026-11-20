@@ -12,11 +12,19 @@ GravityLAN provides an official Unraid Community Applications Docker template.
 
 | Parameter | Value | Description |
 |---|---|---|
-| **Network Mode** | `host` | Essential for Layer-2 ARP sweeps, mDNS discovery, and Nmap subnet scans. |
+| **Network Mode** | `host` | Essential for Layer-2 ARP sweeps, mDNS discovery, and Nmap subnet scans (or use `br0` / `br0.<VLAN>` for dedicated container IPs). |
 | **Capabilities** | `NET_RAW`, `NET_ADMIN` | Configured via `<ExtraParams>` for raw socket scanning without `--privileged=true`. |
-| **App Data** | `/mnt/user/appdata/gravitylan` | Mapped to `/app/data` inside the container for SQLite DB, backups, and vault. One container per directory: GravityLAN runs as a single process, so a second container on the same path is not supported. |
+| **App Data** | `/mnt/user/appdata/gravitylan` | Mapped to `/app/data` inside the container for SQLite DB (`gravitylan.db`, `telemetry.db`), automatic pre-migration backups (`data/backups/`), and `ssh_vault.key`. One container per directory: GravityLAN runs as a single process, so a second container on the same path is not supported. |
 | **WebUI Port** | `8000` | Default listening port (`http://[IP]:8000`). |
 | **PUID / PGID** | `99` / `100` | IDs the server runs as (`nobody:users`, the Unraid appdata default). On start the container hands `/app/data` to this owner. |
+| **Timezone (`TZ`)** | `Europe/Berlin` | Container timezone for console log timestamps (advanced view). |
+| **Internal Port (`GRAVITYLAN_PORT`)** | `8000` | Internal HTTP port; adjust together with WebUI Port in host mode (advanced view). |
+| **Allow Insecure Agent Install** | `false` | `GRAVITYLAN_ALLOW_INSECURE_INSTALL`: allow manual one-line agent installation over plain HTTP without `ALLOW_INSECURE=1` (advanced view). |
+| **Docker Host IP** | empty | `GRAVITYLAN_DOCKER_HOST_IP`: LAN IP of the Unraid host so SSH logins to it can retry over the Docker bridge gateway when using macvlan (advanced view). |
+| **Secure Cookies** | `false` | `GRAVITYLAN_SECURE_COOKIES`: mark session cookies `Secure`; enable only when accessing GravityLAN over HTTPS (advanced view). |
+| **Trusted Proxies** | empty | `GRAVITYLAN_TRUSTED_PROXIES`: comma-separated reverse proxy IPs or CIDRs allowed to set `X-Forwarded-For` and `X-Forwarded-Host` (advanced view). |
+| **Extra Origins** | empty | `GRAVITYLAN_CORS_ORIGINS`: JSON list of allowed origins if a reverse proxy rewrites `Host` without `X-Forwarded-Host` (advanced view). |
+| **Debug Mode** | `false` | `GRAVITYLAN_DEBUG`: verbose backend logging (advanced view). |
 
 ## Troubleshooting: `PERMISSION ERROR: Cannot write to data directory '/app/data'`
 

@@ -23,6 +23,7 @@ from app.scanner.presence import (
     update_interface_presence,
 )
 from app.services.cache_service import discovery_cache, dashboard_cache, topology_cache
+from app.services.mac_observations import collect_usable_macs_by_ip, macs_differ
 
 logger = logging.getLogger(__name__)
 
@@ -148,13 +149,18 @@ async def _cleanup_discovered_hosts(db, subnets: list[str], all_alive_ips: set):
 
 
 async def _cleanup_devices(
-    db, subnets: list[str], all_alive_ips: set, offline_threshold: int = DEFAULT_OFFLINE_THRESHOLD
+    db, subnets: list[str], all_alive_ips: set, offline_threshold: int = DEFAULT_OFFLINE_THRESHOLD,
+    alive_macs_by_ip: dict[str, set[str]] | None = None,
 ):
     """Count a miss for devices absent from the scan; they go offline only at the threshold."""
     res_dev = await db.execute(select(Device).where(Device.is_online == True))
     missing = []
     for dev in res_dev.scalars().all():
         if not _ip_in_any_subnet(dev.ip, subnets):
+            continue
+        if alive_macs_by_ip and any(macs_differ(dev.mac, m) for m in alive_macs_by_ip.get(dev.ip, ())):
+            # Another valid MAC answered at dev.ip in this scan: stay neutral (no register_seen,
+            # no TCP fallback against the foreign host, and no register_miss solely for the conflict).
             continue
         if dev.ip in all_alive_ips:
             register_seen(dev)
@@ -179,14 +185,15 @@ async def _cleanup_devices(
 
 
 async def _cleanup_planner_offline(
-    db, subnets: list[str], all_alive_ips: set, offline_threshold: int = DEFAULT_OFFLINE_THRESHOLD
+    db, subnets: list[str], all_alive_ips: set, offline_threshold: int = DEFAULT_OFFLINE_THRESHOLD,
+    alive_macs_by_ip: dict[str, set[str]] | None = None,
 ):
     """
     Delete unmonitored discovered hosts and count misses for devices that
     were absent from the planner scan (exclusive to the planner scanner).
     """
     await _cleanup_discovered_hosts(db, subnets, all_alive_ips)
-    await _cleanup_devices(db, subnets, all_alive_ips, offline_threshold)
+    await _cleanup_devices(db, subnets, all_alive_ips, offline_threshold, alive_macs_by_ip=alive_macs_by_ip)
     await update_interface_presence(db, subnets, all_alive_ips, offline_threshold)
 
 
@@ -270,11 +277,13 @@ async def _scan_and_resolve_subnet(
     return resolved_hosts
 
 
-async def _post_scan_cleanup(subnets: list[str], all_alive_ips: set) -> None:
+async def _post_scan_cleanup(
+    subnets: list[str], all_alive_ips: set, alive_macs_by_ip: dict[str, set[str]] | None = None,
+) -> None:
     """Offline cleanup, mark initial scan done, and invalidate caches."""
     async with async_session() as db:
         offline_threshold = await get_offline_threshold(db)
-        await _cleanup_planner_offline(db, subnets, all_alive_ips, offline_threshold)
+        await _cleanup_planner_offline(db, subnets, all_alive_ips, offline_threshold, alive_macs_by_ip=alive_macs_by_ip)
         from app.models.setting import Setting
         res_done = await db.execute(select(Setting).where(Setting.key == "scanner.initial_scan_done"))
         if res_done.scalar_one_or_none() is None:
@@ -326,6 +335,7 @@ async def run_planner_scan(
 
     total_found = 0
     all_alive_ips = set()
+    alive_macs_by_ip: dict[str, set[str]] = {}
     from app.scanner.sync import sync_hosts_batch
 
     valid_subnets = [s for s in subnets if not s.startswith("169.254.")]
@@ -359,6 +369,8 @@ async def run_planner_scan(
 
         if resolved_hosts:
             await sync_hosts_batch(resolved_hosts, is_planner_scan=True)
+            for ip, macs in collect_usable_macs_by_ip(resolved_hosts).items():
+                alive_macs_by_ip.setdefault(ip, set()).update(macs)
             for h in resolved_hosts:
                 all_alive_ips.add(h["ip"])
                 total_found += 1
@@ -379,7 +391,7 @@ async def run_planner_scan(
 
     # Last point a Stop takes effect: from here on the sweep was complete and the scan completes
     # Offline Cleanup & Cache Invalidation (Exclusive to Planner)
-    await _post_scan_cleanup(subnets, all_alive_ips)
+    await _post_scan_cleanup(subnets, all_alive_ips, alive_macs_by_ip=alive_macs_by_ip)
 
     logger.info(f"Planner: Scan complete. Found {total_found} hosts.")
 

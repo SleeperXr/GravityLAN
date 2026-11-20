@@ -341,11 +341,16 @@ SECURITY_HEADERS = {
 
 @app.middleware("http")
 async def forwarded_for_hint_middleware(request: Request, call_next):
-    # One warning per start when a reverse proxy sends X-Forwarded-For but is not trusted
+    # One warning per start when an untrusted peer sends X-Forwarded-For
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         from app.services.proxy_hint import check_forwarded_for
-        check_forwarded_for(request.client.host if request.client else None, forwarded_for)
+        from app.services.proxy_trust import STATE_FROM_TRUSTED_PROXY, STATE_TRANSPORT_PEER
+
+        from_trusted = getattr(request.state, STATE_FROM_TRUSTED_PROXY, None)
+        transport_peer = getattr(request.state, STATE_TRANSPORT_PEER, None)
+        peer_host = transport_peer if transport_peer is not None else (request.client.host if request.client else None)
+        check_forwarded_for(peer_host, forwarded_for, from_trusted_proxy=from_trusted)
     return await call_next(request)
 
 
@@ -439,6 +444,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Outermost ASGI middleware: capture real transport peer trust before ProxyHeadersMiddleware rewrites client/scheme
+from app.services.proxy_trust import TrustedProxyMiddleware  # noqa: E402
+
+app.add_middleware(TrustedProxyMiddleware)
 
 # --- Register API routers ---
 from app.api.auth import router as auth_router  # noqa: E402
@@ -614,17 +624,20 @@ async def serve_vue_spa(full_path: str):
     raise HTTPException(status_code=404, detail="GravityUI index.html not found")
 
 
+@app.get("/{full_path:path}", dependencies=[policy(callers=PUBLIC, note="old addresses open GravityUI")])
 async def redirect_to_gravityui(full_path: str):
-    """Old addresses of the classic view (bookmarks such as /devices) open GravityUI; unknown API paths stay 404."""
+    """Old addresses of the classic view (bookmarks such as /devices) open GravityUI; unknown API paths stay 404.
+
+    Registered unconditionally (like /frontend-vue/ above) so the route table and security matrix do not
+    depend on whether a frontend build exists on disk; without a build, non-API fallback paths return 404.
+    """
     _reject_unsafe_path(full_path)
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="API endpoint not found")
+    if not _resolve_frontend_vue_dir().exists():
+        raise HTTPException(status_code=404, detail="Not Found")
     return RedirectResponse(GRAVITYUI_PATH, status_code=307)
 
 
 if _resolve_frontend_vue_dir().exists():
-    # Registered last, so every API route, /docs and the GravityUI routes above win
-    app.get("/{full_path:path}", dependencies=[policy(callers=PUBLIC, note="old addresses open GravityUI")])(
-        redirect_to_gravityui
-    )
     logger.info("Serving GravityUI from: %s", _resolve_frontend_vue_dir())

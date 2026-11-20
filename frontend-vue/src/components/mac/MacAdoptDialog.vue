@@ -25,38 +25,71 @@ const props = withDefaults(
   }>(),
   { device: null, defaultScope: 'single' },
 );
-const emit = defineEmits<{ adopted: [changedIds: number[]] }>();
+const emit = defineEmits<{ adopted: [changedIds: number[]]; refresh: [] }>();
 
 const { showToast } = useToast();
 const scope = ref<'single' | 'all'>('single');
 const submitting = ref(false);
+// Frozen snapshot taken when the dialog opens: background refreshes must never silently expand
+// or alter the target set the user reviewed and confirmed.
+const snapshotGroup = ref<MacConflictGroup | null>(null);
+const snapshotDevice = ref<MacConflictDevice | null>(null);
 
-const targetDevice = computed<MacConflictDevice | null>(() => props.device ?? props.group?.devices[0] ?? null);
-const isSharedGroup = computed(() => (props.group ? hasSharedDevices(props.group) : false));
+const targetDevice = computed<MacConflictDevice | null>(() => snapshotDevice.value ?? snapshotGroup.value?.devices[0] ?? null);
+const isSharedGroup = computed(() => (snapshotGroup.value ? hasSharedDevices(snapshotGroup.value) : false));
 
 watch(
-  () => [open.value, props.group, props.defaultScope] as const,
-  ([isOpen, group, defScope]) => {
-    if (!isOpen || !group) return;
-    scope.value = hasSharedDevices(group) ? defScope : 'single';
+  () => open.value,
+  (isOpen) => {
+    if (!isOpen) return;
+    if (!props.group) {
+      snapshotGroup.value = null;
+      snapshotDevice.value = null;
+      return;
+    }
+    snapshotGroup.value = {
+      ...props.group,
+      devices: props.group.devices.map((d) => ({ ...d })),
+    };
+    snapshotDevice.value = props.device
+      ? { ...props.device }
+      : snapshotGroup.value.devices[0]
+        ? { ...snapshotGroup.value.devices[0] }
+        : null;
+    scope.value = hasSharedDevices(snapshotGroup.value) ? props.defaultScope : 'single';
   },
   { immediate: true },
 );
 
 async function submit() {
-  if (!props.group || !targetDevice.value || submitting.value) return;
+  if (!snapshotGroup.value || !targetDevice.value || submitting.value) return;
   submitting.value = true;
   try {
-    const payload = buildAdoptPayload(props.group, scope.value === 'all');
+    const payload = buildAdoptPayload(snapshotGroup.value, scope.value === 'all', targetDevice.value);
     const result = await api.setDeviceMac(targetDevice.value.id, payload);
-    const count = result.changed_device_ids.length;
-    showToast('success', t('gv.mac_conflicts.adopt_confirm'), t('gv.mac_conflicts.adopt_success', { count: Math.max(count, 1) }));
+    const changed = result.changed_device_ids.length;
+    const skipped = result.skipped_device_ids?.length ?? 0;
+    if (changed > 0 && skipped === 0) {
+      showToast('success', t('gv.mac_conflicts.adopt_confirm'), t('gv.mac_conflicts.adopt_success', { count: changed }));
+      emit('adopted', result.changed_device_ids);
+    } else if (changed > 0 && skipped > 0) {
+      showToast(
+        'info',
+        t('gv.mac_conflicts.adopt_confirm'),
+        t('gv.mac_conflicts.adopt_partial', { changed, skipped }),
+      );
+      emit('adopted', result.changed_device_ids);
+    } else {
+      showToast('info', t('gv.mac_conflicts.adopt_confirm'), t('gv.mac_conflicts.adopt_none'));
+    }
     open.value = false;
-    emit('adopted', result.changed_device_ids);
   } catch (err) {
     showToast('error', t('notifications.save_failed'), (err as Error).message);
+    // Close so a stale snapshot cannot be silently re-confirmed; parent refreshes current state.
+    open.value = false;
   } finally {
     submitting.value = false;
+    emit('refresh');
   }
 }
 </script>
@@ -69,16 +102,16 @@ async function submit() {
     size="md"
     top
   >
-    <div v-if="group && targetDevice" class="space-y-4">
+    <div v-if="snapshotGroup && targetDevice" class="space-y-4">
       <div class="flex flex-wrap items-center gap-2 rounded-md border border-line bg-raised px-3.5 py-3 font-mono text-xs tabular">
         <div class="min-w-0">
           <span class="block font-sans text-micro text-fg-subtle">{{ t('gv.mac_conflicts.documented_mac') }}</span>
-          <span class="text-fg-muted">{{ group.documented_mac || t('gv.mac_conflicts.none') }}</span>
+          <span class="text-fg-muted">{{ snapshotGroup.documented_mac || t('gv.mac_conflicts.none') }}</span>
         </div>
         <ArrowRight class="size-4 shrink-0 text-fg-subtle" aria-hidden="true" />
         <div class="min-w-0">
           <span class="block font-sans text-micro text-fg-subtle">{{ t('gv.mac_conflicts.observed_mac') }}</span>
-          <span class="font-semibold text-fg">{{ group.observed_mac }}</span>
+          <span class="font-semibold text-fg">{{ snapshotGroup.observed_mac }}</span>
         </div>
       </div>
 
@@ -97,14 +130,14 @@ async function submit() {
             :class="scope === 'all' ? 'border-accent/50 bg-accent/10 text-fg' : 'border-line bg-raised text-fg-muted hover:border-line-strong'"
           >
             <input v-model="scope" type="radio" name="mac-adopt-scope" value="all" class="mt-0.5 accent-accent" />
-            <span class="min-w-0 flex-1">{{ t('gv.mac_conflicts.adopt_all_shared', { count: group.devices.length }) }}</span>
+            <span class="min-w-0 flex-1">{{ t('gv.mac_conflicts.adopt_all_shared', { count: snapshotGroup.devices.length }) }}</span>
           </label>
         </fieldset>
 
         <div>
           <p class="gl-eyebrow mb-1.5">{{ t('gv.mac_conflicts.adopt_affected_devices') }}</p>
           <ul class="max-h-44 divide-y divide-line overflow-y-auto rounded-md border border-line bg-raised">
-            <li v-for="dev in group.devices" :key="dev.id" class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
+            <li v-for="dev in snapshotGroup.devices" :key="dev.id" class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
               <span class="font-medium text-fg">{{ dev.name }}</span>
               <span class="font-mono text-fg-subtle tabular">{{ dev.ip }}</span>
             </li>

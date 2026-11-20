@@ -46,11 +46,11 @@ async function dismiss(entry: DeviceMacConflict) {
   try {
     await api.dismissMacObservation(entry.device.id, entry.group.observed_mac);
     showToast('success', t('gv.mac_conflicts.dismiss_title'), t('gv.mac_conflicts.dismiss_success'));
-    emit('resolved');
   } catch (err) {
     showToast('error', t('common.error'), (err as Error).message);
   } finally {
     dismissingKey.value = null;
+    emit('resolved');
   }
 }
 </script>
@@ -115,7 +115,7 @@ async function dismiss(entry: DeviceMacConflict) {
       :group="adoptGroup"
       :device="adoptDevice"
       default-scope="single"
-      @adopted="emit('resolved')"
+      @refresh="emit('resolved')"
     />
   </div>
 </template>

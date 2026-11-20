@@ -232,51 +232,17 @@ def _host_key(scheme: str, netloc: str) -> str:
     return f"{host}:{port or _DEFAULT_PORTS.get(scheme, '')}"
 
 
-# uvicorn's FORWARDED_ALLOW_IPS when GRAVITYLAN_TRUSTED_PROXIES is empty (see the Dockerfile)
-_DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1"
-
-
-def _trusted_proxy_networks() -> list | None:
-    """The networks of GRAVITYLAN_TRUSTED_PROXIES (localhost when empty); None for "*" (every address)."""
-    import ipaddress
-
-    raw = (settings.trusted_proxies or "").strip() or _DEFAULT_TRUSTED_PROXIES
-    networks = []
-    for entry in raw.split(","):
-        entry = entry.strip()
-        if entry == "*":
-            return None
-        try:
-            networks.append(ipaddress.ip_network(entry, strict=False))
-        except ValueError:
-            continue  # a host name or a typo trusts nothing
-    return networks
+from app.services.proxy_trust import STATE_FROM_TRUSTED_PROXY
 
 
 def _from_trusted_proxy(websocket: WebSocket) -> bool:
-    """Whether the handshake came through a proxy in GRAVITYLAN_TRUSTED_PROXIES.
+    """Whether TrustedProxyMiddleware verified that the original transport peer is a trusted proxy.
 
-    uvicorn (--proxy-headers) has already replaced the client address with the one from
-    X-Forwarded-For when the connecting proxy is trusted. So the handshake came through a trusted
-    proxy when its client address is one itself (a proxy that sends no X-Forwarded-For), or when
-    that address was taken from X-Forwarded-For, which uvicorn only does for a trusted proxy.
+    Only an explicit ``gl_from_trusted_proxy is True`` recorded by TrustedProxyMiddleware allows
+    ``X-Forwarded-Host`` to count. False or missing middleware state ignores ``X-Forwarded-Host``.
     """
-    import ipaddress
-
-    from app.services.proxy_hint import _host
-
-    networks = _trusted_proxy_networks()
-    if networks is None:
-        return True
-    client = websocket.client.host if getattr(websocket, "client", None) else None
-    try:
-        address = ipaddress.ip_address(client or "")
-    except ValueError:
-        return False
-    if any(address in network for network in networks):
-        return True
-    forwarded_for = websocket.headers.get("x-forwarded-for") or ""
-    return client in {_host(entry) for entry in forwarded_for.split(",") if entry.strip()}
+    state = getattr(websocket, "state", None)
+    return bool(state is not None and getattr(state, STATE_FROM_TRUSTED_PROXY, False) is True)
 
 
 def websocket_origin_allowed(websocket: WebSocket) -> bool:

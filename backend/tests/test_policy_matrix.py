@@ -11,16 +11,20 @@
 
 import hashlib
 import importlib.util
+import json
 import re
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 from fastapi import routing
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.api.policy import API_TOKEN, MASTER, SESSION, iter_route_policies
+from app.api.policy import API_TOKEN, MASTER, SESSION, STATE_POLICY_PASSED, iter_route_policies
+from app.database import get_db
 from app.main import app
 from app.models.api_token import ApiToken
 from app.models.setting import Setting
@@ -150,12 +154,83 @@ def _expected(p, caller: str, done: bool):
     raise AssertionError(caller)
 
 
-def _outcome(status: int, want):
+def _outcome(status: int, want, *, policy_passed: bool = False):
+    """Evaluate a matrix response strictly.
+
+    - 5xx is never allowed (neither 'ok' nor 'refused').
+    - 'refused' (routes with their own credential check) requires an actual 401/403 denial,
+      never a structural 422/404/400.
+    - 'ok' requires either the endpoint stub (299) or a 422 validation error, AND proof that
+      enforce_policy completed without raising for this exact request (policy_passed=True).
+    """
+    if status >= 500:
+        return status
     if want == "refused":
-        return "refused" if 400 <= status < 500 else status
+        return "refused" if status in (401, 403) else status
     if status in (401, 403):
         return status
-    return "ok"  # served by the stub (or a 404/422 the request itself caused)
+    if status in (STUB_STATUS, 422) and policy_passed:
+        return "ok"
+    return status
+
+
+# Structurally valid payloads for PUBLIC routes that check their own credential (so they reach
+# their credential check and return 401/403 instead of failing schema validation with 422).
+_VALID_AGENT_REPORT = {
+    "agent_version": "0.1.0",
+    "timestamp": 1700000000.0,
+    "cpu_percent": 1.0,
+    "ram": {"total_mb": 1024, "used_mb": 128, "percent": 12.5},
+}
+
+
+def _credential_request_kwargs(entry) -> dict:
+    if entry.method == "POST" and entry.path == "/api/agent/report":
+        # Structurally valid body + syntactically valid Authorization header with an invalid token
+        # so the request reaches the real token verification (401) instead of schema 422.
+        return {"json": _VALID_AGENT_REPORT, "headers": {"Authorization": "Bearer invalid-agent-token"}}
+    return {}
+
+
+@pytest_asyncio.fixture
+async def matrix_call(db):
+    """Issue a single HTTP request and return (Response, policy_passed) using per-request ASGI state."""
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async def call(
+            method: str,
+            url: str,
+            *,
+            headers: dict | None = None,
+            cookies: dict | None = None,
+            json_body: dict | None = None,
+            files: dict | None = None,
+        ):
+            # Per-request container: zero shared/global state between calls
+            observed = {"passed": False}
+
+            async def observing_app(scope, receive, send):
+                try:
+                    await app(scope, receive, send)
+                finally:
+                    observed["passed"] = bool(scope.get("state", {}).get(STATE_POLICY_PASSED))
+
+            transport = ASGITransport(app=observing_app)
+            async with AsyncClient(transport=transport, base_url="http://test", cookies=cookies or {}) as ac:
+                kwargs: dict = {"headers": headers or {}}
+                if json_body is not None:
+                    kwargs["json"] = json_body
+                if files is not None:
+                    kwargs["files"] = files
+                res = await ac.request(method, url, **kwargs)
+            return res, observed["passed"]
+
+        yield call
+    finally:
+        app.dependency_overrides.clear()
 
 
 def _request_args(p, caller: str) -> tuple[dict, dict]:
@@ -202,8 +277,49 @@ def stub_endpoints(monkeypatch):
     monkeypatch.setattr(routing, "run_endpoint_function", run)
 
 
+@pytest.mark.parametrize(
+    ("status", "want", "passed", "expected"),
+    [
+        (500, "ok", True, 500),
+        (502, "ok", True, 502),
+        (503, "refused", True, 503),
+        (404, "ok", True, 404),
+        (405, "ok", True, 405),
+        (307, "ok", True, 307),
+        (422, "ok", False, 422),
+        (422, "ok", True, "ok"),
+        (STUB_STATUS, "ok", False, STUB_STATUS),
+        (STUB_STATUS, "ok", True, "ok"),
+        (401, "refused", True, "refused"),
+        (403, "refused", True, "refused"),
+        (422, "refused", True, 422),
+        (404, "refused", True, 404),
+        (400, "refused", True, 400),
+    ],
+)
+def test_outcome_rejects_5xx_404_and_unverified_422(status, want, passed, expected):
+    assert _outcome(status, want, policy_passed=passed) == expected
+
+
 @pytest.mark.asyncio
-async def test_every_http_route_answers_every_caller_as_its_policy_says(client, db, real_step_up, stub_endpoints):
+async def test_denied_policy_with_invalid_body_never_counts_as_allowed_422(db, real_step_up, stub_endpoints, matrix_call):
+    """A request refused by policy must return 401/403 with policy_passed=False even when its body is invalid."""
+    await _seed(db)
+    await _set_setup(db, True)
+
+    res_anon, passed_anon = await matrix_call("PUT", "/api/devices/1/mac", json_body={"mac": 123})
+    assert res_anon.status_code == 401 and passed_anon is False
+
+    res_ro, passed_ro = await matrix_call(
+        "PUT", "/api/devices/1/mac",
+        headers={"Authorization": f"Bearer {_token_name('devices:read')}"},
+        json_body={"mac": 123},
+    )
+    assert res_ro.status_code == 403 and passed_ro is False
+
+
+@pytest.mark.asyncio
+async def test_every_http_route_answers_every_caller_as_its_policy_says(db, real_step_up, stub_endpoints, matrix_call):
     await _seed(db)
     mismatches, calls = [], 0
     for done in (False, True):
@@ -214,23 +330,194 @@ async def test_every_http_route_answers_every_caller_as_its_policy_says(client, 
                 continue  # answered by the wizard routes themselves (test_setup_hardening)
             callers = CALLERS_AFTER_SETUP if done else CALLERS_DURING_SETUP
             if p.credential:
-                callers = ("anon",)  # without its credential; the route's own tests cover the rest
+                callers = ("anon",)  # without its credential; structurally valid request must get 401/403
+            extra = _credential_request_kwargs(entry) if p.credential else {}
             for caller in callers:
                 headers, cookies = _request_args(p, caller)
-                client.cookies.clear()
-                for name, value in cookies.items():
-                    client.cookies.set(name, value)
-                res = await client.request(entry.method, _url(entry.path), headers=headers)
+                if extra.get("headers"):
+                    headers = {**headers, **extra["headers"]}
+                res, policy_passed = await matrix_call(
+                    entry.method, _url(entry.path),
+                    headers=headers, cookies=cookies, json_body=extra.get("json"),
+                )
                 calls += 1
                 want = _expected(p, caller, done)
-                got = _outcome(res.status_code, want)
+                got = _outcome(res.status_code, want, policy_passed=policy_passed)
                 if want != got:
-                    mismatches.append((done, entry.method, entry.path, caller, want, res.status_code, res.text[:120]))
+                    mismatches.append((
+                        done, entry.method, entry.path, caller, want, res.status_code, policy_passed, res.text[:120],
+                    ))
                 elif caller == "session_unconfirmed" and p.step_up and done:
                     assert res.headers.get("X-Step-Up") == p.step_up, entry.path
-    client.cookies.clear()
+                elif want in (401, 403):
+                    assert policy_passed is False, (entry.method, entry.path, caller)
     assert calls > 1000
     assert mismatches == []
+
+
+# --- independent critical security boundaries (not derived from entry.policy) ---------------------
+
+@pytest.mark.asyncio
+async def test_critical_security_boundaries_independent_of_policy_declarations(
+    db, real_step_up, stub_endpoints, matrix_call, tmp_path, monkeypatch,
+):
+    """Hardcoded security expectations for high-risk routes using explicitly constructed credentials
+    independent of entry.policy, so an accidental policy downgrade cannot pass silently.
+    """
+    from sqlalchemy import create_engine
+    from app.config import settings as app_config
+    from app.database import Base
+
+    db.add_all([
+        Setting(key="api.master_token", value=MASTER_TOKEN),
+        Setting(key="setup.complete", value="true"),
+        ApiToken(
+            name="indep-write",
+            token_hash=hashlib.sha256(b"indep-write").hexdigest(),
+            prefix="indep-wr",
+            scopes="devices:write,settings:write,agent:write,network:write,scanner:start",
+            is_active=True,
+        ),
+        ApiToken(
+            name="indep-readonly",
+            token_hash=hashlib.sha256(b"indep-readonly").hexdigest(),
+            prefix="indep-ro",
+            scopes="devices:read,settings:read,agent:read,network:read,scanner:read",
+            is_active=True,
+        ),
+    ])
+    await db.commit()
+
+    confirmed_sid = session_store.create_session(user_agent=None)
+    for cls in stepup.CLASSES:
+        stepup.store.grant(confirmed_sid, cls, 600)
+    unconfirmed_sid = session_store.create_session(user_agent=None)
+
+    callers = {
+        "anon": ({}, {}),
+        "write_token": ({"Authorization": "Bearer indep-write"}, {}),
+        "readonly_token": ({"Authorization": "Bearer indep-readonly"}, {}),
+        "master": ({"Authorization": f"Bearer {MASTER_TOKEN}"}, {}),
+        "session_unconfirmed": ({}, {"gravitylan_token": unconfirmed_sid}),
+        "session_confirmed": ({}, {"gravitylan_token": confirmed_sid}),
+    }
+
+    # (method, path, caller, expected_status_or_ok, expected_step_up_header)
+    boundaries = [
+        # Instance-critical routes: no anon, no API token (even with write scopes), step-up=instance
+        ("GET", "/api/backup/export", "anon", 401, None),
+        ("GET", "/api/backup/export", "write_token", 403, None),
+        ("GET", "/api/backup/export", "session_unconfirmed", 403, "instance"),
+        ("GET", "/api/backup/export", "session_confirmed", "ok", None),
+        ("GET", "/api/backup/export", "master", "ok", None),
+        ("POST", "/api/backup/import", "anon", 401, None),
+        ("POST", "/api/backup/import", "write_token", 403, None),
+        ("POST", "/api/backup/import", "session_unconfirmed", 403, "instance"),
+        ("POST", "/api/backup/import", "session_confirmed", "ok", None),
+        ("POST", "/api/settings/reset-db", "anon", 401, None),
+        ("POST", "/api/settings/reset-db", "write_token", 403, None),
+        ("POST", "/api/settings/reset-db", "session_unconfirmed", 403, "instance"),
+        # Remote execution / agent adoption: browser session only (no anon, no API token, no master), step-up=remote
+        ("POST", "/api/agent/deploy/1", "anon", 401, None),
+        ("POST", "/api/agent/deploy/1", "write_token", 403, None),
+        ("POST", "/api/agent/deploy/1", "master", 403, None),
+        ("POST", "/api/agent/deploy/1", "session_unconfirmed", 403, "remote"),
+        ("POST", "/api/agent/deploy/1", "session_confirmed", "ok", None),
+        ("POST", "/api/agent/uninstall/1", "master", 403, None),
+        ("POST", "/api/agent/adopt/1", "master", 403, None),
+        ("POST", "/api/agent/adopt/1", "write_token", 403, None),
+        ("POST", "/api/agent/adopt/1", "session_unconfirmed", 403, "remote"),
+        ("POST", "/api/agent/adopt/1", "session_confirmed", "ok", None),
+        ("POST", "/api/ssh/sessions/prepare", "master", 403, None),
+        ("POST", "/api/ssh/sessions/prepare", "write_token", 403, None),
+        # Credentials management: no API token, step-up=credentials
+        ("POST", "/api/auth/tokens", "anon", 401, None),
+        ("POST", "/api/auth/tokens", "write_token", 403, None),
+        ("POST", "/api/auth/tokens", "session_unconfirmed", 403, "credentials"),
+        ("POST", "/api/auth/tokens", "session_confirmed", "ok", None),
+        # Read-only API token must not write devices
+        ("GET", "/api/devices", "readonly_token", "ok", None),
+        ("PUT", "/api/devices/1/mac", "readonly_token", 403, None),
+        ("PUT", "/api/devices/1/mac", "write_token", "ok", None),
+        ("DELETE", "/api/devices/1", "readonly_token", 403, None),
+        ("DELETE", "/api/devices/1", "write_token", "ok", None),
+    ]
+
+    for method, path, caller_name, want, want_step_up in boundaries:
+        headers, cookies = callers[caller_name]
+        res, passed = await matrix_call(method, path, headers=headers, cookies=cookies)
+        got = _outcome(res.status_code, want, policy_passed=passed)
+        assert got == want, (method, path, caller_name, want, res.status_code, passed, res.text[:120])
+        if want_step_up is not None:
+            assert res.headers.get("X-Step-Up") == want_step_up, (method, path, caller_name)
+
+    # Setup gate check: closed routes are 403 during setup; /api/setup/restore accepts a structurally
+    # valid backup during setup (200) and refuses it with 403 once setup is complete.
+    backup_file = tmp_path / "setup_boundary.db"
+    sync_engine = create_engine(f"sqlite:///{backup_file}")
+    Base.metadata.create_all(sync_engine, tables=[t for t in Base.metadata.sorted_tables if t.schema is None])
+    sync_engine.dispose()
+    monkeypatch.setattr(app_config, "database_url", f"sqlite+aiosqlite:///{backup_file}")
+    valid_backup = json.dumps({"settings": [{"key": "scan_interval", "value": "15"}]}).encode()
+
+    await _set_setup(db, False)
+    res_closed, passed_closed = await matrix_call("GET", "/api/backup/export")
+    assert res_closed.status_code == 403 and passed_closed is False
+
+    # Restore real endpoint function for POST /api/setup/restore to verify real 200 vs 403 behavior
+    monkeypatch.undo()
+    monkeypatch.setattr(app_config, "database_url", f"sqlite+aiosqlite:///{backup_file}")
+    res_open, passed_open = await matrix_call(
+        "POST", "/api/setup/restore", files={"file": ("backup.json", valid_backup, "application/json")},
+    )
+    assert res_open.status_code == 200 and passed_open is True
+
+    await _set_setup(db, True)
+    res_done, _ = await matrix_call(
+        "POST", "/api/setup/restore", files={"file": ("backup.json", valid_backup, "application/json")},
+    )
+    assert res_done.status_code == 403
+
+
+# --- deterministic catch-all route (with and without frontend build) ------------------------------
+
+@pytest.mark.asyncio
+async def test_catch_all_route_with_and_without_frontend_build(matrix_call, tmp_path, monkeypatch):
+    """Real app routing for /{full_path:path} with simulated build present vs absent."""
+    import app.main as main_mod
+
+    build_dir = tmp_path / "dist"
+    build_dir.mkdir()
+    (build_dir / "index.html").write_text("<!doctype html><title>GravityUI</title>", encoding="utf-8")
+
+    # 1. With build present: legacy UI paths redirect to /frontend-vue/, no redirect loop, unknown API stays 404
+    monkeypatch.setattr(main_mod, "_resolve_frontend_vue_dir", lambda: build_dir)
+    res_ui, passed_ui = await matrix_call("GET", "/devices")
+    assert res_ui.status_code == 307 and res_ui.headers["location"] == "/frontend-vue/" and passed_ui is True
+
+    res_root, _ = await matrix_call("GET", "/frontend-vue/")
+    assert res_root.status_code == 200
+
+    res_api_404, _ = await matrix_call("GET", "/api/does-not-exist")
+    assert res_api_404.status_code == 404
+
+    res_health, _ = await matrix_call("GET", "/api/health")
+    assert res_health.status_code == 200
+
+    # 2. Without build present: fallback returns 404 (not 307), unknown API stays 404, known routes keep working
+    missing_dir = tmp_path / "no-dist"
+    monkeypatch.setattr(main_mod, "_resolve_frontend_vue_dir", lambda: missing_dir)
+    res_ui_missing, passed_missing = await matrix_call("GET", "/devices")
+    assert res_ui_missing.status_code == 404 and passed_missing is True
+
+    res_api_missing, _ = await matrix_call("GET", "/api/does-not-exist")
+    assert res_api_missing.status_code == 404
+
+    res_health_missing, _ = await matrix_call("GET", "/api/health")
+    assert res_health_missing.status_code == 200
+
+    res_post_unknown, _ = await matrix_call("POST", "/unknown-non-api")
+    assert res_post_unknown.status_code == 405
 
 
 # --- WebSockets -------------------------------------------------------------------------------------

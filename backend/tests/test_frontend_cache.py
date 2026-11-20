@@ -56,10 +56,18 @@ async def test_root_reports_status_without_a_build(monkeypatch, tmp_path, client
 # --- old addresses of the classic view --------------------------------------------------------
 
 @pytest.mark.parametrize("path", ["devices", "settings/network", "assets/index-abc123.js", "static/index.html"])
-async def test_old_addresses_redirect_to_gravityui(path):
+async def test_old_addresses_redirect_to_gravityui(gravityui, path):
     response = await main.redirect_to_gravityui(path)
     assert response.status_code == 307
     assert response.headers["location"] == "/frontend-vue/"
+
+
+@pytest.mark.parametrize("path", ["devices", "settings/network", "assets/index-abc123.js", "static/index.html"])
+async def test_old_addresses_return_404_without_build(monkeypatch, tmp_path, path):
+    monkeypatch.setattr(main, "_resolve_frontend_vue_dir", lambda: tmp_path / "missing")
+    with pytest.raises(HTTPException) as exc:
+        await main.redirect_to_gravityui(path)
+    assert exc.value.status_code == 404
 
 
 async def test_unknown_api_paths_stay_not_found():
@@ -88,7 +96,7 @@ async def test_retired_default_frontend_key_is_dropped_not_refused(client, admin
 
 
 async def test_old_bookmarks_redirect_through_the_app(gravityui, monkeypatch, client):
-    """The catch-all is registered at import only when a build exists, so add it to a fresh app here."""
+    """Exercise the catch-all route through FastAPI routing when a build exists."""
     from fastapi import FastAPI
     from httpx import ASGITransport, AsyncClient
 

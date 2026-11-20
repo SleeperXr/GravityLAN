@@ -359,11 +359,15 @@
       "adopt_confirm": "MAC übernehmen",
       "adopt_success_one": "MAC-Adresse wurde aktualisiert.",
       "adopt_success_other": "MAC-Adresse wurde für {{count}} Geräte aktualisiert.",
+      "adopt_partial": "MAC-Adresse für {{changed}} Gerät(e) aktualisiert; {{skipped}} übersprungen (Zustand geändert oder Konflikt nicht mehr offen).",
+      "adopt_none": "Keine Geräte aktualisiert – der Konflikt ist nicht mehr offen oder der Gerätezustand hat sich inzwischen geändert.",
       "dismiss_title": "MAC-Konflikt verwerfen",
-      "dismiss_message": "Dokumentierte MAC behalten? Die beobachtete MAC {{mac}} wird für dieses Gerät künftig nicht mehr gemeldet.",
-      "dismiss_group_message": "Dokumentierte MAC behalten? Die beobachtete MAC {{mac}} wird für alle {{count}} Geräte dieser Gruppe künftig nicht mehr gemeldet.",
+      "dismiss_message": "Dokumentierte MAC behalten? Die beobachtete MAC {{mac}} wird im aktuellen Kontext (IP/MAC) ignoriert und nicht mehr gemeldet; Erreichbarkeitsprüfungen (Ping/Port) werten das Gerät danach wieder normal.",
+      "dismiss_group_message": "Dokumentierte MAC behalten? Die beobachtete MAC {{mac}} wird im aktuellen Kontext (IP/MAC) für alle {{count}} Geräte dieser Gruppe ignoriert und nicht mehr gemeldet; Erreichbarkeitsprüfungen (Ping/Port) werten die Geräte danach wieder normal.",
       "dismiss_confirm": "Verwerfen",
       "dismiss_success": "MAC-Konflikt verworfen.",
+      "dismiss_partial": "Verwerfung für {{confirmed}} von {{total}} Geräten bestätigt; {{failed}} fehlgeschlagen. Ansicht wurde aktualisiert.",
+      "dismiss_failed": "MAC-Konflikt konnte nicht verworfen werden.",
       "manual_button": "MAC korrigieren",
       "manual_title": "MAC-Adresse manuell korrigieren",
       "manual_desc": "Die Identität des Geräts bleibt unverändert (gleiche Geräte-ID, Eintrag im Verlauf).",
@@ -540,7 +544,7 @@
         "title": "Agent installieren und aktualisieren",
         "summary": "Ein Python-Skript pro Linux-Host liefert CPU, RAM, Platten, Netz und Temperatur.",
         "steps": "Öffne das Gerät im Geräte-Editor, Tab „Agent“.\nÜber SSH: Wähle eine gespeicherte Schlüssel-Verbindung oder gib Benutzer und Passwort ein. Eingegebene Zugangsdaten werden nur für diese Anfrage genutzt.\nOder kopiere den Einzeiler-Installer und führe ihn auf dem Host aus. Er enthält einen Einmalcode, der 30 Minuten gilt.\nOhne HTTPS bricht der Einzeiler ab (siehe „HTTPS mit Reverse Proxy“); die Installation über SSH funktioniert auch so.\nUpdates: Das Agent-Update-Center aktualisiert alle veralteten Agents zusammen, und ein offenes SSH-Terminal bietet einen Button „Agent-Update“.",
-        "hint": "Die Agent-Version ändert sich nur, wenn sich das Agent-Skript ändert. Nicht jedes Server-Update braucht ein Agent-Update."
+        "hint": "Die 24-Stunden-Balken auf der Agents-Seite zeigen die Meldequote (eingetroffene gegen erwartete Berichte seit Token-Registrierung); Stunden ohne Meldung erscheinen als „Keine Daten“. Die Agent-Version ändert sich nur, wenn sich das Agent-Skript ändert."
       },
       "updates": {
         "title": "Paket-Updates",
@@ -557,7 +561,7 @@
       "health": {
         "title": "Health-Radar",
         "summary": "Verfügbarkeit, Latenz und Vorfälle aller Geräte auf einen Blick.",
-        "steps": "Wähle den Zeitraum: 24 Stunden, 7 oder 30 Tage.\nDie Tabelle zeigt pro Gerät Status, Score, Uptime-Balken, Latenz mit Jitter und Dienste; ein Klick öffnet die Details.\nIm Detail siehst du den Latenzverlauf, Dienste mit SSL-Ablauf, Agent-Werte und Vorfälle.\nSchalte für Clients wie Fernseher oder Laptop die 24/7-Überwachung aus. Dann gelten sie im Ruhezustand als Standby statt als Ausfall.",
+        "steps": "Wähle den Zeitraum: 24 Stunden, 7 oder 30 Tage.\nDie Tabelle zeigt pro Gerät Status, Score, Verfügbarkeitsbalken, Latenz mit Jitter und Dienste; Abschnitte ohne Proben erscheinen neutral als „Keine Daten“. Ein Klick öffnet die Details.\nIm Detail siehst du die gemessene 24h-, 7d- und 30d-Verfügbarkeit, den Latenzverlauf, Dienste mit SSL-Ablauf, Agent-Werte und Vorfälle.\nSchalte für Clients wie Fernseher oder Laptop die 24/7-Überwachung aus. Dann gelten sie im Ruhezustand als Standby statt als Ausfall.",
         "hint": "Die Vorfälle der letzten 7 Tage stehen unten als Zeitleiste; ein Klick auf eine Karte öffnet das Gerät."
       },
       "telemetry": {

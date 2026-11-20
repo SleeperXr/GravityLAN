@@ -86,7 +86,7 @@ async function adopt(agent: AgentRow) {
 
 const toneText = { ok: 'text-fg-muted', warn: 'text-warn-text', danger: 'text-danger-text' } as const;
 const toneBar = { ok: 'bg-mark-ok', warn: 'bg-mark-warn', danger: 'bg-mark-danger' } as const;
-const uptimeText = (pct: number) => (pct < 80 ? 'text-danger-text' : pct < 95 ? 'text-warn-text' : 'text-accent-text');
+const uptimeText = (pct: number | null) => (pct === null ? 'text-fg-subtle' : pct < 80 ? 'text-danger-text' : pct < 95 ? 'text-warn-text' : 'text-accent-text');
 const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.uptime_history : Array<number | null>(24).fill(null));
 </script>
 
@@ -198,7 +198,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
             </span>
 
             <span class="flex items-center gap-2.5">
-              <span class="w-16 shrink-0 font-mono text-data tabular" :class="uptimeText(agent.uptime_pct)">{{ agent.uptime_pct.toFixed(1) }} %</span>
+              <span class="w-16 shrink-0 font-mono text-data tabular" :class="uptimeText(agent.uptime_pct)">{{ agent.uptime_pct === null ? '–' : `${agent.uptime_pct.toFixed(1)} %` }}</span>
               <StatusMonitor class="flex-1" compact :focusable="false" :up-at="AGENT_HOUR_FULL_PCT" :bars="hours(agent)" :span-hours="24" :uptime="agent.uptime_pct" :title="agent.hostname" />
             </span>
 

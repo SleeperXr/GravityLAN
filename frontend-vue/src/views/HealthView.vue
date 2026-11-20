@@ -17,7 +17,7 @@ import Sparkline from '@/components/health/Sparkline.vue';
 import IncidentList from '@/components/health/IncidentList.vue';
 import HealthDetailSheet from '@/components/health/HealthDetailSheet.vue';
 import DeviceEditor from '@/components/editor/DeviceEditor.vue';
-import { hasAgentWarning, ms, periodHours, scoreText, scoreTone, sslWarnings } from '@/components/health/healthModel';
+import { compareUptime, hasAgentWarning, ms, pct, periodHours, scoreText, scoreTone, sslWarnings } from '@/components/health/healthModel';
 import { t } from '@/i18n';
 import ResilienceCard from '@/components/health/ResilienceCard.vue';
 import { queryCodecs, useQueryState } from '@/composables/useQueryState';
@@ -87,7 +87,10 @@ const rows = computed(() => {
   list.sort((a, b) => {
     if (sortBy.value === 'score') return (a.health_score - b.health_score) * dir;
     if (sortBy.value === 'latency') return ((a.latency.avg_ms ?? 999999) - (b.latency.avg_ms ?? 999999)) * dir;
-    if (sortBy.value === 'uptime') return (a.uptime.uptime_pct - b.uptime.uptime_pct) * dir;
+    if (sortBy.value === 'uptime') {
+      const cmp = compareUptime(a.uptime.uptime_pct, b.uptime.uptime_pct, dir);
+      return cmp !== 0 ? cmp : a.display_name.localeCompare(b.display_name);
+    }
     return a.display_name.localeCompare(b.display_name) * dir;
   });
   return list;
@@ -264,8 +267,8 @@ const sortOptions = computed(() => [
               </td>
               <td class="px-4 py-3">
                 <div class="flex items-baseline justify-between text-xs">
-                  <span class="font-mono text-data text-fg tabular">{{ d.uptime.uptime_pct.toFixed(1) }}%</span>
-                  <span class="font-mono text-xs text-fg-subtle">24h {{ d.uptime.uptime_24h.toFixed(0) }}%</span>
+                  <span class="font-mono text-data tabular" :class="d.uptime.uptime_pct === null ? 'text-fg-subtle' : 'text-fg'">{{ pct(d.uptime.uptime_pct, 1) }}</span>
+                  <span class="font-mono text-xs text-fg-subtle">24h {{ pct(d.uptime.uptime_24h, 0) }}</span>
                 </div>
                 <StatusMonitor class="mt-1" compact size="sm" :bars="d.uptime.history_bars" :span-hours="periodHours(period)" :uptime="d.uptime.uptime_pct" :title="d.display_name" />
               </td>
@@ -318,7 +321,7 @@ const sortOptions = computed(() => [
             </div>
             <div class="flex items-center justify-between gap-2 text-xs">
               <HealthStatusBadge :status="d.health_status" />
-              <span class="font-mono text-data text-fg tabular">{{ d.uptime.uptime_pct.toFixed(1) }}% <span class="text-fg-subtle">· {{ ms(d.latency.current_ms) }}</span></span>
+              <span class="font-mono text-data tabular" :class="d.uptime.uptime_pct === null ? 'text-fg-subtle' : 'text-fg'">{{ pct(d.uptime.uptime_pct, 1) }} <span class="text-fg-subtle">· {{ ms(d.latency.current_ms) }}</span></span>
             </div>
             <StatusMonitor compact size="sm" :focusable="false" :bars="d.uptime.history_bars" :span-hours="periodHours(period)" :uptime="d.uptime.uptime_pct" />
             <!-- The same warnings the table shows, now that the cards stand in for it up to 1280 px -->

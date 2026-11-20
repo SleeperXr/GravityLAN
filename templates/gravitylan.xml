@@ -10,62 +10,47 @@
   <Support>https://github.com/SleeperXr/GravityLAN/issues</Support>
   <Project>https://github.com/SleeperXr/GravityLAN</Project>
   <ReadMe>https://github.com/SleeperXr/GravityLAN#readme</ReadMe>
-  <Overview>GravityLAN is a self-hosted network radar and homelab inventory dashboard: sweeps subnets, tracks devices and IP history, draws network topology and racks, and monitors Linux hosts via an optional lightweight agent.[br][br]
-[b]What you get[/b][br]
-- Network scans with hostnames, ports, services and vendors; scan subnets and VLANs can be imported from the router (SNMP or UniFi).[br]
-- Health and availability: uptime, latency, flapping, SSL expiry and pending security patches per device.[br]
-- Topology map, racks and an IP map of every subnet.[br]
-- Optional Linux agent: CPU, RAM, disks, temperature, package updates over SSH, and a browser SSH terminal with an encrypted key store.[br]
-- Read-only API tokens, Swagger UI at /docs and a Python client; a read-only token suits AI assistants and agents (it never gets SSH, agent configuration or admin endpoints).[br]
-- GravityUI, the web interface, with dashboard, orbit map, racks, IP map, health and settings.[br][br]
-[b]Unraid defaults[/b][br]
-PUID 99 and PGID 100 (nobody:users): on start the container makes the appdata directory writable for that user. No privileged mode needed.[br]One container per appdata directory: GravityLAN runs as a single process, so never start a second container on the same Data Storage path. Before an update, stop the container and copy the appdata directory; to go back, start the previous version with that copy.[br][br]
-[b]Which network type?[/b][br]
-- [b]Host[/b] (default, recommended): GravityLAN uses the server's own interfaces and sees every subnet Unraid is in at Layer 2 (ARP, real MAC addresses, vendors, mDNS). Web UI at http://SERVER-IP:8000; the port is set with "Internal Port", port mappings are ignored.[br]
-- [b]Custom: br0[/b] (macvlan or ipvlan): the container gets its own IP in your LAN (set a fixed IP) and scans that subnet at Layer 2. Unraid and the container cannot reach each other unless "Host access to custom networks" is on under Settings → Docker.[br]
-- [b]VLANs[/b]: add one custom network per VLAN under "Additional Networks" (br0.10, br0.20 …) so the container gets an address in each VLAN and scans all of them at Layer 2. Create the VLAN interfaces first under Settings → Network Settings.[br]
-- [b]Bridge[/b]: not recommended. Hosts are only found through NAT, without MAC addresses or vendors.[br][br]
-[b]How scanning works[/b][br]
-Scheduled Nmap and ARP scans run over your scan subnets. The IP addresses page shows how each subnet is reached:[br]
-- [b]L2 Direct[/b]: GravityLAN has an interface in the subnet. ARP and Nmap give hosts, MAC addresses, vendors, ports and services.[br]
-- [b]L3 Routed[/b]: the subnet is only reachable through the router. Nmap finds hosts and services, but ARP stops at the router, so there are no MAC addresses.[br]
-- [b]L2 Probe[/b]: an agent inside a routed subnet with "L2 Subnet Scanner (Probe)" switched on reports the real MAC addresses.[br]
-The setup wizard detects your subnets; routed ones such as an IoT VLAN can be added there or later on the IP addresses page. Scanning needs NET_RAW and NET_ADMIN (already in Extra Parameters), not privileged mode.[br][br]
+  <Overview>GravityLAN is a self-hosted network radar, inventory, orbit topology mapper and rack planner for your homelab, with an optional Linux agent and in-browser SSH terminal.[br][br]
+[b]What GravityLAN does[/b][br]
+- Scans your subnets (Nmap and ARP) for hosts, open ports, services and vendors, keeps multi-VLAN routers as one device with multiple interfaces, supports shared IPVLAN MACs and flags unexpected MAC changes for controlled review.[br]
+- Models your network as an interactive orbit topology (with calculated single points of failure and backup paths) and as 19-inch or 10-inch racks with passive equipment, ports and cabling.[br]
+- Tracks reachability, latency, flapping, SSL expiry and pending security updates over 24 h, 7 d or 30 d, and provides a multi-tab browser SSH terminal with an encrypted key vault and password confirmation before sensitive actions.[br]
+- Optional integrations: lightweight Linux agent (CPU, RAM, disks, temperatures, Layer-2 ARP probe in routed VLANs, SSH package updates), read-only router subnet import (SNMP or UniFi), read-only Proxmox VE guest sync, webhooks (ntfy/Gotify presets) and scoped API tokens with a Python client.[br][br]
+[b]Persistent data &amp; backups[/b][br]
+Data Storage (/mnt/user/appdata/gravitylan -> /app/data) holds the SQLite inventory (gravitylan.db), measurement history (telemetry.db), the encrypted secret key (ssh_vault.key) and automatic pre-migration database copies (data/backups/). The JSON export in Settings backs up inventory, topology, racks and general settings for host migration, but excludes passwords, tokens and SSH keys. Before upgrading, stop the container and copy the appdata directory (plus GRAVITYLAN_VAULT_KEY if configured externally).[br][br]
+[b]Important requirements[/b][br]
+- PUID 99 and PGID 100 (nobody:users): on start the container makes /app/data writable for this user and drops root privileges. No privileged mode needed (NET_RAW and NET_ADMIN in Extra Parameters suffice).[br]
+- Single instance: run only one GravityLAN container per appdata path. For lasting use and browser SSH sessions, access GravityLAN over HTTPS behind a reverse proxy.[br]
+- Network mode: [b]Host[/b] (default, recommended) gives full Layer-2 ARP/MAC visibility on all Unraid interfaces (WebUI at http://SERVER-IP:8000). Alternatively use [b]Custom: br0[/b] (macvlan/ipvlan) with a fixed IP, or add VLAN networks (br0.10, br0.20 ...) under "Additional Networks". [b]Bridge[/b] is not recommended because NAT hides MAC addresses. In routed subnets (L3 Routed), an agent with "L2 Subnet Scanner (Probe)" enabled can report MAC addresses.[br][br]
+[b]Documentation[/b][br]
+English README, German README (README.de.md) and Unraid guide (docs/unraid-template.md): https://github.com/SleeperXr/GravityLAN[br][br]
 [b]Deutsch[/b][br]
-GravityLAN ist ein selbst gehostetes Netzwerk-Radar und Homelab-Inventar: scannt Subnetze, verfolgt Geräte und IP-Verlauf, zeichnet Topologie und Racks und überwacht Linux-Hosts über einen optionalen schlanken Agenten.[br][br]
-[b]Was du bekommst[/b][br]
-- Netzwerk-Scans mit Hostnamen, Ports, Diensten und Herstellern; Scan-Subnetze und VLANs lassen sich vom Router importieren (SNMP oder UniFi).[br]
-- Health und Verfügbarkeit: Uptime, Latenz, Flackern, SSL-Ablauf und offene Sicherheits-Patches pro Gerät.[br]
-- Topologie-Karte, Racks und eine IP-Karte jedes Subnetzes.[br]
-- Optionaler Linux-Agent: CPU, RAM, Laufwerke, Temperatur, Paket-Updates per SSH, dazu ein SSH-Terminal im Browser mit verschlüsseltem Key-Store.[br]
-- Schreibgeschützte API-Token, Swagger UI unter /docs und ein Python-Client; ein schreibgeschütztes Token eignet sich für KI-Assistenten und Agenten (es bekommt nie SSH, Agent-Konfiguration oder Admin-Endpunkte).[br]
-- GravityUI, die Weboberfläche: Übersicht, Orbit-Karte, Racks, IP-Karte, Health und Einstellungen, in den Farbschemata Hell, Dunkel und Aurora.[br][br]
-[b]Unraid-Vorgaben[/b][br]
-PUID 99 und PGID 100 (nobody:users): Beim Start macht der Container den Appdata-Ordner für diesen Benutzer beschreibbar. Kein Privileged-Modus nötig.[br]Ein Container pro Appdata-Ordner: GravityLAN läuft als ein einziger Prozess, starte daher nie einen zweiten Container auf demselben Data-Storage-Pfad. Vor einem Update den Container stoppen und den Appdata-Ordner kopieren; zurück geht es mit der vorherigen Version und dieser Kopie.[br][br]
-[b]Welcher Netzwerktyp?[/b][br]
-- [b]Host[/b] (Standard, empfohlen): GravityLAN nutzt die Schnittstellen des Servers und sieht jedes Subnetz, in dem Unraid hängt, auf Layer 2 (ARP, echte MAC-Adressen, Hersteller, mDNS). Weboberfläche unter http://SERVER-IP:8000; der Port wird über "Internal Port" gesetzt, Port-Mappings werden ignoriert.[br]
-- [b]Custom: br0[/b] (macvlan oder ipvlan): Der Container bekommt eine eigene IP im LAN (feste IP eintragen) und scannt dieses Subnetz auf Layer 2. Unraid und Container erreichen sich gegenseitig nur, wenn unter Settings → Docker "Host access to custom networks" eingeschaltet ist.[br]
-- [b]VLANs[/b]: Unter "Additional Networks" je VLAN ein Custom-Netz hinzufügen (br0.10, br0.20 …). Dann hat der Container in jedem VLAN eine Adresse und scannt alle auf Layer 2. Die VLAN-Schnittstellen vorher unter Settings → Network Settings anlegen.[br]
-- [b]Bridge[/b]: nicht empfohlen. Hosts werden nur durch NAT gefunden, ohne MAC-Adressen und Hersteller.[br][br]
-[b]So wird gescannt[/b][br]
-Geplante Nmap- und ARP-Scans laufen über deine Scan-Subnetze. Die Seite IP-Adressen zeigt, wie jedes Subnetz erreicht wird:[br]
-- [b]L2 Direkt[/b]: GravityLAN hat eine Schnittstelle im Subnetz. ARP und Nmap liefern Hosts, MAC-Adressen, Hersteller, Ports und Dienste.[br]
-- [b]L3 Geroutet[/b]: Das Subnetz ist nur über den Router erreichbar. Nmap findet Hosts und Dienste, aber ARP endet am Router, daher gibt es keine MAC-Adressen.[br]
-- [b]L2 Probe[/b]: Ein Agent im gerouteten Subnetz mit eingeschaltetem "L2 Subnetz-Scanner (Probe)" meldet die echten MAC-Adressen.[br]
-Der Setup-Wizard erkennt deine Subnetze; geroutete wie ein IoT-VLAN lassen sich dort oder später auf der Seite IP-Adressen ergänzen. Zum Scannen braucht der Container NET_RAW und NET_ADMIN (stehen schon in Extra Parameters), keinen Privileged-Modus.</Overview>
+GravityLAN ist ein selbst gehostetes Netzwerk-Radar, Inventar, Orbit-Topologie- und Rack-Planer fürs Homelab – mit optionalem Linux-Agenten und SSH-Terminal im Browser.[br][br]
+[b]Was GravityLAN macht[/b][br]
+- Scannt deine Subnetze (Nmap und ARP) nach Hosts, Ports, Diensten und Herstellern, führt Multi-VLAN-Router als ein Gerät mit mehreren Schnittstellen, unterstützt geteilte IPVLAN-MACs und meldet abweichende MAC-Adressen kontrolliert zur Prüfung.[br]
+- Zeichnet dein Netz als interaktiven Orbit-Netzplan (mit berechneten Single Points of Failure und Backup-Pfaden) sowie als 19- oder 10-Zoll-Racks mit passiven Einbauten, Ports und Verkabelung.[br]
+- Verfolgt Erreichbarkeit, Latenz, Flackern, SSL-Ablauf und offene Sicherheits-Updates über 24 h, 7 d oder 30 d und bietet ein Multi-Tab-SSH-Terminal im Browser mit verschlüsseltem Key-Store und Passwortbestätigung vor kritischen Aktionen.[br]
+- Optionale Integrationen: schlanker Linux-Agent (CPU, RAM, Laufwerke, Temperaturen, Layer-2-ARP-Probe in gerouteten VLANs, Paket-Updates per SSH), lesender Router-Subnetz-Import (SNMP oder UniFi), lesender Proxmox-VE-Abgleich, Webhooks (ntfy/Gotify) sowie gescopte API-Tokens und Python-Client.[br][br]
+[b]Persistente Daten &amp; Backups[/b][br]
+Data Storage (/mnt/user/appdata/gravitylan -> /app/data) speichert das SQLite-Inventar (gravitylan.db), die Messdaten (telemetry.db), den Vault-Schlüssel (ssh_vault.key) und automatische Pre-Migrations-Kopien (data/backups/). Der JSON-Export in den Einstellungen sichert Inventar, Topologie, Racks und Einstellungen für einen Host-Umzug, enthält aber keine Passwörter, Tokens oder SSH-Keys. Vor einem Update den Container stoppen und den Appdata-Ordner kopieren (ggf. inkl. externem GRAVITYLAN_VAULT_KEY).[br][br]
+[b]Wichtige Anforderungen[/b][br]
+- PUID 99 und PGID 100 (nobody:users): Beim Start macht der Container /app/data für diesen Benutzer beschreibbar und gibt root-Rechte ab. Kein Privileged-Modus nötig (NET_RAW und NET_ADMIN in Extra Parameters reichen).[br]
+- Einzelinstanz: Nur einen GravityLAN-Container pro Appdata-Ordner betreiben. Für den Dauerbetrieb und Browser-SSH-Sitzungen HTTPS über einen Reverse Proxy nutzen.[br]
+- Netzwerktyp: [b]Host[/b] (Standard, empfohlen) bietet volle Layer-2-ARP-/MAC-Sicht auf allen Unraid-Schnittstellen (WebUI unter http://SERVER-IP:8000). Alternativ [b]Custom: br0[/b] (macvlan/ipvlan) mit fester IP oder zusätzliche VLANs (br0.10, br0.20 ...) unter "Additional Networks". [b]Bridge[/b] wird nicht empfohlen, da NAT die MAC-Adressen verbirgt. In gerouteten Subnetzen (L3 Geroutet) kann ein Agent als L2-Probe die MAC-Adressen liefern.[br][br]
+[b]Dokumentation[/b][br]
+Deutsche README (README.de.md), englische README und Unraid-Anleitung (docs/unraid-template.md): https://github.com/SleeperXr/GravityLAN</Overview>
   <Requires>Host network (default) or a custom br0 network with its own IP; add br0.X under "Additional Networks" for VLANs. Bridge hides MAC addresses. / Host-Netzwerk (Standard) oder ein Custom-br0-Netz mit eigener IP; für VLANs br0.X unter "Additional Networks" ergänzen. Bridge verbirgt MAC-Adressen.</Requires>
-  <Description>GravityLAN is a self-hosted dashboard and network radar for your homelab or home network.
+  <Description>GravityLAN is a self-hosted dashboard, network radar, topology mapper, and rack planner for your homelab or home network.
 
 Features:
-- Discovery: Scheduled Nmap and ARP network scans (hostnames, open ports, services, vendors, VLANs).
-- Network Inventory: Real-time SLA radar, latency telemetry, IP change logs, and offline flap detection.
-- Topology &amp; Racks: Visual interactive network map with link speeds and rack unit placement.
-- In-Browser SSH Terminal: Fast multi-tab web terminal with saved credentials and encrypted vault.
-- Linux Agent (optional): Single-script monitoring for CPU, RAM, disks, temperatures, and pending package updates.
-- API: Read-only tokens, Swagger UI and a Python client, suited to AI assistants and agents.
-- GravityUI: the web interface, with light, dark and Aurora colour schemes.
+- Discovery &amp; Inventory: Scheduled Nmap and ARP subnet scans (hostnames, ports, services, vendors, multi-VLAN interfaces, IPVLAN support, and controlled MAC conflict review).
+- Orbit Topology &amp; Racks: Interactive solar-system topology map with calculated single points of failure and 19"/10" rack planner with front/rear cabling.
+- Health &amp; Availability: Reachability and latency history, SSL certificate expiry, and offline flap protection.
+- In-Browser SSH Terminal: Multi-tab web terminal with encrypted server-side key vault, host-key pinning, and step-up password confirmation.
+- Optional Integrations: Linux monitoring and patching agent (with Layer-2 ARP probe for routed VLANs), read-only router subnet import (SNMP / UniFi), read-only Proxmox VE guest sync, webhooks (ntfy / Gotify), and scoped API tokens with a Python client.
+- GravityUI: Vue 3 interface with Night, Starlight, Aurora, Day map, and custom JSON themes (EN / DE).
 
-Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets.</Description>
+Note: GravityLAN uses host networking mode by default to ensure direct Layer-2 ARP detection and Nmap raw socket access across your local subnets without privileged mode.</Description>
   <Changes>
 ### 0.8.0
 - GravityUI only: the classic React interface is gone. New: Proxmox VE integration (VM and container names and addresses, optional adding to the dashboard, guests hung on their node), an app-wide search (Ctrl+K), a time zone setting, own designs plus the Aurora and Starlight themes, a second DNS server, an assistant that arranges the orbit map, and a notice when an agent stops reporting. Security: the setup wizard only scans private networks, the master token is stored as a hash and can be replaced under Settings → Access, and backups no longer contain credentials. The database is copied before a migration, log times follow TZ (tzdata in the image), and every Python package is pinned. Agent 0.3.15. Security hardening: WebSocket origin check, security headers, CSRF-safe agent config and scanner routes, tokens, submitted values and database passwords masked in logs; GRAVITYLAN_TRUSTED_PROXIES for the real client address behind a reverse proxy, with a warning when a proxy is not trusted or TZ is missing.

@@ -28,6 +28,7 @@ from app.scanner.utils import (
     measure_tcp_latency_ms,
 )
 from app.services.agent_activity import load_intervals, stale_window
+from app.services.mac_observations import open_conflict_device_ids
 from app.services.cache_service import dashboard_cache, topology_cache
 
 logger = logging.getLogger(__name__)
@@ -156,16 +157,28 @@ async def run_health_probe_pass() -> int:
         offline_threshold = await get_offline_threshold(db)
 
         device_ids = [d.id for d in devices]
-        res_tokens = await db.execute(select(AgentToken).where(AgentToken.device_id.in_(device_ids)))
+        res_tokens = await db.execute(
+            select(AgentToken).where(
+                AgentToken.device_id.in_(device_ids),
+                AgentToken.is_active.is_(True),
+            )
+        )
         tokens_by_dev = {t.device_id: t for t in res_tokens.scalars().all()}
         intervals = await load_intervals(db)
+        conflict_ids = await open_conflict_device_ids(db, device_ids)
+        # Devices with an open MAC conflict cannot be confirmed by L3 probes alone: skip
+        # probing so a foreign box at the IP neither wakes the device nor writes false-positive
+        # health samples or foreign service states (normal L3 devices without conflict continue).
+        probe_devices = [dev for dev in devices if dev.id not in conflict_ids]
+        if not probe_devices:
+            return 0
 
         # Run probes concurrently in batches
-        tasks = [_probe_single_device(dev, now, semaphore) for dev in devices]
+        tasks = [_probe_single_device(dev, now, semaphore) for dev in probe_devices]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         samples_to_add = []
-        for dev, result in zip(devices, results):
+        for dev, result in zip(probe_devices, results):
             if isinstance(result, Exception):
                 logger.debug(f"Health probe error for {dev.ip}: {result}")
                 continue
@@ -189,7 +202,7 @@ async def run_health_probe_pass() -> int:
                 register_seen(dev)
             else:
                 token = tokens_by_dev.get(dev.id)
-                has_agent = bool(dev.has_agent or token)
+                has_agent = token is not None
                 agent_last_seen = ensure_utc(token.last_seen) if token and token.last_seen else None
                 agent_stale = not agent_last_seen or (now - agent_last_seen).total_seconds() > stale_window(intervals.get(dev.id))
 

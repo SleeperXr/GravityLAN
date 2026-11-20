@@ -108,7 +108,7 @@ def _old_assemble(device_ids, device_map, token_map, all_24h_metrics, total_coun
     metrics_by_device = defaultdict(list)
     for m in all_24h_metrics:
         metrics_by_device[m.device_id].append(m)
-    agents_list, total_metrics_count, total_cpu, total_ram, active_count = [], 0, 0.0, 0.0, 0
+    agents_list, total_metrics_count, cpu_vals, ram_vals, active_count = [], 0, [], [], 0
     for device_id in device_ids:
         device = device_map[device_id]
         token = token_map[device_id]
@@ -119,14 +119,19 @@ def _old_assemble(device_ids, device_map, token_map, all_24h_metrics, total_coun
         is_active = at._is_agent_active(token, now, (intervals or {}).get(device_id))
         if is_active:
             active_count += 1
+            # Live averages only include currently reporting agents with usable measurements
+            if last_m is not None:
+                if last_m.cpu_percent is not None:
+                    cpu_vals.append(last_m.cpu_percent)
+                if last_m.ram_percent is not None:
+                    ram_vals.append(last_m.ram_percent)
         uptime_pct = at._compute_uptime_pct(token, now, cutoff_24h, device_metrics_24h, (intervals or {}).get(device_id))
         uptime_history = at._compute_uptime_history(token, now, cutoff_24h, device_metrics_24h, (intervals or {}).get(device_id))
-        if last_m:
-            total_cpu += last_m.cpu_percent
-            total_ram += last_m.ram_percent
         agents_list.append(_old_summary(device, token, last_m, m_count, is_active, uptime_pct, uptime_history))
     n = len(agents_list)
-    return agents_list, n, active_count, total_metrics_count, (total_cpu / n if n else 0.0), (total_ram / n if n else 0.0)
+    avg_cpu = sum(cpu_vals) / len(cpu_vals) if cpu_vals else 0.0
+    avg_ram = sum(ram_vals) / len(ram_vals) if ram_vals else 0.0
+    return agents_list, n, active_count, total_metrics_count, avg_cpu, avg_ram
 
 
 # --- report metadata -----------------------------------------------------------------------
@@ -210,6 +215,7 @@ def test_agents_overview_matches(seed):
     ids = list(range(1, rnd.randint(1, 8)))
     devices = {i: SimpleNamespace(id=i, hostname=rnd.choice([None, f"h{i}"]), display_name=f"d{i}", ip=f"10.0.0.{i}") for i in ids}
     tokens = {i: SimpleNamespace(
+        is_active=True,
         agent_version="0.7.0", os_pretty=None, os_name="debian", os_version="12", os_codename=None, os_arch="x86_64",
         os_kernel=None, last_seen=(NOW - timedelta(seconds=rnd.choice([10, 200, 4000]))).replace(tzinfo=None),
         created_at=rnd.choice([None, (NOW - timedelta(hours=3)).replace(tzinfo=None), (NOW - timedelta(days=9)).replace(tzinfo=None)]),

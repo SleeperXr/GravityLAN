@@ -22,7 +22,7 @@ Set-Location ..
 Write-Host "Starting GravityLAN Development Stack..." -ForegroundColor Cyan
 
 # 3. Start Backend
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location backend; python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000" -WorkingDirectory $PSScriptRoot -WindowStyle Normal
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location backend; python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-proxy-headers" -WorkingDirectory $PSScriptRoot -WindowStyle Normal
 
 # 4. Start GravityUI
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location frontend-vue; npm run dev" -WorkingDirectory $PSScriptRoot -WindowStyle Normal

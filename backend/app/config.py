@@ -96,8 +96,8 @@ class Settings(BaseSettings):
     # Server
     host: str = Field(default="0.0.0.0", description="Host address to bind to")
     port: int = Field(default=8000, description="Port to listen on")
-    # Read by the container's start command, not by the app: uvicorn takes the client
-    # address from X-Forwarded-For only for these proxies (empty = localhost only)
+    # Trusted reverse proxies (comma-separated IPs/CIDRs, or "*"). Evaluated by TrustedProxyMiddleware
+    # before ProxyHeadersMiddleware rewrites client/scheme (falls back to FORWARDED_ALLOW_IPS, else localhost).
     trusted_proxies: str = Field(default="", description="Reverse proxy IPs or networks, comma-separated")
 
     # CORS (development)
