@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 import importlib
 import json
 import sqlite3
@@ -216,6 +217,66 @@ def _clean_rows(cursor, table: str, rows: list[dict]) -> list[dict]:
     return [_clean_row(table, row, table_info, now_str) for row in rows]
 
 
+def _setting_row_valid(row: dict) -> bool:
+    """A settings row passes the check POST /api/settings applies to the same key (app.api.settings)."""
+    from app.api.settings import _VALIDATORS
+
+    validator = _VALIDATORS.get(row.get("key"))
+    value = row.get("value")
+    if validator is None or value in (None, ""):
+        return True
+    try:
+        validator(str(value))
+    except HTTPException:
+        return False
+    return True
+
+
+def _subnet_row_checked(row: dict) -> dict | None:
+    """A subnets row normalized like one created on the Network page (schemas.network), or None when invalid."""
+    from pydantic import ValidationError
+
+    from app.schemas.network import SubnetCreate
+
+    fields = {k: row[k] for k in ("cidr", "name", "dns_server", "gateway_ip", "vlan_id", "is_enabled") if k in row}
+    if fields.get("is_enabled") is None:
+        fields.pop("is_enabled", None)
+    if fields.get("name") is None:
+        fields.pop("name", None)
+    try:
+        subnet = SubnetCreate(**fields)
+    except (ValidationError, TypeError, ValueError):
+        return None
+    checked = dict(row)
+    checked.update(cidr=subnet.cidr, name=subnet.name, dns_server=subnet.dns_server, gateway_ip=subnet.gateway_ip)
+    return checked
+
+
+def _validated_rows(table: str, rows: list[dict]) -> tuple[list[dict], int]:
+    """The rows of a settings or subnets table that pass the app's own input checks; (rows, number dropped).
+
+    A backup is a file anyone could have edited. Settings reach the install script (server.url)
+    and nmap (dns.server), subnets reach nmap and the DNS resolver, so they must pass the same
+    checks as when they are typed into GravityUI. Rows that do not are left out and reported.
+    """
+    if table == "app_settings":
+        kept = [row for row in rows if _setting_row_valid(row)]
+        for row in rows:
+            if row not in kept:
+                logger.warning("Backup: setting %r left out, its value does not pass the settings check", row.get("key"))
+        return kept, len(rows) - len(kept)
+    if table == "subnets":
+        kept = []
+        for row in rows:
+            checked = _subnet_row_checked(row)
+            if checked is None:
+                logger.warning("Backup: subnet %r left out, it is not a valid scan subnet", str(row.get("cidr"))[:60])
+            else:
+                kept.append(checked)
+        return kept, len(rows) - len(kept)
+    return rows, 0
+
+
 def _known_columns(row: dict, table_info: dict) -> dict:
     """The row without unknown columns and without empty values for NOT NULL columns."""
     return {
@@ -412,15 +473,22 @@ def _restorable_table(key: str, rows) -> str | None:
     return ALLOWED_TABLE_MAP[key]
 
 
-def _import_tables(cursor, data: dict) -> tuple[dict[str, int], dict[str, int]]:
-    """Replace each table the backup has. Returns (table -> rows imported, table -> duplicates dropped)."""
+def _import_tables(cursor, data: dict) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
+    """Replace each table the backup has.
+
+    Returns (table -> rows imported, table -> duplicates dropped, table -> invalid rows dropped).
+    """
     imported: dict[str, int] = {}
     duplicates: dict[str, int] = {}
+    invalid: dict[str, int] = {}
     for key, rows in data.items():
         table = _restorable_table(key, rows)
         if table is None:
             continue
-        valid_rows = _clean_rows(cursor, table, rows) if rows else []
+        checked, rejected = _validated_rows(table, rows) if rows else ([], 0)
+        if rejected:
+            invalid[table] = rejected
+        valid_rows = _clean_rows(cursor, table, checked) if checked else []
         if rows and not valid_rows:
             continue  # every row was dropped while cleaning: keep the table rather than empty it
         valid_rows, dropped = _drop_duplicates(table, valid_rows)
@@ -430,7 +498,7 @@ def _import_tables(cursor, data: dict) -> tuple[dict[str, int], dict[str, int]]:
 
         _replace_table(cursor, table, valid_rows)
         imported[table] = len(valid_rows)
-    return imported, duplicates
+    return imported, duplicates, invalid
 
 
 def _count_agent_tokens(cursor) -> int:
@@ -444,7 +512,7 @@ def _apply_backup(cursor, data: dict, report: dict | None) -> dict[str, int]:
     devices_before = _device_identities(cursor)
     tokens_before = _count_agent_tokens(cursor)
 
-    imported, duplicates = _import_tables(cursor, data)
+    imported, duplicates, invalid = _import_tables(cursor, data)
 
     if _read_protected_settings(cursor) != protected_before:
         raise RuntimeError("Backup import would change protected settings")
@@ -456,6 +524,7 @@ def _apply_backup(cursor, data: dict, report: dict | None) -> dict[str, int]:
         report["agent_tokens_revoked"] = tokens_before - _count_agent_tokens(cursor)
         report["reassigned_device_ids"] = reassigned
         report["duplicates_dropped"] = duplicates
+        report["invalid_dropped"] = invalid
     return imported
 
 
@@ -526,8 +595,12 @@ def _import_audit_detail(imported: dict[str, int], skipped: int) -> str:
     return f"{detail}, {skipped} duplicates skipped" if skipped else detail
 
 
-def _import_message(revoked: int, skipped: int) -> str:
+def _import_message(revoked: int, skipped: int, invalid: int = 0) -> str:
     message = "Backup successfully imported"
+    if invalid:
+        message += (
+            f". {invalid} setting(s) or subnet(s) did not pass the input checks and were left out (see the log)"
+        )
     if revoked:
         message += f". {revoked} agent(s) belonged to devices that are different now and must be enrolled again"
     if skipped:
@@ -547,10 +620,41 @@ async def _retire_reassigned_devices(db: AsyncSession, reassigned: list[int], re
     )
 
 
+@asynccontextmanager
+async def _scheduler_paused():
+    """Stop the background scans and jobs while the tables are replaced, like the database reset.
+
+    A scan that writes devices or subnets in the middle of the import would mix old and new
+    rows or fail on rows that are gone. Restarted afterwards, also when the import fails.
+    """
+    from app.scanner.scheduler import scheduler
+
+    was_running = scheduler.running
+    if was_running:
+        logger.info("Backup: pausing the scanner scheduler during the import")
+        try:
+            await asyncio.wait_for(scheduler.stop(), timeout=5.0)
+        except (asyncio.TimeoutError, RuntimeError, OSError) as exc:
+            logger.warning("Backup: scheduler stop failed or timed out: %s", exc)
+    try:
+        yield
+    finally:
+        if was_running:
+            try:
+                await scheduler.start()
+            except (RuntimeError, OSError) as exc:
+                logger.error("Backup: failed to restart the scheduler: %s", exc)
+
+
 async def restore_upload(request: Request, file: UploadFile, db: AsyncSession, actor: str | None = None) -> dict:
     """Check, write and clean up after an uploaded backup; used by the import and the setup wizard."""
     db_path = _sqlite_db_path()
     data = await _read_backup_upload(file)
+    async with _scheduler_paused():
+        return await _restore(request, data, db, db_path, actor)
+
+
+async def _restore(request: Request, data: dict, db: AsyncSession, db_path: str, actor: str | None) -> dict:
     report: dict = {}
     try:
         imported = await asyncio.to_thread(_write_db, db_path, data, report)
@@ -563,6 +667,7 @@ async def restore_upload(request: Request, file: UploadFile, db: AsyncSession, a
         logger.info(f"Backup: Imported {count} rows into {table}")
     duplicates = report.get("duplicates_dropped", {})
     skipped = sum(duplicates.values())
+    invalid = report.get("invalid_dropped", {})
     await audit(request, "backup.import", detail=_import_audit_detail(imported, skipped), actor=actor)
 
     reassigned = report.get("reassigned_device_ids", [])
@@ -574,11 +679,12 @@ async def restore_upload(request: Request, file: UploadFile, db: AsyncSession, a
 
     return {
         "status": "ok",
-        "message": _import_message(revoked, skipped),
+        "message": _import_message(revoked, skipped, sum(invalid.values())),
         "agent_tokens_revoked": revoked,
         "reassigned_devices": len(reassigned),
         "devices": imported.get("devices", 0),
         "duplicates_dropped": duplicates,
+        "invalid_dropped": invalid,
     }
 
 
