@@ -89,6 +89,8 @@ async function dismiss(entry: DeviceMacConflict) {
         </div>
       </dl>
 
+      <p class="mt-2 text-fg-muted">{{ t('gv.mac_conflicts.presence_frozen_hint') }}</p>
+
       <p v-if="hasSharedDevices(entry.group)" class="mt-2 text-fg-muted">
         {{ t('gv.mac_conflicts.shared_hint', { count: entry.group.devices.length }) }}
       </p>

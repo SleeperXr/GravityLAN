@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- A device with an open MAC conflict, which is not probed until the conflict is adopted or dismissed, is marked **Status unconfirmed** on its overview card and in the list, in the health table and its detail sheet; the conflict banner in the device editor says that an outage is not noticed meanwhile. The device list, the device endpoints and the health views report it as `presence_frozen`. Dismissing a conflict now also refreshes the cached device lists, and a conflict the agent relay opens or closes shows at once.
+
 ## [0.8.0] - 2026-11-20
 
 0.7.1 went out only as a release candidate (0.7.1-rc.1); everything in it is part of 0.8.0.

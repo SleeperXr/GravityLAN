@@ -12,6 +12,7 @@ import Skeleton from '@/components/ui/Skeleton.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import ErrorState from '@/components/ui/ErrorState.vue';
 import HealthStatusBadge from '@/components/health/HealthStatusBadge.vue';
+import PresenceFrozenBadge from '@/components/mac/PresenceFrozenBadge.vue';
 import StatusMonitor from '@/components/common/StatusMonitor.vue';
 import Sparkline from '@/components/health/Sparkline.vue';
 import IncidentList from '@/components/health/IncidentList.vue';
@@ -263,6 +264,7 @@ const sortOptions = computed(() => [
                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <HealthStatusBadge :status="d.health_status" />
                   <Badge :tone="scoreTone(d.health_score, d.health_status)" mono :title="`Health Score ${d.health_score}/100`">{{ d.health_score }}</Badge>
+                  <PresenceFrozenBadge v-if="d.presence_frozen" />
                 </div>
               </td>
               <td class="px-4 py-3">
@@ -320,7 +322,10 @@ const sortOptions = computed(() => [
               <Badge :tone="scoreTone(d.health_score, d.health_status)" mono>{{ d.health_score }}</Badge>
             </div>
             <div class="flex items-center justify-between gap-2 text-xs">
-              <HealthStatusBadge :status="d.health_status" />
+              <span class="flex flex-wrap items-center gap-1.5">
+                <HealthStatusBadge :status="d.health_status" />
+                <PresenceFrozenBadge v-if="d.presence_frozen" />
+              </span>
               <span class="font-mono text-data tabular" :class="d.uptime.uptime_pct === null ? 'text-fg-subtle' : 'text-fg'">{{ pct(d.uptime.uptime_pct, 1) }} <span class="text-fg-subtle">· {{ ms(d.latency.current_ms) }}</span></span>
             </div>
             <StatusMonitor compact size="sm" :focusable="false" :bars="d.uptime.history_bars" :span-hours="periodHours(period)" :uptime="d.uptime.uptime_pct" />

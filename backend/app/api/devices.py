@@ -173,6 +173,14 @@ async def _annotate_parent_names(db: AsyncSession, devices: list[Device]) -> Non
             device.parent_name = device_map.get(device.parent_id)
 
 
+async def _annotate_presence(db: AsyncSession, devices: list[Device]) -> list[Device]:
+    """Mark devices whose online state is frozen by an open MAC conflict (not probed until it is resolved)."""
+    frozen = await mac_observations.open_conflict_device_ids(db, [d.id for d in devices])
+    for device in devices:
+        device.presence_frozen = device.id in frozen
+    return devices
+
+
 @router.get("", response_model=list[DeviceResponse], dependencies=[policy(scope="devices:read")])
 async def list_devices(
     include_hidden: bool = False,
@@ -198,6 +206,7 @@ async def list_devices(
 
     await _annotate_parent_names(db, devices)
     await annotate_primary_subnets(db, devices)
+    await _annotate_presence(db, devices)
 
     # Cache plain response objects: the ORM instances detach when this request's
     # session closes, and later reads of them could raise DetachedInstanceError
@@ -446,6 +455,8 @@ async def dismiss_mac_observation(
     await db.commit()
     await audit(request, "device.mac_conflict_dismissed", device_id=device.id, target=device_label(device),
                 detail=mac_observations.normalise_mac(req.mac) or "")
+    # The cached lists carry presence_frozen: without this the device stayed marked until the next scan
+    _invalidate_device_caches()
 
 
 def _invalidate_device_caches() -> None:
@@ -464,6 +475,7 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     token_map = await _load_agent_tokens(db, [device])
     intervals = await load_intervals(db)
     await annotate_primary_subnets(db, [device])
+    await _annotate_presence(db, [device])
     return _device_response(device, token_map.get(device.id), intervals)
 
 
@@ -536,6 +548,7 @@ async def update_device(
     topology_cache.invalidate()
     await db.refresh(device)
     logger.info("Device %s updated: %s", device_id, update_data)
+    await _annotate_presence(db, [device])
     return device
 
 
@@ -648,6 +661,7 @@ async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db)
         await db.refresh(device)
         dashboard_cache.invalidate_all()
         topology_cache.invalidate()
+    await _annotate_presence(db, [device])
     return device
 
 def _mark_auto_services(device, open_ports: list[int]) -> None:
@@ -770,6 +784,7 @@ async def refresh_device_services(device_id: int, db: AsyncSession = Depends(get
         await db.refresh(device)
         dashboard_cache.invalidate_all()
         topology_cache.invalidate()
+    await _annotate_presence(db, [device])
     return device
 
 @router.get("/{device_id}/history", response_model=list[DeviceHistoryResponse], dependencies=[policy(scope="devices:read")])
@@ -1027,6 +1042,7 @@ async def get_group_details(
     # Populate agent details
     tokens_by_device = await _load_agent_tokens(db, group.devices)
     intervals = await load_intervals(db)
+    await _annotate_presence(db, list(group.devices))
     devices_list = [_device_response(d, tokens_by_device.get(d.id), intervals) for d in group.devices]
         
     return GroupWithDevicesResponse(
