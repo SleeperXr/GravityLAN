@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- GravityUI live log: the newest line is on top and new lines appear above it, so the page opens on the live state; with a full log (500 lines) it used to start at the oldest line and take a while to reach the newest. Scrolled down into older lines, the view stays put while new lines arrive, and "jump to newest" takes it back to the top. Copying keeps the time order (oldest first).
+
 ### Security
 - API tokens can no longer change credentials or the instance, whatever their scope. With `settings:write` a token could replace the Proxmox connection, add or delete webhooks with their tokens, retry outbox entries or lengthen the step-up time, all actions a browser session may only take after confirming the password. An API token has no password to confirm, so these answer 403 now; GravityUI with password confirmation and the master token work as before. Reading settings and all other `settings:write` changes stay allowed.
 - Adopting an agent's pending token (Agents → adopt) now asks for the password like enrolling or deploying an agent; adopting lets that host report as the device.
