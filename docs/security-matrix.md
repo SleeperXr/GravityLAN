@@ -90,6 +90,7 @@ check a credential of their own, named under *Notes*.
 | GET | `/api/devices` | yes | yes | `devices:read` | - | after setup |  |
 | POST | `/api/devices/add-from-ip` | yes | yes | `devices:write` | - | after setup |  |
 | POST | `/api/devices/bulk-delete` | yes | yes | `devices:write` | - | after setup |  |
+| GET | `/api/devices/mac-conflicts` | yes | yes | `devices:read` | - | after setup |  |
 | POST | `/api/devices/refresh-all` | yes | yes | `devices:write` | - | after setup |  |
 | GET | `/api/devices/{device_id}` | yes | yes | `devices:read` | - | after setup |  |
 | PATCH | `/api/devices/{device_id}` | yes | yes | `devices:write` | - | after setup |  |
@@ -101,6 +102,8 @@ check a credential of their own, named under *Notes*.
 | POST | `/api/devices/{device_id}/interfaces/merge` | yes | yes | `devices:write` | - | after setup |  |
 | PATCH | `/api/devices/{device_id}/interfaces/{interface_id}` | yes | yes | `devices:write` | - | after setup |  |
 | DELETE | `/api/devices/{device_id}/interfaces/{interface_id}` | yes | yes | `devices:write` | - | after setup |  |
+| PUT | `/api/devices/{device_id}/mac` | yes | yes | `devices:write` | - | after setup |  |
+| POST | `/api/devices/{device_id}/mac-observations/dismiss` | yes | yes | `devices:write` | - | after setup |  |
 | POST | `/api/devices/{device_id}/refresh-info` | yes | yes | `devices:write` | - | after setup |  |
 | POST | `/api/devices/{device_id}/refresh-services` | yes | yes | `devices:write` | - | after setup |  |
 | POST | `/api/devices/{device_id}/services` | yes | yes | `devices:write` | - | after setup |  |

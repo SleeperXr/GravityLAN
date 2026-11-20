@@ -92,14 +92,20 @@ async def test_repair_device_ignores_former_hardcoded_ids_and_names(db, docker_u
     assert dev.ip_placeholder is True
 
 
-async def test_repair_device_docker_match(db, monkeypatch):
+def docker_with(monkeypatch, *containers):
     docker_service = MagicMock()
     docker_service.is_available.return_value = True
-    docker_service.get_local_containers.return_value = [
-        {"name": "nextcloud-aio", "ips": ["10.0.0.7"], "status": "running"},
-    ]
+    docker_service.get_local_containers.return_value = list(containers)
     monkeypatch.setattr("app.services.docker_service.docker_service", docker_service)
 
+
+@pytest.mark.parametrize("container", [
+    {"name": "Nextcloud", "ips": ["10.0.0.7"], "status": "running"},
+    {"name": "next_cloud", "ips": ["10.0.0.7"], "status": "running"},
+    {"name": "stack-nextcloud-1", "service": "nextcloud", "ips": ["10.0.0.7"], "status": "running"},
+])
+async def test_repair_device_docker_match(db, monkeypatch, container):
+    docker_with(monkeypatch, container)
     db.add(Device(ip="offline-aa:bb:cc", ip_placeholder=True, display_name="Nextcloud"))
     await db.commit()
 
@@ -110,6 +116,40 @@ async def test_repair_device_docker_match(db, monkeypatch):
     assert dev.ip == "10.0.0.7"
     assert dev.is_online is True
     assert dev.ip_placeholder is False
+
+
+@pytest.mark.parametrize("second", [
+    {"name": "stack-nextcloud-2", "service": "nextcloud", "ips": ["10.0.0.8"], "status": "running"},  # --scale
+    {"name": "other-nextcloud-1", "service": "nextcloud", "ips": ["10.0.0.8"], "status": "running"},  # another project
+])
+async def test_repair_device_ignores_a_compose_service_name_several_containers_answer_to(db, monkeypatch, second):
+    docker_with(monkeypatch, {"name": "stack-nextcloud-1", "service": "nextcloud", "ips": ["10.0.0.7"], "status": "running"}, second)
+    db.add(Device(ip="offline-aa:bb:cc", ip_placeholder=True, display_name="Nextcloud"))
+    await db.commit()
+
+    await migrations._clean_corrupted_ip_placeholders(db)
+    await db.commit()
+
+    dev = (await db.execute(select(Device))).scalar_one()
+    assert (dev.ip, dev.is_online, dev.ip_placeholder) == ("0.0.0.0", False, True)
+
+
+@pytest.mark.parametrize("device_name, container_name", [
+    ("AP", "backup-app"),          # a short name inside a container name
+    ("Nextcloud", "nextcloud-aio"),  # a longer container name
+    ("Lancache Cache", "lancache"),  # a longer device name
+])
+async def test_repair_device_needs_the_same_name_not_a_part_of_it(db, monkeypatch, device_name, container_name):
+    """A substring was enough before: a placeholder "AP" took the address of a container "backup-app"."""
+    docker_with(monkeypatch, {"name": container_name, "ips": ["10.0.0.8"], "status": "running"})
+    db.add(Device(ip="offline-aa:bb:cc", ip_placeholder=True, display_name=device_name))
+    await db.commit()
+
+    await migrations._clean_corrupted_ip_placeholders(db)
+    await db.commit()
+
+    dev = (await db.execute(select(Device))).scalar_one()
+    assert (dev.ip, dev.is_online, dev.ip_placeholder) == ("0.0.0.0", False, True)
 
 
 async def test_repair_device_restores_old_ip(db, docker_unavailable):

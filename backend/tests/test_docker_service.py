@@ -83,6 +83,7 @@ def test_get_local_containers_parses_ips(monkeypatch):
     assert result[0] == {
         "id": "abc123",
         "name": "web",
+        "service": None,
         "ips": ["172.17.0.2"],
         "status": "running",
         "image": "latest",
@@ -90,6 +91,13 @@ def test_get_local_containers_parses_ips(monkeypatch):
     }
     assert result[1]["name"] == "db"
     assert result[1]["status"] == "exited"
+
+
+def test_get_local_containers_names_the_compose_service(monkeypatch):
+    container = FakeContainer("abc123", "stack-lancache-1", "running", {"bridge": "172.17.0.2"})
+    container.attrs["Config"] = {"Labels": {"com.docker.compose.service": "lancache"}}
+    service = _make_service(monkeypatch, containers=[container])
+    assert service.get_local_containers()[0]["service"] == "lancache"
 
 
 def test_get_local_containers_multiple_networks(monkeypatch):

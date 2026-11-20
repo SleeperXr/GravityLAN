@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     event,
     func,
 )
@@ -136,7 +137,10 @@ class Device(Base):
     group: Mapped[DeviceGroup | None] = relationship(back_populates="devices")
     services: Mapped[list["Service"]] = relationship(back_populates="device", lazy="selectin", cascade="all, delete-orphan")
     history: Mapped[list["DeviceHistory"]] = relationship(back_populates="device", lazy="select", cascade="all, delete-orphan")
-    
+    mac_observations: Mapped[list["DeviceMacObservation"]] = relationship(
+        back_populates="device", lazy="select", cascade="all, delete-orphan",
+    )
+
     # Self-referential relationship for Host/Guest mapping
     parent: Mapped["Device"] = relationship("Device", remote_side=[id], back_populates="children")
     children: Mapped[list["Device"]] = relationship("Device", back_populates="parent")
@@ -248,6 +252,33 @@ class DeviceHistory(Base):
 
     __table_args__ = (
         Index("ix_device_history_device_ts", "device_id", "timestamp"),
+    )
+
+
+class DeviceMacObservation(Base):
+    """A valid MAC that answered at a device's address but is not the device's own.
+
+    Seen by the agent ARP relay or the scan. One row per device and MAC: the first sighting is
+    reported once (a ``mac_conflict`` history entry), later ones only move ``last_seen``, and a
+    dismissed one is never reported again. The device's MAC itself only changes through
+    app.services.mac_observations.set_device_mac (by hand or by adopting an observation).
+    Several addresses sharing one MAC (ipvlan) are no observation.
+    """
+
+    __tablename__ = "device_mac_observations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    observed_mac: Mapped[str] = mapped_column(String(17), nullable=False)
+    source: Mapped[str] = mapped_column(String(10), nullable=False)  # relay, scan
+    first_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    state: Mapped[str] = mapped_column(String(10), nullable=False, default="open", server_default="open")  # open, dismissed
+
+    device: Mapped[Device] = relationship(back_populates="mac_observations")
+
+    __table_args__ = (
+        UniqueConstraint("device_id", "observed_mac", name="uq_device_mac_observation"),
     )
 
 

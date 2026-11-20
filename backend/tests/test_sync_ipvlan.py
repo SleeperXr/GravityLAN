@@ -198,12 +198,11 @@ async def test_migration_cleans_multiple_corrupted_devices(db):
 
 
 @pytest.mark.asyncio
-async def test_docker_sync_restores_placeholder_ip_by_container_name(db):
+async def test_docker_sync_leaves_a_placeholder_of_the_same_name_to_the_start_up_repair(db):
     """
-    Test scenario:
-    1. Device 'Lancache' currently has placeholder IP '0.0.0.1' and ip_placeholder=True.
-    2. Docker sync runs with container name 'Lancache' running at IP '192.168.100.15'.
-    3. Result: 'Lancache' device IP is restored to '192.168.100.15', ip_placeholder is set False, and device is set ONLINE.
+    Device 'Lancache' has the placeholder IP '0.0.0.1'; a container 'Lancache' runs at '192.168.100.15'.
+    The periodic Docker sync links containers by address only, so the device stays where it is;
+    the start-up repair restores it (tests/test_migrations.py::test_repair_device_docker_match).
     """
     from app.scanner.sync import sync_docker_containers
 
@@ -230,9 +229,7 @@ async def test_docker_sync_restores_placeholder_ip_by_container_name(db):
 
     res = await db.execute(select(Device).where(Device.display_name == "Lancache"))
     updated = res.scalar_one()
-    assert updated.ip == "192.168.100.15"
-    assert updated.ip_placeholder is False
-    assert updated.is_online is True
+    assert (updated.ip, updated.ip_placeholder, updated.is_online) == ("0.0.0.1", True, False)
 
 
 

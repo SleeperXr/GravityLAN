@@ -18,7 +18,6 @@ from app.scanner.sync import (
     SyncContext,
     commit_or_discard,
     _find_safe_placeholder_ip,
-    _relocate_conflicting_device,
     _should_apply_custom_name,
     _sync_host_internal,
     load_sync_context,
@@ -429,18 +428,6 @@ async def test_placeholder_prefers_a_free_old_ip_and_otherwise_counts_up(db):
     assert await _find_safe_placeholder_ip(db, offline) == "0.0.0.1"
 
 
-async def test_relocating_a_device_uses_the_first_free_placeholder(db):
-    holder = Device(ip="192.0.2.80", display_name="holder", is_online=True)
-    await add(db, holder)
-    used = {"0.0.0.0", "192.0.2.80"}
-    await _relocate_conflicting_device(db, "192.0.2.80", used)
-    assert (holder.ip, holder.is_online, holder.ip_placeholder) == ("0.0.0.1", False, True)
-    assert "0.0.0.1" in used
-
-    await _relocate_conflicting_device(db, "192.0.2.99", used)  # nobody holds it
-    assert used == {"0.0.0.0", "192.0.2.80", "0.0.0.1"}
-
-
 async def test_running_container_at_a_known_ip_comes_online(db):
     disc = DiscoveredHost(ip="192.0.2.90", is_online=False, custom_name="Unknown", ip_placeholder=True)
     dev = Device(ip="192.0.2.90", display_name="web", is_online=False, missed_scans=2, ip_placeholder=True,
@@ -454,6 +441,74 @@ async def test_running_container_at_a_known_ip_comes_online(db):
 
     assert (disc.is_online, disc.custom_name, disc.ip_placeholder) == (True, "web", False)
     assert (dev.is_online, dev.missed_scans, dev.ip_placeholder, dev.ip) == (True, 0, False, "192.0.2.90")
+
+
+@pytest.fixture
+def docker(db):
+    async def run(*containers):
+        with patch("app.scanner.sync.async_session", return_value=Session(db)):
+            await sync_docker_containers(list(containers))
+    return run
+
+
+def running(name, ip):
+    return {"name": name, "ips": [ip], "status": "running"}
+
+
+@pytest.mark.parametrize("is_online", [True, False])
+async def test_a_container_name_containing_a_device_name_does_not_take_the_device(db, docker, scan, is_online):
+    """"AP" is part of "grafana-api": the AP was moved to the container's bridge address, marked online there
+    (also while it was down), and a scan that saw it at its own address made that a second host."""
+    ap = Device(ip="192.0.2.2", mac=MAC_A, display_name="AP", is_online=is_online, missed_scans=0 if is_online else 5)
+    await add(db, ap)
+
+    await docker(running("grafana-api", "172.18.0.5"))
+    if is_online:
+        await scan({"ip": "192.0.2.2", "mac": MAC_A})
+
+    await db.refresh(ap)
+    assert (ap.ip, ap.old_ip, ap.is_online) == ("192.0.2.2", None, is_online)
+
+
+async def test_a_container_in_the_lan_does_not_take_a_live_device_with_a_similar_name(db, docker, scan):
+    """Same subnet: every scan pulled the device back by its MAC, reported an IP change, and lost it again."""
+    nextcloud = Device(ip="192.0.2.30", mac=MAC_A, display_name="Nextcloud", is_online=True)
+    await add(db, nextcloud)
+
+    for _ in range(2):
+        await docker(running("nextcloud-db", "192.0.2.70"))
+        await scan({"ip": "192.0.2.30", "mac": MAC_A}, {"ip": "192.0.2.70", "mac": MAC_B})
+
+    await db.refresh(nextcloud)
+    assert (nextcloud.ip, nextcloud.old_ip) == ("192.0.2.30", None)
+    assert (await db.execute(select(DeviceHistory).where(DeviceHistory.status == "ip_changed"))).first() is None
+    container = (await db.execute(select(DiscoveredHost).where(DiscoveredHost.ip == "192.0.2.70"))).scalar_one()
+    assert container.mac == MAC_B
+
+
+async def test_a_device_at_the_container_address_is_not_pushed_aside(db, docker):
+    printer = Device(ip="192.0.2.60", mac=MAC_B, display_name="Printer", is_online=False)
+    pi = Device(ip="192.0.2.40", mac=MAC_A, display_name="Pi", is_online=True)
+    await add(db, printer, pi)
+
+    # The container runs at the printer's address: before, "Pi" was moved there and the printer
+    # pushed aside to a 0.0.0.N placeholder
+    await docker(running("pi-backup", "192.0.2.60"))
+
+    await db.refresh(printer)
+    await db.refresh(pi)
+    assert (printer.ip, printer.ip_placeholder, printer.old_ip) == ("192.0.2.60", False, None)
+    assert (pi.ip, pi.old_ip) == ("192.0.2.40", None)
+
+
+async def test_a_container_without_a_record_at_its_address_changes_nothing(db, docker):
+    disc = DiscoveredHost(ip="192.0.2.91", hostname="plex", custom_name="Unknown", is_online=False)
+    await add(db, disc)
+
+    await docker(running("plex", "192.0.2.92"))
+
+    await db.refresh(disc)
+    assert (disc.ip, disc.is_online, disc.custom_name) == ("192.0.2.91", False, "Unknown")
 
 
 async def test_no_containers_is_a_no_op():

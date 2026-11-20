@@ -9,7 +9,6 @@ from app.scanner.sync import (
     sync_hosts_batch,
     sync_docker_containers,
     _mac_is_valid,
-    _fuzzy_match,
     _is_unraid_host,
 )
 
@@ -246,7 +245,8 @@ async def test_discovered_host_inherits_name_from_monitored_device(db):
 
 
 @pytest.mark.asyncio
-async def test_docker_sync_restores_placeholder_device_by_fuzzy_name(db):
+async def test_docker_sync_does_not_move_a_placeholder_device_by_name(db):
+    """Only the start-up repair restores placeholders by name (app.database.migrations), with exact names."""
     dev = Device(
         ip="0.0.0.1",
         mac="02:63:aa:bb:cc:dd",
@@ -275,9 +275,7 @@ async def test_docker_sync_restores_placeholder_device_by_fuzzy_name(db):
 
     res = await db.execute(select(Device).where(Device.id == dev.id))
     updated = res.scalar_one()
-    assert updated.ip == "192.168.100.15"
-    assert updated.ip_placeholder is False
-    assert updated.is_online is True
+    assert (updated.ip, updated.ip_placeholder, updated.is_online) == ("0.0.0.1", True, False)
 
 
 @pytest.mark.asyncio
@@ -311,7 +309,7 @@ async def test_docker_sync_skips_non_running_containers(db):
 
 
 @pytest.mark.asyncio
-async def test_docker_sync_updates_discovered_host_placeholder(db):
+async def test_docker_sync_does_not_move_a_discovered_host_by_name(db):
     disc = DiscoveredHost(
         ip="0.0.0.3",
         hostname="plex",
@@ -336,10 +334,7 @@ async def test_docker_sync_updates_discovered_host_placeholder(db):
 
     res = await db.execute(select(DiscoveredHost).where(DiscoveredHost.id == disc.id))
     updated = res.scalar_one()
-    assert updated.ip == "192.168.100.20"
-    assert updated.ip_placeholder is False
-    assert updated.is_online is True
-    assert updated.custom_name == "plex"
+    assert (updated.ip, updated.ip_placeholder, updated.is_online) == ("0.0.0.3", True, False)
 
 
 def test_mac_is_valid_cases():
@@ -351,14 +346,6 @@ def test_mac_is_valid_cases():
     assert _mac_is_valid("33:33:00:00:00:01") is False
     assert _mac_is_valid("02:42:ac:11:00:01") is True
     assert _mac_is_valid("00:11:22:33:44:55") is True
-
-
-def test_fuzzy_match_cases():
-    assert _fuzzy_match(None, "lancache") is False
-    assert _fuzzy_match("lancache", None) is False
-    assert _fuzzy_match("lancache", "Lancache Cache") is True
-    assert _fuzzy_match("my_device", "my-device-1") is True
-    assert _fuzzy_match("router", "switch") is False
 
 
 def test_is_unraid_host_checks_names_and_vendor():

@@ -21,6 +21,9 @@ from app.models.network import Subnet
     ("00:00:00:00:00:00", False),
     ("ff:ff:ff:ff:ff:ff", False),
     ("GG:BB:CC:00:00:01", False),  # not hex
+    ("01:00:5e:00:00:fb", False),  # IPv4 multicast
+    ("33:33:00:00:00:01", False),  # IPv6 multicast
+    ("02:42:ac:11:00:02", True),   # locally administered unicast (Docker, ipvlan)
 ])
 def test_mac_validation(mac, ok):
     assert relay.is_valid_mac_address(mac) is ok
@@ -59,15 +62,26 @@ async def test_entries_without_ip_or_mac_or_with_bad_values_are_skipped(db):
     assert [(h.ip, h.mac) for h in hosts] == [("192.0.2.12", "aa:bb:cc:00:00:12")]
 
 
-async def test_a_known_discovered_host_is_refreshed(db, monkeypatch):
+@pytest.mark.parametrize("known_mac", [None, "AA:BB:CC:00:00:20"], ids=["no-mac", "same-mac-upper-case"])
+async def test_a_known_discovered_host_is_refreshed(db, monkeypatch, known_mac):
     dev = await _probe(db, "192.0.2.5")
-    db.add(DiscoveredHost(ip="192.0.2.20", mac="AA:BB:CC:00:00:99", vendor=None, is_online=False))
+    db.add(DiscoveredHost(ip="192.0.2.20", mac=known_mac, vendor=None, is_online=False))
     await db.commit()
     monkeypatch.setattr(relay, "get_vendor", lambda mac: "Vendor")
 
     assert await relay.ingest_agent_arp_table(db, dev.id, [{"ip": "192.0.2.20", "mac": "aa:bb:cc:00:00:20"}]) == 1
     host = (await db.execute(select(DiscoveredHost))).scalar_one()
-    assert (host.mac, host.vendor, host.is_online) == ("aa:bb:cc:00:00:20", "Vendor", True)
+    assert (host.mac.lower(), host.vendor, host.is_online) == ("aa:bb:cc:00:00:20", "Vendor", True)
+
+
+async def test_a_discovered_host_keeps_its_mac_and_state_when_another_box_answers(db):
+    dev = await _probe(db, "192.0.2.5")
+    db.add(DiscoveredHost(ip="192.0.2.21", mac="aa:bb:cc:00:00:99", is_online=False))
+    await db.commit()
+
+    assert await relay.ingest_agent_arp_table(db, dev.id, [{"ip": "192.0.2.21", "mac": "aa:bb:cc:00:00:21"}]) == 0
+    host = (await db.execute(select(DiscoveredHost))).scalar_one()
+    assert (host.mac, host.is_online) == ("aa:bb:cc:00:00:99", False)
 
 
 async def test_an_unchanged_device_counts_nothing(db):

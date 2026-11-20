@@ -15,6 +15,7 @@ from app.models.agent import AgentConfig
 from app.models.device import Device, DiscoveredHost
 from app.models.network import Subnet
 from app.scanner.vendor import get_vendor
+from app.services.mac_observations import ReportedPairs, is_usable_mac, macs_differ, record_mac_conflict
 
 logger = logging.getLogger(__name__)
 
@@ -22,20 +23,10 @@ ProbeNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 
 def is_valid_mac_address(mac: str | None) -> bool:
-    """Validate standard colon-separated MAC address format."""
-    if not mac or len(mac) != 17:
+    """A colon-separated unicast MAC that is not all zeros (multicast and broadcast are no card's MAC)."""
+    if not mac or len(mac) != 17 or mac.count(":") != 5:
         return False
-    parts = mac.split(":")
-    if len(parts) != 6:
-        return False
-    if mac.lower() in ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"):
-        return False
-    try:
-        for p in parts:
-            int(p, 16)
-        return True
-    except ValueError:
-        return False
+    return is_usable_mac(mac)
 
 
 async def get_probe_networks(db: AsyncSession, device_id: int) -> list[ProbeNetwork]:
@@ -81,7 +72,11 @@ async def ingest_agent_arp_table(
     Only devices with the scanner relay enabled are heard, and only for
     addresses inside their own subnets (see ``get_probe_networks``), so one
     agent token cannot rewrite MAC, vendor or online state elsewhere.
-    Updates MAC addresses on existing devices and adds new discovered hosts.
+
+    An ARP answer confirms an endpoint at an address, not the device documented there: a
+    missing MAC is filled, but a different valid MAC changes neither the MAC nor the online
+    state; it is recorded once as an observation (app.services.mac_observations). One MAC at
+    several addresses (ipvlan) is normal. New addresses become discovered hosts.
     Returns the number of ingested/updated hosts.
     """
     if not arp_entries:
@@ -97,6 +92,8 @@ async def ingest_agent_arp_table(
 
     now = datetime.now(timezone.utc)
     updated_count = 0
+    conflicts_seen = False  # only last_seen of an observation may have moved: commit, but no broadcast
+    reported = ReportedPairs()
     out_of_scope: list[str] = []
 
     # Cache existing devices by IP
@@ -134,8 +131,14 @@ async def ingest_agent_arp_table(
         # 1. If device exists on dashboard, enrich MAC and online status
         if raw_ip in devices_by_ip:
             dev = devices_by_ip[raw_ip]
+            if macs_differ(dev.mac, raw_mac):
+                # Another box answers at this address: the device stays as it is
+                conflicts_seen = True
+                if await record_mac_conflict(db, dev, raw_mac, "relay", reported):
+                    updated_count += 1
+                continue
             changed = False
-            if not dev.mac or dev.mac.lower() != raw_mac:
+            if not is_usable_mac(dev.mac):
                 dev.mac = raw_mac
                 changed = True
             if not dev.vendor:
@@ -155,7 +158,10 @@ async def ingest_agent_arp_table(
         # 2. Update or insert DiscoveredHost
         if raw_ip in disc_by_ip:
             disc = disc_by_ip[raw_ip]
-            disc.mac = raw_mac
+            if macs_differ(disc.mac, raw_mac):
+                continue  # another box at this address: the record keeps its MAC and state
+            if not is_usable_mac(disc.mac):
+                disc.mac = raw_mac
             if not disc.vendor:
                 disc.vendor = await asyncio.to_thread(get_vendor, raw_mac)
             disc.is_online = True
@@ -180,6 +186,8 @@ async def ingest_agent_arp_table(
             f"outside its subnets: {', '.join(out_of_scope)}"
         )
 
+    if updated_count == 0 and conflicts_seen:
+        await db.commit()
     if updated_count > 0:
         await db.commit()
         logger.info(f"Agent probe {reporting_device_id} updated {updated_count} L2 neighbors.")

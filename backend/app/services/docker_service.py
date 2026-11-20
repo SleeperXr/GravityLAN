@@ -70,9 +70,12 @@ class DockerService:
                     # map everything to the host IP. 
                     pass
 
+                labels = container.attrs.get('Config', {}).get('Labels') or {}
                 containers_data.append({
                     "id": container.short_id,
                     "name": container.name,
+                    # Compose names containers "<project>-<service>-<n>"; the service is the name people give
+                    "service": labels.get("com.docker.compose.service"),
                     "ips": ips,
                     "status": container.status, # running, exited, paused, etc.
                     "image": container.image.tags[0] if container.image.tags else "unknown",

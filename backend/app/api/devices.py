@@ -5,7 +5,7 @@ import logging
 import re
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,10 +19,16 @@ from app.services.agent_activity import load_intervals
 from app.dns_answers import stored_dns_answers
 from app.scanner.hostname import HOSTNAME_SOURCES, choose_hostname, lookup_dns_names, resolve_hostname, is_ip_like
 from app.services.interface_service import annotate_primary_subnets, device_for_interface_ip
+from app.services import mac_observations
+from app.services.audit import device_label, record as audit
 from app.schemas.device import (
     DeviceResponse,
     DeviceUpdate,
     DeviceHistoryResponse,
+    MacChangeRequest,
+    MacChangeResult,
+    MacConflictGroup,
+    MacObservationDismiss,
     ServiceResponse,
     ServiceCreate,
     ServiceUpdate,
@@ -343,6 +349,66 @@ async def _fill_new_device_details(device, ip: str) -> None:
         device.vendor = await asyncio.to_thread(get_vendor, mac)
 
 
+# --- MAC conflicts and the controlled MAC change (app.services.mac_observations) ---
+
+@router.get("/mac-conflicts", response_model=list[MacConflictGroup], dependencies=[policy(scope="devices:read")])
+async def list_mac_conflicts(db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """Other MACs that answered at devices' addresses, one entry per (documented, observed) MAC pair."""
+    return await mac_observations.open_conflict_groups(db)
+
+
+async def _device_or_404(db: AsyncSession, device_id: int) -> Device:
+    device = await db.get(Device, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return device
+
+
+@router.put("/{device_id}/mac", response_model=MacChangeResult, dependencies=[policy(scope="devices:write")])
+async def set_device_mac(
+    device_id: int, req: MacChangeRequest, request: Request, db: AsyncSession = Depends(get_db),
+) -> MacChangeResult:
+    """Correct a device's MAC by hand, or adopt one that was seen at its address; the device keeps its id.
+
+    A MAC that was observed at the device counts as adopted, any other as a manual correction; both
+    write a history entry. ``apply_to_shared`` also changes the devices that share the old MAC and
+    saw the same new one.
+    """
+    device = await _device_or_404(db, device_id)
+    adopted = await mac_observations.has_open_observation(db, device, req.mac)
+    try:
+        changed = await mac_observations.set_device_mac(
+            db, device, req.mac, adopted=adopted, apply_to_shared=req.apply_to_shared,
+        )
+    except mac_observations.MacChangeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await db.commit()
+    for dev in changed:
+        await audit(request, "device.mac_changed", device_id=dev.id, target=device_label(dev),
+                    detail=f"{dev.mac} ({'adopted' if adopted else 'manual'})")
+    _invalidate_device_caches()
+    return MacChangeResult(changed_device_ids=[d.id for d in changed])
+
+
+@router.post("/{device_id}/mac-observations/dismiss", status_code=204, dependencies=[policy(scope="devices:write")])
+async def dismiss_mac_observation(
+    device_id: int, req: MacObservationDismiss, request: Request, db: AsyncSession = Depends(get_db),
+) -> None:
+    """Keep the device's MAC: the given MAC is not reported at this device again."""
+    device = await _device_or_404(db, device_id)
+    if not await mac_observations.dismiss_observation(db, device, req.mac):
+        raise HTTPException(status_code=404, detail="No such MAC observation for this device")
+    await db.commit()
+    await audit(request, "device.mac_conflict_dismissed", device_id=device.id, target=device_label(device),
+                detail=mac_observations.normalise_mac(req.mac) or "")
+
+
+def _invalidate_device_caches() -> None:
+    dashboard_cache.invalidate_all()
+    discovery_cache.invalidate()
+    topology_cache.invalidate()
+
+
 @router.get("/{device_id}", response_model=DeviceResponse, dependencies=[policy(scope="devices:read")])
 async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> DeviceResponse:
     """Get a single device by ID."""
@@ -431,7 +497,7 @@ async def _delete_device_dependencies(db: AsyncSession, device_ids: list[int]) -
     from sqlalchemy import delete, update
     from app.models.topology import TopologyLink
     from app.models.agent import AgentToken, AgentConfig
-    from app.models.device import Device, Service, DeviceHistory, DeviceInterface
+    from app.models.device import Device, Service, DeviceHistory, DeviceInterface, DeviceMacObservation
     from app.services.telemetry_store import delete_device_telemetry
 
     if not device_ids:
@@ -460,6 +526,7 @@ async def _delete_device_dependencies(db: AsyncSession, device_ids: list[int]) -
     await db.execute(delete(Service).where(Service.device_id.in_(device_ids)))
     await db.execute(delete(DeviceHistory).where(DeviceHistory.device_id.in_(device_ids)))
     await db.execute(delete(DeviceInterface).where(DeviceInterface.device_id.in_(device_ids)))
+    await db.execute(delete(DeviceMacObservation).where(DeviceMacObservation.device_id.in_(device_ids)))
 
     # 4. Clear parent/child relationship
     await db.execute(
