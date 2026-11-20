@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text, update as sa_update
-from app.services.stepup import require_step_up
+from app.api.policy import policy, NO_API_TOKEN
 from app.database import get_db
 from app.models.device import Device
 from app.models.setting import Setting
@@ -15,7 +15,6 @@ from app.scanner.subnets import merge_subnets
 import logging
 
 logger = logging.getLogger(__name__)
-from app.api.auth import get_current_admin
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -55,7 +54,7 @@ def is_writable_key(key: str) -> bool:
     return key in WRITABLE_KEYS or key.startswith(WRITABLE_PREFIXES)
 
 
-@router.get("", dependencies=[Depends(get_current_admin)])
+@router.get("", dependencies=[policy(scope="settings:read")])
 async def get_all_settings(db: AsyncSession = Depends(get_db)):
     """Fetch all system settings as a key-value dictionary, excluding secrets."""
     result = await db.execute(select(Setting))
@@ -202,7 +201,7 @@ _VALIDATORS = {
 }
 
 
-@router.post("", dependencies=[Depends(get_current_admin)])
+@router.post("", dependencies=[policy(scope="settings:write")])
 async def update_settings(settings: SettingsUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     """Update or create system settings."""
     values = {key: value for key, value in settings.root.items() if key not in RETIRED_KEYS}
@@ -322,7 +321,7 @@ def _drop_runtime_credentials() -> None:
     logger.warning("Database reset: %d browser session(s) logged out, %d terminal session(s) closed", logged_out, closed)
 
 
-@router.post("/reset-db", status_code=200, dependencies=[Depends(get_current_admin), Depends(require_step_up("instance"))])
+@router.post("/reset-db", status_code=200, dependencies=[policy(callers=NO_API_TOKEN, step_up="instance")])
 async def reset_database(request: Request, db: AsyncSession = Depends(get_db)):
     """Wipe all devices, services, and reset setup status for a fresh start."""
     from app.config import settings as app_config

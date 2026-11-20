@@ -116,18 +116,12 @@ async def test_tokens_are_refused_for_remote_access_and_logged(client, device, n
 
 
 @pytest.mark.asyncio
-async def test_patch_websocket_accepts_browser_sessions_only(monkeypatch):
-    from app.api.agent_patches import run_patches_websocket
+async def test_patch_websocket_accepts_browser_sessions_only():
+    from app.api.policy import SESSION_ONLY, iter_route_policies
+    from app.main import app
 
-    seen = {}
-
-    async def fake_auth(websocket, endpoint_type, device_id=None, allowed_levels=()):
-        seen["allowed_levels"] = allowed_levels
-        return None
-
-    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", fake_auth)
-    await run_patches_websocket(None, 1)
-    assert seen["allowed_levels"] == ("session",)
+    entry = next(e for e in iter_route_policies(app) if e.path == "/api/agent/patches/{device_id}/run-ws")
+    assert entry.policy.callers == SESSION_ONLY and not entry.policy.agent_token
 
 
 @pytest.mark.asyncio

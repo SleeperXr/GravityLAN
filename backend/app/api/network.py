@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.policy import policy
 from app.database import async_session, get_db
 from app.models.network import Subnet
 from sqlalchemy import delete
@@ -15,7 +16,6 @@ from app.scanner.subnets import find_subnet
 from app.services.cache_service import dashboard_cache, topology_cache
 
 logger = logging.getLogger(__name__)
-from app.api.auth import get_current_admin
 
 router = APIRouter(prefix="/api/network", tags=["network"])
 
@@ -137,7 +137,7 @@ def _enrich_subnet(
 
 
 
-@router.get("/subnets", response_model=list[SubnetResponse], dependencies=[Depends(get_current_admin)])
+@router.get("/subnets", response_model=list[SubnetResponse], dependencies=[policy(scope="network:read")])
 async def get_subnets(db: AsyncSession = Depends(get_db)):
     """Get all configured subnets with L2/L3 reachability details."""
     result = await db.execute(select(Subnet).order_by(Subnet.name))
@@ -154,7 +154,7 @@ def _invalidate_device_views() -> None:
     topology_cache.invalidate()
 
 
-@router.post("/subnets", response_model=SubnetResponse, dependencies=[Depends(get_current_admin)])
+@router.post("/subnets", response_model=SubnetResponse, dependencies=[policy(scope="network:write")])
 async def create_subnet(subnet_in: SubnetCreate, db: AsyncSession = Depends(get_db)):
     """Create a new subnet configuration; it is scanned and shown as a tab while enabled."""
     if await find_subnet(db, subnet_in.cidr):
@@ -169,7 +169,7 @@ async def create_subnet(subnet_in: SubnetCreate, db: AsyncSession = Depends(get_
     return _enrich_subnet(subnet, parsed_locals, probes, detect_default_gateways())
 
 
-@router.patch("/subnets/{subnet_id}", response_model=SubnetResponse, dependencies=[Depends(get_current_admin)])
+@router.patch("/subnets/{subnet_id}", response_model=SubnetResponse, dependencies=[policy(scope="network:write")])
 async def update_subnet(subnet_id: int, subnet_in: SubnetUpdate, db: AsyncSession = Depends(get_db)):
     """Update a subnet configuration."""
     subnet = await db.get(Subnet, subnet_id)
@@ -196,7 +196,7 @@ async def update_subnet(subnet_id: int, subnet_in: SubnetUpdate, db: AsyncSessio
 
 
 
-@router.delete("/subnets/{subnet_id}", dependencies=[Depends(get_current_admin)])
+@router.delete("/subnets/{subnet_id}", dependencies=[policy(scope="network:write")])
 async def delete_subnet(subnet_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a subnet configuration."""
     subnet = await db.get(Subnet, subnet_id)

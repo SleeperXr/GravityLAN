@@ -11,9 +11,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_admin
+from app.api.policy import policy, NO_API_TOKEN
 from app.database import get_db
-from app.services.stepup import require_step_up
 from app.schemas.router_import import (
     ProviderKey,
     RouterImportApply,
@@ -27,10 +26,10 @@ from app.services.router_import import service
 
 logger = logging.getLogger(__name__)
 # Guarded here as well, not only where main.py mounts it (as the Proxmox router does)
-router = APIRouter(prefix="/api/network/router-import", tags=["network"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(prefix="/api/network/router-import", tags=["network"])
 
 
-@router.get("/sources", response_model=list[RouterSourceResponse])
+@router.get("/sources", response_model=list[RouterSourceResponse], dependencies=[policy(scope="network:read")])
 async def list_router_sources(db: AsyncSession = Depends(get_db)):
     """Saved router connections (address and options; which secrets are stored, never their values)."""
     return await service.list_sources(db)
@@ -38,7 +37,7 @@ async def list_router_sources(db: AsyncSession = Depends(get_db)):
 
 # Forgetting and using the stored router credentials (SNMP community, UniFi API key) asks for the
 # password like the Proxmox connection, and refuses API tokens (step-up class credentials)
-@router.delete("/sources/{provider}", dependencies=[Depends(require_step_up("credentials"))])
+@router.delete("/sources/{provider}", dependencies=[policy(callers=NO_API_TOKEN, step_up="credentials")])
 async def delete_router_source(provider: ProviderKey, db: AsyncSession = Depends(get_db)):
     """Forget a saved router connection and its stored credentials."""
     if not await service.delete_source(db, provider):
@@ -46,7 +45,7 @@ async def delete_router_source(provider: ProviderKey, db: AsyncSession = Depends
     return {"status": "ok"}
 
 
-@router.post("/preview", response_model=RouterImportPreview, dependencies=[Depends(require_step_up("credentials"))])
+@router.post("/preview", response_model=RouterImportPreview, dependencies=[policy(callers=NO_API_TOKEN, step_up="credentials")])
 async def preview_router_import(req: RouterImportRequest, db: AsyncSession = Depends(get_db)):
     """Ask the router for its networks and compare them with the scan subnets. Changes no subnet."""
     try:
@@ -56,7 +55,7 @@ async def preview_router_import(req: RouterImportRequest, db: AsyncSession = Dep
         raise HTTPException(status_code=err.status_code, detail=err.message) from None
 
 
-@router.post("/apply", response_model=RouterImportApplyResult)
+@router.post("/apply", response_model=RouterImportApplyResult, dependencies=[policy(scope="network:write")])
 async def apply_router_import(req: RouterImportApply, db: AsyncSession = Depends(get_db)):
     """Add the picked networks as scan subnets; configured ones only get an empty gateway/VLAN filled in."""
     from app.api.network import _invalidate_device_views

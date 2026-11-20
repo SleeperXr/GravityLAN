@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.policy import policy
 from app.api.auth import get_current_admin
 from app.api.summary import get_summary
 from app.database import get_db
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/health", tags=["health"])
 
 
-@router.get("/summary", response_model=HealthSummaryResponse)
+@router.get("/summary", response_model=HealthSummaryResponse, dependencies=[policy(scope="devices:read")])
 async def get_health_summary(
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
@@ -577,7 +578,7 @@ def _empty_overview(period: str) -> HealthOverviewResponse:
     )
 
 
-@router.get("/overview", response_model=HealthOverviewResponse)
+@router.get("/overview", response_model=HealthOverviewResponse, dependencies=[policy(scope="devices:read")])
 async def get_health_overview(
     period: str = Query("24h", pattern="^(24h|7d|30d)$"),
     token: str = Depends(get_current_admin),
@@ -670,7 +671,7 @@ def _sample_point(s, now: datetime) -> HealthSamplePoint:
     )
 
 
-@router.get("/device/{device_id}", response_model=DeviceHealthDetailResponse)
+@router.get("/device/{device_id}", response_model=DeviceHealthDetailResponse, dependencies=[policy(scope="devices:read")])
 async def get_device_health_detail(
     device_id: int,
     period: str = Query("24h", pattern="^(24h|7d|30d)$"),

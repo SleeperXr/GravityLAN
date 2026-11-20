@@ -426,7 +426,8 @@ def _ws_app():
 
 
 def test_websocket_registers_and_removes_the_client(monkeypatch):
-    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", AsyncMock(return_value={"level": "session"}))
+    # The route's policy authenticates the handshake (app.api.policy)
+    monkeypatch.setattr("app.api.auth.authenticate_websocket", AsyncMock(return_value={"authenticated": True, "auth_type": "session", "identity": "session_x"}))
     client = TestClient(_ws_app())
 
     with client.websocket_connect("/api/scanner/ws") as ws:
@@ -440,11 +441,11 @@ def test_websocket_registers_and_removes_the_client(monkeypatch):
 
 def test_websocket_without_authorization_is_not_accepted(monkeypatch):
     async def refuse(websocket, **kwargs):
-        # Like the real check: it closes the connection itself and returns None
+        # Like the real check: it closes the connection and reports the refusal
         await websocket.close(code=4003, reason="Unauthorized")
-        return None
+        return {"authenticated": False}
 
-    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", refuse)
+    monkeypatch.setattr("app.api.auth.authenticate_websocket", refuse)
     client = TestClient(_ws_app())
 
     with pytest.raises(WebSocketDisconnect) as exc:

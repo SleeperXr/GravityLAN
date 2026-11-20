@@ -89,7 +89,7 @@ def test_only_non_root_logins_go_through_sudo(user, needs_sudo, sudo_password):
 
 def test_no_credentials_stop_before_connecting(query):
     client = _shell()
-    assert query(client, ssh_password=None) == {**NOTHING_FOUND, "error": "Neither password nor SSH key provided."}
+    assert query(client, ssh_password=None) == {**NOTHING_FOUND, "error": "Neither password nor SSH key provided.", "error_kind": "credentials"}
     client.connect.assert_not_called()
     client.close.assert_called_once()
 
@@ -100,7 +100,7 @@ def test_an_unreadable_key_is_reported_and_never_connects(query, monkeypatch):
 
     monkeypatch.setattr(ps, "_load_ssh_key", refuse)
     client = _shell()
-    assert query(client, ssh_key="garbage") == {**NOTHING_FOUND, "error": "Invalid SSH key format: not a private key"}
+    assert query(client, ssh_key="garbage") == {**NOTHING_FOUND, "error": "Invalid SSH key format: not a private key", "error_kind": "credentials"}
     client.connect.assert_not_called()
 
 
@@ -147,7 +147,7 @@ def test_no_transport_means_no_channel():
 def test_a_connection_failure_is_returned_not_raised(query):
     client = _shell()
     client.connect.side_effect = OSError("no route to host")
-    assert query(client) == {**NOTHING_FOUND, "error": "no route to host"}
+    assert query(client) == {**NOTHING_FOUND, "error": "no route to host", "error_kind": "unreachable"}
     client.close.assert_called_once()
 
 

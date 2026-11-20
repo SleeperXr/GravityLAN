@@ -5,15 +5,15 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Body, Response, Request, Header, WebSocket, Query
+from fastapi import APIRouter, Depends, HTTPException, Body, Response, Request, WebSocket
 from fastapi.requests import HTTPConnection
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from app.api.policy import policy, NO_API_TOKEN, PUBLIC, SESSION_ONLY
 from app.services.audit import record as audit, remember_actor
 from app.services import stepup
-from app.services.stepup import require_step_up
 from app.database import get_db
 from app.models.setting import Setting
 from app.config import settings
@@ -31,75 +31,17 @@ from app.services.agent_telemetry import _setting_cache  # noqa: F401 - tests re
 
 _READ_METHODS = ("GET", "HEAD")
 
-# Paths that need one scope whatever the method (compared without a trailing slash)
-_FIXED_SCOPES = {
-    # GETs that start active scans: live discovery sweeps subnets and stores what it
-    # finds, scan-ip runs nmap against an address (#43)
-    "/api/scanner/live-discovery": "scanner:start",
-    "/api/scanner/scan-ip": "scanner:start",
-    # /test posts to every subscriber, so even its GET variant needs write access
-    "/api/webhooks/test": "settings:write",
-}
-# Agent routes that hand out credentials or enroll a host: write access for every method
-_AGENT_WRITE_PREFIXES = ("/api/agent/download/config", "/api/agent/token", "/api/agent/enroll")
-
-# (path prefixes, scope for GET/HEAD, scope for other methods); the first match wins
-_SCOPE_RULES: tuple[tuple[tuple[str, ...], str, str], ...] = (
-    (("/api/devices", "/api/groups", "/api/services", "/api/interfaces"), "devices:read", "devices:write"),
-    (("/api/topology",), "topology:read", "topology:write"),
-    (("/api/network",), "network:read", "network:write"),
-    (("/api/agent",), "agent:read", "agent:write"),  # also covers /api/agents
-    (("/api/settings",), "settings:read", "settings:write"),
-    (("/api/backup",), "backup:read", "backup:write"),
-    (("/api/scanner",), "scanner:read", "scanner:start"),
-    (("/api/webhooks",), "settings:read", "settings:write"),
-    (("/api/summary", "/api/issues"), "devices:read", "devices:read"),  # general read permission
-    (("/api/auth/tokens", "/api/logs", "/api/audit"), "settings:read", "settings:write"),
-    (("/api/notifications", "/api/health"), "devices:read", "devices:write"),
-)
-
-
-def _required_scope_for(path: str, method: str) -> str | None:
-    """Map an API path/method to the scope a read-only token needs."""
-    fixed = _FIXED_SCOPES.get(path.rstrip("/"))
-    if fixed:
-        return fixed
-    if path.startswith(_AGENT_WRITE_PREFIXES):
-        return "agent:write"
-    for prefixes, read_scope, write_scope in _SCOPE_RULES:
-        if path.startswith(prefixes):
-            return read_scope if method in _READ_METHODS else write_scope
-    return None
-
-
-# Import overwrites the whole database like reset-db, so a scoped token must not reach it either
-_READONLY_FORBIDDEN_PATHS = ("/api/backup/export", "/api/backup/import", "/api/settings/reset-db")
+# Which route needs which scope, step-up or caller kind is declared per route: app.api.policy
 _READONLY_DEFAULT_SCOPES = {
     "devices:read", "topology:read", "network:read", "agent:read",
     "settings:read", "backup:read", "scanner:read"
 }
-
-# Routes the first-run wizard calls before any admin credential exists.
-# Everything else stays closed until setup.complete is set (fresh install or
-# after a factory reset), so an unconfigured instance cannot be exported,
-# reconfigured or used to deploy agents by anyone on the LAN.
-_SETUP_WIZARD_ROUTES = frozenset({
-    ("GET", "/api/scanner/subnets"),
-    ("GET", "/api/scanner/discovered"),
-    ("POST", "/api/scanner/start"),
-    ("POST", "/api/scanner/stop"),
-    ("WEBSOCKET", "/api/scanner/ws"),
-})
-
-
-def _is_setup_wizard_route(conn: HTTPConnection) -> bool:
-    """Return True when the request targets a route the setup wizard needs."""
-    method = conn.scope.get("method") or conn.scope.get("type", "").upper()
-    return (method, conn.url.path) in _SETUP_WIZARD_ROUTES
+STATE_TOKEN_SCOPES = "gl_token_scopes"  # the scopes of the API token a request authenticated with
+TOKENS_DENIED = "Read-only tokens cannot view or manage other tokens."
 
 
 async def _verify_api_token(db: AsyncSession, token_val: str, conn: HTTPConnection) -> str:
-    """Validate a read-only API token, enforce scopes, and update last_used_at."""
+    """Validate an API token and update last_used_at; the route's policy checks its scopes."""
     h = hashlib.sha256(token_val.encode()).hexdigest()
     from app.models.api_token import ApiToken
     token_res = await db.execute(select(ApiToken).where(ApiToken.token_hash == h, ApiToken.is_active == True))
@@ -108,23 +50,13 @@ async def _verify_api_token(db: AsyncSession, token_val: str, conn: HTTPConnecti
     if not db_token:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    _enforce_token_scopes(db_token, conn)
     await _touch_api_token(db, db_token)
-    # Step-up refuses API tokens for credentials and instance changes (stepup.CONFIRMED_CLASSES)
     state = getattr(conn, "state", None)  # every Starlette connection has one; stand-ins may not
     if state is not None:
+        setattr(state, STATE_TOKEN_SCOPES, _token_scopes(db_token))
+        # Step-up refuses API tokens for credentials and instance changes (stepup.CONFIRMED_CLASSES)
         setattr(state, stepup.API_TOKEN_STATE, True)
     return f"api_token:{db_token.name}"
-
-
-# Not scoped: who-am-I checks, and routes that do their own check (step-up, browser session)
-_SCOPE_EXEMPT_PATHS = ("/api/auth/check", "/api/auth/me", "/api/ssh/sessions/prepare")
-_SCOPE_EXEMPT_PREFIXES = ("/api/agent/enroll/", "/api/agent/deploy/", "/api/agent/uninstall/", "/api/agent/patches/")
-# Token management, SSH and agent credentials/deployment are never open to an API token
-_TOKEN_FORBIDDEN_PREFIXES = (
-    "/api/auth/tokens", "/api/ssh", "/api/agent/download/config", "/api/agent/enroll", "/api/agent/adopt",
-    "/api/agent/deploy", "/api/agent/uninstall", "/api/agent/patches",
-)
 
 
 def _token_scopes(db_token) -> set[str]:
@@ -134,40 +66,11 @@ def _token_scopes(db_token) -> set[str]:
     return _READONLY_DEFAULT_SCOPES
 
 
-def _is_scope_exempt(path: str) -> bool:
-    return path in _SCOPE_EXEMPT_PATHS or path.startswith(_SCOPE_EXEMPT_PREFIXES)
-
-
-def _is_forbidden_for_tokens(path: str) -> bool:
-    return path in _READONLY_FORBIDDEN_PATHS or path.startswith(_TOKEN_FORBIDDEN_PREFIXES)
-
-
 def _missing_scope_error(required_scope: str, method: str) -> HTTPException:
     detail = f"Token is missing the required scope '{required_scope}'."
     if method not in _READ_METHODS:
         detail = f"Read-only token cannot perform state-modifying actions. {detail}"
     return HTTPException(status_code=403, detail=detail)
-
-
-def _enforce_token_scopes(db_token, conn: HTTPConnection) -> None:
-    """Enforce scope rules for a read-only API token on HTTP requests."""
-    if conn.scope.get("type") != "http":
-        return
-
-    method = conn.method
-    path = conn.url.path
-    if _is_scope_exempt(path):
-        return
-
-    if _is_forbidden_for_tokens(path):
-        raise HTTPException(
-            status_code=403,
-            detail="Read-only token is not authorized for this administrative action. Token is not authorized for sensitive administrative actions."
-        )
-
-    required_scope = _required_scope_for(path, method)
-    if required_scope and required_scope not in _token_scopes(db_token):
-        raise _missing_scope_error(required_scope, method)
 
 
 async def _authenticate_query_param(db: AsyncSession, token: str, conn: HTTPConnection) -> str:
@@ -192,19 +95,19 @@ async def _authenticate_query_param(db: AsyncSession, token: str, conn: HTTPConn
     raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
-async def get_current_admin(
-    conn: HTTPConnection,
-    authorization: str | None = Header(None),
-    token: str | None = Query(None),
-    db: AsyncSession = Depends(get_db)
-) -> str:
+async def get_current_admin(conn: HTTPConnection) -> str:
+    """The caller the route's policy (app.api.policy) authenticated: "session_...", the master
+    token, or "api_token:<name>" ("setup_mode" on a wizard route before setup).
+
+    Only the policy authenticates; a route that asks for the caller without declaring a policy
+    is refused, so a forgotten policy cannot leave a route open.
     """
-    Dependency to validate authentication via Cookie, Authorization header, or Query param.
-    Works for both HTTP Requests and WebSockets. Tells the audit log who the caller is
-    ("session", "master", "api_token:<name>"; never a token's value).
-    """
-    identity = await _resolve_admin(conn, authorization, token, db)
-    remember_actor(conn, identity)
+    from app.api.policy import NO_POLICY_MESSAGE, STATE_IDENTITY
+
+    identity = getattr(getattr(conn, "state", None), STATE_IDENTITY, None)
+    if identity is None:
+        logger.error("Route %s asks for the caller but declares no access policy", conn.url.path)
+        raise HTTPException(status_code=500, detail=NO_POLICY_MESSAGE)
     return identity
 
 
@@ -239,10 +142,12 @@ async def _authenticate_cookie(db: AsyncSession, conn: HTTPConnection, cookie_to
     raise HTTPException(status_code=401, detail="Invalid token")
 
 
-async def _resolve_admin(conn: HTTPConnection, authorization: str | None, token: str | None, db: AsyncSession) -> str:
-    # 0. Before setup is complete no credentials exist: only the wizard's routes are open
+async def _resolve_admin(
+    conn: HTTPConnection, authorization: str | None, token: str | None, db: AsyncSession, setup_open: bool = False,
+) -> str:
+    # 0. Before setup is complete no credentials exist: only the wizard's routes (setup="open") answer
     if not await _setup_completed(db):
-        if _is_setup_wizard_route(conn):
+        if setup_open:
             return "setup_mode"
         raise HTTPException(status_code=403, detail="Initial setup not completed.")
 
@@ -283,26 +188,31 @@ async def _authenticate_bearer(db: AsyncSession, authorization: str, conn: HTTPC
     return await _verify_api_token(db, token_val, conn)
 
 
-async def get_bearer_admin(
-    conn: HTTPConnection,
-    authorization: str | None = Header(None),
-    db: AsyncSession = Depends(get_db)
-) -> str:
-    """
-    Dependency for GET routes with side effects: only the Authorization header counts.
+BEARER_ONLY_MESSAGE = (
+    "This GET endpoint only accepts an API token in the 'Authorization: Bearer' header. "
+    "Browser sessions must use the POST variant."
+)
+
+
+async def authenticate_bearer_only(conn: HTTPConnection, db: AsyncSession) -> str:
+    """For GET routes with side effects (policy ``bearer_only``): only the Authorization header counts.
 
     SameSite=Lax still sends the session cookie when another site links or redirects
     the browser to a GET URL, so a cookie must not be enough to trigger an action there.
     Browser sessions use the POST variant of such routes instead.
     """
+    authorization = conn.headers.get("authorization")
     if not (authorization and authorization.startswith("Bearer ")):
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "This GET endpoint only accepts an API token in the 'Authorization: Bearer' header. "
-                "Browser sessions must use the POST variant."
-            )
-        )
+        if not conn.cookies.get("gravitylan_token"):
+            raise HTTPException(status_code=401, detail="Missing authentication token")
+        raise HTTPException(status_code=403, detail=BEARER_ONLY_MESSAGE)
+    return await _authenticate_bearer(db, authorization, conn)
+
+
+async def get_bearer_admin(conn: HTTPConnection, authorization: str | None, db: AsyncSession) -> str:
+    """The master or API token of the Authorization header alone (for routes that check it themselves)."""
+    if not (authorization and authorization.startswith("Bearer ")):
+        raise HTTPException(status_code=403, detail=BEARER_ONLY_MESSAGE)
     identity = await _authenticate_bearer(db, authorization, conn)
     remember_actor(conn, identity)
     return identity
@@ -322,6 +232,53 @@ def _host_key(scheme: str, netloc: str) -> str:
     return f"{host}:{port or _DEFAULT_PORTS.get(scheme, '')}"
 
 
+# uvicorn's FORWARDED_ALLOW_IPS when GRAVITYLAN_TRUSTED_PROXIES is empty (see the Dockerfile)
+_DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1"
+
+
+def _trusted_proxy_networks() -> list | None:
+    """The networks of GRAVITYLAN_TRUSTED_PROXIES (localhost when empty); None for "*" (every address)."""
+    import ipaddress
+
+    raw = (settings.trusted_proxies or "").strip() or _DEFAULT_TRUSTED_PROXIES
+    networks = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if entry == "*":
+            return None
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            continue  # a host name or a typo trusts nothing
+    return networks
+
+
+def _from_trusted_proxy(websocket: WebSocket) -> bool:
+    """Whether the handshake came through a proxy in GRAVITYLAN_TRUSTED_PROXIES.
+
+    uvicorn (--proxy-headers) has already replaced the client address with the one from
+    X-Forwarded-For when the connecting proxy is trusted. So the handshake came through a trusted
+    proxy when its client address is one itself (a proxy that sends no X-Forwarded-For), or when
+    that address was taken from X-Forwarded-For, which uvicorn only does for a trusted proxy.
+    """
+    import ipaddress
+
+    from app.services.proxy_hint import _host
+
+    networks = _trusted_proxy_networks()
+    if networks is None:
+        return True
+    client = websocket.client.host if getattr(websocket, "client", None) else None
+    try:
+        address = ipaddress.ip_address(client or "")
+    except ValueError:
+        return False
+    if any(address in network for network in networks):
+        return True
+    forwarded_for = websocket.headers.get("x-forwarded-for") or ""
+    return client in {_host(entry) for entry in forwarded_for.split(",") if entry.strip()}
+
+
 def websocket_origin_allowed(websocket: WebSocket) -> bool:
     """True unless a browser opened this WebSocket from another site.
 
@@ -329,8 +286,9 @@ def websocket_origin_allowed(websocket: WebSocket) -> bool:
     apply CORS to it, so a page on another site could open the scanner, log or terminal
     channels in the admin's name. Browsers always send ``Origin`` on the handshake and a
     page cannot change it. Allowed: no ``Origin`` (scripts and agents), the address the
-    browser used (``Host``, or ``X-Forwarded-Host`` from a reverse proxy, which a page
-    cannot set either) and the origins in ``GRAVITYLAN_CORS_ORIGINS``.
+    browser used (``Host``, or ``X-Forwarded-Host`` when the handshake came through a proxy in
+    ``GRAVITYLAN_TRUSTED_PROXIES``; from anyone else it is ignored) and the origins in
+    ``GRAVITYLAN_CORS_ORIGINS``.
     """
     origin = websocket.headers.get("origin")
     if origin is None:
@@ -344,7 +302,7 @@ def websocket_origin_allowed(websocket: WebSocket) -> bool:
     wanted = _host_key(scheme, netloc)
     hosts = [websocket.headers.get("host", "")]
     forwarded = websocket.headers.get("x-forwarded-host")
-    if forwarded:
+    if forwarded and _from_trusted_proxy(websocket):
         hosts.append(forwarded.split(",")[0])
     return any(_host_key(scheme, h) == wanted for h in hosts if h)
 
@@ -365,7 +323,8 @@ async def authenticate_websocket(
     websocket: WebSocket,
     endpoint_type: str,  # "logs" (Logs), "scanner" (Scan Status), "agent" (Agent metrics)
     device_id: int | None = None,
-    db: AsyncSession | None = None
+    db: AsyncSession | None = None,
+    token_scope: str | None = None,
 ) -> dict:
     """
     Centralized, secure helper to authenticate WebSocket connections.
@@ -390,9 +349,9 @@ async def authenticate_websocket(
     if db is None:
         from app.database import async_session
         async with async_session() as session_ctx:
-            return await _authenticate_websocket_impl(websocket, endpoint_type, device_id, session_ctx)
+            return await _authenticate_websocket_impl(websocket, endpoint_type, device_id, session_ctx, token_scope)
     else:
-        return await _authenticate_websocket_impl(websocket, endpoint_type, device_id, db)
+        return await _authenticate_websocket_impl(websocket, endpoint_type, device_id, db, token_scope)
 
 
 async def authenticate_websocket_authorized(
@@ -460,6 +419,7 @@ class _WsHandshake:
     websocket: WebSocket
     endpoint_type: str
     device_id: int | None
+    token_scope: str | None = None  # the scope an API token needs on this channel (its policy's scope)
 
 
 async def _auth_logs_query(handshake: _WsHandshake, query_token: str) -> dict | None:
@@ -519,10 +479,6 @@ async def _ws_close(websocket: WebSocket, code: int, reason: str, log_message: s
     return {"authenticated": False}
 
 
-# The scope an API token needs on each WebSocket channel
-_WS_TOKEN_SCOPES = {"logs": "settings:read", "scanner": "scanner:read", "agent": "agent:read"}
-
-
 async def _ws_session_cookie(websocket: WebSocket, cookie_token: str) -> dict:
     """Browser session from the cookie; every channel accepts it (UI clients subscribing)."""
     session = session_store.get_session(cookie_token)
@@ -539,7 +495,7 @@ async def _ws_session_cookie(websocket: WebSocket, cookie_token: str) -> dict:
 
 
 async def _ws_api_token(handshake: _WsHandshake, db_token) -> dict:
-    required_scope = _WS_TOKEN_SCOPES.get(handshake.endpoint_type)
+    required_scope = handshake.token_scope
     if required_scope and required_scope not in _token_scopes(db_token):
         return await _ws_close(
             handshake.websocket, 4003, "Insufficient token scopes",
@@ -597,9 +553,10 @@ async def _authenticate_websocket_impl(
     websocket: WebSocket,
     endpoint_type: str,
     device_id: int | None,
-    db: AsyncSession
+    db: AsyncSession,
+    token_scope: str | None = None,
 ) -> dict:
-    handshake = _WsHandshake(db, websocket, endpoint_type, device_id)
+    handshake = _WsHandshake(db, websocket, endpoint_type, device_id, token_scope)
 
     # 1. Setup gate
     if not await _setup_completed(db):
@@ -774,7 +731,7 @@ async def _save_admin_password(
     await db.commit()
 
 
-@router.post("/login")
+@router.post("/login", dependencies=[policy(callers=PUBLIC, note="password login; at most 5 failed attempts per address and minute")])
 async def login(
     request: Request,
     response: Response,
@@ -817,7 +774,7 @@ async def login(
     # Lets the login screen say why the session will not stick instead of silently showing itself again
     return {"status": "ok", "message": "Login successful", "secure_cookie_over_http": secure_cookie_dropped(request)}
 
-@router.post("/logout")
+@router.post("/logout", dependencies=[policy(callers=PUBLIC, note="ends the session of the cookie it is sent with")])
 async def logout(request: Request, response: Response):
     """Clear the authentication cookie and invalidate the in-memory session."""
     cookie_token = request.cookies.get("gravitylan_token")
@@ -834,10 +791,6 @@ class PasswordChange(BaseModel):
     new_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=256)
 
 
-def _is_valid_browser_session(token: str) -> bool:
-    return token.startswith("session_") and session_store.get_session(token) is not None
-
-
 def _ensure_new_password_valid(req: PasswordChange) -> None:
     if req.new_password == req.current_password:
         raise HTTPException(status_code=400, detail="Choose a password that differs from the current one.")
@@ -845,7 +798,7 @@ def _ensure_new_password_valid(req: PasswordChange) -> None:
         raise HTTPException(status_code=400, detail="The new password must not be blank.")
 
 
-@router.post("/password")
+@router.post("/password", dependencies=[policy(callers=SESSION_ONLY, denied="Only a logged-in browser session can change the password.", audit_action="auth.password", note="current password confirmed in the request")])
 async def change_password(
     req: PasswordChange,
     request: Request,
@@ -858,10 +811,6 @@ async def change_password(
     current password must be confirmed. Errors are 400, not 401, so the UI does not
     treat a typo as "logged out".
     """
-    if not _is_valid_browser_session(token):
-        await audit(request, "auth.password", "denied", detail="not a browser session")
-        raise HTTPException(status_code=403, detail="Only a logged-in browser session can change the password.")
-
     master_setting, admin_setting = await _password_settings(db)
     required = _stored_password(master_setting, admin_setting)
     if not required:
@@ -896,7 +845,7 @@ async def _admin_password_matches(db: AsyncSession, password: str) -> bool:
     return _password_matches(password, required)
 
 
-@router.post("/step-up")
+@router.post("/step-up", dependencies=[policy(callers=SESSION_ONLY, denied="Only a logged-in browser session can confirm actions.")])
 async def step_up(
     req: StepUpRequest,
     request: Request,
@@ -908,9 +857,7 @@ async def step_up(
     Wrong passwords count against the same per-address limit as logins. Errors are 400, not 401,
     so the UI does not treat a typo as "logged out".
     """
-    session_id = stepup.session_of(request)
-    if session_id is None:
-        raise HTTPException(status_code=403, detail="Only a logged-in browser session can confirm actions.")
+    session_id = token  # the policy admits browser sessions only
     client_ip = _client_ip(request)
     retry_after = _reserve_login_attempt(client_ip)
     if retry_after is not None:
@@ -931,7 +878,7 @@ async def step_up(
     return {"scope": req.scope, "expires_in": minutes * 60}
 
 
-@router.get("/step-up")
+@router.get("/step-up", dependencies=[policy(scope=None)])
 async def step_up_status(request: Request, token: str = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     """Seconds left per confirmed class for this browser session, and the grant length in minutes."""
     session_id = stepup.session_of(request)
@@ -941,13 +888,13 @@ async def step_up_status(request: Request, token: str = Depends(get_current_admi
     }
 
 
-@router.get("/cookie-security")
+@router.get("/cookie-security", dependencies=[policy(scope=None)])
 async def cookie_security(request: Request, token: str = Depends(get_current_admin)):
     """Whether session cookies carry the Secure flag, and whether this request came over HTTPS."""
     return {"secure_cookies": settings.secure_cookies, "https": served_over_https(request)}
 
 
-@router.post("/master-token/rotate", dependencies=[Depends(require_step_up("credentials"))])
+@router.post("/master-token/rotate", dependencies=[policy(callers=SESSION_ONLY, step_up="credentials", denied="Only a logged-in browser session can replace the master token.", audit_action="auth.master_token.rotate")])
 async def rotate_master_token(
     request: Request,
     token: str = Depends(get_current_admin),
@@ -958,10 +905,6 @@ async def rotate_master_token(
     Only a logged-in browser session with a password confirmation may do this, so the master token
     cannot replace itself. Clients using the old token stop working at once; browser sessions stay.
     """
-    if not _is_valid_browser_session(token):
-        await audit(request, "auth.master_token.rotate", "denied", detail="not a browser session")
-        raise HTTPException(status_code=403, detail="Only a logged-in browser session can replace the master token.")
-
     master_setting, _ = await _password_settings(db)
     if not master_setting:
         raise HTTPException(status_code=500, detail="System not initialized. Run setup first.")
@@ -974,7 +917,7 @@ async def rotate_master_token(
     return {"token": new_token}
 
 
-@router.post("/check")
+@router.post("/check", dependencies=[policy(scope=None)])
 async def check_auth(token: str = Depends(get_current_admin)):
     """Check if currently authenticated (via dependency)."""
     return {"status": "ok"}
@@ -987,19 +930,16 @@ async def check_auth(token: str = Depends(get_current_admin)):
 from app.models.api_token import ApiToken
 from app.schemas.api_token import ApiTokenCreate, ApiTokenResponse, ApiTokenCreated
 
-@router.get("/tokens", response_model=list[ApiTokenResponse])
+@router.get("/tokens", response_model=list[ApiTokenResponse], dependencies=[policy(callers=NO_API_TOKEN, denied=TOKENS_DENIED)])
 async def list_api_tokens(
     token: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """List all configured read-only API tokens (Admin only)."""
-    if token.startswith("api_token:"):
-        raise HTTPException(status_code=403, detail="Read-only tokens cannot view or manage other tokens.")
-    
     res = await db.execute(select(ApiToken).order_by(ApiToken.created_at.desc()))
     return res.scalars().all()
 
-@router.post("/tokens", response_model=ApiTokenCreated, dependencies=[Depends(require_step_up("credentials"))])
+@router.post("/tokens", response_model=ApiTokenCreated, dependencies=[policy(callers=NO_API_TOKEN, step_up="credentials", denied=TOKENS_DENIED)])
 async def create_api_token(
     payload: ApiTokenCreate,
     request: Request,
@@ -1007,9 +947,6 @@ async def create_api_token(
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new read-only API token (Admin only)."""
-    if token.startswith("api_token:"):
-        raise HTTPException(status_code=403, detail="Read-only tokens cannot view or manage other tokens.")
-    
     # The name identifies the token in the audit log and in /api/auth/me, so it must be unique
     taken = await db.execute(select(ApiToken.id).where(ApiToken.name == payload.name))
     if taken.first():
@@ -1043,7 +980,7 @@ async def create_api_token(
         scopes=payload.scopes
     )
 
-@router.delete("/tokens/{token_id}", dependencies=[Depends(require_step_up("credentials"))])
+@router.delete("/tokens/{token_id}", dependencies=[policy(callers=NO_API_TOKEN, step_up="credentials", denied=TOKENS_DENIED)])
 async def delete_api_token(
     token_id: int,
     request: Request,
@@ -1051,9 +988,6 @@ async def delete_api_token(
     db: AsyncSession = Depends(get_db)
 ):
     """Delete (revoke) an API token (Admin only)."""
-    if token.startswith("api_token:"):
-        raise HTTPException(status_code=403, detail="Read-only tokens cannot view or manage other tokens.")
-    
     res = await db.execute(select(ApiToken).where(ApiToken.id == token_id))
     db_token = res.scalar_one_or_none()
     if not db_token:
@@ -1064,7 +998,7 @@ async def delete_api_token(
     await audit(request, "auth.token.delete", target=db_token.name)
     return {"status": "ok", "message": "Token revoked successfully"}
 
-@router.get("/me")
+@router.get("/me", dependencies=[policy(scope=None)])
 async def auth_me(
     request: Request,
     token: str = Depends(get_current_admin),

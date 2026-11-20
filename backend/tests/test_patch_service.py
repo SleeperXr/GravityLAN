@@ -202,6 +202,10 @@ async def test_prepare_patch_action_with_stored_key(client, db, admin_token):
     token = response.json()["patch_token"]
     assert _temp_patch_tokens[token]["ssh_key"] == "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
     assert _temp_patch_tokens[token]["host_ip"] == "192.168.1.105"
+    # Bound to the browser session (only a digest of its id) and the address that asked for it
+    from app.api.agent_patches import _session_digest
+    assert _temp_patch_tokens[token]["session"] == _session_digest(client.cookies.get("gravitylan_token"))
+    assert _temp_patch_tokens[token]["client"] == "127.0.0.1"
 
 
 def _real_channel_mock(exit_code: int = 0) -> MagicMock:

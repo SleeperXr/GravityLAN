@@ -3,6 +3,7 @@
 import logging
 import re
 from fastapi import APIRouter, Depends, Query
+from app.api.policy import policy
 from app.api.auth import get_current_admin
 from app.services.log_streamer import log_handler
 
@@ -36,7 +37,7 @@ def parse_log_line(line: str) -> dict:
         "message": line
     }
 
-@router.get("", response_model=list[dict])
+@router.get("", response_model=list[dict], dependencies=[policy(scope="settings:read")])
 async def get_logs(
     limit: int = Query(50, ge=1, le=1000),
     level: str | None = Query(None, description="Filter logs by level (e.g. INFO, ERROR)"),

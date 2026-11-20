@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_admin
+from app.api.policy import policy
 from app.database import get_db
 from app.models.device import Device
 from app.services.telemetry_store import (
@@ -32,7 +32,7 @@ from app.services.telemetry_store import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/settings/telemetry", tags=["telemetry"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(prefix="/api/settings/telemetry", tags=["telemetry"])
 
 
 class TelemetryRetentionUpdate(BaseModel):
@@ -80,13 +80,13 @@ async def _status(db: AsyncSession) -> dict:
     }
 
 
-@router.get("")
+@router.get("", dependencies=[policy(scope="settings:read")])
 async def get_telemetry_status(db: AsyncSession = Depends(get_db)) -> dict:
     """Sizes of both databases, rows per measurement table and the retention per tier."""
     return await _status(db)
 
 
-@router.put("/retention")
+@router.put("/retention", dependencies=[policy(scope="settings:write")])
 async def update_telemetry_retention(update: TelemetryRetentionUpdate, db: AsyncSession = Depends(get_db)) -> dict:
     """Store the retention per tier; the next hourly maintenance run applies it."""
     await save_retention(db, TelemetryRetention(**update.model_dump()))
@@ -94,7 +94,7 @@ async def update_telemetry_retention(update: TelemetryRetentionUpdate, db: Async
     return await _status(db)
 
 
-@router.post("/purge")
+@router.post("/purge", dependencies=[policy(scope="settings:write")])
 async def purge_telemetry_data(request: TelemetryPurgeRequest, db: AsyncSession = Depends(get_db)) -> dict:
     """Delete measurement data (older than N days, of one device, or all) and free the space."""
     older_than = None

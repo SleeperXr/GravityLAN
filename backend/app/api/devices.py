@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_admin
+from app.api.policy import policy
 from app.database import get_db
 from app.models.device import Device, DeviceGroup, Service
 from app.models.agent import AgentToken
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # Auth sits on the routers themselves (defense in depth): main.py adds it again on
 # include, FastAPI caches the dependency per request, so it still runs once.
 # get_current_admin also accepts scoped API tokens and enforces their scopes.
-router = APIRouter(prefix="/api/devices", tags=["devices"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(prefix="/api/devices", tags=["devices"])
 
 
 def _agent_reporting(token: AgentToken, interval: int | None, now: datetime) -> bool | None:
@@ -153,7 +153,7 @@ async def _annotate_parent_names(db: AsyncSession, devices: list[Device]) -> Non
             device.parent_name = device_map.get(device.parent_id)
 
 
-@router.get("", response_model=list[DeviceResponse])
+@router.get("", response_model=list[DeviceResponse], dependencies=[policy(scope="devices:read")])
 async def list_devices(
     include_hidden: bool = False,
     group_id: int | None = None,
@@ -257,7 +257,7 @@ async def _bulk_metadata_refresh(devices_to_refresh, servers: tuple[str | None, 
     logger.info(f"Bulk metadata refresh complete. Updated {updated} devices.")
 
 
-@router.post("/refresh-all", status_code=200)
+@router.post("/refresh-all", status_code=200, dependencies=[policy(scope="devices:write")])
 async def refresh_all_devices(background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)) -> dict:
     """Trigger a metadata refresh (DNS, MAC, Vendor) for all known devices."""
     try:
@@ -269,7 +269,7 @@ async def refresh_all_devices(background_tasks: BackgroundTasks, db: AsyncSessio
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/add-from-ip", response_model=DeviceResponse)
+@router.post("/add-from-ip", response_model=DeviceResponse, dependencies=[policy(scope="devices:write")])
 async def add_device_from_ip(ip: str, db: AsyncSession = Depends(get_db)) -> DeviceResponse:
     """Add a discovered host to the dashboard by IP."""
     # The value is stored and handed to the hostname resolvers (subprocesses), so only
@@ -351,7 +351,7 @@ async def _fill_new_device_details(device, ip: str) -> None:
 
 # --- MAC conflicts and the controlled MAC change (app.services.mac_observations) ---
 
-@router.get("/mac-conflicts", response_model=list[MacConflictGroup])
+@router.get("/mac-conflicts", response_model=list[MacConflictGroup], dependencies=[policy(scope="devices:read")])
 async def list_mac_conflicts(db: AsyncSession = Depends(get_db)) -> list[dict]:
     """Other MACs that answered at devices' addresses, one entry per (documented, observed) MAC pair."""
     return await mac_observations.open_conflict_groups(db)
@@ -364,7 +364,7 @@ async def _device_or_404(db: AsyncSession, device_id: int) -> Device:
     return device
 
 
-@router.put("/{device_id}/mac", response_model=MacChangeResult)
+@router.put("/{device_id}/mac", response_model=MacChangeResult, dependencies=[policy(scope="devices:write")])
 async def set_device_mac(
     device_id: int, req: MacChangeRequest, request: Request, db: AsyncSession = Depends(get_db),
 ) -> MacChangeResult:
@@ -390,7 +390,7 @@ async def set_device_mac(
     return MacChangeResult(changed_device_ids=[d.id for d in changed])
 
 
-@router.post("/{device_id}/mac-observations/dismiss", status_code=204)
+@router.post("/{device_id}/mac-observations/dismiss", status_code=204, dependencies=[policy(scope="devices:write")])
 async def dismiss_mac_observation(
     device_id: int, req: MacObservationDismiss, request: Request, db: AsyncSession = Depends(get_db),
 ) -> None:
@@ -409,7 +409,7 @@ def _invalidate_device_caches() -> None:
     topology_cache.invalidate()
 
 
-@router.get("/{device_id}", response_model=DeviceResponse)
+@router.get("/{device_id}", response_model=DeviceResponse, dependencies=[policy(scope="devices:read")])
 async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> DeviceResponse:
     """Get a single device by ID."""
     device = await db.get(Device, device_id)
@@ -459,7 +459,7 @@ async def _check_device_links(db: AsyncSession, device: Device, update_data: dic
             )
 
 
-@router.patch("/{device_id}", response_model=DeviceResponse)
+@router.patch("/{device_id}", response_model=DeviceResponse, dependencies=[policy(scope="devices:write")])
 async def update_device(
     device_id: int,
     update: DeviceUpdate,
@@ -536,7 +536,7 @@ async def _delete_device_dependencies(db: AsyncSession, device_ids: list[int]) -
     )
 
 
-@router.delete("/{device_id}", status_code=204)
+@router.delete("/{device_id}", status_code=204, dependencies=[policy(scope="devices:write")])
 async def delete_device(device_id: int, db: AsyncSession = Depends(get_db)) -> None:
     """Delete a device and its services."""
     from sqlalchemy import delete
@@ -552,7 +552,7 @@ async def delete_device(device_id: int, db: AsyncSession = Depends(get_db)) -> N
     discovery_cache.invalidate()  # the address is listed as discovered again
 
 
-@router.post("/bulk-delete", status_code=204)
+@router.post("/bulk-delete", status_code=204, dependencies=[policy(scope="devices:write")])
 async def bulk_delete_devices(device_ids: list[int], db: AsyncSession = Depends(get_db)) -> None:
     """Delete multiple devices at once."""
     from sqlalchemy import delete
@@ -577,7 +577,7 @@ def _apply_hostname(device, new_hostname: str) -> None:
     logger.info(f"Updated hostname for {device.ip} to {new_hostname}")
 
 
-@router.post("/{device_id}/refresh-info", response_model=DeviceResponse)
+@router.post("/{device_id}/refresh-info", response_model=DeviceResponse, dependencies=[policy(scope="devices:write")])
 async def refresh_device_info(device_id: int, db: AsyncSession = Depends(get_db), commit: bool = True) -> DeviceResponse:
     """Trigger a manual metadata refresh (Hostname, MAC, Vendor)."""
     device = await db.get(Device, device_id)
@@ -677,7 +677,7 @@ def _add_missing_services(db, device, open_ports: list[int], found_ports_handled
             existing_svc.is_up = True
 
 
-@router.post("/{device_id}/refresh-services", response_model=DeviceResponse)
+@router.post("/{device_id}/refresh-services", response_model=DeviceResponse, dependencies=[policy(scope="devices:write")])
 async def refresh_device_services(device_id: int, db: AsyncSession = Depends(get_db), commit: bool = True) -> DeviceResponse:
     """Trigger a robust nmap -Pn scan for a single device to update its services."""
     from sqlalchemy.orm import selectinload
@@ -725,7 +725,7 @@ async def refresh_device_services(device_id: int, db: AsyncSession = Depends(get
         topology_cache.invalidate()
     return device
 
-@router.get("/{device_id}/history", response_model=list[DeviceHistoryResponse])
+@router.get("/{device_id}/history", response_model=list[DeviceHistoryResponse], dependencies=[policy(scope="devices:read")])
 async def get_device_history(device_id: int, db: AsyncSession = Depends(get_db)):
     """Get the status history for a specific device."""
     from app.models.device import DeviceHistory
@@ -738,7 +738,7 @@ async def get_device_history(device_id: int, db: AsyncSession = Depends(get_db))
     return result.scalars().all()
 
 
-@router.post("/{device_id}/history/read-all")
+@router.post("/{device_id}/history/read-all", dependencies=[policy(scope="devices:write")])
 async def mark_device_history_read(device_id: int, db: AsyncSession = Depends(get_db)):
     """Mark all status history entries for a specific device as read."""
     from app.models.device import DeviceHistory
@@ -750,9 +750,9 @@ async def mark_device_history_read(device_id: int, db: AsyncSession = Depends(ge
 
 
 # --- Services ---
-router_services = APIRouter(prefix="/api/services", tags=["services"], dependencies=[Depends(get_current_admin)])
+router_services = APIRouter(prefix="/api/services", tags=["services"])
 
-@router.post("/{device_id}/services", response_model=ServiceResponse)
+@router.post("/{device_id}/services", response_model=ServiceResponse, dependencies=[policy(scope="devices:write")])
 async def add_service(device_id: int, data: ServiceCreate, db: AsyncSession = Depends(get_db)):
     """Add a new service to a device."""
     device = await db.get(Device, device_id)
@@ -799,7 +799,7 @@ def _is_generated_link(template: str | None, port: int) -> bool:
     return link_port is None or link_port == "{port}" or link_port == str(port)
 
 
-@router_services.patch("/{service_id}", response_model=ServiceResponse)
+@router_services.patch("/{service_id}", response_model=ServiceResponse, dependencies=[policy(scope="devices:write")])
 async def update_service(service_id: int, data: ServiceUpdate, db: AsyncSession = Depends(get_db)):
     """Update an existing service. Manually updated services are no longer 'auto_detected'."""
     service = await db.get(Service, service_id)
@@ -830,7 +830,7 @@ async def update_service(service_id: int, data: ServiceUpdate, db: AsyncSession 
     topology_cache.invalidate()
     return service
 
-@router_services.delete("/{service_id}", status_code=204)
+@router_services.delete("/{service_id}", status_code=204, dependencies=[policy(scope="devices:write")])
 async def delete_service(service_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a service."""
     service = await db.get(Service, service_id)
@@ -845,10 +845,10 @@ async def delete_service(service_id: int, db: AsyncSession = Depends(get_db)):
 
 # --- Groups ---
 
-groups_router = APIRouter(prefix="/api/groups", tags=["groups"], dependencies=[Depends(get_current_admin)])
+groups_router = APIRouter(prefix="/api/groups", tags=["groups"])
 
 
-@groups_router.get("", response_model=list[GroupResponse])
+@groups_router.get("", response_model=list[GroupResponse], dependencies=[policy(scope="devices:read")])
 async def list_groups(db: AsyncSession = Depends(get_db)) -> list[GroupResponse]:
     """List all device groups with device counts."""
     result = await db.execute(select(DeviceGroup).order_by(DeviceGroup.sort_order))
@@ -868,7 +868,7 @@ async def list_groups(db: AsyncSession = Depends(get_db)) -> list[GroupResponse]
     return response
 
 
-@groups_router.post("", response_model=GroupResponse, status_code=201)
+@groups_router.post("", response_model=GroupResponse, status_code=201, dependencies=[policy(scope="devices:write")])
 async def create_group(data: GroupCreate, db: AsyncSession = Depends(get_db)) -> GroupResponse:
     """Create a new device group."""
     trimmed = data.name.strip()
@@ -898,7 +898,7 @@ async def create_group(data: GroupCreate, db: AsyncSession = Depends(get_db)) ->
     )
 
 
-@groups_router.patch("/{group_id}", response_model=GroupResponse)
+@groups_router.patch("/{group_id}", response_model=GroupResponse, dependencies=[policy(scope="devices:write")])
 async def update_group(
     group_id: int,
     update: GroupUpdate,
@@ -943,7 +943,7 @@ async def update_group(
     )
 
 
-@groups_router.delete("/{group_id}", status_code=204)
+@groups_router.delete("/{group_id}", status_code=204, dependencies=[policy(scope="devices:write")])
 async def delete_group(group_id: int, db: AsyncSession = Depends(get_db)) -> None:
     """Delete a device group. Devices in this group will be unassigned."""
     group = await db.get(DeviceGroup, group_id)
@@ -960,7 +960,7 @@ async def delete_group(group_id: int, db: AsyncSession = Depends(get_db)) -> Non
     dashboard_cache.invalidate_all()
     topology_cache.invalidate()
 
-@groups_router.get("/{group_id}", response_model=GroupWithDevicesResponse)
+@groups_router.get("/{group_id}", response_model=GroupWithDevicesResponse, dependencies=[policy(scope="devices:read")])
 async def get_group_details(
     group_id: int,
     db: AsyncSession = Depends(get_db)

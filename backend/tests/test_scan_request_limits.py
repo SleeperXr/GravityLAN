@@ -86,8 +86,10 @@ async def test_live_discovery_needs_scanner_start_scope(client, admin_token):
 
 
 def test_active_scan_gets_need_scanner_start():
-    from app.api.auth import _required_scope_for
+    from app.api.policy import iter_route_policies
+    from app.main import app
 
-    assert _required_scope_for("/api/scanner/scan-ip", "GET") == "scanner:start"
-    assert _required_scope_for("/api/scanner/live-discovery/", "GET") == "scanner:start"
-    assert _required_scope_for("/api/scanner/status", "GET") == "scanner:read"
+    scopes = {(e.method, e.path): e.policy.scope for e in iter_route_policies(app)}
+    assert scopes[("GET", "/api/scanner/scan-ip")] == "scanner:start"
+    assert scopes[("GET", "/api/scanner/live-discovery")] == "scanner:start"
+    assert scopes[("GET", "/api/scanner/status")] == "scanner:read"

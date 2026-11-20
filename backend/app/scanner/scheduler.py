@@ -81,6 +81,10 @@ class ScanScheduler:
         self._running = False
         self._last_cleanup_time = None
 
+    @property
+    def running(self) -> bool:
+        return self._running
+
     async def start(self):
         if self._running:
             return
