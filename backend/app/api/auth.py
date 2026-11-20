@@ -232,6 +232,53 @@ def _host_key(scheme: str, netloc: str) -> str:
     return f"{host}:{port or _DEFAULT_PORTS.get(scheme, '')}"
 
 
+# uvicorn's FORWARDED_ALLOW_IPS when GRAVITYLAN_TRUSTED_PROXIES is empty (see the Dockerfile)
+_DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1"
+
+
+def _trusted_proxy_networks() -> list | None:
+    """The networks of GRAVITYLAN_TRUSTED_PROXIES (localhost when empty); None for "*" (every address)."""
+    import ipaddress
+
+    raw = (settings.trusted_proxies or "").strip() or _DEFAULT_TRUSTED_PROXIES
+    networks = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if entry == "*":
+            return None
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            continue  # a host name or a typo trusts nothing
+    return networks
+
+
+def _from_trusted_proxy(websocket: WebSocket) -> bool:
+    """Whether the handshake came through a proxy in GRAVITYLAN_TRUSTED_PROXIES.
+
+    uvicorn (--proxy-headers) has already replaced the client address with the one from
+    X-Forwarded-For when the connecting proxy is trusted. So the handshake came through a trusted
+    proxy when its client address is one itself (a proxy that sends no X-Forwarded-For), or when
+    that address was taken from X-Forwarded-For, which uvicorn only does for a trusted proxy.
+    """
+    import ipaddress
+
+    from app.services.proxy_hint import _host
+
+    networks = _trusted_proxy_networks()
+    if networks is None:
+        return True
+    client = websocket.client.host if getattr(websocket, "client", None) else None
+    try:
+        address = ipaddress.ip_address(client or "")
+    except ValueError:
+        return False
+    if any(address in network for network in networks):
+        return True
+    forwarded_for = websocket.headers.get("x-forwarded-for") or ""
+    return client in {_host(entry) for entry in forwarded_for.split(",") if entry.strip()}
+
+
 def websocket_origin_allowed(websocket: WebSocket) -> bool:
     """True unless a browser opened this WebSocket from another site.
 
@@ -239,8 +286,9 @@ def websocket_origin_allowed(websocket: WebSocket) -> bool:
     apply CORS to it, so a page on another site could open the scanner, log or terminal
     channels in the admin's name. Browsers always send ``Origin`` on the handshake and a
     page cannot change it. Allowed: no ``Origin`` (scripts and agents), the address the
-    browser used (``Host``, or ``X-Forwarded-Host`` from a reverse proxy, which a page
-    cannot set either) and the origins in ``GRAVITYLAN_CORS_ORIGINS``.
+    browser used (``Host``, or ``X-Forwarded-Host`` when the handshake came through a proxy in
+    ``GRAVITYLAN_TRUSTED_PROXIES``; from anyone else it is ignored) and the origins in
+    ``GRAVITYLAN_CORS_ORIGINS``.
     """
     origin = websocket.headers.get("origin")
     if origin is None:
@@ -254,7 +302,7 @@ def websocket_origin_allowed(websocket: WebSocket) -> bool:
     wanted = _host_key(scheme, netloc)
     hosts = [websocket.headers.get("host", "")]
     forwarded = websocket.headers.get("x-forwarded-host")
-    if forwarded:
+    if forwarded and _from_trusted_proxy(websocket):
         hosts.append(forwarded.split(",")[0])
     return any(_host_key(scheme, h) == wanted for h in hosts if h)
 
