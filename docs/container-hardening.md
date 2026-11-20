@@ -21,7 +21,7 @@ GravityLAN implements a secure, **multi-stage, capabilities-aware build** design
 
 ```mermaid
 graph TD
-    A[Stage 1: Frontend Build <br/> node:20-alpine] -->|Static HTML/JS| C(Stage 3: Runtime Environment)
+    A[Stage 1: Frontend Build <br/> node:22-alpine] -->|Static HTML/JS| C(Stage 3: Runtime Environment)
     B[Stage 2: Python Build <br/> python:3.12-slim] -->|Isolate /opt/venv| C
     C -->|Minimal System Tools| D[Low-privilege Runtime Layer]
     D -->|Non-root user: gravitylan| E[Secure Container Execution]

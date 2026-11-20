@@ -45,8 +45,8 @@ GravityLAN allows remote deployment of system agents to Linux hosts using SSH. W
 *   **Use Case**: Recommended for stable, hardened environments to significantly mitigate Man-in-the-Middle (MITM) attacks during remote installation or uninstallation.
 
 ### Saved Key Connections (Pinned Host Key)
-*   **Behavior**: Deploy and uninstall with a saved key connection of the SSH terminal (ADR-002, decision 9) ignore both policies above. Only a host whose key is already trusted in the terminal's known hosts (`ssh_known_hosts`) is contacted, and exactly that key is accepted; it is checked after the key exchange and before authentication, so a changed key never receives a credential. Unknown hosts have to be connected to once in the SSH terminal and their key confirmed.
-*   **Scope**: Key logins only (stored passwords are not used), only for the connection's own device, and only from a logged-in browser session (API and master tokens get 403). Package updates (patching) still take typed-in credentials.
+*   **Behavior**: Deploy, uninstall, and package updates (patching) with a saved key connection of the SSH terminal (ADR-002, decision 9) use the host key already trusted in `ssh_known_hosts` (`PinnedHostKeyPolicy`, checked after key exchange and before authentication). An unknown host is not contacted and a changed key never receives a credential; unknown hosts must first be connected to once in the SSH terminal (or learned via typed-in TOFU for package updates).
+*   **Scope**: Key logins only (stored passwords are not used for agent deploy or removal), only for the connection's own device, and only from a logged-in browser session with `remote` step-up password confirmation (API and master tokens get 403).
 
 ### SSH Key Seeding inside Docker Containers
 When running GravityLAN inside a Docker container, the container filesystem is isolated from the host. To seed host keys in Strict Mode:
