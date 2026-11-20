@@ -1042,6 +1042,7 @@ async def get_group_details(
     # Populate agent details
     tokens_by_device = await _load_agent_tokens(db, group.devices)
     intervals = await load_intervals(db)
+    await _annotate_presence(db, list(group.devices))
     devices_list = [_device_response(d, tokens_by_device.get(d.id), intervals) for d in group.devices]
         
     return GroupWithDevicesResponse(

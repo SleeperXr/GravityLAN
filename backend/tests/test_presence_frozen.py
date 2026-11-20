@@ -4,7 +4,7 @@ says so, so the last known state is not read as a measured one (app.services.mac
 import pytest
 
 from app.models.agent import AgentConfig, AgentToken
-from app.models.device import Device
+from app.models.device import Device, DeviceGroup
 from app.models.network import Subnet
 from app.services import mac_observations
 from app.services.agent_scanner_relay import ingest_agent_arp_table
@@ -94,6 +94,22 @@ async def test_a_conflict_the_relay_finds_shows_in_the_cached_list_at_once(db, c
     await ingest_agent_arp_table(db, probe.id, [{"ip": nas.ip, "mac": MAC_B}])
 
     assert (await frozen_in_list(client, auth))["NAS"] is True
+
+
+async def test_the_group_details_mark_a_device_with_an_open_conflict(db, client, auth):
+    group = DeviceGroup(name="Storage")
+    db.add(group)
+    await db.flush()
+    nas, printer = await add_devices(db)
+    nas.group_id = group.id
+    printer.group_id = group.id
+    await db.commit()
+    await open_conflict(db, nas)
+
+    response = await client.get(f"/api/groups/{group.id}", headers=auth)
+
+    assert response.status_code == 200
+    assert {d["display_name"]: d["presence_frozen"] for d in response.json()["devices"]} == {"NAS": True, "Printer": False}
 
 
 async def test_the_health_views_mark_a_device_with_an_open_conflict(db, client, auth):
