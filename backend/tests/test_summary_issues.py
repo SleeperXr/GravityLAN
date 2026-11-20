@@ -35,7 +35,8 @@ async def network(db):
     db.add_all([
         AgentToken(device_id=srv.id, token="sha256:" + "a" * 64, is_active=True, last_seen=_now()),
         AgentToken(device_id=nas.id, token="sha256:" + "b" * 64, is_active=True, last_seen=_now() - timedelta(hours=2)),
-        # cam has_agent but no token at all
+        # cam has an active token that has never reported yet
+        AgentToken(device_id=cam.id, token="sha256:" + "d" * 64, is_active=True, last_seen=None),
         DeviceMetrics(device_id=srv.id, timestamp=_now() - timedelta(minutes=2), cpu_percent=90.0, ram_percent=90.0),
         DeviceMetrics(device_id=srv.id, timestamp=_now(), cpu_percent=10.0, ram_percent=30.0),
         DeviceMetrics(device_id=nas.id, timestamp=_now(), cpu_percent=99.0, ram_percent=99.0),
@@ -50,7 +51,7 @@ async def test_summary_counts_averages_and_issues(client, auth, network, no_scan
     body = (await client.get("/api/summary", headers=auth)).json()
     assert body["devices"] == {"total": 3, "online": 2, "offline": 1}
     # Only srv is active; its newest metrics count, not the older 90 %
-    assert body["agents"] == {"total": 2, "active": 1, "avg_cpu": 10.0, "avg_ram": 30.0}
+    assert body["agents"] == {"total": 3, "active": 1, "avg_cpu": 10.0, "avg_ram": 30.0}
     assert body["scanner"]["status"] == "idle"
     assert body["scanner"]["last_scan"] is not None  # newest device last_seen
     issues = {(i["type"], i["device_name"]): i["details"] for i in body["active_issues"]}

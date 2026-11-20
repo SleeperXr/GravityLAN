@@ -15,13 +15,14 @@ from app.models.device import Device, DeviceGroup, Service
 from app.models.agent import AgentToken
 from app.scanner.vendor import get_vendor
 from app.services.cache_service import topology_cache, dashboard_cache, discovery_cache
-from app.services.agent_activity import load_intervals
+from app.services.agent_activity import has_active_token, load_intervals
 from app.dns_answers import stored_dns_answers
 from app.scanner.hostname import HOSTNAME_SOURCES, choose_hostname, lookup_dns_names, resolve_hostname, is_ip_like
 from app.services.interface_service import annotate_primary_subnets, device_for_interface_ip
 from app.services import mac_observations
 from app.services.audit import device_label, record as audit
 from app.schemas.device import (
+    AgentInfo,
     DeviceResponse,
     DeviceUpdate,
     DeviceHistoryResponse,
@@ -67,22 +68,41 @@ def _agent_reporting(token: AgentToken, interval: int | None, now: datetime) -> 
     return False
 
 
-def _annotate_agent(device, token: AgentToken | None, intervals: dict[int, int] | None = None) -> None:
-    """has_agent, has_pending_token and agent_info of a device from its agent token (None: no agent)."""
+def _agent_fields(
+    device_id: int, token: AgentToken | None, intervals: dict[int, int] | None = None
+) -> dict:
+    """Authoritative API agent fields computed from AgentToken without mutating ORM state.
+
+    ``has_agent`` reflects an active registered AgentToken (authorized to report), not
+    whether agent binaries remain installed on the remote host.
+    """
     from app.api.agent import LATEST_AGENT_VERSION, _latest_metrics
     from app.scanner.utils import ensure_utc
     from app.version import normalize_version
 
-    device.has_agent = token is not None
-    device.has_pending_token = token is not None and token.pending_token is not None
-    if token is not None:
-        device.agent_info = {
-            "agent_version": normalize_version(token.agent_version),
-            "latest_version": normalize_version(LATEST_AGENT_VERSION),
-            "latest_metrics": _latest_metrics.get(device.id),
-            "last_report": ensure_utc(token.last_seen),
-            "reporting": _agent_reporting(token, (intervals or {}).get(device.id), datetime.now(timezone.utc)),
-        }
+    active = has_active_token(token)
+    agent_info = None
+    if active and token is not None:
+        agent_info = AgentInfo(
+            agent_version=normalize_version(token.agent_version),
+            latest_version=normalize_version(LATEST_AGENT_VERSION),
+            latest_metrics=_latest_metrics.get(device_id),
+            last_report=ensure_utc(token.last_seen),
+            reporting=_agent_reporting(token, (intervals or {}).get(device_id), datetime.now(timezone.utc)),
+        )
+    return {
+        "has_agent": active,
+        "has_pending_token": bool(token is not None and token.pending_token is not None),
+        "agent_info": agent_info,
+    }
+
+
+def _device_response(
+    device: Device, token: AgentToken | None, intervals: dict[int, int] | None = None
+) -> DeviceResponse:
+    """Serialize a Device ORM row into a DeviceResponse without dirtying the DB session."""
+    response = DeviceResponse.model_validate(device)
+    return response.model_copy(update=_agent_fields(device.id, token, intervals))
 
 
 async def _dns_server(db: AsyncSession) -> str | None:
@@ -175,15 +195,13 @@ async def list_devices(
     devices = list((await db.execute(query)).scalars().all())
     token_map = await _load_agent_tokens(db, devices)
     intervals = await load_intervals(db)
-    for device in devices:
-        _annotate_agent(device, token_map.get(device.id), intervals)
 
     await _annotate_parent_names(db, devices)
     await annotate_primary_subnets(db, devices)
 
     # Cache plain response objects: the ORM instances detach when this request's
     # session closes, and later reads of them could raise DetachedInstanceError
-    responses = [DeviceResponse.model_validate(d) for d in devices]
+    responses = [_device_response(d, token_map.get(d.id), intervals) for d in devices]
     dashboard_cache.set(cache_key, responses)
     return responses
 
@@ -416,8 +434,10 @@ async def get_device(device_id: int, db: AsyncSession = Depends(get_db)) -> Devi
     if not device:
         from app.exceptions import DeviceNotFoundError
         raise DeviceNotFoundError(device_id)
+    token_map = await _load_agent_tokens(db, [device])
+    intervals = await load_intervals(db)
     await annotate_primary_subnets(db, [device])
-    return device
+    return _device_response(device, token_map.get(device.id), intervals)
 
 
 async def _check_parent(db: AsyncSession, device: Device, parent_id: int) -> None:
@@ -980,10 +1000,7 @@ async def get_group_details(
     # Populate agent details
     tokens_by_device = await _load_agent_tokens(db, group.devices)
     intervals = await load_intervals(db)
-    devices_list = []
-    for d in group.devices:
-        _annotate_agent(d, tokens_by_device.get(d.id), intervals)
-        devices_list.append(DeviceResponse.model_validate(d))
+    devices_list = [_device_response(d, tokens_by_device.get(d.id), intervals) for d in group.devices]
         
     return GroupWithDevicesResponse(
         id=group.id,

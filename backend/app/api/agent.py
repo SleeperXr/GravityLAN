@@ -19,7 +19,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import PlainTextResponse, FileResponse
-from sqlalchemy import delete, desc, select, func
+from sqlalchemy import delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings  # noqa: F401 - patched as agent_module.settings in tests
@@ -43,7 +43,8 @@ from app.schemas.agent import (
     AgentsOverviewResponse,
     GlobalMetricsResponse,
 )
-from app.services.agent_activity import active_window, load_intervals
+from app.services.agent_activity import active_window, has_active_token, load_intervals
+from app.services.cache_service import dashboard_cache, topology_cache
 from app.services.agent_deployer import (
     HOST_KEY_CHANGED, deploy_agent, get_agent_script_sha256, is_host_key_refusal, remove_agent, LATEST_AGENT_VERSION,
 )
@@ -251,10 +252,11 @@ async def get_agents_overview(
     now = datetime.now(timezone.utc)
     cutoff_24h = now - timedelta(hours=24)
 
-    # 1. Fetch all agent-linked devices in a single JOIN
+    # 1. Fetch authorized agents plus pending adoption placeholders (revoked tokens without pending stay out)
     res = await db.execute(
         select(Device, AgentToken)
         .join(AgentToken, Device.id == AgentToken.device_id)
+        .where(or_(AgentToken.is_active.is_(True), AgentToken.pending_token.isnot(None)))
     )
     results = res.all()
 
@@ -330,7 +332,11 @@ async def get_agent_status(
     db: AsyncSession = Depends(get_db),
     current_admin: str = Depends(get_current_admin)
 ) -> AgentStatusResponse:
-    """Get the current status and latest metrics for a specific agent."""
+    """Get the current status and latest metrics for a specific agent.
+
+    ``is_installed`` reflects whether the device has an active authorized AgentToken
+    (not whether agent software is still present on the remote host).
+    """
     # Check Token
     token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device_id))
     token = token_res.scalar_one_or_none()
@@ -338,8 +344,18 @@ async def get_agent_status(
     if not token:
         return AgentStatusResponse(
             device_id=device_id,
+            is_installed=False,
             is_active=False,
-            message="No agent linked"
+            is_healthy=False,
+            message="No agent linked",
+        )
+    if not has_active_token(token):
+        return AgentStatusResponse(
+            device_id=device_id,
+            is_installed=False,
+            is_active=False,
+            is_healthy=False,
+            message="Agent adoption pending" if token.pending_token else "Agent token revoked",
         )
 
     # Get latest metrics
@@ -486,7 +502,10 @@ async def _issue_agent_config(db: AsyncSession, device_id: int) -> PlainTextResp
         token_obj.last_seen = None
         token_obj.pending_token = None
         token_obj.pending_at = None
+    device.has_agent = True
     await db.commit()
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
 
     # Detect Server URL (same logic as in deploy)
     server_url = await _detect_server_url(db)
@@ -709,8 +728,11 @@ async def deploy_agent_endpoint(
         config_res = await db.execute(select(AgentConfig).where(AgentConfig.device_id == device_id))
         if not config_res.scalar_one_or_none():
             db.add(AgentConfig(device_id=device_id))
-            
+
+        device.has_agent = True
         await db.commit()
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()
         return AgentDeployResponse(status="success", message=message)
     else:
         return AgentDeployResponse(status="failed", message=message, error_code=_ssh_error_code(success, message))
@@ -745,11 +767,15 @@ async def uninstall_agent_endpoint(
     )
 
     if success:
-        # Deactivate token in DB
+        # Remove token and clear the device's agent flag while keeping historical metrics intact
         await db.execute(
             delete(AgentToken).where(AgentToken.device_id == device_id)
         )
+        device.has_agent = False
+        _latest_metrics.pop(device_id, None)
         await db.commit()
+        dashboard_cache.invalidate_all()
+        topology_cache.invalidate()
         return {"status": "success", "message": message}
     else:
         return {"status": "failed", "message": message, "error_code": _ssh_error_code(success, message)}
@@ -799,8 +825,13 @@ async def adopt_agent_token(device_id: int, db: AsyncSession = Depends(get_db), 
     token_obj.pending_token = None
     token_obj.pending_at = None
     token_obj.is_active = True
+    device = await db.get(Device, device_id)
+    if device:
+        device.has_agent = True
 
     await db.commit()
+    dashboard_cache.invalidate_all()
+    topology_cache.invalidate()
     logger.info("Device %d adopted its pending agent token", device_id)
     
     return {"status": "ok", "message": "Token adopted successfully"}

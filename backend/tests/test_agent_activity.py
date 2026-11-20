@@ -5,10 +5,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from types import SimpleNamespace
+
 from app.models.agent import AgentConfig, AgentToken
 from app.models.device import Device, Service
 from app.scanner import health_probe as hp_mod
-from app.services.agent_activity import active_window, load_intervals, stale_window
+from app.services.agent_activity import active_window, has_active_token, load_intervals, stale_window
 from app.services.agent_telemetry import _is_agent_active
 
 HEADERS = {"Authorization": "Bearer test-admin-token-12345"}
@@ -23,9 +25,30 @@ def test_windows_follow_the_interval(interval, active, stale):
     assert stale_window(interval) == stale
 
 
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [
+        (None, False),
+        (SimpleNamespace(is_active=True), True),
+        (SimpleNamespace(is_active=False), False),
+        (SimpleNamespace(is_active=None), False),
+        (SimpleNamespace(), False),
+        (SimpleNamespace(is_active=0), False),
+        (SimpleNamespace(is_active=1), True),
+        (SimpleNamespace(is_active="true"), False),
+        (SimpleNamespace(is_active=2), False),
+        (AgentToken(device_id=1, token="t"), False),  # unflushed ORM instance has is_active=None
+        (AgentToken(device_id=1, token="t", is_active=True), True),
+        (AgentToken(device_id=1, token="t", is_active=False), False),
+    ],
+)
+def test_has_active_token_is_conservative(token, expected):
+    assert has_active_token(token) is expected
+
+
 def test_slow_agent_is_active_between_two_reports():
     now = datetime.now(UTC)
-    token = AgentToken(device_id=1, token="t", last_seen=now - timedelta(seconds=280))
+    token = AgentToken(device_id=1, token="t", is_active=True, last_seen=now - timedelta(seconds=280))
 
     assert _is_agent_active(token, now, 300) is True
     assert _is_agent_active(token, now, 30) is False

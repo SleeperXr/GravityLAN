@@ -201,7 +201,8 @@ def test_build_update_command_unsupported():
 # --- uptime helpers ---------------------------------------------------------
 
 def _fake_token(last_seen=None, created_at=None):
-    return SimpleNamespace(last_seen=last_seen, created_at=created_at)
+    # is_active is set explicitly: only an explicitly active token counts as an agent
+    return SimpleNamespace(last_seen=last_seen, created_at=created_at, is_active=True)
 
 
 def test_is_agent_active_recent():

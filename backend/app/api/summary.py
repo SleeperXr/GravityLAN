@@ -13,7 +13,7 @@ from app.models.device import Device, Service
 from app.models.agent import AgentToken, DeviceMetrics
 from app.schemas.summary import SummaryResponse, ActiveIssue
 from app.scanner.utils import ensure_utc
-from app.services.agent_activity import active_window, load_intervals
+from app.services.agent_activity import is_token_reporting, load_intervals
 from app.api.scanner import state
 
 logger = logging.getLogger(__name__)
@@ -35,17 +35,15 @@ async def get_summary(
     online_devices = sum(1 for d in devices if d.is_online)
     offline_devices = total_devices - online_devices
     
-    # 2. Agent counts and metrics
-    agents_res = await db.execute(select(AgentToken))
+    # 2. Agent counts and metrics (active tokens only: revoked/pending placeholders are not agents)
+    agents_res = await db.execute(select(AgentToken).where(AgentToken.is_active.is_(True)))
     agents = agents_res.scalars().all()
     total_agents = len(agents)
     
     active_device_ids = []
     intervals = await load_intervals(db)
     for agent in agents:
-        last_seen = ensure_utc(agent.last_seen)
-        is_active = bool(last_seen and (now - last_seen).total_seconds() < active_window(intervals.get(agent.device_id)))
-        if is_active:
+        if is_token_reporting(agent, intervals.get(agent.device_id), now):
             active_device_ids.append(agent.device_id)
             
     active_agents_count = len(active_device_ids)
@@ -66,9 +64,11 @@ async def get_summary(
         ram_vals = []
         for dev_id in active_device_ids:
             m = latest_metrics.get(dev_id)
-            if m:
-                cpu_vals.append(m.cpu_percent)
-                ram_vals.append(m.ram_percent)
+            if m is not None:
+                if m.cpu_percent is not None:
+                    cpu_vals.append(m.cpu_percent)
+                if m.ram_percent is not None:
+                    ram_vals.append(m.ram_percent)
                 
         if cpu_vals:
             avg_cpu = sum(cpu_vals) / len(cpu_vals)
@@ -91,22 +91,16 @@ async def get_summary(
     # 4. Active issues (offline agents and down services)
     active_issues = []
     
-    # Offline agents
+    # Offline agents: only devices with an active agent token that stopped reporting
     res_inactive_agents = await db.execute(
         select(Device, AgentToken)
-        .join(AgentToken, Device.id == AgentToken.device_id, isouter=True)
-        .where(Device.has_agent == True)
+        .join(AgentToken, Device.id == AgentToken.device_id)
+        .where(AgentToken.is_active.is_(True))
     )
     for dev, agent_token in res_inactive_agents.all():
-        is_agent_active = False
-        if agent_token and agent_token.is_active and agent_token.last_seen:
-            last_seen = ensure_utc(agent_token.last_seen)
-            if (now - last_seen).total_seconds() < active_window(intervals.get(dev.id)):
-                is_agent_active = True
-                
-        if not is_agent_active:
+        if not is_token_reporting(agent_token, intervals.get(dev.id), now):
             last_seen_str = "never"
-            if agent_token and agent_token.last_seen:
+            if agent_token.last_seen:
                 last_seen_str = ensure_utc(agent_token.last_seen).isoformat()
             active_issues.append({
                 "type": "agent_offline",

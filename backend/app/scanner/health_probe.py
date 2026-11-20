@@ -156,7 +156,12 @@ async def run_health_probe_pass() -> int:
         offline_threshold = await get_offline_threshold(db)
 
         device_ids = [d.id for d in devices]
-        res_tokens = await db.execute(select(AgentToken).where(AgentToken.device_id.in_(device_ids)))
+        res_tokens = await db.execute(
+            select(AgentToken).where(
+                AgentToken.device_id.in_(device_ids),
+                AgentToken.is_active.is_(True),
+            )
+        )
         tokens_by_dev = {t.device_id: t for t in res_tokens.scalars().all()}
         intervals = await load_intervals(db)
 
@@ -189,7 +194,7 @@ async def run_health_probe_pass() -> int:
                 register_seen(dev)
             else:
                 token = tokens_by_dev.get(dev.id)
-                has_agent = bool(dev.has_agent or token)
+                has_agent = token is not None
                 agent_last_seen = ensure_utc(token.last_seen) if token and token.last_seen else None
                 agent_stale = not agent_last_seen or (now - agent_last_seen).total_seconds() > stale_window(intervals.get(dev.id))
 

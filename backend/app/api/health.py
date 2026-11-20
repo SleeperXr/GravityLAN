@@ -16,7 +16,7 @@ from app.database import get_db
 from app.models.agent import AgentToken, DeviceMetrics
 from app.models.device import Device, DeviceHistory
 from app.scanner.utils import ensure_utc
-from app.services.agent_activity import active_window, load_intervals
+from app.services.agent_activity import has_active_token, is_token_reporting, load_intervals
 from app.schemas.health import (
     AgentHealthAlerts,
     DeviceHealthDetailResponse,
@@ -93,8 +93,7 @@ async def get_health_summary(
 
 
 def _agent_is_active(agent: AgentToken, intervals: dict, now: datetime) -> bool:
-    last_seen = ensure_utc(agent.last_seen)
-    return bool(agent.is_active and last_seen and (now - last_seen).total_seconds() < active_window(intervals.get(agent.device_id)))
+    return is_token_reporting(agent, intervals.get(agent.device_id), now)
 
 
 def _active_agent_devices(agents, intervals: dict, now: datetime) -> set[int]:
@@ -436,14 +435,10 @@ def _service_items(dev: Device) -> list[ServiceHealthItem]:
 def _agent_alerts(
     dev: Device, agent_token: AgentToken | None, metric: DeviceMetrics | None, now: datetime, interval: int | None
 ) -> AgentHealthAlerts | None:
-    """The agent block of a device that has an agent or a token; None otherwise."""
-    if not (dev.has_agent or agent_token):
+    """The agent block of a device that has an active agent token; None otherwise."""
+    if not has_active_token(agent_token):
         return None
-    is_active = bool(
-        agent_token
-        and agent_token.last_seen
-        and (now - ensure_utc(agent_token.last_seen)).total_seconds() < active_window(interval)
-    )
+    is_active = is_token_reporting(agent_token, interval, now)
     m = metric or _NO_METRICS
     return AgentHealthAlerts(
         has_agent=True,
@@ -601,8 +596,10 @@ async def get_health_overview(
     if not device_ids:
         return _empty_overview(period)
 
-    # 2. Fetch agent tokens & latest metrics in bulk
-    res_tokens = await db.execute(select(AgentToken).where(AgentToken.device_id.in_(device_ids)))
+    # 2. Fetch active agent tokens & latest metrics in bulk
+    res_tokens = await db.execute(
+        select(AgentToken).where(AgentToken.device_id.in_(device_ids), AgentToken.is_active.is_(True))
+    )
     tokens_by_dev = {t.device_id: t for t in res_tokens.scalars().all()}
     intervals = await load_intervals(db)
 
@@ -692,8 +689,10 @@ async def get_device_health_detail(
     if not dev:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    # 2. Agent token & metrics
-    token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device_id))
+    # 2. Active agent token & metrics
+    token_res = await db.execute(
+        select(AgentToken).where(AgentToken.device_id == device_id, AgentToken.is_active.is_(True))
+    )
     agent_token = token_res.scalar_one_or_none()
 
     m_res = await db.execute(
@@ -727,7 +726,7 @@ async def get_device_health_detail(
     # Compute stats
     uptime_stats, latency_stats = _compute_uptime_and_latency(dev, samples, now, window_start, bucket_count)
     services = _service_items(dev)
-    intervals = await load_intervals(db) if (dev.has_agent or agent_token) else {}
+    intervals = await load_intervals(db) if agent_token else {}
     agent_alerts = _agent_alerts(dev, agent_token, latest_metric, now, intervals.get(dev.id))
     score, status = _calculate_health_score(dev, uptime_stats, latency_stats, services, agent_alerts)
 
