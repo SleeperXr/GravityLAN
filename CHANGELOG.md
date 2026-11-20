@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- GravityUI live log: the newest line is on top and new lines appear above it, so the page opens on the live state; with a full log (500 lines) it used to start at the oldest line and take a while to reach the newest. Scrolled down into older lines, the view stays put while new lines arrive, and "jump to newest" takes it back to the top. Copying keeps the time order (oldest first).
+
 ### Security
 - Every API route and WebSocket now declares in one place who may call it: browser session, master token, API token (and with which scope), whether the password must be confirmed first, and whether it answers during the first-run setup. Before, these rules were spread over URL prefix lists, router settings and checks inside single routes, which is how routes like the router import and agent adoption missed their password confirmation. A route without such a declaration fails the build, and `docs/security-matrix.md` lists every route with its rules, generated from the code and checked against real calls in the tests. Answers stay the same, except that a request without any login now always gets 401 (agent adoption answered 403 before) and the error texts for refused API tokens are the same on every route.
 - The one-time token that opens the package update stream (Agents → updates) now only works for the browser session that asked for it and from the same address, and it is checked before the WebSocket is opened. A token that leaked, for example from a proxy's log of the WebSocket address, is useless to anyone else and cannot be used up by them either.
