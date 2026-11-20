@@ -1,42 +1,47 @@
 """Warn once when a request carries X-Forwarded-For from an address that is not a trusted proxy.
 
-uvicorn (--proxy-headers) only takes the client address from X-Forwarded-For when the request
-comes from an address in FORWARDED_ALLOW_IPS, which the container fills from
-GRAVITYLAN_TRUSTED_PROXIES. Otherwise the header is ignored without a word, and the login limit,
-the audit log and agent IPs all see the proxy instead of the real client.
-
-When uvicorn trusted the sender it replaced the client address with an entry of the header, so a
-client address that appears nowhere in X-Forwarded-For means the header came from an untrusted
-address.
+TrustedProxyMiddleware checks the original TCP transport peer against GRAVITYLAN_TRUSTED_PROXIES
+(or FORWARDED_ALLOW_IPS, defaulting to 127.0.0.1,::1) before rewriting client/scheme. When a
+request arrives with X-Forwarded-For from an untrusted peer, the header is ignored, and GravityLAN
+logs a single warning naming the original transport peer.
 """
 import logging
+
+from app.services.proxy_trust import (
+    effective_trusted_proxies_raw,
+    is_trusted_proxy_peer,
+    parse_trusted_proxy_networks,
+)
 
 logger = logging.getLogger(__name__)
 
 _warned = False
 
 
-def _host(entry: str) -> str:
-    """The address of one X-Forwarded-For entry, without a port or IPv6 brackets."""
-    entry = entry.strip()
-    if entry.startswith("["):
-        return entry[1:].split("]", 1)[0]
-    if entry.count(":") == 1:  # IPv4 with a port; a bare IPv6 address has several colons
-        return entry.split(":", 1)[0]
-    return entry
-
-
-def forwarded_by_untrusted(client_host: str | None, forwarded_for: str | None) -> bool:
-    """True when X-Forwarded-For is set but uvicorn did not take the client address from it."""
+def forwarded_by_untrusted(
+    client_host: str | None,
+    forwarded_for: str | None,
+    *,
+    from_trusted_proxy: bool | None = None,
+) -> bool:
+    """True when X-Forwarded-For is set and the transport peer is not a trusted proxy."""
     if not client_host or not forwarded_for or not forwarded_for.strip():
         return False
-    return client_host not in {_host(e) for e in forwarded_for.split(",")}
+    if from_trusted_proxy is not None:
+        return not from_trusted_proxy
+    networks = parse_trusted_proxy_networks(effective_trusted_proxies_raw())
+    return not is_trusted_proxy_peer(client_host, networks)
 
 
-def check_forwarded_for(client_host: str | None, forwarded_for: str | None) -> None:
-    """Log one warning per process for the first request forwarded by an untrusted address."""
+def check_forwarded_for(
+    client_host: str | None,
+    forwarded_for: str | None,
+    *,
+    from_trusted_proxy: bool | None = None,
+) -> None:
+    """Log one warning per process for the first request forwarded by an untrusted peer."""
     global _warned
-    if _warned or not forwarded_by_untrusted(client_host, forwarded_for):
+    if _warned or not forwarded_by_untrusted(client_host, forwarded_for, from_trusted_proxy=from_trusted_proxy):
         return
     _warned = True
     logger.warning(

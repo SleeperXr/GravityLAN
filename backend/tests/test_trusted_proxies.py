@@ -34,30 +34,40 @@ def _run(tmp_path, **env) -> list[str]:
 
 
 @pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
-def test_without_the_setting_only_localhost_may_forward(tmp_path):
-    allowed, args = _run(tmp_path)
-    assert allowed == "127.0.0.1,::1"
-    assert "--proxy-headers" in args.split()
-
-
-@pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
-def test_the_setting_names_the_trusted_proxies(tmp_path):
-    allowed, _ = _run(tmp_path, GRAVITYLAN_TRUSTED_PROXIES="172.18.0.0/16,10.0.0.2")
-    assert allowed == "172.18.0.0/16,10.0.0.2"
-
-
-@pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
-def test_an_existing_forwarded_allow_ips_is_kept_without_the_setting(tmp_path):
-    allowed, _ = _run(tmp_path, FORWARDED_ALLOW_IPS="10.0.0.2")
-    assert allowed == "10.0.0.2"
-    empty, _ = _run(tmp_path, FORWARDED_ALLOW_IPS="")
-    assert empty == ""
-    # The GravityLAN setting wins over it
-    allowed, _ = _run(tmp_path, FORWARDED_ALLOW_IPS="10.0.0.2", GRAVITYLAN_TRUSTED_PROXIES="172.18.0.0/16")
-    assert allowed == "172.18.0.0/16"
+def test_dockerfile_disables_outer_uvicorn_proxy_headers(tmp_path):
+    _, args = _run(tmp_path)
+    tokens = args.split()
+    assert "--no-proxy-headers" in tokens
+    assert "--proxy-headers" not in tokens
 
 
 def test_the_setting_is_a_known_option(monkeypatch):
     """An .env file with the variable must not fail the settings validation."""
     monkeypatch.setenv("GRAVITYLAN_TRUSTED_PROXIES", "172.18.0.0/16")
     assert Settings().trusted_proxies == "172.18.0.0/16"
+
+
+def test_effective_trusted_proxies_precedence_and_parsing(monkeypatch):
+    from app.services import proxy_trust
+
+    monkeypatch.delenv("FORWARDED_ALLOW_IPS", raising=False)
+    monkeypatch.setattr(proxy_trust.settings, "trusted_proxies", "")
+    assert proxy_trust.effective_trusted_proxies_raw() == "127.0.0.1,::1"
+
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "10.0.0.2, fd00::/64")
+    assert proxy_trust.effective_trusted_proxies_raw() == "10.0.0.2, fd00::/64"
+
+    # Explicit empty FORWARDED_ALLOW_IPS must be preserved (trusts nothing)
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "")
+    assert proxy_trust.effective_trusted_proxies_raw() == ""
+    assert proxy_trust.parse_trusted_proxy_networks("") == ()
+    assert not proxy_trust.is_trusted_proxy_peer("127.0.0.1", ())
+
+    # GRAVITYLAN_TRUSTED_PROXIES wins over FORWARDED_ALLOW_IPS
+    monkeypatch.setattr(proxy_trust.settings, "trusted_proxies", "172.18.0.0/16")
+    assert proxy_trust.effective_trusted_proxies_raw() == "172.18.0.0/16"
+
+    # Invalid entries never widen trust; "*" is explicit
+    assert proxy_trust.parse_trusted_proxy_networks("not-an-ip, 999.999.999.999") == ()
+    assert proxy_trust.parse_trusted_proxy_networks("*") is None
+    assert proxy_trust.is_trusted_proxy_peer("203.0.113.9", None) is True

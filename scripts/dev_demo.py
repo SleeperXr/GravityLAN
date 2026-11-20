@@ -509,7 +509,7 @@ async def main(reset: bool, fresh: bool, scenario_name: str) -> None:
             return JSONResponse({"detail": "Disabled in demo mode (no LAN scans, no SSH)."}, status_code=403)
         return await call_next(request)
 
-    server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=PORT, log_level="warning"))
+    server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=PORT, log_level="warning", proxy_headers=False))
 
     if fresh:
         # Like a new install: no data and no completed setup, so the UI opens the setup wizard

@@ -341,11 +341,16 @@ SECURITY_HEADERS = {
 
 @app.middleware("http")
 async def forwarded_for_hint_middleware(request: Request, call_next):
-    # One warning per start when a reverse proxy sends X-Forwarded-For but is not trusted
+    # One warning per start when an untrusted peer sends X-Forwarded-For
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         from app.services.proxy_hint import check_forwarded_for
-        check_forwarded_for(request.client.host if request.client else None, forwarded_for)
+        from app.services.proxy_trust import STATE_FROM_TRUSTED_PROXY, STATE_TRANSPORT_PEER
+
+        from_trusted = getattr(request.state, STATE_FROM_TRUSTED_PROXY, None)
+        transport_peer = getattr(request.state, STATE_TRANSPORT_PEER, None)
+        peer_host = transport_peer if transport_peer is not None else (request.client.host if request.client else None)
+        check_forwarded_for(peer_host, forwarded_for, from_trusted_proxy=from_trusted)
     return await call_next(request)
 
 
@@ -439,6 +444,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Outermost ASGI middleware: capture real transport peer trust before ProxyHeadersMiddleware rewrites client/scheme
+from app.services.proxy_trust import TrustedProxyMiddleware  # noqa: E402
+
+app.add_middleware(TrustedProxyMiddleware)
 
 # --- Register API routers ---
 from app.api.auth import router as auth_router  # noqa: E402

@@ -100,7 +100,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # grants, SSH tickets, the scan state and the background scheduler live in this
 # process. Do not raise --workers and do not run a second instance on the same
 # database or data directory. A restart ends all browser sessions.
-# Behind a reverse proxy, GRAVITYLAN_TRUSTED_PROXIES (IPs or networks, comma-separated) lets
-# uvicorn take the client address from X-Forwarded-For; otherwise an existing FORWARDED_ALLOW_IPS
-# applies, and without either only localhost is trusted, so a client cannot fake its address.
-CMD ["sh", "-c", "FORWARDED_ALLOW_IPS=\"${GRAVITYLAN_TRUSTED_PROXIES:-${FORWARDED_ALLOW_IPS-127.0.0.1,::1}}\" exec uvicorn app.main:app --host 0.0.0.0 --port ${GRAVITYLAN_PORT:-8000} --workers 1 --proxy-headers"]
+# Behind a reverse proxy, GRAVITYLAN_TRUSTED_PROXIES (or FORWARDED_ALLOW_IPS, else localhost)
+# is evaluated by TrustedProxyMiddleware inside app.main:app; --no-proxy-headers prevents
+# uvicorn's outer ProxyHeadersMiddleware from overwriting scope["client"] before the app sees
+# the original transport peer.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${GRAVITYLAN_PORT:-8000} --workers 1 --no-proxy-headers"]

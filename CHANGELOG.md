@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - GravityUI live log: the newest line is on top and new lines appear above it, so the page opens on the live state; with a full log (500 lines) it used to start at the oldest line and take a while to reach the newest. Scrolled down into older lines, the view stays put while new lines arrive, and "jump to newest" takes it back to the top. Copying keeps the time order (oldest first).
 
 ### Security
+- WebSocket `X-Forwarded-Host` trust and untrusted-proxy warnings now evaluate the original TCP transport peer recorded by `TrustedProxyMiddleware` (with Uvicorn started via `--no-proxy-headers` / `proxy_headers=False`), instead of inferring proxy trust from `X-Forwarded-For` contents. Untrusted peers sending their own IP in `X-Forwarded-For` can no longer make GravityLAN accept a self-supplied `X-Forwarded-Host` or suppress the untrusted-proxy warning.
 - Inactive and revoked agent tokens are excluded from active counts, telemetry averages, and health alerts; revoking a token clears the device's active agent flag.
 - Policy matrix tests verify an internal pass marker on simulated requests, ensuring routes cannot count as allowed on unexpected server errors, and check hardcoded access rules for critical administrative endpoints.
 - SSH fallback to the Docker bridge gateway is restricted to unreachable network targets, preventing retry with the same credentials on authentication or host key errors.

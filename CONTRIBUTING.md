@@ -50,7 +50,7 @@ Architecture Decision Records live in [`docs/adr/`](docs/adr) ([ADR-001 Agent De
 # Backend (Python 3.12+, Nmap installed)
 cd backend
 pip install -r requirements.lock.txt
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-proxy-headers
 
 # GravityUI (Node 20/22+), in a second terminal: http://localhost:5174/frontend-vue/, proxies /api to :8000
 cd frontend-vue

@@ -13,27 +13,28 @@ from app.api.auth import websocket_origin_allowed
 HEADERS = {"Authorization": "Bearer test-admin-token-12345"}
 
 
-def _ws(client="127.0.0.1", **headers):
-    """A handshake from ``client`` (by default localhost, which counts as a trusted proxy when
-    GRAVITYLAN_TRUSTED_PROXIES is empty, as uvicorn's own default does)."""
+def _ws(client="127.0.0.1", *, from_trusted_proxy=None, **headers):
+    """Build a WebSocket stub, optionally carrying TrustedProxyMiddleware's recorded peer decision."""
+    state = SimpleNamespace(gl_from_trusted_proxy=from_trusted_proxy) if from_trusted_proxy is not None else SimpleNamespace()
     return SimpleNamespace(
         headers={k.replace("_", "-"): v for k, v in headers.items()},
         client=SimpleNamespace(host=client) if client else None,
+        state=state,
     )
 
 
-@pytest.mark.parametrize("headers", [
-    {},  # scripts and agents send no Origin
-    {"origin": "http://192.168.1.10:8000", "host": "192.168.1.10:8000"},
-    {"origin": "HTTP://GravityLAN.local:8000/", "host": "gravitylan.local:8000"},
-    {"origin": "https://gravity.example.com", "host": "gravity.example.com"},
-    {"origin": "https://gravity.example.com", "host": "gravity.example.com:443"},
-    {"origin": "http://[fd00::5]:8000", "host": "[fd00::5]:8000"},
+@pytest.mark.parametrize("headers, from_trusted", [
+    ({}, None),  # scripts and agents send no Origin
+    ({"origin": "http://192.168.1.10:8000", "host": "192.168.1.10:8000"}, None),
+    ({"origin": "HTTP://GravityLAN.local:8000/", "host": "gravitylan.local:8000"}, None),
+    ({"origin": "https://gravity.example.com", "host": "gravity.example.com"}, None),
+    ({"origin": "https://gravity.example.com", "host": "gravity.example.com:443"}, None),
+    ({"origin": "http://[fd00::5]:8000", "host": "[fd00::5]:8000"}, None),
     # Reverse proxy that rewrites Host to the upstream and passes the browser's host along
-    {"origin": "https://gravity.example.com", "host": "127.0.0.1:8000", "x_forwarded_host": "gravity.example.com"},
+    ({"origin": "https://gravity.example.com", "host": "127.0.0.1:8000", "x_forwarded_host": "gravity.example.com"}, True),
 ])
-def test_same_origin_and_originless_handshakes_are_allowed(headers):
-    assert websocket_origin_allowed(_ws(**headers))
+def test_same_origin_and_originless_handshakes_are_allowed(headers, from_trusted):
+    assert websocket_origin_allowed(_ws(from_trusted_proxy=from_trusted, **headers))
 
 
 @pytest.mark.parametrize("headers", [
@@ -51,31 +52,19 @@ def test_cross_site_handshakes_are_refused(headers):
 PROXIED = {"origin": "https://gravity.example.com", "host": "10.0.0.5:8000", "x_forwarded_host": "gravity.example.com"}
 
 
-def test_forwarded_host_from_an_untrusted_address_is_ignored(monkeypatch):
-    monkeypatch.setattr(auth.settings, "trusted_proxies", "")
-    assert not websocket_origin_allowed(_ws(client="192.168.1.50", **PROXIED))
+def test_forwarded_host_requires_explicit_middleware_trust_state(monkeypatch):
+    """Missing or False middleware state ignores X-Forwarded-Host even if client.host is in the allowlist."""
+    monkeypatch.setattr(auth.settings, "trusted_proxies", "172.18.0.0/16, 127.0.0.1")
+    # Missing state -> client.host alone is in allowlist, yet X-Forwarded-Host must NOT be trusted
+    assert not websocket_origin_allowed(_ws(client="172.18.0.3", **PROXIED))
+    assert not websocket_origin_allowed(_ws(client="127.0.0.1", **PROXIED))
     assert not websocket_origin_allowed(_ws(client=None, **PROXIED))
-
-
-def test_forwarded_host_from_a_configured_proxy_network_counts(monkeypatch):
-    monkeypatch.setattr(auth.settings, "trusted_proxies", "172.18.0.0/16, 10.0.0.2")
-    assert websocket_origin_allowed(_ws(client="172.18.0.3", **PROXIED))
-    assert websocket_origin_allowed(_ws(client="10.0.0.2", **PROXIED))
-    assert not websocket_origin_allowed(_ws(client="127.0.0.1", **PROXIED))  # no longer trusted once configured
-    assert not websocket_origin_allowed(_ws(client="172.19.0.3", **PROXIED))
-
-
-def test_forwarded_host_counts_when_uvicorn_took_the_client_from_a_trusted_proxy(monkeypatch):
-    """uvicorn has replaced the proxy's address with the browser's from X-Forwarded-For by then."""
-    monkeypatch.setattr(auth.settings, "trusted_proxies", "172.18.0.0/16")
-    assert websocket_origin_allowed(_ws(client="192.168.1.50", x_forwarded_for="192.168.1.50", **PROXIED))
-
-
-def test_star_trusts_every_proxy_and_a_typo_trusts_none(monkeypatch):
-    monkeypatch.setattr(auth.settings, "trusted_proxies", "*")
-    assert websocket_origin_allowed(_ws(client="203.0.113.9", **PROXIED))
-    monkeypatch.setattr(auth.settings, "trusted_proxies", "proxy.local")
-    assert not websocket_origin_allowed(_ws(client="203.0.113.9", **PROXIED))
+    # Explicit False -> ignored
+    assert not websocket_origin_allowed(_ws(client="172.18.0.3", from_trusted_proxy=False, **PROXIED))
+    # Explicit True -> allowed
+    assert websocket_origin_allowed(_ws(client="192.168.1.50", from_trusted_proxy=True, **PROXIED))
+    # Host and configured CORS origins still work even when middleware state is absent
+    assert websocket_origin_allowed(_ws(client="172.18.0.3", origin="https://gravity.example.com", host="gravity.example.com"))
 
 
 def test_configured_cors_origins_are_allowed(monkeypatch):
