@@ -51,6 +51,8 @@ export interface DeviceHealthItem {
   group_id: number | null;
   group_name: string | null;
   is_online: boolean;
+  /** Open MAC conflict: the device is not checked, is_online is the last known state. */
+  presence_frozen?: boolean;
   alert_offline?: boolean;
   missed_scans: number;
   health_score: number;

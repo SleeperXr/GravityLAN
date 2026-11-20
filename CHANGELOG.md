@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - GravityUI live log: the newest line is on top and new lines appear above it, so the page opens on the live state; with a full log (500 lines) it used to start at the oldest line and take a while to reach the newest. Scrolled down into older lines, the view stays put while new lines arrive, and "jump to newest" takes it back to the top. Copying keeps the time order (oldest first).
+- A device with an open MAC conflict, which is not probed until the conflict is adopted or dismissed, is marked **Status unconfirmed** on its overview card and in the list, in the health table and its detail sheet; the conflict banner in the device editor says that an outage is not noticed meanwhile. The device list, the device endpoints and the health views report it as `presence_frozen`. Dismissing a conflict now also refreshes the cached device lists, and a conflict the agent relay opens or closes shows at once.
 
 ### Security
 - WebSocket `X-Forwarded-Host` trust and untrusted-proxy warnings now evaluate the original TCP transport peer recorded by `TrustedProxyMiddleware` (with Uvicorn started via `--no-proxy-headers` / `proxy_headers=False`), instead of inferring proxy trust from `X-Forwarded-For` contents. Untrusted peers sending their own IP in `X-Forwarded-For` can no longer make GravityLAN accept a self-supplied `X-Forwarded-Host` or suppress the untrusted-proxy warning.

@@ -9,6 +9,7 @@ import Badge from '@/components/ui/Badge.vue';
 import StatusDot from '@/components/common/StatusDot.vue';
 import RelativeTime from '@/components/common/RelativeTime.vue';
 import HealthStatusBadge from './HealthStatusBadge.vue';
+import PresenceFrozenBadge from '@/components/mac/PresenceFrozenBadge.vue';
 import LatencyChart from './LatencyChart.vue';
 import IncidentList from './IncidentList.vue';
 import StatusMonitor from '@/components/common/StatusMonitor.vue';
@@ -88,6 +89,7 @@ const isSslCandidate = (s: DeviceHealthItem['services'][number]) =>
       <div class="mt-2 flex flex-wrap items-center gap-2">
         <HealthStatusBadge :status="dev.health_status" />
         <span class="font-mono text-xs font-semibold" :class="scoreText(dev.health_score)">Score {{ dev.health_score }}</span>
+        <PresenceFrozenBadge v-if="dev.presence_frozen" />
       </div>
     </template>
 

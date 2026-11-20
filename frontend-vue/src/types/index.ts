@@ -71,6 +71,8 @@ export interface Device {
   ip_changed_at: string | null;
   parent_id: number | null;
   parent_name?: string | null;
+  /** Open MAC conflict: the device is not checked, is_online is the last known state. */
+  presence_frozen?: boolean;
   rack_id: number | null;
   rack_unit: number | null;
   rack_height: number;

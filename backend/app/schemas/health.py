@@ -92,6 +92,8 @@ class DeviceHealthItem(BaseModel):
     group_id: int | None = None
     group_name: str | None = None
     is_online: bool
+    # Open MAC conflict: the device is not probed, is_online is the last known state (see DeviceResponse)
+    presence_frozen: bool = False
     alert_offline: bool = True
     missed_scans: int = 0
     health_score: int  # 0 to 100
