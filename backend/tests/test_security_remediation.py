@@ -157,7 +157,7 @@ async def test_tofu_does_not_persist_host_key_on_failed_ssh_probe(client, db, ad
                 fingerprint="SHA256:untrusted_key_fp",
                 public_key="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIUntrusted",
             )
-        return {"patch_manager": None, "packages": [], "error": "Authentication failed."}
+        return {"patch_manager": None, "packages": [], "error": "Authentication failed.", "error_kind": "login"}
 
     monkeypatch.setattr("app.api.agent.list_device_updates", fake_failed_list_updates)
     client.cookies.set("gravitylan_token", session_store.create_session(user_agent=None))
@@ -166,7 +166,7 @@ async def test_tofu_does_not_persist_host_key_on_failed_ssh_probe(client, db, ad
         "/api/agent/patches/91/query",
         json={"ssh_user": "root", "ssh_password": "wrong", "ssh_port": 22},
     )
-    assert res.status_code == 500
+    assert res.status_code == 400  # a refused SSH login: the request's credentials, not a server error
 
     known = (
         await db.execute(select(SshKnownHost).where(SshKnownHost.host == "192.168.1.91"))

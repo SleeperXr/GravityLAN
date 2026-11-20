@@ -290,11 +290,14 @@ def _ws_expected(p, caller: str, done: bool) -> str:
 
 def test_every_websocket_answers_every_caller_as_its_policy_says(ws_database, monkeypatch):
     device_id, set_setup = ws_database
-    # Past the policy the patch channel wants its one-shot token; the matrix only asks whether the
-    # handshake got that far, so the token check is skipped here (test_agent_patch_ws covers it)
+    # Past the policy the patch channel checks its one-shot token (before accepting); the matrix only
+    # asks whether the handshake got that far, so that check just records it (test_agent_patch_ws covers it)
     import app.api.agent_patches as patches
 
+    reached = []
+
     async def no_session(websocket, device_id):
+        reached.append(device_id)
         return None
 
     monkeypatch.setattr(patches, "_consume_patch_session", no_session)
@@ -321,8 +324,9 @@ def test_every_websocket_answers_every_caller_as_its_policy_says(ws_database, mo
                     query = f"?token={_token_name('nothing:here')}"
                 elif caller == "agent_token":
                     query = "?token=agent-raw"
-                # "ok": the handshake was accepted (what the endpoint does afterwards does not matter here)
-                got = "ok" if _ws_connect(path, cookie, query) == "ok" else "refused"
+                # "ok": the policy let the handshake through (accepted, or handed to the patch token check)
+                reached.clear()
+                got = "ok" if _ws_connect(path, cookie, query) == "ok" or reached else "refused"
                 want = _ws_expected(p, caller, done)
                 if want != got:
                     mismatches.append((done, path, caller, want, got))

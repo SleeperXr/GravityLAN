@@ -20,6 +20,7 @@ from typing import Any, Awaitable, Callable
 from app.config import settings
 from app.services.ssh_utils import (
     CustomWarningPolicy,
+    HostKeyNotTrusted,
     PinnedHostKey,
     TofuHostKeyPolicy,
     _load_ssh_key,
@@ -29,6 +30,30 @@ from app.services.ssh_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+# What went wrong in a package query (result["error_kind"]); the API turns it into a status code
+ERROR_CREDENTIALS = "credentials"  # no usable password or key was given
+ERROR_LOGIN = "login"  # the host refused the SSH login
+ERROR_HOST_KEY = "host_key"  # the host key is not the confirmed one
+ERROR_SUDO = "sudo"  # sudo refused the password
+ERROR_UNREACHABLE = "unreachable"  # no SSH connection (refused, timed out, no route)
+ERROR_REMOTE = "remote"  # connected, but a command on the host failed
+
+
+def ssh_error_kind(exc: BaseException) -> str:
+    """The kind of a failed SSH connection or session."""
+    if isinstance(exc, (HostKeyNotTrusted, paramiko.BadHostKeyException)):
+        return ERROR_HOST_KEY
+    if isinstance(exc, paramiko.AuthenticationException):
+        return ERROR_LOGIN
+    if isinstance(exc, ValueError):  # unreadable key or missing passphrase (SSHKeyPassphraseRequired)
+        return ERROR_CREDENTIALS
+    return ERROR_UNREACHABLE
+
+
+def _query_failed(message: str, kind: str) -> dict[str, Any]:
+    return {"patch_manager": None, "packages": [], "major_upgrade_available": None, "error": message, "error_kind": kind}
+
 
 # Fixed sudo prompt (sudo -p) so it can be recognised regardless of the host's language
 _SUDO_PROMPT = "SUDOPROMPT:"
@@ -305,7 +330,7 @@ def _list_device_updates_blocking(
     try:
         connect_kwargs, err = _build_connect_kwargs(login)
         if err:
-            return {"patch_manager": None, "packages": [], "major_upgrade_available": None, "error": err}
+            return _query_failed(err, ERROR_CREDENTIALS)
 
         _connect_with_fallback(client, connect_kwargs, host_ip)
 
@@ -347,7 +372,7 @@ def _list_device_updates_blocking(
 
     except Exception as e:
         logger.error("Failed to query package updates over SSH: %s", e)
-        return {"patch_manager": None, "packages": [], "major_upgrade_available": None, "error": str(e)}
+        return _query_failed(str(e), ssh_error_kind(e))
     finally:
         client.close()
 
@@ -417,6 +442,7 @@ def _record_apt_update_failure(result: dict[str, Any], login: _SshLogin, refresh
     if refresh.sudo_rejected:
         logger.warning("apt-get update on %s aborted: sudo rejected password for user '%s'", login.host_ip, login.ssh_user)
         result["sudo_rejected"] = True
+        result["error_kind"] = ERROR_SUDO
         result["error"] = (
             f"Sudo password rejected on {login.host_ip} for user '{login.ssh_user}'. "
             "Please check your SSH/sudo password or enable passwordless sudo."
@@ -429,6 +455,7 @@ def _record_apt_update_failure(result: dict[str, Any], login: _SshLogin, refresh
         sudo_may_be_why = login.needs_sudo and not login.ssh_password
         hint = " Set an SSH password or enable passwordless sudo to refresh package lists." if sudo_may_be_why else ""
         ended = refresh.exit_code if refresh.exit_code is not None else "timeout"
+        result["error_kind"] = ERROR_REMOTE
         result["error"] = "apt-get update failed (exit %s).%s" % (ended, hint)
 
 

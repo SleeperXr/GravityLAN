@@ -150,6 +150,9 @@ async def _old_run_patches_websocket(websocket, device_id):
 class FakeWebSocket:
     def __init__(self, token, disconnect_after=None):
         self.query_params = {"patch_token": token} if token else {}
+        # The browser session and address the patch token was issued to (bound since 0.8.0)
+        self.cookies = {"gravitylan_token": "session_patch_owner"}
+        self.client = SimpleNamespace(host="192.0.2.10")
         # What the route's policy leaves on the socket after admitting a browser session
         self.state = SimpleNamespace(gl_ws_auth={"authenticated": True, "auth_type": "session", "identity": "session"})
         self.events = []
@@ -257,6 +260,7 @@ async def _run(fn, monkeypatch, session, probe, stream, strict, narrow, capture_
         "device_id": 5, "host_ip": "192.0.2.50", "ssh_user": session["ssh_user"], "ssh_password": session["ssh_password"],
         "ssh_key": session["ssh_key"], "ssh_port": 2222, "mode": session["mode"], "created_at": time.time(),
         "ssh_key_passphrase": session["passphrase"], "pinned_host_key": session["pinned_host_key"],
+        "session": ap._session_digest("session_patch_owner"), "client": "192.0.2.10",
     }
 
     async def auth_ok(websocket, endpoint_type, device_id=None, allowed_levels=()):
@@ -328,5 +332,7 @@ async def test_patch_run_matches_without_auth_or_with_a_bad_token(monkeypatch):
         ws = FakeWebSocket("unknown-token")
         await fn(ws, 5)
         results.append(ws.events)
-    assert results[0] == results[1]
-    assert results[0][-1] == ("close", 4001, "Invalid session token")
+    # Since 0.8.0 the token is checked before the handshake is accepted (the frozen copy accepted
+    # first and sent an error line); both end with the same close
+    assert results[0][-1] == results[1][-1] == ("close", 4001, "Invalid session token")
+    assert results[1] == [("close", 4001, "Invalid session token")]

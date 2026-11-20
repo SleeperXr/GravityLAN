@@ -22,6 +22,8 @@ class FakeWebSocket:
 
     def __init__(self, query_params=None, disconnect_after=None):
         self.query_params = query_params or {}
+        self.cookies = {"gravitylan_token": SESSION}
+        self.client = SimpleNamespace(host=CLIENT)
         # What the route's policy leaves on the socket after admitting a browser session
         self.state = SimpleNamespace(gl_ws_auth={"authenticated": True, "auth_type": "session", "identity": "session"})
         self._sent = []
@@ -58,10 +60,17 @@ def clear_patch_tokens():
     _temp_patch_tokens.clear()
 
 
+SESSION, CLIENT = "session_patch_owner", "192.0.2.10"
+
+
 def _seed_patch_token(device_id=5, mode="full", host_ip="192.168.1.50"):
+    from app.api.agent_patches import _session_digest
+
     token = "patch_tok_testtoken123"
     _temp_patch_tokens[token] = {
         "device_id": device_id,
+        "session": _session_digest(SESSION),
+        "client": CLIENT,
         "host_ip": host_ip,
         "ssh_user": "root",
         "ssh_password": None,
@@ -95,7 +104,7 @@ async def test_consume_patch_session_valid():
 async def test_consume_patch_session_missing_token():
     ws = FakeWebSocket(query_params={})
     assert await _consume_patch_session(ws, 5) is None
-    assert "Invalid or expired patch session token" in ws.sent[0]
+    assert ws.events == []  # checked before the handshake is accepted: nothing can be sent yet
 
 
 @pytest.mark.asyncio
@@ -108,10 +117,10 @@ async def test_consume_patch_session_invalid_token():
 async def test_consume_patch_session_device_mismatch():
     token = _seed_patch_token(device_id=5)
     ws = FakeWebSocket(query_params={"patch_token": token})
-    # device_id 99 != session's 5 -> rejected, token consumed
+    # device_id 99 != session's 5 -> rejected; the token stays for the socket it was issued for
     assert await _consume_patch_session(ws, 99) is None
-    assert token not in _temp_patch_tokens
-    assert "device ID mismatch" in ws.sent[0]
+    assert token in _temp_patch_tokens
+    assert ws.events == []
 
 
 @pytest.mark.asyncio
@@ -122,7 +131,37 @@ async def test_consume_patch_session_rejects_expired_token():
 
     assert await _consume_patch_session(ws, 5) is None
     assert token not in _temp_patch_tokens
-    assert "expired" in ws.sent[0]
+    assert ws.events == []
+
+
+@pytest.mark.asyncio
+async def test_consume_patch_session_refuses_another_browser_session():
+    token = _seed_patch_token(device_id=5)
+    ws = FakeWebSocket(query_params={"patch_token": token})
+    ws.cookies = {"gravitylan_token": "session_someone_else"}
+
+    assert await _consume_patch_session(ws, 5) is None
+    assert token in _temp_patch_tokens  # a leaked token cannot be burned by another session either
+
+
+@pytest.mark.asyncio
+async def test_consume_patch_session_refuses_another_address():
+    token = _seed_patch_token(device_id=5)
+    ws = FakeWebSocket(query_params={"patch_token": token})
+    ws.client = SimpleNamespace(host="198.51.100.7")
+
+    assert await _consume_patch_session(ws, 5) is None
+    assert token in _temp_patch_tokens
+
+
+@pytest.mark.asyncio
+async def test_consume_patch_session_refuses_a_token_without_owner():
+    """A token stored without session and address (never issued that way) opens nothing."""
+    token = _seed_patch_token(device_id=5)
+    del _temp_patch_tokens[token]["session"], _temp_patch_tokens[token]["client"]
+    ws = FakeWebSocket(query_params={"patch_token": token})
+
+    assert await _consume_patch_session(ws, 5) is None
 
 
 # --- run_patches_websocket --------------------------------------------------
@@ -302,16 +341,24 @@ async def test_run_patches_websocket_failed_stream(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_invalid_token_error_is_sent_before_close(monkeypatch):
-    """The error used to be a fire-and-forget task that raced the immediate close()."""
-    monkeypatch.setattr("app.api.auth.authenticate_websocket_authorized", _auth_ok)
-
+async def test_invalid_token_is_refused_before_the_handshake_is_accepted():
     ws = FakeWebSocket(query_params={"patch_token": "patch_tok_unknown"})
     await agent_module.run_patches_websocket(ws, 5)
 
-    kinds = [kind for kind, _ in ws.events]
-    assert kinds == ["send", "close"]
-    assert "Invalid or expired" in ws.events[0][1]
+    assert ws._accepted is False
+    assert ws.events == [("close", 4001)]
+
+
+@pytest.mark.asyncio
+async def test_token_of_another_session_never_opens_the_update_socket():
+    token = _seed_patch_token(device_id=5)
+    ws = FakeWebSocket(query_params={"patch_token": token})
+    ws.cookies = {"gravitylan_token": "session_someone_else"}
+    await agent_module.run_patches_websocket(ws, 5)
+
+    assert ws._accepted is False
+    assert ws.close_code == 4001
+    assert token in _temp_patch_tokens
 
 
 def _ssh_channel_with_chunks(chunks):
