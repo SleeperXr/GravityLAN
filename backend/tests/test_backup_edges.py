@@ -75,12 +75,16 @@ async def test_export_without_a_database_file_is_404(client, auth, tmp_path, mon
     assert (await client.get("/api/backup/export", headers=auth)).status_code == 404
 
 
-async def test_export_skips_a_missing_table(client, auth, backup_db):
+async def test_export_fails_visibly_when_an_expected_table_is_missing(client, auth, backup_db):
+    # Changed from "skips a missing table" (AP 2): a regular export is complete or it fails; a file
+    # without a table must not pass as a backup (an older instance's missing table is not a reason
+    # to hand out a partial one)
     execute(backup_db, "DROP TABLE rack_cables")
     res = await client.get("/api/backup/export", headers=auth)
-    assert res.status_code == 200
-    assert "rack_cables" not in res.json()
-    assert [d["ip"] for d in res.json()["devices"]] == ["192.0.2.1"]
+    assert res.status_code == 500
+    assert "content-disposition" not in res.headers
+    assert "devices" not in res.json()
+    assert "rack_cables" not in res.json()["detail"] and "no such table" not in res.json()["detail"]
 
 
 async def test_export_leaves_out_the_instance_credentials(client, auth, backup_db):
@@ -95,10 +99,16 @@ async def test_export_leaves_out_the_instance_credentials(client, auth, backup_d
     assert keys == {"scan_interval"}
 
 
-async def test_export_failure_is_a_500(client, auth, backup_db):
-    with patch("app.api.backup.audit", new=AsyncMock(side_effect=RuntimeError("audit down"))):
-        res = await client.get("/api/backup/export", headers=auth)
+async def test_export_failure_is_a_500(client, auth, backup_db, monkeypatch):
+    # The failure is a database that cannot be read (was: a failing audit write, which the audit
+    # service never lets happen: it does not raise)
+    def broken(path, isolation_level=""):
+        raise sqlite3.OperationalError("unable to open database file")
+
+    monkeypatch.setattr(backup, "_open_sqlite_connection", broken)
+    res = await client.get("/api/backup/export", headers=auth)
     assert res.status_code == 500
+    assert "unable to open" not in res.json()["detail"]
 
 
 def test_rack_cleanup_does_nothing_on_a_database_without_rack_tables():
