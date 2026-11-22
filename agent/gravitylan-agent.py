@@ -1147,8 +1147,9 @@ class AgentOrchestrator:
             "agent_version": VERSION,
             "timestamp": time.time(),
         }
-        if self.host_uid is not None:
-            payload["host_uid"] = self.host_uid
+        host_uid = getattr(self, "host_uid", None)
+        if host_uid is not None:
+            payload["host_uid"] = host_uid
         
         for key, collector in self.collectors.items():
             try:

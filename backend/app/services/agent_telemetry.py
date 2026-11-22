@@ -209,7 +209,7 @@ def _persist_device_metadata(db_token: AgentToken, device: Device, payload: Any)
 
     if db_token.agent_version != payload.agent_version:
         db_token.agent_version = payload.agent_version
-    if db_token.host_uid is None and getattr(payload, "host_uid", None):
+    if getattr(db_token, "host_uid", None) is None and getattr(payload, "host_uid", None):
         db_token.host_uid = payload.host_uid
 
     # Persist OS metadata reported by the agent (e.g. from /etc/os-release); empty values keep the old one
@@ -516,8 +516,8 @@ def _build_agent_summary(device: Device, token: AgentToken, last_m: DeviceMetric
         metrics_count=m_count,
         has_pending_token=bool(token.pending_token),
         pending_at=token.pending_at,
-        has_pending_host_uid=bool(token.pending_host_uid),
-        pending_host_at=token.pending_host_at,
+        has_pending_host_uid=bool(getattr(token, "pending_host_uid", None)),
+        pending_host_at=getattr(token, "pending_host_at", None),
         patch_available=m.patch_available,
         patch_security=m.patch_security,
         patch_manager=m.patch_manager,
