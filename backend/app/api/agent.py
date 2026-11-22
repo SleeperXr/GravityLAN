@@ -69,6 +69,7 @@ from app.services.agent_telemetry import (  # noqa: F401
     _get_auto_adopt_setting,
     _is_device_stale,
     _resolve_token_mismatch,
+    _verify_or_pin_host_uid,
     _persist_device_metadata,
     _build_metrics_row,
     _build_config_payload,
@@ -137,6 +138,9 @@ async def receive_report(
 
     # 3. Handle Token Mismatch / Pending Adoption
     agent_token = await _resolve_token_mismatch(db, agent_token, token, client_ip, payload.device_id, allow_auto_adopt)
+
+    # 3b. Enforce TOFU Host-UID Pinning (rejects cloned/migrated hosts with 409 until confirmed)
+    await _verify_or_pin_host_uid(db, agent_token, payload.host_uid, client_ip)
 
     # 4. Main Persistence Transaction (with Retry)
     effective_device_id = agent_token.device_id
@@ -383,7 +387,8 @@ async def get_agent_status(
         last_seen=token.last_seen,
         agent_version=normalize_version(token.agent_version),
         latest_version=normalize_version(LATEST_AGENT_VERSION),
-        latest_metrics=last_metrics.to_dict() if last_metrics else None
+        latest_metrics=last_metrics.to_dict() if last_metrics else None,
+        has_pending_host_uid=bool(token.pending_host_uid),
     )
 
 
@@ -502,6 +507,9 @@ async def _issue_agent_config(db: AsyncSession, device_id: int) -> PlainTextResp
         token_obj.last_seen = None
         token_obj.pending_token = None
         token_obj.pending_at = None
+        token_obj.host_uid = None
+        token_obj.pending_host_uid = None
+        token_obj.pending_host_at = None
     device.has_agent = True
     await db.commit()
     dashboard_cache.invalidate_all()
@@ -824,6 +832,9 @@ async def adopt_agent_token(device_id: int, db: AsyncSession = Depends(get_db), 
     token_obj.token = pending_storage_form(token_obj.pending_token)
     token_obj.pending_token = None
     token_obj.pending_at = None
+    token_obj.host_uid = None
+    token_obj.pending_host_uid = None
+    token_obj.pending_host_at = None
     token_obj.is_active = True
     device = await db.get(Device, device_id)
     if device:
@@ -835,6 +846,55 @@ async def adopt_agent_token(device_id: int, db: AsyncSession = Depends(get_db), 
     logger.info("Device %d adopted its pending agent token", device_id)
     
     return {"status": "ok", "message": "Token adopted successfully"}
+
+
+@router.post("/adopt-host/{device_id}", dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
+async def adopt_agent_host_uid(
+    device_id: int,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(get_current_admin),
+):
+    """Confirm a pending host identity change (e.g. after migrating a VM) for an existing agent token."""
+    token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device_id))
+    token_obj = token_res.scalar_one_or_none()
+
+    if not token_obj or not token_obj.pending_host_uid:
+        raise HTTPException(status_code=400, detail="No pending host identity change found for this device")
+
+    token_obj.host_uid = token_obj.pending_host_uid
+    token_obj.pending_host_uid = None
+    token_obj.pending_host_at = None
+    await db.commit()
+    dashboard_cache.invalidate_all()
+    device = await db.get(Device, device_id)
+    await audit(http_request, "agent.adopt_host", device_id=device_id, target=device_label(device))
+    logger.info("Device %d adopted its pending agent host UID", device_id)
+    return {"status": "ok", "message": "Agent host identity confirmed"}
+
+
+@router.post("/dismiss-host/{device_id}", dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
+async def dismiss_agent_host_uid(
+    device_id: int,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(get_current_admin),
+):
+    """Dismiss a pending host identity change while keeping the currently pinned host UID."""
+    token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device_id))
+    token_obj = token_res.scalar_one_or_none()
+
+    if not token_obj or not token_obj.pending_host_uid:
+        raise HTTPException(status_code=400, detail="No pending host identity change found for this device")
+
+    token_obj.pending_host_uid = None
+    token_obj.pending_host_at = None
+    await db.commit()
+    dashboard_cache.invalidate_all()
+    device = await db.get(Device, device_id)
+    await audit(http_request, "agent.dismiss_host", device_id=device_id, target=device_label(device))
+    logger.info("Device %d dismissed its pending agent host UID", device_id)
+    return {"status": "ok", "message": "Pending agent host identity dismissed"}
 
 
 # ---------------------------------------------------------------------------

@@ -25,10 +25,12 @@ check a credential of their own, named under *Notes*.
 
 | Method | Path | Session | Master | API token | Step-up | Answers | Notes |
 |---|---|---|---|---|---|---|---|
+| POST | `/api/agent/adopt-host/{device_id}` | yes | - | - | remote | after setup |  |
 | POST | `/api/agent/adopt/{device_id}` | yes | - | - | remote | after setup |  |
 | GET | `/api/agent/config/{device_id}` | yes | yes | `agent:read` | - | after setup |  |
 | PATCH | `/api/agent/config/{device_id}` | yes | yes | `agent:write` | - | after setup |  |
 | POST | `/api/agent/deploy/{device_id}` | yes | - | - | remote | after setup |  |
+| POST | `/api/agent/dismiss-host/{device_id}` | yes | - | - | remote | after setup |  |
 | GET | `/api/agent/download/agent` | public | public | public | - | always | The agent script itself; carries no secret. |
 | GET | `/api/agent/download/config/{device_id}` | public | public | public | - | always | Own check: single-use install code, or the master token in the Authorization header (API tokens refused). |
 | POST | `/api/agent/download/config/{device_id}` | yes | - | - | remote | after setup |  |

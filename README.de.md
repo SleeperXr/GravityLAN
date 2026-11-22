@@ -10,7 +10,7 @@ Selbst gehostetes Netzwerk-Radar, Geräteinventar, interaktiver Orbit-Netzplan u
 **[English](README.md)** · **Deutsch**
 
 [![Release](https://img.shields.io/badge/release-v0.8.0--rc-3DB8F5?style=flat-square&labelColor=151A21)](https://github.com/SleeperXr/GravityLAN/releases)
-[![Agent](https://img.shields.io/badge/agent-v0.3.17-3DB8F5?style=flat-square&labelColor=151A21)](docs/linux-agent.md#deutsch)
+[![Agent](https://img.shields.io/badge/agent-v0.3.18-3DB8F5?style=flat-square&labelColor=151A21)](docs/linux-agent.md#deutsch)
 [![CI](https://img.shields.io/github/actions/workflow/status/SleeperXr/GravityLAN/ci.yml?branch=main&style=flat-square&labelColor=151A21&label=CI)](https://github.com/SleeperXr/GravityLAN/actions/workflows/ci.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/sleeperxr/gravitylan?style=flat-square&labelColor=151A21&color=3DB8F5&logo=docker&logoColor=white)](https://hub.docker.com/r/sleeperxr/gravitylan)
 [![License: MIT](https://img.shields.io/badge/license-MIT-5B6674?style=flat-square&labelColor=151A21)](LICENSE)
