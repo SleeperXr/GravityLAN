@@ -14,15 +14,18 @@ This document details the threat modeling, potential attack vectors, security co
 ### Threat B: SSH Man-in-the-Middle (MITM) during Deployment
 *   **Attack Vector**: An attacker performs ARP spoofing or DNS hijacking on the local subnet to intercept the admin's remote deployment connection, capturing the target host's credentials or deploying a malicious system daemon.
 *   **Mitigation**:
-    *   GravityLAN supports an opt-in SSH Strict Mode (`GRAVITYLAN_SSH_STRICT_MODE=True`). Under Strict Mode, the Paramiko client loads system known hosts from `/home/gravitylan/.ssh/known_hosts` (inside Docker container) and enforces `RejectPolicy` for unknown host keys. Additionally, DB-backed TOFU pinning in the SQLite table `ssh_known_hosts` protects against host key changes during patch operations.
-    *   Deployments use local script delivery via secure SCP rather than heredoc shell piping, isolating password delivery from script execution.
-*   **Trade-off**: When Strict Mode is active, admins must seed host keys in the server's `/home/gravitylan/.ssh/known_hosts` file (either via mount or container shell) or confirm them via the SSH terminal. In dynamic DHCP homelabs, this adds configuration overhead.
+    *   In default mode, GravityLAN uses DB-backed host-key pinning (`ssh_known_hosts`): if a host already has a pinned key (for example confirmed in the browser SSH terminal or learned on an earlier deployment/update), `PinnedHostKeyPolicy` enforces it before any credentials are sent; if no key is pinned yet, `TofuHostKeyPolicy` learns and pins the first key.
+    *   With opt-in SSH Strict Mode (`GRAVITYLAN_SSH_STRICT_MODE=true`), unknown hosts are no longer learned via TOFU: Paramiko loads `/home/gravitylan/.ssh/known_hosts` and enforces `RejectPolicy` for unknown host keys (keys already pinned in `ssh_known_hosts` continue to be verified against their pinned entry).
+    *   Deployments transfer the agent script over SFTP/SCP rather than heredoc shell piping, isolating credential entry from script delivery.
+*   **Trade-off**: Under TOFU, the very first unverified connection remains exposed to an active MITM. When Strict Mode is active, admins must pre-seed host keys in `/home/gravitylan/.ssh/known_hosts` or confirm them in the SSH terminal first.
 
 
-### Threat C: Local Database Exposure
-*   **Attack Vector**: An unauthorized user with direct shell access to the host server reads the SQLite database, extracting agent credentials, master API tokens, or system inventories.
-*   **Mitigation**: The SQLite file is stored within a protected Docker volume (`/app/data`) restricted to the container run-time.
-*   **Trade-off**: If the underlying host is compromised or Docker socket permissions are insecure, the SQLite database can be directly read. GravityLAN does not encrypt local inventories on disk, assuming host-level storage security.
+### Threat C: Local Database & Data Directory Exposure
+*   **Attack Vector**: An unauthorized user with access to the host server, Docker host permissions, or a backup reads files from `/app/data` (`gravitylan.db`, `telemetry.db`, and by default `ssh_vault.key`).
+*   **Mitigation**:
+    *   The admin password (Argon2) as well as the master token, API tokens, and agent tokens (SHA-256) are stored only as hashes, so a leaked copy of `gravitylan.db` alone does not yield working login or API tokens.
+    *   Stored SSH keys/passwords and integration secrets (Proxmox, router import) are encrypted with Fernet (`GRAVITYLAN_VAULT_KEY`, falling back to `<data_dir>/ssh_vault.key`).
+*   **Trade-off**: A Docker volume or bind mount (`/app/data`) is **not** a security boundary against host root, members of the `docker` group, or anyone who can read a full appdata backup. Because `ssh_vault.key` sits in `/app/data` by default, a copy of the entire data directory contains both the encrypted database entries and the key to decrypt them. To separate database copies from decryption keys, configure `GRAVITYLAN_VAULT_KEY` outside the data backup and remove `ssh_vault.key` from `/app/data` (see [SECURITY.md](../SECURITY.md)). Device inventories and telemetry in `gravitylan.db` / `telemetry.db` are not encrypted on disk.
 
 ---
 
@@ -30,6 +33,6 @@ This document details the threat modeling, potential attack vectors, security co
 
 | Feature | Homelab/Default Mode | Hardened / Strict Mode | Trade-off Impact |
 | :--- | :--- | :--- | :--- |
-| **SSH Key Policy** | DB-backed TOFU (`TofuHostKeyPolicy` / `PinnedHostKeyPolicy` in `ssh_known_hosts`) | `RejectPolicy` (Strict matching against `/home/gravitylan/.ssh/known_hosts`) | TOFU learns the key on first contact and blocks later key changes without manual file seeding, but remains exposed on the very first unverified connection. Strict mode rejects any host not pre-seeded in `known_hosts` (or confirmed via saved key connections). |
+| **SSH Key Policy** | DB-backed pinning + TOFU (`PinnedHostKeyPolicy` / `TofuHostKeyPolicy` in `ssh_known_hosts`) | DB-pinned keys + `RejectPolicy` against `/home/gravitylan/.ssh/known_hosts` (`GRAVITYLAN_SSH_STRICT_MODE=true`) | TOFU learns the key on first contact and blocks later key changes without manual file seeding, but remains exposed on the very first unverified connection. Strict mode rejects unknown hosts unless pre-seeded in `known_hosts` or previously confirmed in `ssh_known_hosts`. |
 | **CORS Origins** | Strict Origin Isolation (Production) / Configurable List | Custom whitelist only | Limits public web dashboard access unless explicitly permitted by the administrator. |
 | **SQLite Retention** | Configurable Retention (Default 30 days) | Compact historical retention | Keeps databases small and highly performance-optimized, at the cost of losing historical time-series metric tracking for deep retroactive analysis. |
