@@ -84,6 +84,32 @@ async function adopt(agent: AgentRow) {
   }
 }
 
+async function adoptHost(agent: AgentRow) {
+  const ok = await confirmAction({
+    title: t('gv.agents.host_adopt'),
+    message: t('gv.agents.host_adopt_confirm', { host: agent.hostname }),
+    confirmLabel: t('gv.agents.host_adopt'),
+  });
+  if (!ok) return;
+  try {
+    await api.adoptAgentHost(agent.device_id);
+    showToast('success', t('gv.agents.host_adopted'), agent.hostname);
+    await load();
+  } catch (err) {
+    showToast('error', t('gv.agents.host_adopt_failed'), (err as Error).message);
+  }
+}
+
+async function dismissHost(agent: AgentRow) {
+  try {
+    await api.dismissAgentHost(agent.device_id);
+    showToast('success', t('gv.agents.host_dismissed'), agent.hostname);
+    await load();
+  } catch (err) {
+    showToast('error', t('gv.agents.host_dismiss_failed'), (err as Error).message);
+  }
+}
+
 const toneText = { ok: 'text-fg-muted', warn: 'text-warn-text', danger: 'text-danger-text' } as const;
 const toneBar = { ok: 'bg-mark-ok', warn: 'bg-mark-warn', danger: 'bg-mark-danger' } as const;
 const uptimeText = (pct: number | null) => (pct === null ? 'text-fg-subtle' : pct < 80 ? 'text-danger-text' : pct < 95 ? 'text-warn-text' : 'text-accent-text');
@@ -215,6 +241,15 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
             <ShieldCheck class="size-4 shrink-0" aria-hidden="true" />
             <p class="min-w-0 flex-1">{{ t('agent_detail.token_mismatch') }}</p>
             <Button size="sm" @click="adopt(agent)">{{ t('dashboard.adopt') }}</Button>
+          </div>
+
+          <div v-if="agent.has_pending_host_uid" class="mx-4 mb-3 flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn/10 p-3 text-xs text-warn-text">
+            <ShieldCheck class="size-4 shrink-0" aria-hidden="true" />
+            <p class="min-w-0 flex-1">{{ t('gv.agents.host_uid_mismatch') }}</p>
+            <div class="flex items-center gap-2">
+              <Button size="sm" variant="ghost" @click="dismissHost(agent)">{{ t('gv.agents.host_dismiss') }}</Button>
+              <Button size="sm" @click="adoptHost(agent)">{{ t('gv.agents.host_adopt') }}</Button>
+            </div>
           </div>
 
           <div v-if="expandedId === agent.device_id" :id="`agent-detail-${agent.device_id}`" class="border-t border-line px-4 pb-4">

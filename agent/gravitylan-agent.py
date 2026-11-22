@@ -15,6 +15,7 @@ Architecture:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import ipaddress
 import json
 import logging
@@ -37,10 +38,51 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 # Constants & Logging
 # ---------------------------------------------------------------------------
 
-VERSION = "0.3.17"
+VERSION = "0.3.18"
 AGENT_NAME = "gravitylan-agent"
 DEFAULT_CONFIG_FILENAME = "agent.conf"
 DEFAULT_LOG_FILENAME = "gravitylan-agent.log"
+
+_MACHINE_ID_PATHS = ("/etc/machine-id", "/var/lib/dbus/machine-id")
+_PRODUCT_UUID_PATH = "/sys/class/dmi/id/product_uuid"
+_PLACEHOLDER_IDS = frozenset({
+    "00000000-0000-0000-0000-000000000000",
+    "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    "00000000000000000000000000000000",
+})
+
+
+def compute_host_uid(
+    machine_id_paths: tuple[str, ...] = _MACHINE_ID_PATHS,
+    product_uuid_path: str = _PRODUCT_UUID_PATH,
+) -> Optional[str]:
+    """Return a stable SHA-256 fingerprint of this Linux host, or None if unavailable.
+
+    Combines ``/etc/machine-id`` (or ``/var/lib/dbus/machine-id``) with
+    ``/sys/class/dmi/id/product_uuid`` when readable, ignoring volatile network
+    attributes so normal kernel/network changes do not trigger false alerts.
+    """
+    parts: List[str] = []
+    for raw_path in machine_id_paths:
+        try:
+            value = Path(raw_path).read_text(encoding="utf-8", errors="ignore").strip().lower()
+        except OSError:
+            continue
+        if value and value not in _PLACEHOLDER_IDS:
+            parts.append(f"machine_id:{value}")
+            break
+
+    try:
+        uuid_val = Path(product_uuid_path).read_text(encoding="utf-8", errors="ignore").strip().lower()
+    except OSError:
+        uuid_val = ""
+    if uuid_val and uuid_val not in _PLACEHOLDER_IDS:
+        parts.append(f"product_uuid:{uuid_val}")
+
+    if not parts:
+        return None
+    digest = hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"
 
 logger = logging.getLogger(AGENT_NAME)
 
@@ -1087,6 +1129,7 @@ class AgentOrchestrator:
             "patches": PatchMetrics(),
             "arp_table": ArpNeighborCollector()
         }
+        self.host_uid = compute_host_uid()
 
         # Setup Signal Handlers
         signal.signal(signal.SIGTERM, self.stop)
@@ -1104,6 +1147,9 @@ class AgentOrchestrator:
             "agent_version": VERSION,
             "timestamp": time.time(),
         }
+        host_uid = getattr(self, "host_uid", None)
+        if host_uid is not None:
+            payload["host_uid"] = host_uid
         
         for key, collector in self.collectors.items():
             try:

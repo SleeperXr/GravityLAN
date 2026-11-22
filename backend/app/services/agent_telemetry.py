@@ -1,6 +1,7 @@
 """Agent Telemetry Service — Time-series metrics processing, persistence, and WebSocket broadcasting."""
 
 import asyncio
+import hmac
 import json
 import logging
 from collections import defaultdict
@@ -90,6 +91,9 @@ async def _adopt_token(db: AsyncSession, device: Device, token_obj: AgentToken |
         token_obj.token = hash_agent_token(token)
         token_obj.pending_token = None
         token_obj.pending_at = None
+        token_obj.host_uid = None
+        token_obj.pending_host_uid = None
+        token_obj.pending_host_at = None
         token_obj.is_active = True
     else:
         token_obj = AgentToken(device_id=device.id, token=hash_agent_token(token), is_active=True)
@@ -145,6 +149,45 @@ async def _resolve_token_mismatch(
     raise HTTPException(status_code=401, detail="Invalid token. Manual adoption required.")
 
 
+async def _verify_or_pin_host_uid(
+    db: AsyncSession,
+    agent_token: AgentToken,
+    incoming_host_uid: str | None,
+    client_ip: str | None,
+) -> None:
+    """Enforce TOFU host-identity pinning for agent reports.
+
+    Older agents (< 0.3.18) omit ``host_uid`` and keep reporting unchanged.
+    The first report carrying ``host_uid`` pins it on ``agent_token``.
+    A subsequent report from a different host is parked in ``pending_host_uid``
+    and rejected with HTTP 409 so cloned VMs or migrated hosts cannot silently
+    mix telemetry into the existing device until confirmed by an admin.
+    """
+    if not incoming_host_uid:
+        return
+    if agent_token.host_uid is None:
+        agent_token.host_uid = incoming_host_uid
+        agent_token.pending_host_uid = None
+        agent_token.pending_host_at = None
+        return
+    if hmac.compare_digest(agent_token.host_uid, incoming_host_uid):
+        return
+
+    logger.warning(
+        "Agent host UID mismatch for device %d (from %s): parking pending_host_uid for manual confirmation.",
+        agent_token.device_id,
+        client_ip or "unknown",
+    )
+    agent_token.pending_host_uid = incoming_host_uid
+    agent_token.pending_host_at = datetime.now(timezone.utc)
+    await db.commit()
+    dashboard_cache.invalidate_all()
+    raise HTTPException(
+        status_code=409,
+        detail="Agent host identity changed. Confirm the new host in GravityLAN or revoke this agent token.",
+    )
+
+
 # (key in the agent's "system" block, AgentToken column, column length)
 _OS_FIELDS = (
     ("os", "os_pretty", 255),
@@ -166,6 +209,8 @@ def _persist_device_metadata(db_token: AgentToken, device: Device, payload: Any)
 
     if db_token.agent_version != payload.agent_version:
         db_token.agent_version = payload.agent_version
+    if getattr(db_token, "host_uid", None) is None and getattr(payload, "host_uid", None):
+        db_token.host_uid = payload.host_uid
 
     # Persist OS metadata reported by the agent (e.g. from /etc/os-release); empty values keep the old one
     system = payload.system or {}
@@ -471,6 +516,8 @@ def _build_agent_summary(device: Device, token: AgentToken, last_m: DeviceMetric
         metrics_count=m_count,
         has_pending_token=bool(token.pending_token),
         pending_at=token.pending_at,
+        has_pending_host_uid=bool(getattr(token, "pending_host_uid", None)),
+        pending_host_at=getattr(token, "pending_host_at", None),
         patch_available=m.patch_available,
         patch_security=m.patch_security,
         patch_manager=m.patch_manager,

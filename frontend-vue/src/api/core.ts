@@ -355,6 +355,10 @@ export const api = {
     request<{ interval: number; disk_paths: string[]; enable_temp: boolean; enable_patch_check: boolean; enable_scanner_relay: boolean }>(`/api/agent/config/${deviceId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   adoptAgent: (deviceId: number) => 
     request<{ status: string }>(`/api/agent/adopt/${deviceId}`, { method: 'POST' }),
+  adoptAgentHost: (deviceId: number) =>
+    request<{ status: string }>(`/api/agent/adopt-host/${deviceId}`, { method: 'POST' }),
+  dismissAgentHost: (deviceId: number) =>
+    request<{ status: string }>(`/api/agent/dismiss-host/${deviceId}`, { method: 'POST' }),
   queryAgentPatches: (deviceId: number, data: { ssh_user: string; ssh_password?: string; sudo_password?: string; ssh_key?: string; ssh_port?: number; key_id?: number | null; key_passphrase?: string; profile_id?: number | null }) =>
     request<{
       device_id: number;

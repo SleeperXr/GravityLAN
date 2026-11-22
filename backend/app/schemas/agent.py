@@ -54,6 +54,7 @@ class AgentReportPayload(BaseModel):
 
     device_id: int | None = None
     agent_version: str
+    host_uid: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     timestamp: float
     cpu_percent: float = Field(ge=0.0, le=100.0)
     ram: AgentRamReport
@@ -94,6 +95,7 @@ class AgentStatusResponse(BaseModel):
     latest_version: str | None = None
     last_seen: datetime | None = None
     latest_metrics: dict | None = None
+    has_pending_host_uid: bool = False
     message: str | None = None
 
 
@@ -280,6 +282,8 @@ class AgentSummary(BaseModel):
     metrics_count: int = 0
     has_pending_token: bool = False
     pending_at: datetime | None = None
+    has_pending_host_uid: bool = False
+    pending_host_at: datetime | None = None
     patch_available: int = 0
     patch_security: int = 0
     patch_manager: str | None = None

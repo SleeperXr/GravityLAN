@@ -345,6 +345,8 @@ export interface AgentSummary {
   ip: string;
   is_online: boolean;
   has_pending_token?: boolean;
+  has_pending_host_uid?: boolean;
+  pending_host_at?: string | null;
   agent_version: string | null;
   last_seen: string | null;
   cpu_usage: number;

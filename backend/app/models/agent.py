@@ -46,6 +46,11 @@ class AgentToken(Base):
     pending_token: Mapped[str | None] = mapped_column(String(71), nullable=True)
     pending_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Host identity pinning (TOFU): SHA-256 fingerprint of the reporting host's machine-id / product_uuid
+    host_uid: Mapped[str | None] = mapped_column(String(71), nullable=True)
+    pending_host_uid: Mapped[str | None] = mapped_column(String(71), nullable=True)
+    pending_host_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     # Last reported OS metadata (populated from the agent's /etc/os-release)
     os_pretty: Mapped[str | None] = mapped_column(String(255), nullable=True)
     os_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
