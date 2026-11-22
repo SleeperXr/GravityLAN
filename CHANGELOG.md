@@ -4,8 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Agent host-identity pinning (TOFU, agent `0.3.18`): the Linux agent sends a SHA-256 fingerprint (`host_uid`) derived from `/etc/machine-id` and optional `/sys/class/dmi/id/product_uuid`. The server pins it on the first report (`agent_tokens.host_uid`) and rejects reports from a different host identity (such as cloned VMs or migrated hosts reusing `agent.conf`) with HTTP `409 Conflict` without mixing telemetry. GravityUI shows a warning banner on the Agents page to confirm (`POST /api/agent/adopt-host/{device_id}`) or dismiss (`POST /api/agent/dismiss-host/{device_id}`) the new host identity with password confirmation and audit logging; older agents (`< 0.3.18`) keep reporting unchanged.
+- Isolated CI container smoke test (`scripts/smoke_container.py`) in the `build-docker` workflow: starts the built Docker image under `--network=none` with non-root `PUID`/`PGID`, verifies `/api/health`, server process UID/GID, GravityUI asset delivery, setup, login and persistence across a container restart.
+
 ### Changed
 - A device with an open MAC conflict, which is not probed until the conflict is adopted or dismissed, is marked **Status unconfirmed** on its overview card and in the list, in the health table and its detail sheet; the conflict banner in the device editor says that an outage is not noticed meanwhile. The device list, the device endpoints and the health views report it as `presence_frozen`. Dismissing a conflict now also refreshes the cached device lists, and a conflict the agent relay opens or closes shows at once.
+- Security documentation aligned with the current architecture: `SECURITY.md` now points to GitHub's Private Vulnerability Reporting form instead of public issues, and `docs/threat-model.md` accurately documents hashed tokens, `/app/data` vs. external `GRAVITYLAN_VAULT_KEY` boundaries, and `GRAVITYLAN_SSH_STRICT_MODE` vs. DB-backed `ssh_known_hosts` pinning.
+
+### Fixed
+- First-run setup completion (`POST /api/setup/complete`) and pre-setup restore (`POST /api/setup/restore`) are now serialized with an async lock so concurrent requests cannot both pass the `setup.complete` guard or overwrite the admin password.
 
 ## [0.8.0] - 2026-11-20
 
