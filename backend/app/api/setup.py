@@ -13,10 +13,15 @@ from app.config import settings
 from app.version import VERSION
 from app.services.agent_deployer import get_latest_agent_version
 
+import asyncio
 import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/setup", tags=["setup"])
+# Serializes the check-and-commit of setup completion and pre-setup restore so
+# concurrent requests cannot both observe setup.complete != "true" and overwrite
+# the admin password (single-worker server; see Dockerfile).
+_setup_lock = asyncio.Lock()
 
 
 @router.get("/status", dependencies=[policy(callers=PUBLIC, note="whether the first-run wizard is done")])
@@ -258,10 +263,11 @@ async def restore_during_setup(http_request: Request, file: UploadFile = File(..
     never carries the admin password, the master token or the setup state: the wizard sets the
     password next, and completing it with ``restored`` keeps the restored subnets and devices.
     """
-    if await _setup_done(db):
-        raise HTTPException(status_code=403, detail="Setup already completed. Restore backups under Settings.")
-    from app.api.backup import restore_upload
-    return await restore_upload(http_request, file, db, actor="setup")
+    async with _setup_lock:
+        if await _setup_done(db):
+            raise HTTPException(status_code=403, detail="Setup already completed. Restore backups under Settings.")
+        from app.api.backup import restore_upload
+        return await restore_upload(http_request, file, db, actor="setup")
 
 
 async def _upsert_setting(
@@ -364,11 +370,12 @@ async def mark_setup_complete(
     """Mark the initial setup as completed, sign the admin in and adopt discovered hosts."""
     logger.info(f"mark_setup_complete called: has_password={request.admin_password is not None}")
 
-    # 0. Idempotency check: don't allow setup to run again if already complete
-    if await _setup_done(db):
-        raise HTTPException(status_code=400, detail="Setup already completed. Use Settings UI to change configuration.")
-
-    await _persist_initial_setup_settings(db, request)
+    # 0. Atomic check-and-persist: serialize concurrent completion attempts so only
+    # the first caller can set the admin password and flip setup.complete to "true".
+    async with _setup_lock:
+        if await _setup_done(db):
+            raise HTTPException(status_code=400, detail="Setup already completed. Use Settings UI to change configuration.")
+        await _persist_initial_setup_settings(db, request)
 
     # Sign the admin in right away: the wizard ends in the dashboard without a second login request
     if request.admin_password:

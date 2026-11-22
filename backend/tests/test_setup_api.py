@@ -192,3 +192,36 @@ async def test_failing_subnet_registration_and_adoption_still_complete_the_setup
     assert res.headers.get("set-cookie")  # the admin is still signed in
     done = (await db.execute(select(Setting).where(Setting.key == "setup.complete"))).scalar_one()
     assert done.value == "true"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_setup_complete_allows_only_one_winner(monkeypatch, client, db):
+    """Two simultaneous /api/setup/complete calls must not both pass the guard or overwrite the password."""
+    import asyncio
+
+    monkeypatch.setattr("app.scanner.utils.get_local_subnets", lambda: LOCAL)
+    original_persist = setup._persist_initial_setup_settings
+
+    async def slow_persist(session, req):
+        # Yield control so a racing request would interleave without _setup_lock
+        await asyncio.sleep(0.05)
+        await original_persist(session, req)
+
+    monkeypatch.setattr(setup, "_persist_initial_setup_settings", slow_persist)
+
+    pw_first = "winner-password-12345"
+    pw_second = "loser-password-67890"
+    res_a, res_b = await asyncio.gather(
+        client.post("/api/setup/complete", json={"admin_password": pw_first}),
+        client.post("/api/setup/complete", json={"admin_password": pw_second}),
+    )
+
+    statuses = sorted([res_a.status_code, res_b.status_code])
+    assert statuses == [200, 400]
+
+    winner_pw = pw_first if res_a.status_code == 200 else pw_second
+    loser_res = res_b if res_a.status_code == 200 else res_a
+    assert not loser_res.headers.get("set-cookie")
+
+    stored_pw = (await db.execute(select(Setting).where(Setting.key == "api.admin_password"))).scalar_one()
+    assert verify_password(winner_pw, stored_pw.value)
