@@ -16,7 +16,7 @@ This document details the threat modeling, potential attack vectors, security co
 *   **Mitigation**:
     *   In default mode, GravityLAN uses DB-backed host-key pinning (`ssh_known_hosts`): if a host already has a pinned key (for example confirmed in the browser SSH terminal or learned on an earlier deployment/update), `PinnedHostKeyPolicy` enforces it before any credentials are sent; if no key is pinned yet, `TofuHostKeyPolicy` learns and pins the first key.
     *   With opt-in SSH Strict Mode (`GRAVITYLAN_SSH_STRICT_MODE=true`), unknown hosts are no longer learned via TOFU: Paramiko loads `/home/gravitylan/.ssh/known_hosts` and enforces `RejectPolicy` for unknown host keys (keys already pinned in `ssh_known_hosts` continue to be verified against their pinned entry).
-    *   Deployments transfer the agent script over SFTP/SCP rather than heredoc shell piping, isolating credential entry from script delivery.
+    *   The deployer stages the agent script and its `agent.conf` (which carries the agent token) over the SSH exec channel with a quoted heredoc into an owner-only temporary file (`umask 077`). It checks the SHA-256 of the staged script on the host before it removes or replaces anything, and error messages never contain the command text. A sudo password is passed on the standard input of `sudo -S`, not in the command line.
 *   **Trade-off**: Under TOFU, the very first unverified connection remains exposed to an active MITM. When Strict Mode is active, admins must pre-seed host keys in `/home/gravitylan/.ssh/known_hosts` or confirm them in the SSH terminal first.
 
 
