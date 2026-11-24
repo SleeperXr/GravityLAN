@@ -282,20 +282,30 @@ def _check_sudo(client) -> bool:
     return stdout.channel.recv_exit_status() == 0
 
 
+def _stage_file_command(tmp_path: str, content: str) -> str:
+    """Shell command that creates ``tmp_path`` with ``content``, exclusively and owner-only."""
+    return (
+        f"(set -e; umask 077; t=$(mktemp {tmp_path}.XXXXXX); trap 'rm -f \"$t\"' EXIT\n"
+        f"cat > \"$t\" << 'GRAVITYLAN_EOF'\n{content}\nGRAVITYLAN_EOF\n"
+        f"rm -f {tmp_path}\n"
+        f"ln \"$t\" {tmp_path}\n)"
+    )
+
+
 def _stage_file(client, tmp_path: str, content: str) -> None:
     """Write content to a remote temp file via heredoc, readable only by the SSH user.
 
     The agent config carries the agent's bearer token, so nothing staged in /tmp
-    may be world-readable. A leftover file from an earlier run is removed first,
-    since ``cat >`` would keep its old mode.
+    may be world-readable. The content is written to a fresh ``mktemp`` file (created
+    with ``O_EXCL`` and mode 0600), a leftover at ``tmp_path`` from an earlier run is
+    removed, and the finished file is published with ``ln``, which fails if anything
+    exists at ``tmp_path`` by then (a link, a FIFO or a file another local user planted
+    after the ``rm``). Nothing is ever written through a predictable path, and a
+    failure stops the deploy. Only POSIX ``sh`` features and ``mktemp``/``ln``/``rm``
+    are used, which busybox and coreutils both provide.
     """
     from app.services.ssh_utils import _exec_impl
-    _exec_impl(
-        client,
-        f"(umask 077 && rm -f {tmp_path} && cat > {tmp_path} << 'GRAVITYLAN_EOF'\n{content}\nGRAVITYLAN_EOF\n)",
-        15,
-        None,
-    )
+    _exec_impl(client, _stage_file_command(tmp_path, content), 15, None)
 
 
 @dataclass(frozen=True, slots=True)

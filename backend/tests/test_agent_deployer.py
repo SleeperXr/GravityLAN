@@ -244,9 +244,95 @@ def test_stage_file_writes_owner_only_temp_file(monkeypatch):
     agent_deployer._stage_file(MagicMock(), "/tmp/gravitylan_config_7.json", '{"token": "secret"}')
 
     cmd = sent[0]
-    assert cmd.startswith("(umask 077 && rm -f /tmp/gravitylan_config_7.json && cat > /tmp/gravitylan_config_7.json << 'GRAVITYLAN_EOF'\n")
-    assert '{"token": "secret"}' in cmd
-    assert cmd.endswith("\nGRAVITYLAN_EOF\n)")
+    assert cmd.startswith("(set -e; umask 077; t=$(mktemp /tmp/gravitylan_config_7.json.XXXXXX); trap 'rm -f \"$t\"' EXIT\n")
+    assert "cat > \"$t\" << 'GRAVITYLAN_EOF'\n" + '{"token": "secret"}' + "\nGRAVITYLAN_EOF\n" in cmd
+    # Published without ever writing through the predictable path: ln fails if anything is there
+    assert cmd.endswith("rm -f /tmp/gravitylan_config_7.json\nln \"$t\" /tmp/gravitylan_config_7.json\n)")
+    assert "cat > /tmp/gravitylan_config_7.json" not in cmd
+
+
+def _posix_shells() -> list:
+    """Plain POSIX shells on this machine (dash is the closest to busybox ash and Unraid's sh)."""
+    import shutil
+    found = [path for path in (shutil.which("dash"), shutil.which("sh"), shutil.which("bash")) if path]
+    return found or [pytest.param("", marks=pytest.mark.skip(reason="no POSIX shell"))]
+
+
+def _run_in_shell(shell: str, script: str):
+    import subprocess
+    return subprocess.run([shell, "-c", script], capture_output=True, text=True, timeout=20)
+
+
+@pytest.mark.parametrize("shell", _posix_shells())
+class TestStageFileCommandInRealShell:
+    """Run the generated command with a real shell; ``rm`` is shadowed to plant something in the race window."""
+
+    def test_creates_file_with_exact_content(self, shell, tmp_path):
+        import hashlib
+        target = tmp_path / "gravitylan_config_7.json"
+
+        result = _run_in_shell(shell, agent_deployer._stage_file_command(target.as_posix(), '{"token": "secret"}'))
+
+        assert result.returncode == 0, result.stderr
+        assert target.read_bytes() == b'{"token": "secret"}\n'
+        assert hashlib.sha256(target.read_bytes()).hexdigest() == agent_deployer._staged_content_sha256('{"token": "secret"}')
+
+    def test_replaces_a_leftover_file_and_makes_it_owner_only(self, shell, tmp_path):
+        import os
+        import stat
+        if os.name == "nt":
+            pytest.skip("POSIX file modes")
+        target = tmp_path / "leftover"
+        target.write_text("old")
+        target.chmod(0o666)
+
+        result = _run_in_shell(shell, agent_deployer._stage_file_command(target.as_posix(), "new"))
+
+        assert result.returncode == 0, result.stderr
+        assert target.read_text() == "new\n"
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+    def test_refuses_to_write_through_a_link_planted_after_the_rm(self, shell, tmp_path):
+        import os
+        victim = tmp_path / "victim"
+        victim.write_text("keep")
+        target = tmp_path / "gravitylan_config_7.json"
+        try:
+            os.symlink(victim, tmp_path / "probe")
+        except (OSError, NotImplementedError):
+            pytest.skip("cannot create symlinks here")
+        plant = f'rm() {{ command rm "$@"; ln -s "{victim.as_posix()}" "{target.as_posix()}"; }}\n'
+
+        result = _run_in_shell(shell, plant + agent_deployer._stage_file_command(target.as_posix(), "SECRET"))
+
+        assert result.returncode != 0
+        assert victim.read_text() == "keep"
+        assert target.is_symlink()
+
+    def test_refuses_a_file_that_appears_after_the_rm(self, shell, tmp_path):
+        target = tmp_path / "gravitylan_config_7.json"
+        plant = f'rm() {{ command rm "$@"; echo planted > "{target.as_posix()}"; }}\n'
+
+        result = _run_in_shell(shell, plant + agent_deployer._stage_file_command(target.as_posix(), "SECRET"))
+
+        assert result.returncode != 0
+        assert target.read_text() == "planted\n"
+        assert [p.name for p in tmp_path.iterdir()] == [target.name]  # the mktemp file is cleaned up
+
+    def test_refuses_a_fifo_planted_after_the_rm_and_leaves_no_temp_file(self, shell, tmp_path):
+        """A FIFO would hand the content to whoever reads it; a noclobber redirect would still open it."""
+        import os
+        import shutil
+        if os.name == "nt" or not shutil.which("mkfifo"):  # MSYS fakes FIFOs with .lnk files
+            pytest.skip("no mkfifo")
+        target = tmp_path / "gravitylan_config_7.json"
+        plant = f'rm() {{ command rm "$@"; mkfifo "{target.as_posix()}"; }}\n'
+
+        result = _run_in_shell(shell, plant + agent_deployer._stage_file_command(target.as_posix(), "SECRET"))
+
+        assert result.returncode != 0
+        assert not target.is_file()
+        assert [p.name for p in tmp_path.iterdir()] == [target.name]
 
 
 @pytest.mark.asyncio
