@@ -350,6 +350,8 @@ export interface AgentSummary {
   /** Address the host waiting for confirmation reports from, and the first 12 hex digits of its identity. */
   pending_host_ip?: string | null;
   pending_host_fingerprint?: string | null;
+  /** What the confirmation has to name: a value of the whole pending identity (the fingerprint is only for reading). */
+  pending_host_confirmation?: string | null;
   agent_version: string | null;
   last_seen: string | null;
   cpu_usage: number;

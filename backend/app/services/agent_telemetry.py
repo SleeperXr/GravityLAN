@@ -1,6 +1,7 @@
 """Agent Telemetry Service — Time-series metrics processing, persistence, and WebSocket broadcasting."""
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -208,10 +209,21 @@ async def _verify_or_pin_host_uid(
 
 
 def host_uid_fingerprint(host_uid: str | None) -> str | None:
-    """The first 12 hex digits of a ``sha256:`` host UID: short enough to read out, to tell hosts apart."""
+    """The first 12 hex digits of a ``sha256:`` host UID: short enough to read out, to tell hosts apart.
+
+    For display only. The host chooses its whole UID (the server only checks the format), so another
+    one that starts with the same 12 digits is easy to make: a confirmation must not rest on this.
+    """
     if not host_uid:
         return None
     return host_uid.split(":", 1)[-1][:12]
+
+
+def host_uid_confirmation(host_uid: str | None) -> str | None:
+    """What a confirmation has to name: a value of the whole pending UID, so it changes whenever that does."""
+    if not host_uid:
+        return None
+    return hashlib.sha256(f"gravitylan-host-confirmation:{host_uid}".encode()).hexdigest()[:32]
 
 
 # (key in the agent's "system" block, AgentToken column, column length)
@@ -546,6 +558,7 @@ def _build_agent_summary(device: Device, token: AgentToken, last_m: DeviceMetric
         pending_host_at=getattr(token, "pending_host_at", None),
         pending_host_ip=getattr(token, "pending_host_ip", None),
         pending_host_fingerprint=host_uid_fingerprint(getattr(token, "pending_host_uid", None)),
+        pending_host_confirmation=host_uid_confirmation(getattr(token, "pending_host_uid", None)),
         patch_available=m.patch_available,
         patch_security=m.patch_security,
         patch_manager=m.patch_manager,

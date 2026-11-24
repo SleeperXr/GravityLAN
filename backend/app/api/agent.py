@@ -1,5 +1,6 @@
 """Agent API — Handles incoming metrics from deployed agents and provides real-time status."""
 
+import hmac
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -71,7 +72,7 @@ from app.services.agent_telemetry import (  # noqa: F401
     _is_device_stale,
     _resolve_token_mismatch,
     _verify_or_pin_host_uid,
-    host_uid_fingerprint,
+    host_uid_confirmation,
     _persist_device_metadata,
     _build_metrics_row,
     _build_config_payload,
@@ -856,14 +857,14 @@ async def adopt_agent_host_uid(
 ):
     """Confirm a pending host identity change (e.g. after migrating a VM) for an existing agent token.
 
-    Only the host the admin was shown: ``req.pending`` has to be the fingerprint of the pending host.
+    Only the host the admin was shown: ``req.pending`` has to be the confirmation of the pending host.
     """
     token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device_id))
     token_obj = token_res.scalar_one_or_none()
 
     if not token_obj or not token_obj.pending_host_uid:
         raise HTTPException(status_code=400, detail="No pending host identity change found for this device")
-    if host_uid_fingerprint(token_obj.pending_host_uid) != req.pending:
+    if not hmac.compare_digest(host_uid_confirmation(token_obj.pending_host_uid), req.pending):
         raise HTTPException(
             status_code=409,
             detail="The host waiting for confirmation changed since you looked at it. Reload and check it again.",

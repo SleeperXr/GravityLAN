@@ -190,7 +190,7 @@
       "query_failed": "Updates konnten nicht abgefragt werden",
       "adopted": "Neuer Agent-Schlüssel übernommen",
       "adopt_failed": "Schlüssel konnte nicht übernommen werden",
-      "host_uid_mismatch": "Dieser Agent-Token meldet sich von einer anderen Host-Identität (z. B. nach VM-Migration oder Klon). Telemetrie wird pausiert, bis du den neuen Host bestätigst oder den Hinweis verwirfst.",
+      "host_uid_mismatch": "Dieser Agent-Token meldet sich von einer anderen Host-Identität (z. B. nach VM-Migration oder Klon). Dessen Reports werden abgelehnt, bis du ihn bestätigst. Verwerfen blendet nur diesen Hinweis aus, bis der Host wieder meldet.",
       "host_adopt": "Neuen Host übernehmen",
       "host_adopt_confirm": "Den Host, der von {{from}} meldet (Fingerabdruck {{fingerprint}}), dauerhaft an {{host}} binden und die Telemetrie wieder annehmen?",
       "host_address_unknown": "unbekannte Adresse",

@@ -86,21 +86,21 @@ async function adopt(agent: AgentRow) {
 }
 
 async function adoptHost(agent: AgentRow) {
-  // The fingerprint the admin looked at: another host waiting by now is refused, not adopted unseen
-  const fingerprint = agent.pending_host_fingerprint;
-  if (!fingerprint) return;
+  // The host the admin looked at: another one waiting by now is refused, not adopted unseen
+  const confirmation = agent.pending_host_confirmation;
+  if (!confirmation) return;
   const ok = await confirmAction({
     title: t('gv.agents.host_adopt'),
     message: t('gv.agents.host_adopt_confirm', {
       host: agent.hostname,
       from: agent.pending_host_ip || t('gv.agents.host_address_unknown'),
-      fingerprint,
+      fingerprint: agent.pending_host_fingerprint,
     }),
     confirmLabel: t('gv.agents.host_adopt'),
   });
   if (!ok) return;
   try {
-    await api.adoptAgentHost(agent.device_id, fingerprint);
+    await api.adoptAgentHost(agent.device_id, confirmation);
     showToast('success', t('gv.agents.host_adopted'), agent.hostname);
   } catch (err) {
     showToast('error', t('gv.agents.host_adopt_failed'), (err as Error).message);
@@ -262,7 +262,7 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
             </div>
             <div class="flex items-center gap-2">
               <Button size="sm" variant="ghost" @click="dismissHost(agent)">{{ t('gv.agents.host_dismiss') }}</Button>
-              <Button size="sm" :disabled="!agent.pending_host_fingerprint" @click="adoptHost(agent)">{{ t('gv.agents.host_adopt') }}</Button>
+              <Button size="sm" :disabled="!agent.pending_host_confirmation" @click="adoptHost(agent)">{{ t('gv.agents.host_adopt') }}</Button>
             </div>
           </div>
 

@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from app.models.agent import AgentToken, DeviceMetrics
 from app.models.device import Device
+from app.services.agent_telemetry import host_uid_confirmation
 from app.services.agent_tokens import hash_agent_token
 from app.services.session_service import session_store
 from app.services.stepup import store as stepup_store
@@ -20,8 +21,10 @@ ROOT = Path(__file__).resolve().parents[2]
 HOST_UID_A = "sha256:" + "a" * 64
 HOST_UID_B = "sha256:" + "b" * 64
 HOST_UID_C = "sha256:" + "c" * 64
-FINGERPRINT_B = "b" * 12  # what the overview shows for HOST_UID_B and the confirmation has to name
-FINGERPRINT_C = "c" * 12
+HOST_UID_B_SAME_PREFIX = "sha256:" + "b" * 12 + "d" * 52  # another identity with the fingerprint of HOST_UID_B
+FINGERPRINT_B = "b" * 12  # what the overview shows to read for HOST_UID_B
+CONFIRM_B = host_uid_confirmation(HOST_UID_B)  # what a confirmation has to name
+CONFIRM_C = host_uid_confirmation(HOST_UID_C)
 
 
 def _load_agent_module() -> Any:
@@ -174,7 +177,7 @@ async def test_host_uid_tofu_pin_mismatch_dismiss_and_adopt_lifecycle(client, db
     assert r_mismatch_again.status_code == 409
 
     # 5. Adopt promotes HOST_UID_B to pinned host_uid; now HOST_UID_B succeeds and HOST_UID_A is rejected
-    r_adopt = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": FINGERPRINT_B}, cookies=session_cookies)
+    r_adopt = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": CONFIRM_B}, cookies=session_cookies)
     assert r_adopt.status_code == 200
     await db.refresh(tok)
     assert tok.host_uid == HOST_UID_B
@@ -243,19 +246,23 @@ async def test_a_second_foreign_host_replaces_the_pending_one_and_the_first_cann
     cookies = {"gravitylan_token": _confirmed_session_cookie("remote")}
 
     # The admin looked at host B; host C has taken its place since
-    stale = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": FINGERPRINT_B}, cookies=cookies)
+    stale = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": CONFIRM_B}, cookies=cookies)
     assert stale.status_code == 409
     await db.refresh(tok)
     assert (tok.host_uid, tok.pending_host_uid) == (HOST_UID_A, HOST_UID_C)
 
-    current = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": FINGERPRINT_C}, cookies=cookies)
+    current = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": CONFIRM_C}, cookies=cookies)
     assert current.status_code == 200
     await db.refresh(tok)
     assert (tok.host_uid, tok.pending_host_uid) == (HOST_UID_C, None)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("body", [None, {}, {"pending": "nope"}, {"pending": "B" * 12}, {"pending": "b" * 64}])
+@pytest.mark.parametrize(
+    "body",
+    [None, {}, {"pending": "nope"}, {"pending": CONFIRM_B.upper()}, {"pending": FINGERPRINT_B}, {"pending": "b" * 64}],
+    ids=["no-body", "empty", "not-hex", "upper-case", "display-fingerprint-only", "too-long"],
+)
 async def test_confirming_a_host_must_name_its_fingerprint(client, db, admin_token, body) -> None:
     dev, tok, raw = await _seed_agent(db)
     await _pin(client, raw, dev.id)
@@ -270,6 +277,46 @@ async def test_confirming_a_host_must_name_its_fingerprint(client, db, admin_tok
 
 
 @pytest.mark.asyncio
+async def test_an_identity_with_the_same_fingerprint_cannot_take_over_a_confirmation(client, db, admin_token) -> None:
+    """The host chooses its whole UID: one that starts like the pending one must not inherit the confirmation."""
+    dev, tok, raw = await _seed_agent(db)
+    await _pin(client, raw, dev.id)
+    assert (await _report(client, raw, dev.id, HOST_UID_B)).status_code == 409
+    seen_by_admin = host_uid_confirmation(HOST_UID_B)
+    assert (await _report(client, raw, dev.id, HOST_UID_B_SAME_PREFIX)).status_code == 409  # same 12 digits, another identity
+    cookies = {"gravitylan_token": _confirmed_session_cookie("remote")}
+    await db.refresh(tok)
+    assert tok.pending_host_uid == HOST_UID_B_SAME_PREFIX
+
+    stale = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": seen_by_admin}, cookies=cookies)
+
+    assert stale.status_code == 409
+    await db.refresh(tok)
+    assert (tok.host_uid, tok.pending_host_uid) == (HOST_UID_A, HOST_UID_B_SAME_PREFIX)
+    current = await client.post(
+        f"/api/agent/adopt-host/{dev.id}", json={"pending": host_uid_confirmation(HOST_UID_B_SAME_PREFIX)}, cookies=cookies,
+    )
+    assert current.status_code == 200
+    await db.refresh(tok)
+    assert tok.host_uid == HOST_UID_B_SAME_PREFIX
+
+
+@pytest.mark.asyncio
+async def test_an_unchanged_pending_host_stays_confirmable(client, db, admin_token) -> None:
+    dev, tok, raw = await _seed_agent(db)
+    await _pin(client, raw, dev.id)
+    for _ in range(3):  # reports keep coming while the admin looks at the dialog
+        assert (await _report(client, raw, dev.id, HOST_UID_B)).status_code == 409
+    cookies = {"gravitylan_token": _confirmed_session_cookie("remote")}
+
+    response = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": CONFIRM_B}, cookies=cookies)
+
+    assert response.status_code == 200
+    await db.refresh(tok)
+    assert tok.host_uid == HOST_UID_B
+
+
+@pytest.mark.asyncio
 async def test_the_overview_names_the_pending_host_by_address_and_fingerprint(client, db, admin_token) -> None:
     dev, tok, raw = await _seed_agent(db)
     await _pin(client, raw, dev.id)
@@ -280,6 +327,7 @@ async def test_the_overview_names_the_pending_host_by_address_and_fingerprint(cl
 
     entry = next(a for a in overview.json()["agents"] if a["device_id"] == dev.id)
     assert entry["pending_host_fingerprint"] == FINGERPRINT_B
+    assert entry["pending_host_confirmation"] == CONFIRM_B and len(CONFIRM_B) == 32
     assert entry["pending_host_ip"] == tok.pending_host_ip and tok.pending_host_ip
     assert "pending_host_uid" not in entry and HOST_UID_B not in str(entry)  # the full identity never leaves the server
 

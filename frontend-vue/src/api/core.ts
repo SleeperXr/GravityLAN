@@ -355,7 +355,7 @@ export const api = {
     request<{ interval: number; disk_paths: string[]; enable_temp: boolean; enable_patch_check: boolean; enable_scanner_relay: boolean }>(`/api/agent/config/${deviceId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   adoptAgent: (deviceId: number) => 
     request<{ status: string }>(`/api/agent/adopt/${deviceId}`, { method: 'POST' }),
-  /** `pending` is the fingerprint of the host the admin was shown; a different host waiting now is refused. */
+  /** `pending` is the `pending_host_confirmation` of the host the admin was shown; a different host waiting now is refused. */
   adoptAgentHost: (deviceId: number, pending: string) =>
     request<{ status: string }>(`/api/agent/adopt-host/${deviceId}`, { method: 'POST', body: JSON.stringify({ pending }) }),
   dismissAgentHost: (deviceId: number) =>

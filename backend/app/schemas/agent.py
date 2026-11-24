@@ -85,13 +85,14 @@ class AgentReportResponse(BaseModel):
 
 
 class AgentHostAdoptRequest(BaseModel):
-    """Confirm the host the admin was shown: ``pending`` is the fingerprint of the pending host.
+    """Confirm the host the admin was shown: ``pending`` is the ``pending_host_confirmation`` of the overview.
 
-    A different host may have replaced the pending one since the page was loaded; the confirmation
-    is refused then, so a host nobody looked at cannot be adopted.
+    It is a value of the whole pending identity, so any other host that took the place of the pending
+    one since the page was loaded (even one that shares its fingerprint) is refused and cannot be
+    adopted unseen.
     """
 
-    pending: str = Field(..., pattern=r"^[0-9a-f]{12}$")
+    pending: str = Field(..., pattern=r"^[0-9a-f]{32}$")
 
 
 class AgentStatusResponse(BaseModel):
@@ -295,9 +296,11 @@ class AgentSummary(BaseModel):
     has_pending_host_uid: bool = False
     pending_host_at: datetime | None = None
     # What the admin is asked to confirm: the address the other host reports from and the first
-    # 12 hex digits of its identity, which the confirmation has to name (AgentHostAdoptRequest)
+    # 12 hex digits of its identity (to read); the confirmation names ``pending_host_confirmation``,
+    # a value of the whole identity (AgentHostAdoptRequest)
     pending_host_ip: str | None = None
     pending_host_fingerprint: str | None = None
+    pending_host_confirmation: str | None = None
     patch_available: int = 0
     patch_security: int = 0
     patch_manager: str | None = None
