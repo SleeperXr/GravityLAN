@@ -1,5 +1,6 @@
 """Agent API — Handles incoming metrics from deployed agents and provides real-time status."""
 
+import hmac
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -30,6 +31,7 @@ from app.models.ssh import SshKnownHost
 from app.services.ssh_utils import PinnedHostKey, TofuHostKeyPolicy
 from app.api.auth import get_bearer_admin, get_current_admin
 from app.schemas.agent import (
+    AgentHostAdoptRequest,
     AgentReportPayload,
     AgentReportResponse,
     AgentStatusResponse,
@@ -70,6 +72,7 @@ from app.services.agent_telemetry import (  # noqa: F401
     _is_device_stale,
     _resolve_token_mismatch,
     _verify_or_pin_host_uid,
+    host_uid_confirmation,
     _persist_device_metadata,
     _build_metrics_row,
     _build_config_payload,
@@ -507,9 +510,7 @@ async def _issue_agent_config(db: AsyncSession, device_id: int) -> PlainTextResp
         token_obj.last_seen = None
         token_obj.pending_token = None
         token_obj.pending_at = None
-        token_obj.host_uid = None
-        token_obj.pending_host_uid = None
-        token_obj.pending_host_at = None
+        token_obj.reset_host_pin()
     device.has_agent = True
     await db.commit()
     dashboard_cache.invalidate_all()
@@ -832,9 +833,7 @@ async def adopt_agent_token(device_id: int, db: AsyncSession = Depends(get_db), 
     token_obj.token = pending_storage_form(token_obj.pending_token)
     token_obj.pending_token = None
     token_obj.pending_at = None
-    token_obj.host_uid = None
-    token_obj.pending_host_uid = None
-    token_obj.pending_host_at = None
+    token_obj.reset_host_pin()
     token_obj.is_active = True
     device = await db.get(Device, device_id)
     if device:
@@ -851,20 +850,28 @@ async def adopt_agent_token(device_id: int, db: AsyncSession = Depends(get_db), 
 @router.post("/adopt-host/{device_id}", dependencies=[policy(callers=SESSION_ONLY, step_up="remote")])
 async def adopt_agent_host_uid(
     device_id: int,
+    req: AgentHostAdoptRequest,
     http_request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(get_current_admin),
 ):
-    """Confirm a pending host identity change (e.g. after migrating a VM) for an existing agent token."""
+    """Confirm a pending host identity change (e.g. after migrating a VM) for an existing agent token.
+
+    Only the host the admin was shown: ``req.pending`` has to be the confirmation of the pending host.
+    """
     token_res = await db.execute(select(AgentToken).where(AgentToken.device_id == device_id))
     token_obj = token_res.scalar_one_or_none()
 
     if not token_obj or not token_obj.pending_host_uid:
         raise HTTPException(status_code=400, detail="No pending host identity change found for this device")
+    if not hmac.compare_digest(host_uid_confirmation(token_obj.pending_host_uid), req.pending):
+        raise HTTPException(
+            status_code=409,
+            detail="The host waiting for confirmation changed since you looked at it. Reload and check it again.",
+        )
 
     token_obj.host_uid = token_obj.pending_host_uid
-    token_obj.pending_host_uid = None
-    token_obj.pending_host_at = None
+    token_obj.clear_pending_host()
     await db.commit()
     dashboard_cache.invalidate_all()
     device = await db.get(Device, device_id)
@@ -887,8 +894,7 @@ async def dismiss_agent_host_uid(
     if not token_obj or not token_obj.pending_host_uid:
         raise HTTPException(status_code=400, detail="No pending host identity change found for this device")
 
-    token_obj.pending_host_uid = None
-    token_obj.pending_host_at = None
+    token_obj.clear_pending_host()
     await db.commit()
     dashboard_cache.invalidate_all()
     device = await db.get(Device, device_id)

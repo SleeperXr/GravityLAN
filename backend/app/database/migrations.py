@@ -38,6 +38,7 @@ MIGRATIONS = [
     ("agent_tokens", "host_uid", "VARCHAR(71)"),
     ("agent_tokens", "pending_host_uid", "VARCHAR(71)"),
     ("agent_tokens", "pending_host_at", "DATETIME"),
+    ("agent_tokens", "pending_host_ip", "VARCHAR(45)"),
     ("agent_tokens", "os_pretty", "VARCHAR(255)"),
     ("agent_tokens", "os_name", "VARCHAR(100)"),
     ("agent_tokens", "os_version", "VARCHAR(100)"),

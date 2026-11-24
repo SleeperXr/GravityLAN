@@ -17,6 +17,7 @@ import GlobalMetricsDialog from '@/components/agents/GlobalMetricsDialog.vue';
 import AgentUpdateCenter from '@/components/dashboard/AgentUpdateCenter.vue';
 import { AGENT_HOUR_FULL_PCT, loadTone, matchesAgent, osLabelOf, type AgentRow } from '@/components/agents/agentRow';
 import { isAgentOutdated } from '@/lib/agent';
+import { pendingHostRelation } from '@/lib/agentHost';
 import { useNetworkStore } from '@/stores/network';
 import { confirmAction } from '@/composables/useConfirm';
 import { useToast } from '@/composables/useToast';
@@ -85,19 +86,26 @@ async function adopt(agent: AgentRow) {
 }
 
 async function adoptHost(agent: AgentRow) {
+  // The host the admin looked at: another one waiting by now is refused, not adopted unseen
+  const confirmation = agent.pending_host_confirmation;
+  if (!confirmation) return;
   const ok = await confirmAction({
     title: t('gv.agents.host_adopt'),
-    message: t('gv.agents.host_adopt_confirm', { host: agent.hostname }),
+    message: t('gv.agents.host_adopt_confirm', {
+      host: agent.hostname,
+      from: agent.pending_host_ip || t('gv.agents.host_address_unknown'),
+      fingerprint: agent.pending_host_fingerprint,
+    }),
     confirmLabel: t('gv.agents.host_adopt'),
   });
   if (!ok) return;
   try {
-    await api.adoptAgentHost(agent.device_id);
+    await api.adoptAgentHost(agent.device_id, confirmation);
     showToast('success', t('gv.agents.host_adopted'), agent.hostname);
-    await load();
   } catch (err) {
     showToast('error', t('gv.agents.host_adopt_failed'), (err as Error).message);
   }
+  await load();
 }
 
 async function dismissHost(agent: AgentRow) {
@@ -245,10 +253,16 @@ const hours = (a: AgentRow): (number | null)[] => (a.uptime_history?.length ? a.
 
           <div v-if="agent.has_pending_host_uid" class="mx-4 mb-3 flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn/10 p-3 text-xs text-warn-text">
             <ShieldCheck class="size-4 shrink-0" aria-hidden="true" />
-            <p class="min-w-0 flex-1">{{ t('gv.agents.host_uid_mismatch') }}</p>
+            <div class="min-w-0 flex-1 space-y-1">
+              <p>{{ t('gv.agents.host_uid_mismatch') }}</p>
+              <p class="font-mono text-micro" data-testid="pending-host">
+                {{ agent.pending_host_ip || t('gv.agents.host_address_unknown') }} · {{ agent.pending_host_fingerprint }}
+              </p>
+              <p data-testid="pending-host-relation">{{ t(`gv.agents.host_relation_${pendingHostRelation(agent)}`, { device: agent.ip }) }}</p>
+            </div>
             <div class="flex items-center gap-2">
               <Button size="sm" variant="ghost" @click="dismissHost(agent)">{{ t('gv.agents.host_dismiss') }}</Button>
-              <Button size="sm" @click="adoptHost(agent)">{{ t('gv.agents.host_adopt') }}</Button>
+              <Button size="sm" :disabled="!agent.pending_host_confirmation" @click="adoptHost(agent)">{{ t('gv.agents.host_adopt') }}</Button>
             </div>
           </div>
 

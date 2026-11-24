@@ -50,6 +50,19 @@ class AgentToken(Base):
     host_uid: Mapped[str | None] = mapped_column(String(71), nullable=True)
     pending_host_uid: Mapped[str | None] = mapped_column(String(71), nullable=True)
     pending_host_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Address the pending host reports from: what the admin sees when asked to confirm it
+    pending_host_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+
+    def clear_pending_host(self) -> None:
+        """Forget the host that was waiting for confirmation."""
+        self.pending_host_uid = None
+        self.pending_host_at = None
+        self.pending_host_ip = None
+
+    def reset_host_pin(self) -> None:
+        """Unpin the host (a new token, a new agent configuration): the next report pins again."""
+        self.host_uid = None
+        self.clear_pending_host()
 
     # Last reported OS metadata (populated from the agent's /etc/os-release)
     os_pretty: Mapped[str | None] = mapped_column(String(255), nullable=True)
