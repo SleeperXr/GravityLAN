@@ -19,6 +19,9 @@ from app.services.stepup import store as stepup_store
 ROOT = Path(__file__).resolve().parents[2]
 HOST_UID_A = "sha256:" + "a" * 64
 HOST_UID_B = "sha256:" + "b" * 64
+HOST_UID_C = "sha256:" + "c" * 64
+FINGERPRINT_B = "b" * 12  # what the overview shows for HOST_UID_B and the confirmation has to name
+FINGERPRINT_C = "c" * 12
 
 
 def _load_agent_module() -> Any:
@@ -171,13 +174,136 @@ async def test_host_uid_tofu_pin_mismatch_dismiss_and_adopt_lifecycle(client, db
     assert r_mismatch_again.status_code == 409
 
     # 5. Adopt promotes HOST_UID_B to pinned host_uid; now HOST_UID_B succeeds and HOST_UID_A is rejected
-    r_adopt = await client.post(f"/api/agent/adopt-host/{dev.id}", cookies=session_cookies)
+    r_adopt = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": FINGERPRINT_B}, cookies=session_cookies)
     assert r_adopt.status_code == 200
     await db.refresh(tok)
     assert tok.host_uid == HOST_UID_B
     assert tok.pending_host_uid is None
+    assert tok.pending_host_ip is None
 
     r_new_ok = await client.post("/api/agent/report", json=_report_payload(dev.id, host_uid=HOST_UID_B, cpu=33.0), headers=agent_headers)
     assert r_new_ok.status_code == 200
     r_old_rejected = await client.post("/api/agent/report", json=_report_payload(dev.id, host_uid=HOST_UID_A), headers=agent_headers)
     assert r_old_rejected.status_code == 409
+
+
+async def _report(client, raw: str, device_id: int, host_uid: str | None, cpu: float = 12.5):
+    return await client.post(
+        "/api/agent/report", json=_report_payload(device_id, host_uid=host_uid, cpu=cpu),
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+
+
+async def _pin(client, raw: str, device_id: int, host_uid: str = HOST_UID_A) -> None:
+    assert (await _report(client, raw, device_id, host_uid)).status_code == 200
+
+
+async def _metric_count(db, device_id: int) -> int:
+    return len((await db.execute(select(DeviceMetrics).where(DeviceMetrics.device_id == device_id))).scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_a_pinned_token_rejects_a_report_without_host_uid(client, db) -> None:
+    """Leaving the field out must not get around the pin: only the host knows its own identity."""
+    dev, tok, raw = await _seed_agent(db)
+    await _pin(client, raw, dev.id)
+    before = await _metric_count(db, dev.id)
+
+    response = await _report(client, raw, dev.id, None, cpu=77.0)
+
+    assert response.status_code == 409
+    assert "no host identity" in response.json()["detail"]
+    assert await _metric_count(db, dev.id) == before
+    await db.refresh(tok)
+    assert (tok.host_uid, tok.pending_host_uid) == (HOST_UID_A, None)  # nothing to confirm: no host named itself
+
+
+@pytest.mark.asyncio
+async def test_a_foreign_host_reporting_again_writes_nothing_new(client, db) -> None:
+    dev, tok, raw = await _seed_agent(db)
+    await _pin(client, raw, dev.id)
+
+    assert (await _report(client, raw, dev.id, HOST_UID_B)).status_code == 409
+    await db.refresh(tok)
+    first_seen, first_ip = tok.pending_host_at, tok.pending_host_ip
+    assert first_seen is not None and first_ip
+
+    assert (await _report(client, raw, dev.id, HOST_UID_B)).status_code == 409
+
+    await db.refresh(tok)
+    assert (tok.pending_host_at, tok.pending_host_ip, tok.pending_host_uid) == (first_seen, first_ip, HOST_UID_B)
+
+
+@pytest.mark.asyncio
+async def test_a_second_foreign_host_replaces_the_pending_one_and_the_first_cannot_be_confirmed(client, db, admin_token) -> None:
+    dev, tok, raw = await _seed_agent(db)
+    await _pin(client, raw, dev.id)
+    assert (await _report(client, raw, dev.id, HOST_UID_B)).status_code == 409
+    assert (await _report(client, raw, dev.id, HOST_UID_C)).status_code == 409
+    cookies = {"gravitylan_token": _confirmed_session_cookie("remote")}
+
+    # The admin looked at host B; host C has taken its place since
+    stale = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": FINGERPRINT_B}, cookies=cookies)
+    assert stale.status_code == 409
+    await db.refresh(tok)
+    assert (tok.host_uid, tok.pending_host_uid) == (HOST_UID_A, HOST_UID_C)
+
+    current = await client.post(f"/api/agent/adopt-host/{dev.id}", json={"pending": FINGERPRINT_C}, cookies=cookies)
+    assert current.status_code == 200
+    await db.refresh(tok)
+    assert (tok.host_uid, tok.pending_host_uid) == (HOST_UID_C, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [None, {}, {"pending": "nope"}, {"pending": "B" * 12}, {"pending": "b" * 64}])
+async def test_confirming_a_host_must_name_its_fingerprint(client, db, admin_token, body) -> None:
+    dev, tok, raw = await _seed_agent(db)
+    await _pin(client, raw, dev.id)
+    assert (await _report(client, raw, dev.id, HOST_UID_B)).status_code == 409
+    cookies = {"gravitylan_token": _confirmed_session_cookie("remote")}
+
+    response = await client.post(f"/api/agent/adopt-host/{dev.id}", json=body, cookies=cookies)
+
+    assert response.status_code == 422
+    await db.refresh(tok)
+    assert (tok.host_uid, tok.pending_host_uid) == (HOST_UID_A, HOST_UID_B)
+
+
+@pytest.mark.asyncio
+async def test_the_overview_names_the_pending_host_by_address_and_fingerprint(client, db, admin_token) -> None:
+    dev, tok, raw = await _seed_agent(db)
+    await _pin(client, raw, dev.id)
+    assert (await _report(client, raw, dev.id, HOST_UID_B)).status_code == 409
+    await db.refresh(tok)
+
+    overview = await client.get("/api/agent/overview", headers={"Authorization": f"Bearer {admin_token}"})
+
+    entry = next(a for a in overview.json()["agents"] if a["device_id"] == dev.id)
+    assert entry["pending_host_fingerprint"] == FINGERPRINT_B
+    assert entry["pending_host_ip"] == tok.pending_host_ip and tok.pending_host_ip
+    assert "pending_host_uid" not in entry and HOST_UID_B not in str(entry)  # the full identity never leaves the server
+
+
+@pytest.mark.asyncio
+async def test_dismissing_forgets_the_pending_address_too(client, db, admin_token) -> None:
+    dev, tok, raw = await _seed_agent(db)
+    await _pin(client, raw, dev.id)
+    assert (await _report(client, raw, dev.id, HOST_UID_B)).status_code == 409
+    cookies = {"gravitylan_token": _confirmed_session_cookie("remote")}
+
+    assert (await client.post(f"/api/agent/dismiss-host/{dev.id}", cookies=cookies)).status_code == 200
+
+    await db.refresh(tok)
+    assert (tok.host_uid, tok.pending_host_uid, tok.pending_host_at, tok.pending_host_ip) == (HOST_UID_A, None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_resetting_the_pin_clears_the_host_and_everything_waiting(db) -> None:
+    """A new token or agent configuration starts over: the next report pins again."""
+    _, tok, _ = await _seed_agent(db)
+    tok.host_uid, tok.pending_host_uid = HOST_UID_A, HOST_UID_B
+    tok.pending_host_at, tok.pending_host_ip = tok.last_seen, "192.168.100.9"
+
+    tok.reset_host_pin()
+
+    assert (tok.host_uid, tok.pending_host_uid, tok.pending_host_at, tok.pending_host_ip) == (None, None, None, None)

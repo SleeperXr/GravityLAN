@@ -84,6 +84,16 @@ class AgentReportResponse(BaseModel):
     device_id: int | None = None
 
 
+class AgentHostAdoptRequest(BaseModel):
+    """Confirm the host the admin was shown: ``pending`` is the fingerprint of the pending host.
+
+    A different host may have replaced the pending one since the page was loaded; the confirmation
+    is refused then, so a host nobody looked at cannot be adopted.
+    """
+
+    pending: str = Field(..., pattern=r"^[0-9a-f]{12}$")
+
+
 class AgentStatusResponse(BaseModel):
     """Status of an agent deployment for a specific device."""
 
@@ -284,6 +294,10 @@ class AgentSummary(BaseModel):
     pending_at: datetime | None = None
     has_pending_host_uid: bool = False
     pending_host_at: datetime | None = None
+    # What the admin is asked to confirm: the address the other host reports from and the first
+    # 12 hex digits of its identity, which the confirmation has to name (AgentHostAdoptRequest)
+    pending_host_ip: str | None = None
+    pending_host_fingerprint: str | None = None
     patch_available: int = 0
     patch_security: int = 0
     patch_manager: str | None = None
