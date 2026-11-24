@@ -22,13 +22,30 @@ class Session:
         self.last_seen = created_at
         self.user_agent = user_agent
 
+MAX_SESSIONS = 128
+
+
 class SessionStore:
-    def __init__(self, session_lifetime_seconds: float = 60 * 60 * 24 * 7):  # Default 7 days
+    def __init__(
+        self,
+        session_lifetime_seconds: float = 60 * 60 * 24 * 7,  # Default 7 days
+        max_sessions: int = MAX_SESSIONS,
+    ):
         self._sessions: Dict[str, Session] = {}
         self.session_lifetime = session_lifetime_seconds
+        self.max_sessions = max_sessions
 
     def create_session(self, user_agent: str | None = None) -> str:
-        """Create a new session, store it, and return the session ID."""
+        """Create a new session, store it, and return the session ID.
+
+        Expired sessions are dropped first, and when the store is still full the session
+        that was used longest ago makes room: a script that logs in over and over and
+        throws its cookie away cannot grow the store without bound.
+        """
+        self.prune_expired_sessions()
+        while len(self._sessions) >= self.max_sessions:
+            stalest = min(self._sessions.values(), key=lambda s: s.last_seen)
+            self.delete_session(stalest.session_id)
         session_id = f"session_{secrets.token_hex(32)}"
         now = time.time()
         self._sessions[session_id] = Session(

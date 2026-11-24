@@ -355,6 +355,21 @@ async def forwarded_for_hint_middleware(request: Request, call_next):
 
 
 @app.middleware("http")
+async def cross_origin_write_middleware(request: Request, call_next):
+    """Refuse a state-changing request that a page on another origin sent with the session cookie."""
+    from app.api.auth import SAFE_METHODS, cookie_write_origin_allowed
+
+    if request.method not in SAFE_METHODS and request.cookies.get("gravitylan_token"):
+        if not cookie_write_origin_allowed(request):
+            logger.warning(
+                "%s %s refused: origin %s does not match this server",
+                request.method, request.url.path, request.headers.get("origin", "-")[:200],
+            )
+            return JSONResponse(status_code=403, content={"detail": "Origin not allowed"})
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     for name, value in SECURITY_HEADERS.items():
