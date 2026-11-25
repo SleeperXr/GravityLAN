@@ -1,5 +1,8 @@
+import asyncio
 import hashlib
 import hmac
+import weakref
+from typing import Callable, TypeVar
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
@@ -7,6 +10,23 @@ from argon2.exceptions import InvalidHashError, VerificationError
 # Argon2id with argon2-cffi's defaults (t=3, m=64 MiB, p=4), the same parameters passlib used before:
 # the parameters are stored in each hash, so hashes written by older versions keep verifying.
 _hasher = PasswordHasher()
+
+# One Argon2id run takes 64 MiB and tens to hundreds of milliseconds. It runs in a worker thread so
+# the event loop keeps serving terminals, logs and agent reports; at most this many run at once,
+# so parallel logins cannot add up to gigabytes.
+MAX_PARALLEL_HASHES = 2
+_T = TypeVar("_T")
+_gates: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
+
+
+async def run_hashing(func: Callable[..., _T], *args) -> _T:
+    """Run ``hash_password`` or ``verify_password`` (or a stand-in) off the event loop, a few at a time."""
+    loop = asyncio.get_running_loop()
+    gate = _gates.get(loop)
+    if gate is None:
+        gate = _gates[loop] = asyncio.Semaphore(MAX_PARALLEL_HASHES)
+    async with gate:
+        return await asyncio.to_thread(func, *args)
 
 
 def hash_password(password: str) -> str:

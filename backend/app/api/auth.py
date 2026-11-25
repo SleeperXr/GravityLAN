@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 from app.services.auth_service import (
-    MASTER_TOKEN_PREFIX, hash_master_token, hash_password, looks_hashed, master_token_matches, secure_compare,
-    verify_password,
+    MASTER_TOKEN_PREFIX, hash_master_token, hash_password, looks_hashed, master_token_matches, run_hashing,
+    secure_compare, verify_password,
 )
 from app.services.session_service import session_store
 from app.services.agent_telemetry import _setting_cache  # noqa: F401 - tests reset it through this module
@@ -235,7 +235,7 @@ def _host_key(scheme: str, netloc: str) -> str:
 from app.services.proxy_trust import STATE_FROM_TRUSTED_PROXY
 
 
-def _from_trusted_proxy(websocket: WebSocket) -> bool:
+def _from_trusted_proxy(websocket: HTTPConnection) -> bool:
     """Whether TrustedProxyMiddleware verified that the original transport peer is a trusted proxy.
 
     Only an explicit ``gl_from_trusted_proxy is True`` recorded by TrustedProxyMiddleware allows
@@ -245,8 +245,26 @@ def _from_trusted_proxy(websocket: WebSocket) -> bool:
     return bool(state is not None and getattr(state, STATE_FROM_TRUSTED_PROXY, False) is True)
 
 
-def websocket_origin_allowed(websocket: WebSocket) -> bool:
-    """True unless a browser opened this WebSocket from another site.
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def cookie_write_origin_allowed(request: HTTPConnection) -> bool:
+    """Whether a browser may send this state-changing request with its session cookie.
+
+    ``SameSite=Lax`` is no wall between ports or subdomains of one host (they are the same
+    site), so a page on another service of the same machine could still POST with the cookie,
+    for routes that need no CORS preflight (no body, or a form post). Browsers always send
+    ``Sec-Fetch-Site`` (and ``Origin`` on every non-GET request) and a page cannot change
+    them. ``same-origin`` is allowed outright, which also covers a proxy that does not pass
+    ``Host``; anything else must carry an allowed ``Origin`` (see ``websocket_origin_allowed``).
+    """
+    if request.headers.get("sec-fetch-site", "").strip().lower() == "same-origin":
+        return True
+    return websocket_origin_allowed(request)
+
+
+def websocket_origin_allowed(websocket: HTTPConnection) -> bool:
+    """True unless a browser opened this WebSocket (or sent this request) from another site.
 
     Browsers send the session cookie with a WebSocket handshake from any page and do not
     apply CORS to it, so a page on another site could open the scanner, log or terminal
@@ -677,19 +695,24 @@ def _stored_password(master_setting: Setting | None, admin_setting: Setting | No
     return master_setting.value if master_setting else ""
 
 
-def _password_matches(password: str, stored: str) -> bool:
-    """Check against a hash, or against a legacy plaintext value that is not migrated yet."""
+async def _password_matches(password: str, stored: str) -> bool:
+    """Check against a hash, or against a legacy plaintext value that is not migrated yet.
+
+    The Argon2id check runs in a worker thread (``run_hashing``), not on the event loop.
+    """
     if stored.startswith(MASTER_TOKEN_PREFIX):
         # No admin password yet: the (hashed) master token counts
         return master_token_matches(password, stored)
-    return verify_password(password, stored) if looks_hashed(stored) else secure_compare(password, stored)
+    if looks_hashed(stored):
+        return await run_hashing(verify_password, password, stored)
+    return secure_compare(password, stored)
 
 
 async def _save_admin_password(
     db: AsyncSession, admin_setting: Setting | None, password: str, description: str | None = None
 ) -> None:
     """Hash and store the admin password, creating its row when only the master token exists so far."""
-    hashed = hash_password(password)
+    hashed = await run_hashing(hash_password, password)
     if admin_setting:
         admin_setting.value = hashed
     else:
@@ -721,7 +744,7 @@ async def login(
         raise HTTPException(status_code=500, detail="System not initialized. Run setup first.")
 
     required = _stored_password(master_setting, admin_setting)
-    if not _password_matches(password, required):
+    if not await _password_matches(password, required):
         logger.warning("Login failed: invalid password provided")
         await audit(request, "auth.login", "failed", detail="wrong password", actor="anonymous")
         raise HTTPException(status_code=401, detail="Invalid password")
@@ -782,7 +805,7 @@ async def change_password(
     if not required:
         raise HTTPException(status_code=500, detail="System not initialized. Run setup first.")
 
-    if not _password_matches(req.current_password, required):
+    if not await _password_matches(req.current_password, required):
         logger.warning("Password change rejected: current password is wrong")
         await audit(request, "auth.password", "failed", detail="current password wrong")
         raise HTTPException(status_code=400, detail="The current password is wrong.")
@@ -808,7 +831,7 @@ async def _admin_password_matches(db: AsyncSession, password: str) -> bool:
     required = _stored_password(master_setting, admin_setting)
     if not required:
         return False
-    return _password_matches(password, required)
+    return await _password_matches(password, required)
 
 
 @router.post("/step-up", dependencies=[policy(callers=SESSION_ONLY, denied="Only a logged-in browser session can confirm actions.")])

@@ -1,6 +1,7 @@
 """Agent Telemetry Service — Time-series metrics processing, persistence, and WebSocket broadcasting."""
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -91,9 +92,7 @@ async def _adopt_token(db: AsyncSession, device: Device, token_obj: AgentToken |
         token_obj.token = hash_agent_token(token)
         token_obj.pending_token = None
         token_obj.pending_at = None
-        token_obj.host_uid = None
-        token_obj.pending_host_uid = None
-        token_obj.pending_host_at = None
+        token_obj.reset_host_pin()
         token_obj.is_active = True
     else:
         token_obj = AgentToken(device_id=device.id, token=hash_agent_token(token), is_active=True)
@@ -157,35 +156,74 @@ async def _verify_or_pin_host_uid(
 ) -> None:
     """Enforce TOFU host-identity pinning for agent reports.
 
-    Older agents (< 0.3.18) omit ``host_uid`` and keep reporting unchanged.
-    The first report carrying ``host_uid`` pins it on ``agent_token``.
-    A subsequent report from a different host is parked in ``pending_host_uid``
-    and rejected with HTTP 409 so cloned VMs or migrated hosts cannot silently
-    mix telemetry into the existing device until confirmed by an admin.
+    A token that is not pinned yet takes any report: older agents (< 0.3.18) send no ``host_uid``,
+    and the first report carrying one pins it on ``agent_token``.
+
+    A pinned token only takes reports of the pinned host. Another host is parked in
+    ``pending_host_uid`` (with the address it reports from) and rejected with HTTP 409, so cloned VMs
+    or migrated hosts cannot mix telemetry into the device until an admin confirms them. A report
+    without ``host_uid`` is rejected too: whoever holds only the token (and not the host) cannot know
+    the pinned value, and would otherwise get around the pin by leaving the field out.
     """
     if not incoming_host_uid:
-        return
+        if agent_token.host_uid is None:
+            return
+        logger.warning(
+            "Agent report for device %d (from %s) carries no host identity although one is pinned; rejected.",
+            agent_token.device_id,
+            client_ip or "unknown",
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This agent token is pinned to a host, but the report carries no host identity. "
+                "Use agent 0.3.18 or newer, or issue a new agent configuration for this device."
+            ),
+        )
     if agent_token.host_uid is None:
         agent_token.host_uid = incoming_host_uid
-        agent_token.pending_host_uid = None
-        agent_token.pending_host_at = None
+        agent_token.clear_pending_host()
         return
     if hmac.compare_digest(agent_token.host_uid, incoming_host_uid):
         return
 
-    logger.warning(
-        "Agent host UID mismatch for device %d (from %s): parking pending_host_uid for manual confirmation.",
-        agent_token.device_id,
-        client_ip or "unknown",
-    )
-    agent_token.pending_host_uid = incoming_host_uid
-    agent_token.pending_host_at = datetime.now(timezone.utc)
-    await db.commit()
-    dashboard_cache.invalidate_all()
+    # The same foreign host reports every interval: only a new host or a new address is written
+    new_host = agent_token.pending_host_uid != incoming_host_uid
+    if new_host or agent_token.pending_host_ip != client_ip:
+        if new_host:
+            logger.warning(
+                "Agent host UID mismatch for device %d (from %s): parking host %s for manual confirmation.",
+                agent_token.device_id,
+                client_ip or "unknown",
+                host_uid_fingerprint(incoming_host_uid),
+            )
+            agent_token.pending_host_uid = incoming_host_uid
+            agent_token.pending_host_at = datetime.now(timezone.utc)
+        agent_token.pending_host_ip = client_ip
+        await db.commit()
+        dashboard_cache.invalidate_all()
     raise HTTPException(
         status_code=409,
         detail="Agent host identity changed. Confirm the new host in GravityLAN or revoke this agent token.",
     )
+
+
+def host_uid_fingerprint(host_uid: str | None) -> str | None:
+    """The first 12 hex digits of a ``sha256:`` host UID: short enough to read out, to tell hosts apart.
+
+    For display only. The host chooses its whole UID (the server only checks the format), so another
+    one that starts with the same 12 digits is easy to make: a confirmation must not rest on this.
+    """
+    if not host_uid:
+        return None
+    return host_uid.split(":", 1)[-1][:12]
+
+
+def host_uid_confirmation(host_uid: str | None) -> str | None:
+    """What a confirmation has to name: a value of the whole pending UID, so it changes whenever that does."""
+    if not host_uid:
+        return None
+    return hashlib.sha256(f"gravitylan-host-confirmation:{host_uid}".encode()).hexdigest()[:32]
 
 
 # (key in the agent's "system" block, AgentToken column, column length)
@@ -518,6 +556,9 @@ def _build_agent_summary(device: Device, token: AgentToken, last_m: DeviceMetric
         pending_at=token.pending_at,
         has_pending_host_uid=bool(getattr(token, "pending_host_uid", None)),
         pending_host_at=getattr(token, "pending_host_at", None),
+        pending_host_ip=getattr(token, "pending_host_ip", None),
+        pending_host_fingerprint=host_uid_fingerprint(getattr(token, "pending_host_uid", None)),
+        pending_host_confirmation=host_uid_confirmation(getattr(token, "pending_host_uid", None)),
         patch_available=m.patch_available,
         patch_security=m.patch_security,
         patch_manager=m.patch_manager,

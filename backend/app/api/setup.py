@@ -304,7 +304,7 @@ async def _insert_setting_if_missing(
 async def _persist_initial_setup_settings(db: AsyncSession, request: SetupCompleteRequest) -> None:
     """Persist DNS server, admin password, setup.complete flag, and master API token."""
     import secrets
-    from app.services.auth_service import hash_master_token, hash_password
+    from app.services.auth_service import hash_master_token, hash_password, run_hashing
 
     if request.dns_server:
         await _upsert_setting(
@@ -320,7 +320,7 @@ async def _persist_initial_setup_settings(db: AsyncSession, request: SetupComple
         await _upsert_setting(
             db,
             "api.admin_password",
-            hash_password(request.admin_password),
+            await run_hashing(hash_password, request.admin_password),
             category="system",
             description="Administrator password for dashboard login",
         )
