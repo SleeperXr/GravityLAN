@@ -63,7 +63,11 @@ jobs:
         flake8 backend/app --count --select=E9,F63,F7,F82,F401,F841 --show-source --statistics
         # exit-zero treats all errors as warnings.
         flake8 backend/app --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-        
+
+    - name: Install busybox
+      # test_agent_deployer runs the deploy staging command in busybox ash too (Synology, Alpine, OpenWrt)
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends busybox
+
     - name: Run tests
       env:
         GRAVITYLAN_DATA_DIR: /tmp/gravitylan_test_data

@@ -288,7 +288,12 @@ def _stage_file_command(tmp_path: str, content: str) -> str:
         f"(set -e; umask 077; t=$(mktemp {tmp_path}.XXXXXX); trap 'rm -f \"$t\"' EXIT\n"
         f"cat > \"$t\" << 'GRAVITYLAN_EOF'\n{content}\nGRAVITYLAN_EOF\n"
         f"rm -f {tmp_path}\n"
-        f"ln \"$t\" {tmp_path}\n)"
+        f"ln \"$t\" {tmp_path}\n"
+        # ln puts the link inside a directory (or a link to one) planted after the rm and still
+        # succeeds: only one lstat of tmp_path showing the inode of $t proves the name is ours
+        f"set -- $(ls -di \"$t\") $(ls -di {tmp_path})\n"
+        f"[ \"$1\" = \"$3\" ] || {{ rm -f {tmp_path}/\"${{t##*/}}\" 2>/dev/null || :; "
+        f"echo \"{tmp_path} was replaced during staging\" >&2; exit 1; }}\n)"
     )
 
 
@@ -298,10 +303,13 @@ def _stage_file(client, tmp_path: str, content: str) -> None:
     The agent config carries the agent's bearer token, so nothing staged in /tmp
     may be world-readable. The content is written to a fresh ``mktemp`` file (created
     with ``O_EXCL`` and mode 0600), a leftover at ``tmp_path`` from an earlier run is
-    removed, and the finished file is published with ``ln``, which fails if anything
-    exists at ``tmp_path`` by then (a link, a FIFO or a file another local user planted
-    after the ``rm``). Nothing is ever written through a predictable path, and a
-    failure stops the deploy. Only POSIX ``sh`` features and ``mktemp``/``ln``/``rm``
+    removed, and the finished file is published with ``ln``. ``ln`` fails if a file, a
+    FIFO or a link to a file appears at ``tmp_path`` after the ``rm``, but a directory (or a
+    link to one) makes it create the link inside that directory and succeed. So after the
+    ``ln`` one ``lstat`` (``ls -di``) of ``tmp_path`` must show the inode of the mktemp file:
+    that name then refers to a file owned by the SSH user, which nobody else may remove or
+    rename in the sticky ``/tmp``. Anything else stops the deploy. Nothing is ever written
+    through a predictable path. Only POSIX ``sh`` features and ``mktemp``/``ln``/``ls``/``rm``
     are used, which busybox and coreutils both provide.
     """
     from app.services.ssh_utils import _exec_impl

@@ -246,21 +246,26 @@ def test_stage_file_writes_owner_only_temp_file(monkeypatch):
     cmd = sent[0]
     assert cmd.startswith("(set -e; umask 077; t=$(mktemp /tmp/gravitylan_config_7.json.XXXXXX); trap 'rm -f \"$t\"' EXIT\n")
     assert "cat > \"$t\" << 'GRAVITYLAN_EOF'\n" + '{"token": "secret"}' + "\nGRAVITYLAN_EOF\n" in cmd
-    # Published without ever writing through the predictable path: ln fails if anything is there
-    assert cmd.endswith("rm -f /tmp/gravitylan_config_7.json\nln \"$t\" /tmp/gravitylan_config_7.json\n)")
+    # Published without ever writing through the predictable path. ln refuses a file or a link to
+    # one, but links into a directory planted there, so the inode of the published name is checked
+    assert "rm -f /tmp/gravitylan_config_7.json\nln \"$t\" /tmp/gravitylan_config_7.json\n" in cmd
+    assert "set -- $(ls -di \"$t\") $(ls -di /tmp/gravitylan_config_7.json)\n" in cmd
     assert "cat > /tmp/gravitylan_config_7.json" not in cmd
 
 
 def _posix_shells() -> list:
-    """Plain POSIX shells on this machine (dash is the closest to busybox ash and Unraid's sh)."""
+    """The shells of the deploy targets found on this machine: dash, sh, bash (Unraid's sh) and
+    busybox ash (Synology tools, Alpine, OpenWrt); CI installs busybox so it always runs there."""
     import shutil
-    found = [path for path in (shutil.which("dash"), shutil.which("sh"), shutil.which("bash")) if path]
-    return found or [pytest.param("", marks=pytest.mark.skip(reason="no POSIX shell"))]
+    found = [pytest.param((path,), id=name) for name in ("dash", "sh", "bash") if (path := shutil.which(name))]
+    if busybox := shutil.which("busybox"):
+        found.append(pytest.param((busybox, "sh"), id="busybox"))
+    return found or [pytest.param((), marks=pytest.mark.skip(reason="no POSIX shell"))]
 
 
-def _run_in_shell(shell: str, script: str):
+def _run_in_shell(shell: tuple, script: str):
     import subprocess
-    return subprocess.run([shell, "-c", script], capture_output=True, text=True, timeout=20)
+    return subprocess.run([*shell, "-c", script], capture_output=True, text=True, timeout=20)
 
 
 @pytest.mark.parametrize("shell", _posix_shells())
@@ -308,6 +313,36 @@ class TestStageFileCommandInRealShell:
         assert result.returncode != 0
         assert victim.read_text() == "keep"
         assert target.is_symlink()
+
+    def test_refuses_a_directory_that_appears_after_the_rm(self, shell, tmp_path):
+        """ln would link into the directory and succeed; the inode check must stop the deploy."""
+        target = tmp_path / "gravitylan_config_7.json"
+        plant = f'rm() {{ command rm "$@"; mkdir -p "{target.as_posix()}"; }}\n'
+
+        result = _run_in_shell(shell, plant + agent_deployer._stage_file_command(target.as_posix(), "SECRET"))
+
+        assert result.returncode != 0
+        assert "was replaced during staging" in result.stderr
+        assert target.is_dir() and list(target.iterdir()) == []  # the link inside it is removed again
+        assert [p.name for p in tmp_path.iterdir()] == [target.name]  # and the mktemp file
+
+    def test_refuses_a_link_to_a_directory_that_appears_after_the_rm(self, shell, tmp_path):
+        import os
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        target = tmp_path / "gravitylan_config_7.json"
+        try:
+            os.symlink(elsewhere, tmp_path / "probe", target_is_directory=True)
+            (tmp_path / "probe").unlink()
+        except (OSError, NotImplementedError):
+            pytest.skip("cannot create symlinks here")
+        plant = f'rm() {{ command rm "$@"; [ -e "{target.as_posix()}" ] || ln -s "{elsewhere.as_posix()}" "{target.as_posix()}"; }}\n'
+
+        result = _run_in_shell(shell, plant + agent_deployer._stage_file_command(target.as_posix(), "SECRET"))
+
+        assert result.returncode != 0
+        assert target.is_symlink()
+        assert list(elsewhere.iterdir()) == []
 
     def test_refuses_a_file_that_appears_after_the_rm(self, shell, tmp_path):
         target = tmp_path / "gravitylan_config_7.json"
