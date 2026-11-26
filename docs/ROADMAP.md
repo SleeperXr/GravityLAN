@@ -16,7 +16,7 @@ it into an enterprise platform (SIEM export, signed audit trails, network access
 | 2 · Safer administration | A logged-in session alone is no longer root on every host | 🟡 in progress |
 | 3 · Events | Reliable notifications about new devices and changes | ✅ done |
 
-**Release state:** `:latest` is 0.7.0, the rc.7 image re-tagged on 2026-11-11. 0.7.1-rc.1 (React removed, Aurora, second DNS server and the fixes since) is on `:next`. Earlier candidates cannot become the release: rc.4 to rc.6 of 0.7.0 carry a build label baked into the image.
+**Release state:** `:latest` is 0.8.0, the rc.3 image (`90bf9fc`) re-tagged on 2026-11-25; `:next` is still 0.8.0-rc.3, the same image. Everything merged to `main` after rc.3 is `[Unreleased]` and goes into 0.8.1.
 
 ## Phase 0 · Release foundation ✅
 

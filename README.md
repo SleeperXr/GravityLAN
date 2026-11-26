@@ -9,7 +9,7 @@ Self-hosted network radar, device inventory, interactive orbit topology, and rac
 
 **English** · **[Deutsch](README.de.md)**
 
-[![Release](https://img.shields.io/badge/release-v0.8.0--rc-3DB8F5?style=flat-square&labelColor=151A21)](https://github.com/SleeperXr/GravityLAN/releases)
+[![Release](https://img.shields.io/badge/release-v0.8.0-3DB8F5?style=flat-square&labelColor=151A21)](https://github.com/SleeperXr/GravityLAN/releases)
 [![Agent](https://img.shields.io/badge/agent-v0.3.18-3DB8F5?style=flat-square&labelColor=151A21)](docs/linux-agent.md)
 [![CI](https://img.shields.io/github/actions/workflow/status/SleeperXr/GravityLAN/ci.yml?branch=main&style=flat-square&labelColor=151A21&label=CI)](https://github.com/SleeperXr/GravityLAN/actions/workflows/ci.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/sleeperxr/gravitylan?style=flat-square&labelColor=151A21&color=3DB8F5&logo=docker&logoColor=white)](https://hub.docker.com/r/sleeperxr/gravitylan)
@@ -20,10 +20,10 @@ Self-hosted network radar, device inventory, interactive orbit topology, and rac
 </div>
 
 > [!NOTE]
-> **Active development & published images.** This branch documents the upcoming **0.8.0** release:
-> - `sleeperxr/gravitylan:latest` currently serves **`0.7.0`** (the last final release).
-> - `sleeperxr/gravitylan:next` currently serves **`0.8.0-rc.3`** (includes GravityUI-only, Proxmox VE sync, `Ctrl+K` search, Starlight/Aurora/custom themes, secondary DNS, pre-migration DB backups, MAC conflict review and manual MAC correction, the newest-on-top live log, the central route security matrix, and agent `0.3.17`).
-> - Changes merged to `main` after `0.8.0-rc.3` are listed under `[Unreleased]` in the [changelog](CHANGELOG.md) and ship with the next release candidate or the final `0.8.0` image.
+> **Published images.** The current release is **0.8.0**:
+> - `sleeperxr/gravitylan:latest` and `sleeperxr/gravitylan:0.8.0` serve **`0.8.0`** (GravityUI-only, Proxmox VE sync, `Ctrl+K` search, Starlight/Aurora/custom themes, secondary DNS, pre-migration DB backups, MAC conflict review and manual MAC correction, the newest-on-top live log, the central route security matrix, and agent `0.3.17`). See the [release notes](https://github.com/SleeperXr/GravityLAN/releases/tag/v0.8.0).
+> - `sleeperxr/gravitylan:next` follows release candidates and currently serves the same image as `0.8.0` (`0.8.0-rc.3`).
+> - Changes merged to `main` after `0.8.0` are listed under `[Unreleased]` in the [changelog](CHANGELOG.md) and ship with the next release candidate.
 >
 > Always stop the container and back up your data directory before upgrading.
 
@@ -65,7 +65,7 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-*Image tags:* `:latest` runs **`0.7.0`** (until `v0.8.0` is tagged); `:next` runs **`0.8.0-rc.3`** (`main` commits after `rc.3` are not in `:next` yet; see `[Unreleased]` in the changelog).
+*Image tags:* `:latest` and `:0.8.0` run **`0.8.0`**; `:next` runs the latest release candidate, currently **`0.8.0-rc.3`** (the same image as `0.8.0`). `main` commits after `0.8.0` are not in any image yet; see `[Unreleased]` in the changelog.
 
 Open `http://<your-host>:8000` and complete the setup wizard: it detects local subnets, runs the initial scan (or restores a JSON backup), and sets the admin password.
 
