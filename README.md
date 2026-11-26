@@ -19,14 +19,6 @@ Self-hosted network radar, device inventory, interactive orbit topology, and rac
 
 </div>
 
-> [!NOTE]
-> **Published images.** The current release is **0.8.0**:
-> - `sleeperxr/gravitylan:latest` and `sleeperxr/gravitylan:0.8.0` serve **`0.8.0`** (GravityUI-only, Proxmox VE sync, `Ctrl+K` search, Starlight/Aurora/custom themes, secondary DNS, pre-migration DB backups, MAC conflict review and manual MAC correction, the newest-on-top live log, the central route security matrix, and agent `0.3.17`). See the [release notes](https://github.com/SleeperXr/GravityLAN/releases/tag/v0.8.0).
-> - `sleeperxr/gravitylan:next` follows release candidates and currently serves the same image as `0.8.0` (`0.8.0-rc.3`).
-> - Changes merged to `main` after `0.8.0` are listed under `[Unreleased]` in the [changelog](CHANGELOG.md) and ship with the next release candidate.
->
-> Always stop the container and back up your data directory before upgrading.
-
 <p align="center">
   <img src="./docs/screenshots/vue/overview.png" alt="GravityUI overview showing the network status bar, per-subnet health, system notices, live orbit map, and device groups" width="100%">
 </p>
@@ -65,7 +57,7 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-*Image tags:* `:latest` and `:0.8.0` run **`0.8.0`**; `:next` runs the latest release candidate, currently **`0.8.0-rc.3`** (the same image as `0.8.0`). `main` commits after `0.8.0` are not in any image yet; see `[Unreleased]` in the changelog.
+*Image tags:* `:latest` is the current release (see [Releases](https://github.com/SleeperXr/GravityLAN/releases)), `:X.Y.Z` pins a version, and `:next` is the newest release candidate, for testers.
 
 Open `http://<your-host>:8000` and complete the setup wizard: it detects local subnets, runs the initial scan (or restores a JSON backup), and sets the admin password.
 

@@ -19,14 +19,6 @@ Selbst gehostetes Netzwerk-Radar, Geräteinventar, interaktiver Orbit-Netzplan u
 
 </div>
 
-> [!NOTE]
-> **Veröffentlichte Images.** Das aktuelle Release ist **0.8.0**:
-> - `sleeperxr/gravitylan:latest` und `sleeperxr/gravitylan:0.8.0` liefern **`0.8.0`** (u. a. GravityUI als einzige Oberfläche, Proxmox-VE-Sync, `Strg+K`-Suche, Starlight/Aurora/eigene Designs, zweiter DNS-Server, Pre-Migrations-DB-Kopien, MAC-Konfliktprüfung und manuelle MAC-Korrektur, Live-Log mit neuester Zeile oben, zentrale Security-Matrix sowie Agent `0.3.17`). Siehe die [Release-Notes](https://github.com/SleeperXr/GravityLAN/releases/tag/v0.8.0).
-> - `sleeperxr/gravitylan:next` folgt den Release-Candidates und liefert aktuell dasselbe Image wie `0.8.0` (`0.8.0-rc.3`).
-> - Nach `0.8.0` auf `main` gemergte Änderungen stehen im [Changelog](CHANGELOG.md) unter `[Unreleased]` und folgen mit dem nächsten Release-Candidate.
->
-> Stoppe vor einem Update immer den Container und sichere das Datenverzeichnis.
-
 <p align="center">
   <img src="./docs/screenshots/vue/overview.png" alt="GravityUI-Übersicht mit Statuszeile, Zustand je Subnetz, Systemhinweisen, Live-Orbit-Netzplan und Gerätegruppen" width="100%">
 </p>
@@ -65,7 +57,7 @@ docker run -d --name gravitylan \
   sleeperxr/gravitylan:latest
 ```
 
-*Image-Tags:* `:latest` und `:0.8.0` starten **`0.8.0`**; `:next` startet den neuesten Release-Candidate, aktuell **`0.8.0-rc.3`** (dasselbe Image wie `0.8.0`). Commits auf `main` nach `0.8.0` sind noch in keinem Image; siehe `[Unreleased]` im Changelog.
+*Image-Tags:* `:latest` ist das aktuelle Release (siehe [Releases](https://github.com/SleeperXr/GravityLAN/releases)), `:X.Y.Z` hält eine feste Version, und `:next` ist der neueste Release-Candidate, für Tester.
 
 Öffne `http://<dein-host>:8000` und schließe den Setup-Wizard ab: Er erkennt lokale Subnetze, startet den ersten Scan (oder spielt ein JSON-Backup ein) und legt das Admin-Passwort fest.
 
