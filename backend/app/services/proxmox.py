@@ -1,6 +1,6 @@
 """Read-only Proxmox VE discovery: guest names and addresses, no guest operations.
 
-Ported from the PedanXr fork (feat/proxmox-integration, author Daniel Schulze).
+Ported from the PedanXr fork (feat/proxmox-integration, author PedanXr).
 """
 import asyncio
 import ipaddress
