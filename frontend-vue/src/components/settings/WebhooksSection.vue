@@ -50,6 +50,7 @@ const availableEvents = computed(() => [
   { id: 'device.online', label: t('gv.webhooks.event_device_online') },
   { id: 'new_device', label: t('gv.webhooks.event_new_device') },
   { id: 'device.ip_changed', label: t('gv.webhooks.event_ip_changed') },
+  { id: 'device.mac_conflict', label: t('gv.webhooks.event_mac_conflict') },
   { id: 'scan.complete', label: t('gv.webhooks.event_scan_complete') },
 ]);
 

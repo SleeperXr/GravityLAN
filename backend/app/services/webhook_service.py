@@ -92,6 +92,8 @@ EVENT_ALIASES = {
     "device.ip_changed": {"ip_changed", "device.ip_changed"},
     "device.offline": {"device.offline", "offline"},
     "device.online": {"device.online", "online"},
+    "mac_conflict": {"mac_conflict", "device.mac_conflict"},
+    "device.mac_conflict": {"mac_conflict", "device.mac_conflict"},
 }
 
 
@@ -124,6 +126,15 @@ def _ip_changed_text(data: dict) -> Notification:
     return "GravityLAN: IP Address Changed", message, 5, ["satellite"]
 
 
+def _mac_conflict_text(data: dict) -> Notification:
+    name = _device_label(data, "display_name", "hostname", "ip", fallback="Device")
+    message = (
+        f"Another device answers at {data.get('ip', 'unknown')} ('{name}'): "
+        f"{data.get('observed_mac', 'unknown')} besides {data.get('mac') or 'unknown'}. Possible IP conflict."
+    )
+    return "GravityLAN: IP/MAC Conflict", message, 8, ["warning", "twisted_rightwards_arrows"]
+
+
 def _scan_complete_text(data: dict) -> Notification:
     return "GravityLAN: Scan Complete", f"Network discovery scan complete: {data.get('hosts_found', 0)} hosts found", 3, ["mag"]
 
@@ -139,6 +150,7 @@ _EVENT_TEXTS = {
     "device.online": _online_text, "online": _online_text,
     "new_device": _new_device_text, "device.new": _new_device_text,
     "device.ip_changed": _ip_changed_text, "ip_changed": _ip_changed_text,
+    "device.mac_conflict": _mac_conflict_text, "mac_conflict": _mac_conflict_text,
     "scan.complete": _scan_complete_text,
     "test.event": _test_text,
 }
@@ -419,15 +431,37 @@ _PENDING_EVENTS_KEY = "gravitylan_pending_webhooks"
 
 
 def _fire_pending_events(session) -> None:
+    # Releasing a savepoint (begin_nested) fires after_commit too, while the outer transaction is
+    # still open and may yet roll back: only the commit of the outermost transaction sends
+    if session.in_nested_transaction():
+        return
     # after_commit is synchronous: hand each event to trigger_webhooks on the running loop
-    for event_type, data in session.info.pop(_PENDING_EVENTS_KEY, []):
+    for event_type, data, _savepoint in session.info.pop(_PENDING_EVENTS_KEY, []):
         task = asyncio.get_running_loop().create_task(trigger_webhooks(event_type=event_type, data=data))
         _background_webhook_tasks.add(task)
         task.add_done_callback(_background_webhook_tasks.discard)
 
 
-def _drop_pending_events(session, _previous_transaction=None) -> None:
-    session.info.pop(_PENDING_EVENTS_KEY, None)
+def _queued_within(savepoint, rolled_back) -> bool:
+    """Whether an event queued in ``savepoint`` (None: the outer transaction) lies inside ``rolled_back``."""
+    while savepoint is not None:
+        if savepoint is rolled_back:
+            return True
+        savepoint = savepoint.parent
+    return False
+
+
+def _drop_pending_events(session, previous_transaction=None) -> None:
+    if not session.in_transaction():
+        # The outermost transaction rolled back: nothing it reported happened
+        session.info.pop(_PENDING_EVENTS_KEY, None)
+        return
+    # A savepoint rolled back (a duplicate insert caught by the caller): only the events queued
+    # inside it go; those of the outer transaction stay for its commit
+    if previous_transaction is not None and previous_transaction.nested:
+        pending = session.info.get(_PENDING_EVENTS_KEY)
+        if pending:
+            pending[:] = [e for e in pending if not _queued_within(e[2], previous_transaction)]
 
 
 def trigger_webhooks_after_commit(db, event_type: str, data: dict) -> None:
@@ -443,7 +477,10 @@ def trigger_webhooks_after_commit(db, event_type: str, data: dict) -> None:
     # and the next commit would send what the caller meant to discard
     if not sync_session.in_transaction():
         sync_session.begin()
-    sync_session.info.setdefault(_PENDING_EVENTS_KEY, []).append((event_type, data))
+    # Remember the savepoint the event was queued in, so rolling that savepoint back drops it
+    sync_session.info.setdefault(_PENDING_EVENTS_KEY, []).append(
+        (event_type, data, sync_session.get_nested_transaction())
+    )
     if not sa_event.contains(sync_session, "after_commit", _fire_pending_events):
         sa_event.listen(sync_session, "after_commit", _fire_pending_events)
         # after_soft_rollback fires on every rollback(), after_rollback only when a transaction was open

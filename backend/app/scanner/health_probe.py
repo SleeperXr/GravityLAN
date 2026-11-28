@@ -136,6 +136,37 @@ async def _probe_single_device(
         return sample, service_results
 
 
+async def _mark_failed_services(devices: list[Device], now: datetime, semaphore: asyncio.Semaphore) -> int:
+    """Probe the services of devices with an open MAC conflict and mark the ones that fail as down.
+
+    A port that answers may be the other box's, so a success changes nothing. A port that does not
+    answer is down for everyone who uses the address, whichever box holds it right now: hiding that
+    while the conflict is open left a real outage invisible. Returns the number of failed services,
+    whose state or telemetry changed and must be committed.
+    """
+    async def probe(dev: Device):
+        async with semaphore:
+            return dev, await asyncio.gather(
+                *(_probe_single_service(dev.ip, dev.hostname, svc, now) for svc in dev.services),
+                return_exceptions=True,
+            )
+
+    marked = 0
+    for result in await asyncio.gather(*(probe(dev) for dev in devices), return_exceptions=True):
+        if isinstance(result, BaseException):
+            logger.debug("Service probe error on a device with a MAC conflict: %s", result)
+            continue
+        dev, svc_results = result
+        failed = {r[0] for r in svc_results if not isinstance(r, BaseException) and r[1] is None}
+        for svc in dev.services:
+            if svc.id in failed:
+                svc.latency_ms = None
+                svc.last_checked = now
+                svc.is_up = False
+                marked += 1
+    return marked
+
+
 async def run_health_probe_pass() -> int:
     """Execute a single network-wide health and latency probing pass.
 
@@ -166,11 +197,17 @@ async def run_health_probe_pass() -> int:
         tokens_by_dev = {t.device_id: t for t in res_tokens.scalars().all()}
         intervals = await load_intervals(db)
         conflict_ids = await open_conflict_device_ids(db, device_ids)
-        # Devices with an open MAC conflict cannot be confirmed by L3 probes alone: skip
-        # probing so a foreign box at the IP neither wakes the device nor writes false-positive
-        # health samples or foreign service states (normal L3 devices without conflict continue).
+        # Devices with an open MAC conflict cannot be confirmed by L3 probes alone: they get no
+        # presence change and no health sample, so a foreign box at the IP neither wakes the device
+        # nor writes false-positive samples (normal L3 devices without conflict continue).
         probe_devices = [dev for dev in devices if dev.id not in conflict_ids]
+        conflicted = [dev for dev in devices if dev.id in conflict_ids and dev.services]
+        services_failed = await _mark_failed_services(conflicted, now, semaphore) if conflicted else 0
         if not probe_devices:
+            if services_failed:
+                outcome = await commit_or_discard(db)
+                if outcome == "ok":
+                    dashboard_cache.invalidate_all()
             return 0
 
         # Run probes concurrently in batches

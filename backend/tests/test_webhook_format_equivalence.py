@@ -69,6 +69,8 @@ def _old_prepare(service_type, url, token, event_type, data, now):
 
 EVENTS = sorted({e for aliases in ws.EVENT_ALIASES.values() for e in aliases} | set(ws.EVENT_ALIASES)
                 | {"offline", "online", "new_device", "device.new", "ip_changed", "scan.complete", "test.event", "custom.thing", ""})
+# Events added after the refactor have no old text to compare with (see test_mac_conflict_webhook_text)
+EVENTS = [e for e in EVENTS if e not in ("mac_conflict", "device.mac_conflict")]
 DATA = [
     {},
     {"ip": "10.0.0.5"},
