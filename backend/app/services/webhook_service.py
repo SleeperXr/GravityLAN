@@ -436,18 +436,32 @@ def _fire_pending_events(session) -> None:
     if session.in_nested_transaction():
         return
     # after_commit is synchronous: hand each event to trigger_webhooks on the running loop
-    for event_type, data in session.info.pop(_PENDING_EVENTS_KEY, []):
+    for event_type, data, _savepoint in session.info.pop(_PENDING_EVENTS_KEY, []):
         task = asyncio.get_running_loop().create_task(trigger_webhooks(event_type=event_type, data=data))
         _background_webhook_tasks.add(task)
         task.add_done_callback(_background_webhook_tasks.discard)
 
 
-def _drop_pending_events(session, _previous_transaction=None) -> None:
-    # A savepoint rolled back (a duplicate insert caught by the caller) leaves the outer transaction
-    # and the events queued in it intact; only the rollback of the outermost transaction drops them
-    if session.in_transaction():
+def _queued_within(savepoint, rolled_back) -> bool:
+    """Whether an event queued in ``savepoint`` (None: the outer transaction) lies inside ``rolled_back``."""
+    while savepoint is not None:
+        if savepoint is rolled_back:
+            return True
+        savepoint = savepoint.parent
+    return False
+
+
+def _drop_pending_events(session, previous_transaction=None) -> None:
+    if not session.in_transaction():
+        # The outermost transaction rolled back: nothing it reported happened
+        session.info.pop(_PENDING_EVENTS_KEY, None)
         return
-    session.info.pop(_PENDING_EVENTS_KEY, None)
+    # A savepoint rolled back (a duplicate insert caught by the caller): only the events queued
+    # inside it go; those of the outer transaction stay for its commit
+    if previous_transaction is not None and previous_transaction.nested:
+        pending = session.info.get(_PENDING_EVENTS_KEY)
+        if pending:
+            pending[:] = [e for e in pending if not _queued_within(e[2], previous_transaction)]
 
 
 def trigger_webhooks_after_commit(db, event_type: str, data: dict) -> None:
@@ -463,7 +477,10 @@ def trigger_webhooks_after_commit(db, event_type: str, data: dict) -> None:
     # and the next commit would send what the caller meant to discard
     if not sync_session.in_transaction():
         sync_session.begin()
-    sync_session.info.setdefault(_PENDING_EVENTS_KEY, []).append((event_type, data))
+    # Remember the savepoint the event was queued in, so rolling that savepoint back drops it
+    sync_session.info.setdefault(_PENDING_EVENTS_KEY, []).append(
+        (event_type, data, sync_session.get_nested_transaction())
+    )
     if not sa_event.contains(sync_session, "after_commit", _fire_pending_events):
         sa_event.listen(sync_session, "after_commit", _fire_pending_events)
         # after_soft_rollback fires on every rollback(), after_rollback only when a transaction was open

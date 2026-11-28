@@ -507,6 +507,8 @@ async def test_webhook_events_wait_for_the_outer_commit_and_survive_a_savepoint_
         assert hook.await_count == 0  # savepoint released, outer transaction still open
         try:
             async with db.begin_nested():
+                # Queued inside the savepoint that rolls back: dropped with it
+                trigger_webhooks_after_commit(db, "device.offline", {"ip": "192.168.110.31"})
                 db.add(Device(ip="192.168.110.31", display_name="dup"))
         except IntegrityError:
             pass
