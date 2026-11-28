@@ -167,6 +167,18 @@ async def record_mac_conflict(
         read=False,
         message=f"Another MAC answers at {device.ip}: {observed} (device has {device.mac})"[:255],
     ))
+    # Two boxes on one address break whatever runs there: tell the notification targets too, once
+    # the conflict is saved (a rolled back pass reports nothing)
+    from app.services.webhook_service import trigger_webhooks_after_commit
+    trigger_webhooks_after_commit(db, "device.mac_conflict", {
+        "device_id": device.id,
+        "ip": device.ip,
+        "display_name": device.display_name,
+        "hostname": device.hostname,
+        "mac": device.mac,
+        "observed_mac": observed,
+        "source": source,
+    })
     return True
 
 

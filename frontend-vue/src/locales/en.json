@@ -784,6 +784,7 @@
       "event_device_online": "Device back online (device.online)",
       "event_new_device": "New device discovered (new_device)",
       "event_ip_changed": "IP address changed (device.ip_changed)",
+      "event_mac_conflict": "IP/MAC conflict (device.mac_conflict)",
       "event_scan_complete": "Scan completed (scan.complete)",
       "btn_add": "Add destination",
       "btn_test": "Test",

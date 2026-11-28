@@ -13,6 +13,7 @@ Covers:
    routed L3 probes without MAC, and recovery after dismiss or manual/adopted MAC change.
 """
 
+import asyncio
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
@@ -75,7 +76,8 @@ async def relay(db):
     await db.commit()
 
     async def run(*entries):
-        return await ingest_agent_arp_table(db, probe.id, [{"ip": ip, "mac": mac} for ip, mac in entries])
+        with patch("app.services.webhook_service.trigger_webhooks", new=AsyncMock()):
+            return await ingest_agent_arp_table(db, probe.id, [{"ip": ip, "mac": mac} for ip, mac in entries])
 
     return run
 
@@ -418,3 +420,70 @@ async def test_docker_sync_stays_neutral_on_open_mac_conflict_and_works_normally
     await db.refresh(clean)
     assert (conflicted.is_online, conflicted.missed_scans, conflicted.last_seen) == (False, 4, old_seen)
     assert clean.is_online is True and clean.missed_scans == 0 and clean.last_seen != old_seen
+
+
+# --- Visibility of a real IP conflict ------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_health_probe_marks_services_down_on_open_conflict_without_touching_presence(db, relay, monkeypatch):
+    """A port that does not answer is down for everyone at that address, conflict or not: the service
+    goes down, while presence and health samples stay neutral and a success changes nothing."""
+    old_seen = datetime(2026, 11, 1, 10, 0, tzinfo=UTC).replace(tzinfo=None)
+    docker = Device(ip="192.168.110.27", mac=MAC_A, display_name="Docker", is_online=True, missed_scans=0, last_seen=old_seen)
+    db.add(docker)
+    await db.flush()
+    web = Service(device_id=docker.id, name="Web", protocol="http", port=80, is_up=True)
+    api = Service(device_id=docker.id, name="API", protocol="http", port=8080, is_up=True)
+    db.add_all([web, api])
+    await db.commit()
+    await relay(("192.168.110.27", MAC_B))
+    assert await _obs(db, docker.id) == [(docker.id, MAC_B, "open")]
+
+    async def tcp(ip, port, timeout=None):
+        return None if port == 80 else 3.0
+
+    monkeypatch.setattr(hp_mod, "async_session", lambda: _SameSession(db))
+    monkeypatch.setattr(hp_mod, "measure_ping_latency_ms", AsyncMock(return_value=None))
+    monkeypatch.setattr(hp_mod, "measure_tcp_latency_ms", tcp)
+    monkeypatch.setattr(hp_mod, "commit_or_discard", AsyncMock(return_value="ok"))
+    probe = (await db.execute(select(Device).where(Device.display_name == "Probe"))).scalar_one()
+    probe.is_hidden = True  # only the conflicted device is probed
+    await db.commit()
+
+    assert await hp_mod.run_health_probe_pass() == 0
+    await db.flush()
+    await db.refresh(docker)
+    await db.refresh(web)
+    await db.refresh(api)
+    assert (web.is_up, api.is_up) == (False, True)
+    assert (docker.is_online, docker.missed_scans, docker.last_seen) == (True, 0, old_seen)
+    assert (await db.execute(select(DeviceHealthSample))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_new_conflict_is_a_warning_notification_and_a_webhook_event(db, relay, client, auth):
+    nas = Device(ip="192.168.110.28", mac=MAC_A, display_name="NAS", is_online=True)
+    db.add(nas)
+    await db.commit()
+
+    probe = (await db.execute(select(Device).where(Device.display_name == "Probe"))).scalar_one()
+    with patch("app.services.webhook_service.trigger_webhooks", new=AsyncMock()) as hook:
+        for _ in range(2):  # a known pair is not reported again
+            await ingest_agent_arp_table(db, probe.id, [{"ip": "192.168.110.28", "mac": MAC_B}])
+            await db.commit()
+        await asyncio.sleep(0)
+    calls = [c.kwargs for c in hook.await_args_list]
+    assert [c["event_type"] for c in calls] == ["device.mac_conflict"]
+    assert calls[0]["data"]["observed_mac"] == MAC_B and calls[0]["data"]["ip"] == "192.168.110.28"
+
+    notes = (await client.get(f"/api/notifications?device_id={nas.id}", headers=auth)).json()
+    conflict = next(n for n in notes if n["type"] == "mac_conflict")
+    assert conflict["severity"] == "warning"
+
+
+def test_mac_conflict_webhook_text():
+    from app.services.webhook_service import format_event_notification
+    title, message, prio, _ = format_event_notification(
+        "device.mac_conflict", {"ip": "192.168.100.27", "display_name": "Docker", "mac": MAC_A, "observed_mac": MAC_B},
+    )
+    assert "Conflict" in title and MAC_B in message and "192.168.100.27" in message and prio >= 8

@@ -784,6 +784,7 @@
       "event_device_online": "Gerät wieder online (device.online)",
       "event_new_device": "Neues Gerät entdeckt (new_device)",
       "event_ip_changed": "IP-Adresse geändert (device.ip_changed)",
+      "event_mac_conflict": "IP-/MAC-Konflikt (device.mac_conflict)",
       "event_scan_complete": "Scan abgeschlossen (scan.complete)",
       "btn_add": "Ziel hinzufügen",
       "btn_test": "Test",

@@ -76,6 +76,10 @@ async def list_notifications(
                 title = "📡 IP-Adresse geändert"
                 severity = "info"
                 event_type = "ip_changed"
+            elif h.status == "mac_conflict":
+                title = "⚠️ IP-/MAC-Konflikt"
+                severity = "warning"
+                event_type = "mac_conflict"
             elif h.status == "new_device":
                 title = "✨ Neues Gerät"
                 severity = "info"

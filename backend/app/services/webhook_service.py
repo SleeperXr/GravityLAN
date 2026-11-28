@@ -92,6 +92,8 @@ EVENT_ALIASES = {
     "device.ip_changed": {"ip_changed", "device.ip_changed"},
     "device.offline": {"device.offline", "offline"},
     "device.online": {"device.online", "online"},
+    "mac_conflict": {"mac_conflict", "device.mac_conflict"},
+    "device.mac_conflict": {"mac_conflict", "device.mac_conflict"},
 }
 
 
@@ -124,6 +126,15 @@ def _ip_changed_text(data: dict) -> Notification:
     return "GravityLAN: IP Address Changed", message, 5, ["satellite"]
 
 
+def _mac_conflict_text(data: dict) -> Notification:
+    name = _device_label(data, "display_name", "hostname", "ip", fallback="Device")
+    message = (
+        f"Another device answers at {data.get('ip', 'unknown')} ('{name}'): "
+        f"{data.get('observed_mac', 'unknown')} besides {data.get('mac') or 'unknown'}. Possible IP conflict."
+    )
+    return "GravityLAN: IP/MAC Conflict", message, 8, ["warning", "twisted_rightwards_arrows"]
+
+
 def _scan_complete_text(data: dict) -> Notification:
     return "GravityLAN: Scan Complete", f"Network discovery scan complete: {data.get('hosts_found', 0)} hosts found", 3, ["mag"]
 
@@ -139,6 +150,7 @@ _EVENT_TEXTS = {
     "device.online": _online_text, "online": _online_text,
     "new_device": _new_device_text, "device.new": _new_device_text,
     "device.ip_changed": _ip_changed_text, "ip_changed": _ip_changed_text,
+    "device.mac_conflict": _mac_conflict_text, "mac_conflict": _mac_conflict_text,
     "scan.complete": _scan_complete_text,
     "test.event": _test_text,
 }
