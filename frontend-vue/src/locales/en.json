@@ -351,7 +351,7 @@
       "device_heading": "Another MAC answers at this device's IP",
       "presence_frozen": "Status unconfirmed",
       "presence_frozen_title": "Another MAC answers at this IP. The status is not checked until you adopt the MAC or dismiss the conflict; the last known one is shown.",
-      "presence_frozen_hint": "While the conflict is open, GravityLAN does not check this device: an outage is not noticed, and the last known status is shown.",
+      "presence_frozen_hint": "While the conflict is open, GravityLAN does not check whether this device is online: the last known status is shown. Services that do not answer are still reported as down.",
       "documented_mac": "Documented MAC",
       "observed_mac": "Observed MAC",
       "source": "Source",

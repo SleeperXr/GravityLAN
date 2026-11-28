@@ -431,6 +431,10 @@ _PENDING_EVENTS_KEY = "gravitylan_pending_webhooks"
 
 
 def _fire_pending_events(session) -> None:
+    # Releasing a savepoint (begin_nested) fires after_commit too, while the outer transaction is
+    # still open and may yet roll back: only the commit of the outermost transaction sends
+    if session.in_nested_transaction():
+        return
     # after_commit is synchronous: hand each event to trigger_webhooks on the running loop
     for event_type, data in session.info.pop(_PENDING_EVENTS_KEY, []):
         task = asyncio.get_running_loop().create_task(trigger_webhooks(event_type=event_type, data=data))
@@ -439,6 +443,10 @@ def _fire_pending_events(session) -> None:
 
 
 def _drop_pending_events(session, _previous_transaction=None) -> None:
+    # A savepoint rolled back (a duplicate insert caught by the caller) leaves the outer transaction
+    # and the events queued in it intact; only the rollback of the outermost transaction drops them
+    if session.in_transaction():
+        return
     session.info.pop(_PENDING_EVENTS_KEY, None)
 
 

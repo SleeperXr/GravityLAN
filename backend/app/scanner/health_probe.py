@@ -141,7 +141,8 @@ async def _mark_failed_services(devices: list[Device], now: datetime, semaphore:
 
     A port that answers may be the other box's, so a success changes nothing. A port that does not
     answer is down for everyone who uses the address, whichever box holds it right now: hiding that
-    while the conflict is open left a real outage invisible. Returns the number of services marked down.
+    while the conflict is open left a real outage invisible. Returns the number of failed services,
+    whose state or telemetry changed and must be committed.
     """
     async def probe(dev: Device):
         async with semaphore:
@@ -161,9 +162,8 @@ async def _mark_failed_services(devices: list[Device], now: datetime, semaphore:
             if svc.id in failed:
                 svc.latency_ms = None
                 svc.last_checked = now
-                if svc.is_up is not False:
-                    svc.is_up = False
-                    marked += 1
+                svc.is_up = False
+                marked += 1
     return marked
 
 

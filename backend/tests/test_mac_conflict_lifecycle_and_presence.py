@@ -445,13 +445,13 @@ async def test_health_probe_marks_services_down_on_open_conflict_without_touchin
     monkeypatch.setattr(hp_mod, "async_session", lambda: _SameSession(db))
     monkeypatch.setattr(hp_mod, "measure_ping_latency_ms", AsyncMock(return_value=None))
     monkeypatch.setattr(hp_mod, "measure_tcp_latency_ms", tcp)
-    monkeypatch.setattr(hp_mod, "commit_or_discard", AsyncMock(return_value="ok"))
     probe = (await db.execute(select(Device).where(Device.display_name == "Probe"))).scalar_one()
     probe.is_hidden = True  # only the conflicted device is probed
     await db.commit()
 
     assert await hp_mod.run_health_probe_pass() == 0
-    await db.flush()
+    # The pass must have committed: a rollback here would bring the old values back
+    await db.rollback()
     await db.refresh(docker)
     await db.refresh(web)
     await db.refresh(api)
@@ -487,3 +487,29 @@ def test_mac_conflict_webhook_text():
         "device.mac_conflict", {"ip": "192.168.100.27", "display_name": "Docker", "mac": MAC_A, "observed_mac": MAC_B},
     )
     assert "Conflict" in title and MAC_B in message and "192.168.100.27" in message and prio >= 8
+
+
+@pytest.mark.asyncio
+async def test_webhook_events_wait_for_the_outer_commit_and_survive_a_savepoint_rollback(db):
+    """A savepoint release must not send queued events early, and a savepoint rollback must not drop
+    the events queued before it (record_mac_conflict inserts in a savepoint)."""
+    from sqlalchemy.exc import IntegrityError
+    from app.services.webhook_service import trigger_webhooks_after_commit
+
+    a = Device(ip="192.168.110.31", mac=MAC_A, display_name="A")
+    db.add(a)
+    await db.commit()
+    with patch("app.services.webhook_service.trigger_webhooks", new=AsyncMock()) as hook:
+        trigger_webhooks_after_commit(db, "device.mac_conflict", {"ip": "192.168.110.31"})
+        async with db.begin_nested():
+            db.add(Device(ip="192.168.110.32", display_name="B"))
+        await asyncio.sleep(0)
+        assert hook.await_count == 0  # savepoint released, outer transaction still open
+        try:
+            async with db.begin_nested():
+                db.add(Device(ip="192.168.110.31", display_name="dup"))
+        except IntegrityError:
+            pass
+        await db.commit()
+        await asyncio.sleep(0)
+    assert [c.kwargs["event_type"] for c in hook.await_args_list] == ["device.mac_conflict"]
